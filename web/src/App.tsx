@@ -351,6 +351,10 @@ function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: S
     setRematching(false);
   };
 
+  const minQualityForDisplay = Number.parseFloat(rematchMinQuality);
+  const sourceBelowQuality = (s: CveSourceStat) =>
+    Number.isFinite(minQualityForDisplay) && minQualityForDisplay > 0 && (s.matchable_percent || 0) < minQualityForDisplay;
+
   const handleCvssRecalc = async () => {
     setCvssRecalcBusy(true);
     setCvssRecalcMsg('');
@@ -676,20 +680,27 @@ function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: S
         <div className="card" style={{ marginTop: '1rem' }}>
           <div className="card-header"><h2>CVE Database Sources</h2></div>
           <table>
-            <thead><tr><th>Source</th><th>Records</th><th>Matchable</th><th>Ecosystem</th><th>Fixed</th><th>Ranges</th><th>CVSS</th><th>Last Update</th></tr></thead>
+            <thead><tr><th>Source</th><th>Records</th><th>Matchable</th><th>Matchable %</th><th>Ecosystem</th><th>Fixed</th><th>Ranges</th><th>CVSS</th><th>Last Update</th></tr></thead>
             <tbody>
-              {cveSources.map(s => (
-                <tr key={s.source}>
-                  <td><span style={{ fontWeight: 600 }}>{s.source.toUpperCase()}</span></td>
-                  <td className="mono">{s.count.toLocaleString()}</td>
-                  <td className="mono">{(s.matchable || 0).toLocaleString()}</td>
-                  <td className="mono">{(s.with_ecosystem || 0).toLocaleString()}</td>
-                  <td className="mono">{(s.with_fixed || 0).toLocaleString()}</td>
-                  <td className="mono">{(s.with_ranges || 0).toLocaleString()}</td>
-                  <td className="mono">{(s.with_cvss || 0).toLocaleString()}</td>
-                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.last_update ? new Date(s.last_update).toLocaleString() : '-'}</td>
-                </tr>
-              ))}
+              {cveSources.map(s => {
+                const belowQuality = sourceBelowQuality(s);
+                return (
+                  <tr key={s.source} style={belowQuality ? { background: 'rgba(224, 176, 32, 0.08)' } : undefined}>
+                    <td>
+                      <span style={{ fontWeight: 600 }}>{s.source.toUpperCase()}</span>
+                      {belowQuality && <span className="badge" style={{ marginLeft: 6, color: 'var(--medium)' }}>below gate</span>}
+                    </td>
+                    <td className="mono">{s.count.toLocaleString()}</td>
+                    <td className="mono">{(s.matchable || 0).toLocaleString()}</td>
+                    <td className="mono" style={{ color: belowQuality ? 'var(--medium)' : undefined }}>{(s.matchable_percent ?? 0).toFixed(1)}%</td>
+                    <td className="mono">{(s.with_ecosystem || 0).toLocaleString()}</td>
+                    <td className="mono">{(s.with_fixed || 0).toLocaleString()}</td>
+                    <td className="mono">{(s.with_ranges || 0).toLocaleString()}</td>
+                    <td className="mono">{(s.with_cvss || 0).toLocaleString()}</td>
+                    <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.last_update ? new Date(s.last_update).toLocaleString() : '-'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

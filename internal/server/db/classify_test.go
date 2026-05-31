@@ -700,6 +700,24 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 	}
 }
 
+func TestCveSourceStatsExposeMatchablePercent(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"MatchablePercent float64",
+		`json:"matchable_percent"`,
+		"float64(s.Matchable)",
+		"float64(s.Count)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE source stats missing matchable percent support %q", want)
+		}
+	}
+}
+
 func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
 	for name, got := range map[string]string{
 		"contextual": cveContextualFixedVersionSQL("c", "v"),

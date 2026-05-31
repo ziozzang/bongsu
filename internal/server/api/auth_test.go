@@ -1624,6 +1624,32 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 	}
 }
 
+func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBody := string(appOut)
+	apiBody := string(apiOut)
+	for _, want := range []string{
+		"sourceBelowQuality",
+		"Matchable %",
+		"below gate",
+		"minQualityForDisplay",
+	} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("dashboard source quality gate missing %q", want)
+		}
+	}
+	if !strings.Contains(apiBody, "matchable_percent") {
+		t.Fatal("CVE source stat API type must include matchable_percent")
+	}
+}
+
 func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/install-agent.sh")
 	if err != nil {

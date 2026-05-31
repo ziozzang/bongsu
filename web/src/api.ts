@@ -254,6 +254,7 @@ export interface CveSourceStat {
   source: string;
   count: number;
   matchable: number;
+  matchable_percent?: number;
   with_ecosystem: number;
   with_fixed: number;
   with_ranges: number;

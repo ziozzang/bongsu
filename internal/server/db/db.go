@@ -3943,14 +3943,15 @@ func (db *DB) GetCveSources(ctx context.Context) ([]string, error) {
 }
 
 type CveSourceStats struct {
-	Source        string     `json:"source"`
-	Count         int        `json:"count"`
-	Matchable     int        `json:"matchable"`
-	WithEcosystem int        `json:"with_ecosystem"`
-	WithFixed     int        `json:"with_fixed"`
-	WithRanges    int        `json:"with_ranges"`
-	WithCVSS      int        `json:"with_cvss"`
-	LastUpdate    *time.Time `json:"last_update"`
+	Source           string     `json:"source"`
+	Count            int        `json:"count"`
+	Matchable        int        `json:"matchable"`
+	MatchablePercent float64    `json:"matchable_percent"`
+	WithEcosystem    int        `json:"with_ecosystem"`
+	WithFixed        int        `json:"with_fixed"`
+	WithRanges       int        `json:"with_ranges"`
+	WithCVSS         int        `json:"with_cvss"`
+	LastUpdate       *time.Time `json:"last_update"`
 }
 
 func (db *DB) GetCveSourceStats(ctx context.Context) ([]CveSourceStats, error) {
@@ -4005,6 +4006,9 @@ ORDER BY source`, cveSourceMatchablePredicateSQL("affected_products", "ecosystem
 		var s CveSourceStats
 		if err := rows.Scan(&s.Source, &s.Count, &s.Matchable, &s.WithEcosystem, &s.WithFixed, &s.WithRanges, &s.WithCVSS, &s.LastUpdate); err != nil {
 			return nil, err
+		}
+		if s.Count > 0 {
+			s.MatchablePercent = math.Round(float64(s.Matchable)*1000/float64(s.Count)) / 10
 		}
 		stats = append(stats, s)
 	}
