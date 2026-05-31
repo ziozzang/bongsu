@@ -103,6 +103,10 @@ Container and image policies are resolved from the latest completed scan per hos
 
 Administration and agent events are written to append-only `audit_logs` rows. The current audit surface includes agent report submissions, force-scan request lifecycle events, scan deletion, SBOM export, vulnerability report export, Trivy DB upload/update, security DB import/export/update, CVE DB import/export/rematch/CVSS recalculation, vulnerability triage changes, RBAC subject/policy changes and deletions, and periodic security DB change hooks. Admins can query `/api/admin/audit-logs` with `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `status`, `limit`, and `offset`; the dashboard exposes the same data in the Audit Log view for operational review.
 
+## Retention
+
+Admins can dry-run or execute `/api/admin/retention/prune` from the dashboard to remove old operational history. The prune action deletes scans older than `BONGSU_RETENTION_SCAN_DAYS` while preserving each host's latest completed scan, removes completed/failed/cancelled scan requests older than `BONGSU_RETENTION_SCAN_REQUEST_DAYS`, and removes audit events older than `BONGSU_RETENTION_AUDIT_DAYS`. Triage decisions and the current host inventory are not pruned by this action.
+
 ## Vulnerability Triage
 
 Triage decisions are stored separately from scan-result rows in `vulnerability_triage`, so they survive rescans and security DB updates. A decision can target one CVE globally, one CVE on a host, or one CVE/package pair on a host. Current statuses are `open`, `in_progress`, `accepted_risk`, `false_positive`, `fixed`, and `ignored`; expired decisions stop applying automatically. The dashboard exposes an expiry date for time-bound exceptions, exports include `triage_expires_at`, and triage changes are audited through `vulnerability.triage`.

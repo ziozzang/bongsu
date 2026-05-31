@@ -142,6 +142,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/admin/cve-db/recalc-cvss", s.handleCveDbRecalcCVSS)
 	s.mux.HandleFunc("GET /api/admin/cve-db/export", s.handleCveDbExport)
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
+	s.mux.HandleFunc("POST /api/admin/retention/prune", s.handleRetentionPrune)
 	s.mux.HandleFunc("GET /api/admin/rbac/subjects", s.handleListAccessSubjects)
 	s.mux.HandleFunc("POST /api/admin/rbac/subjects", s.handleUpsertAccessSubject)
 	s.mux.HandleFunc("DELETE /api/admin/rbac/subjects/{id}", s.handleDeleteAccessSubject)
@@ -2179,6 +2180,67 @@ func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sources": sources})
+}
+
+func (s *Server) handleRetentionPrune(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		DryRun      *bool `json:"dry_run"`
+		ScanDays    int   `json:"scan_days"`
+		RequestDays int   `json:"request_days"`
+		AuditDays   int   `json:"audit_days"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+	}
+	if body.ScanDays <= 0 {
+		body.ScanDays = envInt("BONGSU_RETENTION_SCAN_DAYS", 180)
+	}
+	if body.ScanDays <= 0 {
+		body.ScanDays = 180
+	}
+	if body.RequestDays <= 0 {
+		body.RequestDays = envInt("BONGSU_RETENTION_SCAN_REQUEST_DAYS", 90)
+	}
+	if body.RequestDays <= 0 {
+		body.RequestDays = 90
+	}
+	if body.AuditDays <= 0 {
+		body.AuditDays = envInt("BONGSU_RETENTION_AUDIT_DAYS", 365)
+	}
+	if body.AuditDays <= 0 {
+		body.AuditDays = 365
+	}
+	dryRun := true
+	if body.DryRun != nil {
+		dryRun = *body.DryRun
+	}
+	result, err := s.db.PruneOperationalData(r.Context(), body.ScanDays, body.RequestDays, body.AuditDays, dryRun)
+	if err != nil {
+		log.Printf("retention prune: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	status := "dry_run"
+	if !dryRun {
+		status = "pruned"
+	}
+	s.audit(r, "retention.prune", "retention", "operational_data", status, map[string]any{
+		"dry_run":       result.DryRun,
+		"scan_days":     result.ScanDays,
+		"request_days":  result.RequestDays,
+		"audit_days":    result.AuditDays,
+		"scans":         result.Scans,
+		"scan_requests": result.Requests,
+		"audit_logs":    result.AuditLogs,
+	})
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleUpsertAccessSubject(w http.ResponseWriter, r *http.Request) {

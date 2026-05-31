@@ -192,6 +192,8 @@ function DashboardView() {
   const [updateMsg, setUpdateMsg] = useState('');
   const [rematching, setRematching] = useState(false);
   const [rematchMsg, setRematchMsg] = useState('');
+  const [retentionMsg, setRetentionMsg] = useState('');
+  const [retentionBusy, setRetentionBusy] = useState(false);
 
   useEffect(() => { api.stats().then(setStats).catch(() => {}); }, []);
   useEffect(() => {
@@ -248,6 +250,19 @@ function DashboardView() {
       setRematchMsg('Rematch failed (check server logs)');
     }
     setRematching(false);
+  };
+
+  const handleRetentionPrune = async (dryRun: boolean) => {
+    setRetentionBusy(true);
+    setRetentionMsg('');
+    try {
+      const r = await api.pruneRetention({ dry_run: dryRun });
+      const affected = r.scans + r.scan_requests + r.audit_logs;
+      setRetentionMsg(`${dryRun ? 'Dry run' : 'Pruned'}: ${affected.toLocaleString()} records (${r.scans} scans, ${r.scan_requests} requests, ${r.audit_logs} audit logs)`);
+    } catch {
+      setRetentionMsg('Retention prune failed or requires admin API key');
+    }
+    setRetentionBusy(false);
   };
 
   if (!stats) return <div style={{ color: 'var(--text-muted)', padding: '2rem' }}>Loading...</div>;
@@ -370,6 +385,19 @@ function DashboardView() {
       </div>
       {updateMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: updateMsg.includes('fail') ? 'var(--critical)' : 'var(--low)' }}>{updateMsg}</div>}
       {rematchMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: rematchMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{rematchMsg}</div>}
+      <div className="db-status-bar" style={{ marginTop: '1rem' }}>
+        <h3>Operational Retention</h3>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Defaults: scans 180d, requests 90d, audit 365d</span>
+        <button className="update-btn" onClick={() => handleRetentionPrune(true)} disabled={retentionBusy} style={{ marginLeft: 'auto' }}>Dry Run</button>
+        <button
+          className="delete-btn"
+          onClick={() => { if (confirm('Prune old scans, completed scan requests, and audit logs using server retention defaults?')) handleRetentionPrune(false); }}
+          disabled={retentionBusy}
+        >
+          Prune
+        </button>
+      </div>
+      {retentionMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: retentionMsg.includes('failed') ? 'var(--critical)' : 'var(--text-muted)' }}>{retentionMsg}</div>}
       {(ownerSummary.length > 0 || environmentSummary.length > 0) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
           <SummaryTable title="Owner Remediation Queue" rows={ownerSummary} />

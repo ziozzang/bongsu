@@ -44,6 +44,7 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 - Force scan 요청과 RBAC 데이터 모델 기반
 - 보안 DB import/update 후 백그라운드 CVSS 재계산 및 rematch
 - Agent last_seen 기반 online/stale/offline 상태 표시
+- 운영 데이터 retention dry-run/prune 관리
 - 인증 없는 모드 (`BONGSU_WEB_AUTH=false`)
 
 ## 운영 흐름

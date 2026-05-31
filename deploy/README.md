@@ -186,6 +186,9 @@ spec:
 | `BONGSU_SLA_LOW_DAYS` | `180` | Remediation SLA days for low findings |
 | `BONGSU_AGENT_ONLINE_MINUTES` | `1560` | Last-seen age treated as online (26h default for daily scans) |
 | `BONGSU_AGENT_OFFLINE_MINUTES` | `4320` | Last-seen age treated as offline after this threshold |
+| `BONGSU_RETENTION_SCAN_DAYS` | `180` | Default scan history retention for admin prune action |
+| `BONGSU_RETENTION_SCAN_REQUEST_DAYS` | `90` | Default completed/failed/cancelled scan request retention |
+| `BONGSU_RETENTION_AUDIT_DAYS` | `365` | Default audit log retention for admin prune action |
 | `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login) |
 
 ### Agent
@@ -221,6 +224,7 @@ spec:
 | `POST` | `/api/admin/security-db/import` | Import exported security DB bundle |
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
+| `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs |
 | `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
 | `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |
 | `DELETE` | `/api/admin/rbac/subjects/{id}` | Delete RBAC subject and its policies |

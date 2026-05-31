@@ -293,6 +293,22 @@ export interface CveDbEntry {
   references: string;
 }
 
+export interface RetentionPruneResult {
+  dry_run: boolean;
+  scan_days: number;
+  request_days: number;
+  audit_days: number;
+  scans: number;
+  packages: number;
+  vulnerabilities: number;
+  containers: number;
+  users: number;
+  processes: number;
+  ports: number;
+  scan_requests: number;
+  audit_logs: number;
+}
+
 export const api = {
   hosts: (params?: { agent_status?: string }) => request<Host[]>('/hosts', params),
   host: (id: string) => request<Host>(`/hosts/${id}`),
@@ -347,4 +363,6 @@ export const api = {
   updateTrivyDB: () => request<{status: string; message: string; trivy_db_ready: boolean; last_update: string}>('/admin/trivy-db/update', undefined, 'POST'),
   updateSecurityDB: () => request<{status: string; security_db: HealthStatus['security_db']}>('/admin/security-db/update', undefined, 'POST'),
   rematchCVEs: () => request<{matched: number; new_vulns: number; skipped: number}>('/admin/cve-db/rematch', undefined, 'POST'),
+  pruneRetention: (body: { dry_run: boolean; scan_days?: number; request_days?: number; audit_days?: number }) =>
+    requestJSON<RetentionPruneResult>('/admin/retention/prune', body),
 };
