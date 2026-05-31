@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+	"time"
+)
 
 func TestEnvPositiveIntFallsBackForInvalidValues(t *testing.T) {
 	for _, value := range []string{"", "0", "-1", "invalid"} {
@@ -13,6 +17,35 @@ func TestEnvPositiveIntFallsBackForInvalidValues(t *testing.T) {
 	t.Setenv("BONGSU_TEST_POSITIVE_INT", "42")
 	if got := envPositiveInt("BONGSU_TEST_POSITIVE_INT", 10); got != 42 {
 		t.Fatalf("envPositiveInt valid = %d, want 42", got)
+	}
+}
+
+func TestNewHTTPServerUsesConfiguredTimeoutsAndHeaderLimit(t *testing.T) {
+	t.Setenv("BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS", "3")
+	t.Setenv("BONGSU_HTTP_READ_TIMEOUT_SECONDS", "31")
+	t.Setenv("BONGSU_HTTP_WRITE_TIMEOUT_SECONDS", "121")
+	t.Setenv("BONGSU_HTTP_IDLE_TIMEOUT_SECONDS", "122")
+	t.Setenv("BONGSU_HTTP_MAX_HEADER_BYTES", "2048")
+
+	srv := newHTTPServer(9090, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+
+	if srv.Addr != ":9090" {
+		t.Fatalf("addr = %q", srv.Addr)
+	}
+	if srv.ReadHeaderTimeout != 3*time.Second {
+		t.Fatalf("read header timeout = %s", srv.ReadHeaderTimeout)
+	}
+	if srv.ReadTimeout != 31*time.Second {
+		t.Fatalf("read timeout = %s", srv.ReadTimeout)
+	}
+	if srv.WriteTimeout != 121*time.Second {
+		t.Fatalf("write timeout = %s", srv.WriteTimeout)
+	}
+	if srv.IdleTimeout != 122*time.Second {
+		t.Fatalf("idle timeout = %s", srv.IdleTimeout)
+	}
+	if srv.MaxHeaderBytes != 2048 {
+		t.Fatalf("max header bytes = %d", srv.MaxHeaderBytes)
 	}
 }
 

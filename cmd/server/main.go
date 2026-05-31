@@ -105,15 +105,7 @@ func main() {
 		log.Printf("API Key: %s", key)
 	}
 
-	httpServer := &http.Server{
-		Addr:              fmt.Sprintf(":%d", port),
-		Handler:           server.Handler(),
-		ReadHeaderTimeout: time.Duration(envPositiveInt("BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS", 10)) * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      120 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		MaxHeaderBytes:    envPositiveInt("BONGSU_HTTP_MAX_HEADER_BYTES", 1<<20),
-	}
+	httpServer := newHTTPServer(port, server.Handler())
 
 	go func() {
 		sigCh := make(chan os.Signal, 1)
@@ -170,6 +162,18 @@ func envBool(key string, def bool) bool {
 		return def
 	}
 	return b
+}
+
+func newHTTPServer(port int, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           handler,
+		ReadHeaderTimeout: time.Duration(envPositiveInt("BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS", 10)) * time.Second,
+		ReadTimeout:       time.Duration(envPositiveInt("BONGSU_HTTP_READ_TIMEOUT_SECONDS", 30)) * time.Second,
+		WriteTimeout:      time.Duration(envPositiveInt("BONGSU_HTTP_WRITE_TIMEOUT_SECONDS", 120)) * time.Second,
+		IdleTimeout:       time.Duration(envPositiveInt("BONGSU_HTTP_IDLE_TIMEOUT_SECONDS", 120)) * time.Second,
+		MaxHeaderBytes:    envPositiveInt("BONGSU_HTTP_MAX_HEADER_BYTES", 1<<20),
+	}
 }
 
 func validateServerSecrets() error {
