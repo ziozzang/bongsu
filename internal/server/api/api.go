@@ -1241,6 +1241,9 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.installToken == "" {
+		s.audit(r, "installer.generate", "installer", "install.sh", "error", map[string]any{
+			"reason": "install token is not configured",
+		})
 		http.Error(w, "install token is not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -1386,6 +1389,10 @@ echo "  Log:     $WORK_DIR/agent.log"
 
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/x-shellscript")
+	s.audit(r, "installer.generate", "installer", "install.sh", "ok", map[string]any{
+		"server":            serverURL,
+		"install_token_set": s.installToken != "",
+	})
 	w.Write([]byte(script))
 }
 
@@ -1405,6 +1412,10 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 
 	f, err := os.Open(agentPath)
 	if err != nil {
+		s.audit(r, "installer.download", "binary", "bongsu-agent", "error", map[string]any{
+			"reason": "agent binary not found",
+			"path":   agentPath,
+		})
 		http.Error(w, "agent binary not found", http.StatusNotFound)
 		return
 	}
@@ -1415,6 +1426,9 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", "attachment; filename=bongsu-agent")
+	s.audit(r, "installer.download", "binary", "bongsu-agent", "ok", map[string]any{
+		"bytes": info.Size(),
+	})
 	io.Copy(w, f)
 }
 
@@ -1429,6 +1443,10 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := os.Open(trivyPath)
 	if err != nil {
+		s.audit(r, "installer.download", "binary", "trivy", "error", map[string]any{
+			"reason": "trivy binary not found",
+			"path":   trivyPath,
+		})
 		http.Error(w, "trivy binary not found", http.StatusNotFound)
 		return
 	}
@@ -1439,6 +1457,9 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", "attachment; filename=trivy")
+	s.audit(r, "installer.download", "binary", "trivy", "ok", map[string]any{
+		"bytes": info.Size(),
+	})
 	io.Copy(w, f)
 }
 

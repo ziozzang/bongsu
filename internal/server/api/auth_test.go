@@ -316,6 +316,26 @@ func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
 	}
 }
 
+func TestInstallerAndBinaryDownloadsAreAudited(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`"installer.generate"`,
+		`"installer.download"`,
+		`"bongsu-agent"`,
+		`"trivy"`,
+		`"install_token_set"`,
+		`"bytes"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("installer audit missing %q", want)
+		}
+	}
+}
+
 func TestHostInventoryStatus(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	recent := now.Add(-1 * time.Hour)
