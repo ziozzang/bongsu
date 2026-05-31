@@ -69,6 +69,7 @@ cp scripts/install-agent.sh "$STAGING/scripts/"
 cp scripts/update-trivy-db.sh "$STAGING/scripts/"
 cp scripts/download-trivy-db.sh "$STAGING/scripts/"
 cp scripts/download-cisa-kev.sh "$STAGING/scripts/"
+cp scripts/download-epss.sh "$STAGING/scripts/"
 cp scripts/export-security-db-bundle.sh "$STAGING/scripts/"
 cp scripts/import-security-db-bundle.sh "$STAGING/scripts/"
 chmod +x "$STAGING/scripts/"*.sh

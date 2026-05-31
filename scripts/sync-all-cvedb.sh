@@ -1,6 +1,6 @@
 #!/bin/bash
 # sync-all-cvedb.sh — Download from all CVE sources and import into Bongsu
-# Sources: CISA KEV, OSV.dev (all ecosystems), NVD, Trivy DB
+# Sources: CISA KEV, FIRST EPSS, OSV.dev (all ecosystems), NVD, Trivy DB
 # Usage: ./sync-all-cvedb.sh [server_url] [api_key]
 # Environment: NVD_API_KEY for higher NVD rate limits (optional)
 
@@ -71,8 +71,24 @@ else
 fi
 echo ""
 
-# --- 2. OSV.dev ---
-echo "[2/4] Downloading OSV.dev data..."
+# --- 2. FIRST EPSS ---
+echo "[2/5] Downloading FIRST EPSS data..."
+EPSS_FILE="${TMPDIR}/epss.jsonl"
+"${SCRIPT_DIR}/download-epss.sh" "${EPSS_FILE}"
+
+if [ -s "${EPSS_FILE}" ]; then
+    echo "  Importing EPSS data ($(wc -l < "${EPSS_FILE}") entries, $(du -h "${EPSS_FILE}" | cut -f1))..."
+    IMPORTED=$(import_cve_file "${EPSS_FILE}" "epss")
+    echo "  Imported/updated: ${IMPORTED}"
+    TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+else
+    echo "  ERROR: no EPSS data"
+    FAILED_SOURCES+=("epss:no-data")
+fi
+echo ""
+
+# --- 3. OSV.dev ---
+echo "[3/5] Downloading OSV.dev data..."
 OSV_FILE="${TMPDIR}/osv-all.jsonl"
 "${SCRIPT_DIR}/download-osv.sh" "${OSV_FILE}" \
     "PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,Alpine,Debian,SUSE,AlmaLinux,Chainguard"
@@ -88,8 +104,8 @@ else
 fi
 echo ""
 
-# --- 3. NVD ---
-echo "[3/4] Downloading NVD data..."
+# --- 4. NVD ---
+echo "[4/5] Downloading NVD data..."
 CURRENT_YEAR=$(date +%Y)
 NVD_ALL_FILE="${TMPDIR}/nvd-all.jsonl"
 NVD_FAILED=0
@@ -125,8 +141,8 @@ else
 fi
 echo ""
 
-# --- 4. Trivy DB ---
-echo "[4/4] Extracting Trivy DB CVE data..."
+# --- 5. Trivy DB ---
+echo "[5/5] Extracting Trivy DB CVE data..."
 TRIVY_FILE="${TMPDIR}/trivy-cve.jsonl"
 TRIVY_FAILED=0
 if command -v trivy &>/dev/null || [ -x /opt/bongsu/bin/trivy ]; then

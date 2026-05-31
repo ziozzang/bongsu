@@ -150,6 +150,8 @@ type Vulnerability struct {
 	HostEnvironment string     `json:"host_environment,omitempty"`
 	HostCriticality string     `json:"host_criticality,omitempty"`
 	Exploited       bool       `json:"exploited"`
+	EPSSScore       float64    `json:"epss_score,omitempty"`
+	EPSSPercentile  float64    `json:"epss_percentile,omitempty"`
 	TriageStatus    string     `json:"triage_status"`
 	TriageReason    string     `json:"triage_reason,omitempty"`
 	TriageComment   string     `json:"triage_comment,omitempty"`
@@ -249,6 +251,8 @@ type CveEntry struct {
 	Severity         string     `json:"severity"`
 	CVSSScore        float64    `json:"cvss_score"`
 	CVSSVector       string     `json:"cvss_vector"`
+	EPSSScore        float64    `json:"epss_score,omitempty"`
+	EPSSPercentile   float64    `json:"epss_percentile,omitempty"`
 	Title            string     `json:"title"`
 	Description      string     `json:"description"`
 	PublishedDate    *time.Time `json:"published_date,omitempty"`

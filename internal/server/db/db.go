@@ -181,6 +181,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "vulnerabilities", column: "pkg_path"},
 		{table: "vulnerabilities", column: "finding_source"},
 		{table: "cve_database", column: "category"},
+		{table: "cve_database", column: "epss_score"},
 		{table: "container_assets"},
 		{table: "scan_requests", column: "claimed_by_host_id"},
 		{table: "scan_requests", column: "security_db_revision"},
@@ -507,7 +508,7 @@ func ClassifySecuritySource(source, affectedProducts string) (string, string) {
 		return "code-library", ""
 	case "trivy":
 		return "os-package", ""
-	case "nvd", "cisa-kev":
+	case "nvd", "cisa-kev", "epss":
 		return "general-cve", ""
 	default:
 		return "custom", ""
@@ -1004,7 +1005,9 @@ const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerabilit
 COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), ''),
 v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, ''),
-EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)`
+EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id),
+COALESCE((SELECT epss.epss_score FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0),
+COALESCE((SELECT epss.epss_percentile FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)`
 
 const vulnTriageJoin = ` LEFT JOIN LATERAL (
 	SELECT status, reason, comment, expires_at, updated_by, updated_at
@@ -1025,7 +1028,7 @@ func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnera
 		&v.PkgName, &v.PkgType, &v.Ecosystem, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
 		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
 		&v.FindingSource, &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
-		&v.Exploited, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
+		&v.Exploited, &v.EPSSScore, &v.EPSSPercentile, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
 }
 
 type VulnerabilityInsertResult struct {
@@ -2424,6 +2427,8 @@ type VulnFilter struct {
 	FindingSource string
 	Overdue       bool
 	Exploited     bool
+	MinEPSS       float64
+	MinEPSSPct    float64
 	PkgName       string
 	Container     string
 	Owner         string
@@ -2512,6 +2517,16 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	}
 	if f.Exploited {
 		baseQ += ` AND EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)`
+	}
+	if f.MinEPSS > 0 {
+		baseQ += fmt.Sprintf(" AND EXISTS(SELECT 1 FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id AND epss.epss_score >= $%d)", argN)
+		args = append(args, f.MinEPSS)
+		argN++
+	}
+	if f.MinEPSSPct > 0 {
+		baseQ += fmt.Sprintf(" AND EXISTS(SELECT 1 FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id AND epss.epss_percentile >= $%d)", argN)
+		args = append(args, f.MinEPSSPct)
+		argN++
 	}
 
 	if f.HideFixed {
@@ -3381,10 +3396,12 @@ func vulnSortExpr(col string, desc bool) string {
 		"cvss_score": "v.cvss_score", "pkg_name": "v.pkg_name",
 		"host_id": "v.host_id", "container": "v.container", "installed_version": "v.installed_version",
 		"fixed_version": "v.fixed_version", "created_at": "v.created_at", "due_at": "v.created_at",
-		"exploited": "EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)",
-		"pkg_type":  "COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), '')",
-		"ecosystem": "COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), '')",
-		"owner":     "h.owner", "team": "h.team", "environment": "h.environment", "criticality": "h.criticality",
+		"exploited":       "EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)",
+		"epss_score":      "COALESCE((SELECT epss.epss_score FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)",
+		"epss_percentile": "COALESCE((SELECT epss.epss_percentile FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)",
+		"pkg_type":        "COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), '')",
+		"ecosystem":       "COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), '')",
+		"owner":           "h.owner", "team": "h.team", "environment": "h.environment", "criticality": "h.criticality",
 	}
 	expr, ok := allowed[col]
 	if !ok {
@@ -3417,11 +3434,11 @@ func (db *DB) GetVulnsByPackageID(ctx context.Context, packageID string) ([]mode
 	return vulns, nil
 }
 
-const CveCols = `id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at`
+const CveCols = `id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, epss_score, epss_percentile, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at`
 
 func ScanCveEntry(scanner interface{ Scan(...interface{}) error }, e *models.CveEntry) error {
 	return scanner.Scan(&e.ID, &e.VulnerabilityID, &e.Source, &e.Category, &e.Ecosystem, &e.Severity, &e.CVSSScore, &e.CVSSVector,
-		&e.Title, &e.Description, &e.PublishedDate, &e.ModifiedDate,
+		&e.EPSSScore, &e.EPSSPercentile, &e.Title, &e.Description, &e.PublishedDate, &e.ModifiedDate,
 		&e.AffectedProducts, &e.References, &e.RawData, &e.UpdatedAt)
 }
 
@@ -3439,11 +3456,12 @@ func (db *DB) UpsertCveEntries(ctx context.Context, entries []models.CveEntry) (
 }
 
 func (db *DB) UpsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry) (int, error) {
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, epss_score, epss_percentile, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
 ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 	category=EXCLUDED.category, ecosystem=EXCLUDED.ecosystem,
 	severity=EXCLUDED.severity, cvss_score=EXCLUDED.cvss_score, cvss_vector=EXCLUDED.cvss_vector,
+	epss_score=EXCLUDED.epss_score, epss_percentile=EXCLUDED.epss_percentile,
 	title=EXCLUDED.title, description=EXCLUDED.description,
 	published_date=EXCLUDED.published_date, modified_date=EXCLUDED.modified_date,
 	affected_products=EXCLUDED.affected_products, refs=EXCLUDED.refs,
@@ -3480,7 +3498,7 @@ ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 			e.Category, e.Ecosystem = ClassifySecuritySource(e.Source, e.AffectedProducts)
 		}
 		if _, err := stmt.ExecContext(ctx, e.ID, e.VulnerabilityID, e.Source, e.Category, e.Ecosystem, e.Severity,
-			e.CVSSScore, e.CVSSVector, e.Title, e.Description,
+			e.CVSSScore, e.CVSSVector, e.EPSSScore, e.EPSSPercentile, e.Title, e.Description,
 			e.PublishedDate, e.ModifiedDate, e.AffectedProducts, e.References, e.RawData); err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("insert %s: %w", e.VulnerabilityID, err)
@@ -3549,7 +3567,7 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source str
 
 	sortCol := "cvss_score"
 	switch sortBy {
-	case "vulnerability_id", "severity", "cvss_score", "source", "title", "published_date":
+	case "vulnerability_id", "severity", "cvss_score", "epss_score", "epss_percentile", "source", "title", "published_date":
 		sortCol = sortBy
 	}
 	sortDir := "DESC"
@@ -3557,7 +3575,7 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source str
 		sortDir = "ASC"
 	}
 	nullHandling := ""
-	if sortCol == "cvss_score" {
+	if sortCol == "cvss_score" || sortCol == "epss_score" || sortCol == "epss_percentile" {
 		nullHandling = " NULLS LAST"
 	}
 	dataQ := fmt.Sprintf("SELECT %s ", CveCols) + baseQ + fmt.Sprintf(" ORDER BY %s %s%s LIMIT $%d OFFSET $%d", sortCol, sortDir, nullHandling, argN, argN+1)

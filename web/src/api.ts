@@ -154,6 +154,8 @@ export interface Vuln {
   host_environment?: string;
   host_criticality?: string;
   exploited: boolean;
+  epss_score?: number;
+  epss_percentile?: number;
   container: string;
   triage_status: string;
   triage_reason: string;
@@ -355,6 +357,8 @@ export interface CveDbEntry {
   severity: string;
   cvss_score: number;
   cvss_vector: string;
+  epss_score?: number;
+  epss_percentile?: number;
   title: string;
   description: string;
   published_date: string | null;
@@ -391,9 +395,9 @@ export const api = {
   exportHostSBOM: (id: string, hostname: string, format = 'cyclonedx') =>
     download(`/hosts/${id}/sbom`, `${hostname || id}-${format === 'spdx' ? 'spdx.json' : 'cyclonedx.json'}`, { format }),
   hostVulnCounts: (id: string) => request<Record<string, number>>(`/hosts/${id}/vuln-counts`),
-  vulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; finding_source?: string; overdue?: string; exploited?: string; min_cvss?: string; pkg_name?: string; container?: string; owner?: string; team?: string; environment?: string; criticality?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
+  vulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; finding_source?: string; overdue?: string; exploited?: string; min_epss?: string; min_epss_percentile?: string; min_cvss?: string; pkg_name?: string; container?: string; owner?: string; team?: string; environment?: string; criticality?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Vuln[]; total: number }>('/vulnerabilities', params),
-  exportVulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; finding_source?: string; overdue?: string; exploited?: string; pkg_name?: string; container?: string; owner?: string; team?: string; environment?: string; criticality?: string; sort_by?: string; sort_order?: string; show_no_fix?: string; show_mismatch?: string; format?: string }) =>
+  exportVulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; finding_source?: string; overdue?: string; exploited?: string; min_epss?: string; min_epss_percentile?: string; pkg_name?: string; container?: string; owner?: string; team?: string; environment?: string; criticality?: string; sort_by?: string; sort_order?: string; show_no_fix?: string; show_mismatch?: string; format?: string }) =>
     download('/vulnerabilities/export', `bongsu-vulnerabilities.${params.format === 'json' ? 'json' : 'csv'}`, params),
   vulnFilters: () => request<FilterOptions>('/vulnerabilities/filters'),
   vulnSummary: (params: { group_by?: string }) =>

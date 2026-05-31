@@ -21,6 +21,7 @@ func TestClassifySecuritySource(t *testing.T) {
 		{"osv debian", "osv", `[{"name":"openssl","ecosystem":"Debian"}]`, "os-package", "Debian"},
 		{"nvd fallback", "nvd", `[]`, "general-cve", ""},
 		{"cisa kev fallback", "cisa-kev", `[]`, "general-cve", ""},
+		{"epss fallback", "epss", `[]`, "general-cve", ""},
 		{"custom fallback", "internal", ``, "custom", ""},
 	}
 
@@ -918,6 +919,7 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		`{table: "vulnerabilities", column: "pkg_path"}`,
 		`{table: "vulnerabilities", column: "finding_source"}`,
 		`{table: "cve_database", column: "category"}`,
+		`{table: "cve_database", column: "epss_score"}`,
 		`{table: "container_assets"}`,
 		`{table: "scan_requests", column: "claimed_by_host_id"}`,
 		`{table: "scan_requests", column: "security_db_revision"}`,
@@ -1532,14 +1534,57 @@ func TestListVulnerabilitiesExposesCisaKevPrioritization(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"Exploited     bool",
+		"MinEPSS       float64",
+		"MinEPSSPct    float64",
 		"&v.Exploited",
+		"&v.EPSSScore",
+		"&v.EPSSPercentile",
 		`kev.source = 'cisa-kev'`,
+		`epss.source = 'epss'`,
 		`kev.vulnerability_id = v.vulnerability_id`,
 		"if f.Exploited",
-		`"exploited": "EXISTS(SELECT 1 FROM cve_database kev`,
+		"if f.MinEPSS > 0",
+		"if f.MinEPSSPct > 0",
+		`"exploited":`,
+		`"epss_score":`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("ListVulnerabilities KEV prioritization missing %q", want)
+		}
+	}
+}
+
+func TestCveDatabaseStoresEPSSPriorityColumns(t *testing.T) {
+	bodyBytes, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migration, err := os.ReadFile("../../../migrations/020_cve_epss.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(bodyBytes)
+	migrationBody := string(migration)
+	for _, want := range []string{
+		"epss_score",
+		"epss_percentile",
+		"&e.EPSSScore",
+		"&e.EPSSPercentile",
+		"epss_score=EXCLUDED.epss_score",
+		"epss_percentile=EXCLUDED.epss_percentile",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE DB EPSS support missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"ADD COLUMN IF NOT EXISTS epss_score",
+		"ADD COLUMN IF NOT EXISTS epss_percentile",
+		"idx_cve_db_epss_score",
+		"idx_cve_db_epss_percentile",
+	} {
+		if !strings.Contains(migrationBody, want) {
+			t.Fatalf("EPSS migration missing %q: %s", want, migrationBody)
 		}
 	}
 }

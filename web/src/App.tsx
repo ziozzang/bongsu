@@ -1119,10 +1119,11 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [showMismatch, setShowMismatch] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [exploitedOnly, setExploitedOnly] = useState(false);
+  const [minEpss, setMinEpss] = useState('');
   const [exportMsg, setExportMsg] = useState('');
   const limit = 50;
 
-  const load = useCallback((p: number, sev: string, triage: string, source: string, overdue: boolean, exploited: boolean, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
+  const load = useCallback((p: number, sev: string, triage: string, source: string, overdue: boolean, exploited: boolean, epss: string, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
     setLoading(true);
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
     if (sev) params.severity = sev;
@@ -1130,6 +1131,8 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     if (source) params.finding_source = source;
     if (overdue) params.overdue = 'true';
     if (exploited) params.exploited = 'true';
+    const minEpssParam = epssParam(epss);
+    if (minEpssParam) params.min_epss = minEpssParam;
     if (hId) params.host_id = hId;
     if (cont) params.container = cont;
     if (own) params.owner = own;
@@ -1160,16 +1163,16 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
+  useEffect(() => { load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
 
-  const handleSearch = () => { load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
+  const handleSearch = () => { load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
-    const nextDesc = sortBy === col ? !sortDesc : col === 'cvss_score' || col === 'severity' || col === 'exploited';
+    const nextDesc = sortBy === col ? !sortDesc : col === 'cvss_score' || col === 'severity' || col === 'exploited' || col === 'epss_score' || col === 'epss_percentile';
     setSortBy(col);
     setSortDesc(nextDesc);
-    load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
+    load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
   };
 
   const sortArrow = (col: string) => {
@@ -1178,6 +1181,11 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   };
 
   const badgeClass = (sev: string) => `badge badge-${sev.toLowerCase()}`;
+  const epssParam = (epss: string) => {
+    const n = Number(epss);
+    if (!Number.isFinite(n) || n <= 0) return '';
+    return String(Math.min(n, 100) / 100);
+  };
   const currentExportParams = (format: 'csv' | 'json') => {
     const params: Record<string, string> = { format };
     if (severity) params.severity = severity;
@@ -1185,6 +1193,8 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     if (findingSource) params.finding_source = findingSource;
     if (overdueOnly) params.overdue = 'true';
     if (exploitedOnly) params.exploited = 'true';
+    const minEpssParam = epssParam(minEpss);
+    if (minEpssParam) params.min_epss = minEpssParam;
     if (hostId) params.host_id = hostId;
     if (container) params.container = container;
     if (owner) params.owner = owner;
@@ -1213,7 +1223,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const criticalities = Array.from(new Set(Object.values(hostMeta).map(h => h.criticality || '').filter(Boolean))).sort();
 
   const cols: [string, string][] = [
-    ['exploited', 'KEV'], ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
+    ['exploited', 'KEV'], ['epss_score', 'EPSS'], ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
     ['pkg_name', 'Package'], ['owner', 'Owner'], ['environment', 'Env'], ['container', 'Container'], ['pkg_type', 'Pkg Type'],
     ['installed_version', 'Installed'], ['fixed_version', 'Fixed'], ['due_at', 'Due'],
   ];
@@ -1296,6 +1306,17 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             <input type="checkbox" checked={exploitedOnly} onChange={e => setExploitedOnly(e.target.checked)} /> CISA KEV
           </label>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            step="1"
+            placeholder="Min EPSS %"
+            value={minEpss}
+            onChange={(e) => setMinEpss(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ width: 115 }}
+          />
           <button className="filter-btn" onClick={() => exportVulns('csv')}>Export CSV</button>
           <button className="filter-btn" onClick={() => exportVulns('json')}>JSON</button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{exportMsg || `${total} results`}</span>
@@ -1321,6 +1342,9 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   <td><span className="badge">{(v.triage_status || 'open').replace('_', ' ')}</span></td>
                   <td><span className="badge">{findingSourceLabel(v.finding_source)}</span></td>
                   <td>{v.exploited ? <span className="badge badge-critical">KEV</span> : <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                  <td className="mono" style={{ color: (v.epss_score || 0) >= 0.5 ? 'var(--critical)' : (v.epss_score || 0) >= 0.1 ? 'var(--high)' : 'var(--text-muted)' }}>
+                    {v.epss_score ? `${(v.epss_score * 100).toFixed(1)}%` : '-'}
+                  </td>
                   <td className="mono">
                     <span className="host-link" style={{ color: 'var(--primary)' }}>{v.vulnerability_id}</span>
                   </td>
@@ -1353,14 +1377,14 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   </td>
                 </tr>
               ))}
-              {vulns.length === 0 && <tr><td colSpan={15} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
+              {vulns.length === 0 && <tr><td colSpan={16} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
             </tbody>
           </table>
         )}
         <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
+          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
+          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
         </div>
       </div>
     </>
@@ -1445,6 +1469,11 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         <div className="stat-card">
           <div className="label">CISA KEV</div>
           <div style={{ fontSize: '0.875rem' }}>{vuln.exploited ? <span className="badge badge-critical">Known exploited</span> : '-'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">EPSS</div>
+          <div style={{ fontSize: '0.875rem' }}>{vuln.epss_score ? `${(vuln.epss_score * 100).toFixed(2)}%` : '-'}</div>
+          {vuln.epss_percentile ? <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>p{(vuln.epss_percentile * 100).toFixed(1)}</div> : null}
         </div>
         <div className="stat-card">
           <div className="label">Triage</div>
@@ -2042,6 +2071,7 @@ function CveSearchView() {
                 <th className="clickable" onClick={() => toggleSort('vulnerability_id')} style={{ userSelect: 'none' }}>CVE ID{sortArrow('vulnerability_id')}</th>
                 <th className="clickable" onClick={() => toggleSort('severity')} style={{ userSelect: 'none' }}>Severity{sortArrow('severity')}</th>
                 <th className="clickable" onClick={() => toggleSort('cvss_score')} style={{ userSelect: 'none' }}>CVSS{sortArrow('cvss_score')}</th>
+                <th className="clickable" onClick={() => toggleSort('epss_score')} style={{ userSelect: 'none' }}>EPSS{sortArrow('epss_score')}</th>
                 <th className="clickable" onClick={() => toggleSort('source')} style={{ userSelect: 'none' }}>Source{sortArrow('source')}</th>
                 <th className="clickable" onClick={() => toggleSort('title')} style={{ userSelect: 'none' }}>Title{sortArrow('title')}</th>
                 <th className="clickable" onClick={() => toggleSort('published_date')} style={{ userSelect: 'none' }}>Published{sortArrow('published_date')}</th>
@@ -2072,6 +2102,9 @@ function CveSearchView() {
                       <td className="mono" style={{ fontWeight: 600, color: cvssClr(entry.cvss_score) }}>
                         {entry.cvss_score > 0 ? entry.cvss_score.toFixed(1) : '-'}
                       </td>
+                      <td className="mono" style={{ color: (entry.epss_score || 0) >= 0.5 ? 'var(--critical)' : (entry.epss_score || 0) >= 0.1 ? 'var(--high)' : 'var(--text-muted)' }}>
+                        {entry.epss_score ? `${(entry.epss_score * 100).toFixed(1)}%` : '-'}
+                      </td>
                       <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                         {entry.source}
                       </td>
@@ -2084,7 +2117,7 @@ function CveSearchView() {
                     </tr>
                     {isExpanded && (
                       <tr>
-                        <td colSpan={6} style={{ background: 'var(--surface)', padding: '1rem 1.5rem' }}>
+                        <td colSpan={7} style={{ background: 'var(--surface)', padding: '1rem 1.5rem' }}>
                           {entry.description && (
                             <div style={{ marginBottom: '0.75rem' }}>
                               <strong>Description</strong>

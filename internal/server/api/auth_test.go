@@ -1582,7 +1582,11 @@ func TestVulnerabilityAPIExposesExploitedFilterAndExportColumn(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`Exploited:     r.URL.Query().Get("exploited") == "true"`,
+		`MinEPSS:       floatParam(r, "min_epss", 0)`,
+		`MinEPSSPct:    floatParam(r, "min_epss_percentile", 0)`,
 		`"exploited"`,
+		`"epss_score"`,
+		`"epss_percentile"`,
 		`strconv.FormatBool(v.Exploited)`,
 	} {
 		if !strings.Contains(body, want) {
@@ -1669,18 +1673,24 @@ func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
 	apiBody := string(apiOut)
 	for _, want := range []string{
 		"exploitedOnly",
+		"minEpss",
 		"params.exploited = 'true'",
+		"params.min_epss = minEpssParam",
 		"['exploited', 'KEV']",
+		"['epss_score', 'EPSS']",
 		"CISA KEV",
+		"Min EPSS %",
 		"Known exploited",
+		"v.epss_score",
 		"v.exploited",
 	} {
 		if !strings.Contains(appBody, want) {
 			t.Fatalf("dashboard KEV prioritization missing %q", want)
 		}
 	}
-	if !strings.Contains(apiBody, "exploited: boolean") || !strings.Contains(apiBody, "exploited?: string") {
-		t.Fatal("web API types must expose exploited vulnerability fields and filter")
+	if !strings.Contains(apiBody, "exploited: boolean") || !strings.Contains(apiBody, "exploited?: string") ||
+		!strings.Contains(apiBody, "epss_score?: number") || !strings.Contains(apiBody, "min_epss?: string") {
+		t.Fatal("web API types must expose exploited and EPSS vulnerability fields and filters")
 	}
 }
 
@@ -1775,6 +1785,8 @@ func TestSecurityDBSyncScriptFailsOnImportErrors(t *testing.T) {
 		"import_cve_file()",
 		`download-cisa-kev.sh`,
 		`import_cve_file "${CISA_KEV_FILE}" "cisa-kev"`,
+		`download-epss.sh`,
+		`import_cve_file "${EPSS_FILE}" "epss"`,
 		"curl -fsS -X POST",
 		`data.get("status") != "ok"`,
 		"invalid import response",
@@ -1821,6 +1833,32 @@ func TestDownloadCisaKevScriptIsFailClosedAndAtomic(t *testing.T) {
 	}
 	if strings.Contains(body, `> "${OUTPUT}"`) {
 		t.Fatal("download-cisa-kev must not write partial data directly to the final output")
+	}
+}
+
+func TestDownloadEPSSScriptIsFailClosedAndAtomic(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/download-epss.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`epss_scores-`,
+		`OUTPUT_TMP="${OUTPUT}.tmp.$$"`,
+		`gzip.decompress(resp.read())`,
+		`EPSS CSV missing required columns`,
+		`EPSS conversion produced no CVE entries`,
+		`"source": "epss"`,
+		`"epss_score": epss_score`,
+		`"epss_percentile": percentile`,
+		`mv "${OUTPUT_TMP}" "${OUTPUT}"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("download-epss must fail closed and write atomically, missing %q", want)
+		}
+	}
+	if strings.Contains(body, `> "${OUTPUT}"`) {
+		t.Fatal("download-epss must not write partial data directly to the final output")
 	}
 }
 
