@@ -219,6 +219,37 @@ func TestAdminMetricsExposeTriageLifecycle(t *testing.T) {
 	}
 }
 
+func TestAdminMetricsExposeAgentFleetState(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) adminMetrics")
+	if start < 0 {
+		t.Fatal("adminMetrics not found")
+	}
+	end := strings.Index(body[start:], "func boolMetric")
+	if end < 0 {
+		t.Fatal("boolMetric not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"ListHosts(ctx)",
+		"applyAgentStatus(&host, now)",
+		"bongsu_agent_hosts",
+		`map[string]string{"status": status}`,
+		`[]string{"online", "stale", "offline", "unknown"}`,
+		"bongsu_agent_version_hosts",
+		`map[string]string{"version": version}`,
+		"bongsu_agent_metrics_error",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("admin metrics agent fleet state missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestPrometheusLabelValueEscapesUnsafeCharacters(t *testing.T) {
 	var b strings.Builder
 	writePromGauge(&b, "bongsu_test_info", map[string]string{"revision": "rev\"x\\y\nz"}, 1)

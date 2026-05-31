@@ -2853,6 +2853,32 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 0)
 	}
 	if s.db != nil {
+		if hosts, err := s.db.ListHosts(ctx); err == nil {
+			agentStatusCounts := map[string]int{}
+			agentVersionCounts := map[string]int{}
+			now := time.Now()
+			for _, host := range hosts {
+				applyAgentStatus(&host, now)
+				status := host.AgentStatus
+				if status == "" {
+					status = "unknown"
+				}
+				version := strings.TrimSpace(host.AgentVersion)
+				if version == "" {
+					version = "unknown"
+				}
+				agentStatusCounts[status]++
+				agentVersionCounts[version]++
+			}
+			for _, status := range []string{"online", "stale", "offline", "unknown"} {
+				writePromGauge(&b, "bongsu_agent_hosts", map[string]string{"status": status}, float64(agentStatusCounts[status]))
+			}
+			for version, count := range agentVersionCounts {
+				writePromGauge(&b, "bongsu_agent_version_hosts", map[string]string{"version": version}, float64(count))
+			}
+		} else {
+			writePromGauge(&b, "bongsu_agent_metrics_error", nil, 1)
+		}
 		triageExpiringSoonDays := envInt("BONGSU_TRIAGE_EXPIRING_SOON_DAYS", 14)
 		if triageExpiringSoonDays <= 0 {
 			triageExpiringSoonDays = 14
