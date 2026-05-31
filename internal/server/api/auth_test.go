@@ -1764,9 +1764,44 @@ func TestSecurityDBFreshnessHealthAndMetricsAreExposed(t *testing.T) {
 		`bongsu_security_db_source_stale`,
 		`bongsu_security_db_source_count`,
 		`bongsu_security_db_source_oldest_age_seconds`,
+		`bongsu_security_db_source_matchable_percent`,
+		`bongsu_security_db_source_quality_metrics_error`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("security DB freshness support missing %q", want)
+		}
+	}
+}
+
+func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) adminMetrics")
+	if start < 0 {
+		t.Fatal("adminMetrics not found")
+	}
+	end := strings.Index(body[start:], "func boolMetric")
+	if end < 0 {
+		t.Fatal("boolMetric not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"GetCveSourceStats(ctx)",
+		`labels := map[string]string{"source": stat.Source}`,
+		"bongsu_security_db_source_records",
+		"bongsu_security_db_source_matchable_records",
+		"bongsu_security_db_source_matchable_percent",
+		"bongsu_security_db_source_with_ecosystem_records",
+		"bongsu_security_db_source_with_fixed_records",
+		"bongsu_security_db_source_with_ranges_records",
+		"bongsu_security_db_source_with_cvss_records",
+		"bongsu_security_db_source_quality_metrics_error",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("admin metrics source quality missing %q: %s", want, fn)
 		}
 	}
 }

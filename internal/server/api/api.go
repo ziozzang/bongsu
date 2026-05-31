@@ -2877,6 +2877,20 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		if status, _ := freshness["status"].(string); status == "error" {
 			writePromGauge(&b, "bongsu_security_db_freshness_metrics_error", nil, 1)
 		}
+		if sourceStats, err := s.db.GetCveSourceStats(ctx); err == nil {
+			for _, stat := range sourceStats {
+				labels := map[string]string{"source": stat.Source}
+				writePromGauge(&b, "bongsu_security_db_source_records", labels, float64(stat.Count))
+				writePromGauge(&b, "bongsu_security_db_source_matchable_records", labels, float64(stat.Matchable))
+				writePromGauge(&b, "bongsu_security_db_source_matchable_percent", labels, stat.MatchablePercent)
+				writePromGauge(&b, "bongsu_security_db_source_with_ecosystem_records", labels, float64(stat.WithEcosystem))
+				writePromGauge(&b, "bongsu_security_db_source_with_fixed_records", labels, float64(stat.WithFixed))
+				writePromGauge(&b, "bongsu_security_db_source_with_ranges_records", labels, float64(stat.WithRanges))
+				writePromGauge(&b, "bongsu_security_db_source_with_cvss_records", labels, float64(stat.WithCVSS))
+			}
+		} else {
+			writePromGauge(&b, "bongsu_security_db_source_quality_metrics_error", nil, 1)
+		}
 		if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
 			writePromGauge(&b, "bongsu_security_db_revision_info", map[string]string{"revision": revision}, 1)
 			if counts, err := s.db.CountSecurityDBRescanRequestsByStatus(ctx, nil, true, revision); err == nil {
