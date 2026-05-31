@@ -936,6 +936,62 @@ func TestReportAuditStatus(t *testing.T) {
 	}
 }
 
+func TestNormalizeVulnerabilityTriage(t *testing.T) {
+	triage := models.VulnerabilityTriage{
+		VulnerabilityID: " CVE-2026-0001 ",
+		HostID:          " host-1 ",
+		PkgName:         " openssl ",
+		Status:          " accepted_risk ",
+		Reason:          " approved ",
+		Comment:         " maintenance window ",
+		UpdatedBy:       " admin ",
+	}
+	normalizeVulnerabilityTriage(&triage)
+	if triage.VulnerabilityID != "CVE-2026-0001" ||
+		triage.HostID != "host-1" ||
+		triage.PkgName != "openssl" ||
+		triage.Status != "accepted_risk" ||
+		triage.Reason != "approved" ||
+		triage.Comment != "maintenance window" ||
+		triage.UpdatedBy != "admin" {
+		t.Fatalf("triage was not normalized: %#v", triage)
+	}
+}
+
+func TestTriageHandlerValidatesScopeBeforeUpsert(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleUpsertVulnerabilityTriage")
+	if start < 0 {
+		t.Fatal("handleUpsertVulnerabilityTriage not found")
+	}
+	end := strings.Index(body[start+1:], "\nfunc ")
+	if end < 0 {
+		t.Fatal("handleUpsertVulnerabilityTriage end not found")
+	}
+	fn := body[start : start+1+end]
+	for _, want := range []string{
+		"normalizeVulnerabilityTriage(&body)",
+		`body.PkgName != "" && body.HostID == ""`,
+		`http.Error(w, "host_id is required when pkg_name is set", http.StatusBadRequest)`,
+		`s.db.GetHost(r.Context(), body.HostID)`,
+		`http.Error(w, "host not found", http.StatusNotFound)`,
+		`s.db.UpsertVulnerabilityTriage`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("triage handler missing %q: %s", want, fn)
+		}
+	}
+	hostLookupIdx := strings.Index(fn, "s.db.GetHost(r.Context(), body.HostID)")
+	upsertIdx := strings.Index(fn, "s.db.UpsertVulnerabilityTriage")
+	if hostLookupIdx < 0 || upsertIdx < 0 || upsertIdx < hostLookupIdx {
+		t.Fatalf("triage handler must validate host before upsert: %s", fn)
+	}
+}
+
 func TestReportWebhookPayloadIncludesQualitySignals(t *testing.T) {
 	report := &models.ScanReport{
 		ScanID:   "scan-1",

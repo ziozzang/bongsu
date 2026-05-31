@@ -1162,9 +1162,25 @@ func (s *Server) handleUpsertVulnerabilityTriage(w http.ResponseWriter, r *http.
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	normalizeVulnerabilityTriage(&body)
 	if body.VulnerabilityID == "" {
 		http.Error(w, "vulnerability_id is required", http.StatusBadRequest)
 		return
+	}
+	if body.PkgName != "" && body.HostID == "" {
+		http.Error(w, "host_id is required when pkg_name is set", http.StatusBadRequest)
+		return
+	}
+	if body.HostID != "" {
+		if _, err := s.db.GetHost(r.Context(), body.HostID); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				http.Error(w, "host not found", http.StatusNotFound)
+				return
+			}
+			log.Printf("triage host lookup: %v", err)
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
 	}
 	switch body.Status {
 	case "", "open", "in_progress", "accepted_risk", "false_positive", "fixed", "ignored":
@@ -1191,6 +1207,16 @@ func (s *Server) handleUpsertVulnerabilityTriage(w http.ResponseWriter, r *http.
 		"expires_at": formatTimePtr(body.ExpiresAt),
 	})
 	writeJSON(w, http.StatusOK, body)
+}
+
+func normalizeVulnerabilityTriage(t *models.VulnerabilityTriage) {
+	t.VulnerabilityID = strings.TrimSpace(t.VulnerabilityID)
+	t.HostID = strings.TrimSpace(t.HostID)
+	t.PkgName = strings.TrimSpace(t.PkgName)
+	t.Status = strings.TrimSpace(t.Status)
+	t.Reason = strings.TrimSpace(t.Reason)
+	t.Comment = strings.TrimSpace(t.Comment)
+	t.UpdatedBy = strings.TrimSpace(t.UpdatedBy)
 }
 
 func (s *Server) handleCveSearch(w http.ResponseWriter, r *http.Request) {
