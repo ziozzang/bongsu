@@ -169,6 +169,8 @@ spec:
 | `BONGSU_ALLOW_WEAK_SECRETS` | `false` | Development-only override for missing, placeholder, short, or duplicate server secrets; keep `false` in production |
 | `BONGSU_ACCESS_LOG` | `true` | Emit request-scoped access logs with method, path, status, bytes, duration, IP, and `X-Request-ID` |
 | `BONGSU_ACCESS_LOG_HEALTH` | `false` | Include `/api/health` in access logs when enabled |
+| `BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS` | `10` | Maximum seconds allowed to read request headers before closing the connection |
+| `BONGSU_HTTP_MAX_HEADER_BYTES` | `1048576` | Maximum accepted HTTP request header size |
 | `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC; use `key:user:alice` or `key:group:platform` when user and group IDs may overlap |
 | `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
 | `BONGSU_PORT` | `8080` | Server listen port |

@@ -106,11 +106,13 @@ func main() {
 	}
 
 	httpServer := &http.Server{
-		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      server.Handler(),
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 120 * time.Second,
-		IdleTimeout:  120 * time.Second,
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           server.Handler(),
+		ReadHeaderTimeout: time.Duration(envPositiveInt("BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS", 10)) * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    envPositiveInt("BONGSU_HTTP_MAX_HEADER_BYTES", 1<<20),
 	}
 
 	go func() {
@@ -145,6 +147,14 @@ func envInt(key string, def int) int {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil {
+		return def
+	}
+	return n
+}
+
+func envPositiveInt(key string, def int) int {
+	n := envInt(key, def)
+	if n <= 0 {
 		return def
 	}
 	return n

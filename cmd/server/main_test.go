@@ -2,6 +2,20 @@ package main
 
 import "testing"
 
+func TestEnvPositiveIntFallsBackForInvalidValues(t *testing.T) {
+	for _, value := range []string{"", "0", "-1", "invalid"} {
+		t.Setenv("BONGSU_TEST_POSITIVE_INT", value)
+		if got := envPositiveInt("BONGSU_TEST_POSITIVE_INT", 10); got != 10 {
+			t.Fatalf("envPositiveInt(%q) = %d, want 10", value, got)
+		}
+	}
+
+	t.Setenv("BONGSU_TEST_POSITIVE_INT", "42")
+	if got := envPositiveInt("BONGSU_TEST_POSITIVE_INT", 10); got != 42 {
+		t.Fatalf("envPositiveInt valid = %d, want 42", got)
+	}
+}
+
 func TestValidateServerSecretsRejectsMissingRequiredSecrets(t *testing.T) {
 	t.Setenv("BONGSU_ALLOW_WEAK_SECRETS", "false")
 
