@@ -795,7 +795,8 @@ func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerab
 	}
 	defer tx.Rollback()
 
-	q := fmt.Sprintf(`INSERT INTO vulnerabilities (%s) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())`, vulnCols)
+	q := fmt.Sprintf(`INSERT INTO vulnerabilities (%s) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
+ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`, vulnCols)
 	stmt, err := tx.PrepareContext(ctx, q)
 	if err != nil {
 		return result, err
@@ -803,7 +804,7 @@ func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerab
 	defer stmt.Close()
 
 	for i := range vulns {
-		_, err := stmt.ExecContext(ctx,
+		res, err := stmt.ExecContext(ctx,
 			vulns[i].ID, vulns[i].PackageID, vulns[i].ScanID, vulns[i].HostID,
 			vulns[i].VulnerabilityID, vulns[i].Severity, vulns[i].Title,
 			vulns[i].Description, vulns[i].PkgName, vulns[i].InstalledVer,
@@ -813,7 +814,11 @@ func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerab
 		if err != nil {
 			return result, err
 		}
-		result.Inserted++
+		if affected, _ := res.RowsAffected(); affected > 0 {
+			result.Inserted++
+		} else {
+			result.Skipped++
+		}
 	}
 	return result, tx.Commit()
 }
@@ -3433,6 +3438,7 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 
 	result := &RematchResult{Matched: len(matches)}
 	var newVulns []models.Vulnerability
+	pending := map[string]int{}
 
 	for _, m := range matches {
 		affected, ok := compatibleSecurityCandidate(m.pkgName, m.pkgType, m.pkgEco, m.version, m.category, m.cveEco, m.affectedProducts)
@@ -3479,6 +3485,15 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 			InstalledVer: m.version, FixedVersion: fixedVersions(affected)[0], CVSSScore: m.cvssScore, CVSSVector: m.cvssVector,
 			PrimaryURL: primaryURL, Container: m.container,
 		}
+		key := rematchVulnerabilityKey(v)
+		if idx, ok := pending[key]; ok {
+			if betterRematchVulnerability(v, newVulns[idx]) {
+				newVulns[idx] = v
+			}
+			result.Skipped++
+			continue
+		}
+		pending[key] = len(newVulns)
 		newVulns = append(newVulns, v)
 	}
 
@@ -3493,26 +3508,67 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 (id, package_id, scan_id, host_id, vulnerability_id, severity, title, description,
  pkg_name, pkg_path, installed_version, fixed_version, cvss_score, cvss_vector,
  primary_url, container, layer_id, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())`)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
+ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`)
 		if err != nil {
 			return nil, fmt.Errorf("prepare: %w", err)
 		}
 		defer stmt.Close()
 
 		for _, v := range newVulns {
-			if _, err := stmt.ExecContext(ctx, v.ID, v.PackageID, v.ScanID, v.HostID,
+			res, err := stmt.ExecContext(ctx, v.ID, v.PackageID, v.ScanID, v.HostID,
 				v.VulnerabilityID, v.Severity, v.Title, v.Description,
 				v.PkgName, v.PkgPath, v.InstalledVer, v.FixedVersion,
-				v.CVSSScore, v.CVSSVector, v.PrimaryURL, v.Container, ""); err != nil {
+				v.CVSSScore, v.CVSSVector, v.PrimaryURL, v.Container, "")
+			if err != nil {
 				continue
 			}
-			result.NewVulns++
+			if affected, _ := res.RowsAffected(); affected > 0 {
+				result.NewVulns++
+			} else {
+				result.Skipped++
+			}
 		}
 		if err := tx.Commit(); err != nil {
 			return nil, err
 		}
 	}
 	return result, nil
+}
+
+func rematchVulnerabilityKey(v models.Vulnerability) string {
+	return v.PackageID + "\x00" + v.ScanID + "\x00" + v.VulnerabilityID
+}
+
+func betterRematchVulnerability(candidate, current models.Vulnerability) bool {
+	if candidate.CVSSScore != current.CVSSScore {
+		return candidate.CVSSScore > current.CVSSScore
+	}
+	if severityRank(candidate.Severity) != severityRank(current.Severity) {
+		return severityRank(candidate.Severity) > severityRank(current.Severity)
+	}
+	if (candidate.FixedVersion != "") != (current.FixedVersion != "") {
+		return candidate.FixedVersion != ""
+	}
+	if (candidate.Title != "") != (current.Title != "") {
+		return candidate.Title != ""
+	}
+	return candidate.PrimaryURL != "" && current.PrimaryURL == ""
+}
+
+func severityRank(sev string) int {
+	switch strings.ToUpper(sev) {
+	case "CRITICAL":
+		return 4
+	case "HIGH":
+		return 3
+	case "MEDIUM":
+		return 2
+	case "LOW":
+		return 1
+	default:
+		return 0
+	}
 }
 
 func truncate(s string, maxLen int) string {

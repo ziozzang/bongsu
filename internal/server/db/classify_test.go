@@ -363,6 +363,61 @@ func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
 	}
 }
 
+func TestVulnerabilityFindingsAreUniquePerPackageScanAndCVE(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/013_unique_vulnerability_findings.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationBody := string(migration)
+	for _, want := range []string{
+		"PARTITION BY package_id, scan_id, vulnerability_id",
+		"DELETE FROM vulnerabilities",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_vulnerabilities_package_scan_vuln",
+		"ON vulnerabilities(package_id, scan_id, vulnerability_id)",
+	} {
+		if !strings.Contains(migrationBody, want) {
+			t.Fatalf("unique vulnerability migration missing %q: %s", want, migrationBody)
+		}
+	}
+
+	dbFile, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(dbFile)
+	if strings.Count(body, "ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING") < 2 {
+		t.Fatalf("scanner and rematch inserts must ignore duplicate vulnerability findings")
+	}
+	if !strings.Contains(body, "res.RowsAffected()") {
+		t.Fatal("duplicate vulnerability conflicts must be reflected in insert counters")
+	}
+}
+
+func TestRematchVulnerabilityDedupPrefersStrongerCandidate(t *testing.T) {
+	current := models.Vulnerability{
+		PackageID:       "pkg-1",
+		ScanID:          "scan-1",
+		VulnerabilityID: "CVE-2026-0001",
+		Severity:        "MEDIUM",
+		CVSSScore:       5.0,
+	}
+	candidate := current
+	candidate.Severity = "HIGH"
+	candidate.CVSSScore = 8.1
+	candidate.FixedVersion = "1.2.3"
+	candidate.Title = "better"
+
+	if rematchVulnerabilityKey(candidate) != rematchVulnerabilityKey(current) {
+		t.Fatal("same package, scan, and CVE must dedupe to the same key")
+	}
+	if !betterRematchVulnerability(candidate, current) {
+		t.Fatal("higher CVSS rematch candidate should replace weaker duplicate")
+	}
+	if betterRematchVulnerability(current, candidate) {
+		t.Fatal("weaker rematch candidate must not replace stronger duplicate")
+	}
+}
+
 func TestPackagedInstallScriptHardensAgentCredentialFile(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/install-agent.sh")
 	if err != nil {
