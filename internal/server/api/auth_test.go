@@ -2261,7 +2261,9 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"initialRequestFilters.security_db_revision || ''",
 		"stats.security_db_rescan_request_counts?.pending",
 		"stats.security_db_rescan_request_counts?.claimed",
+		"stats.security_db_rescan_request_counts?.degraded",
 		"stats.security_db_rescan_request_counts?.failed",
+		"stats.scan_request_counts?.degraded",
 		"req.request_age_seconds",
 		"req.claim_age_seconds",
 		"req.request_stale",
@@ -2279,7 +2281,9 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"Requeue</button>",
 		"Current DB Rescan Pending",
 		"Current DB Rescan Claimed",
+		"Current DB Rescan Degraded",
 		"Current DB Rescan Failed",
+		"Scan Requests Degraded",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard DB rescan count missing %q", want)

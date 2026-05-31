@@ -516,6 +516,11 @@ function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: S
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+          <div className="label">Scan Requests Degraded</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{stats.scan_request_counts?.degraded || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--medium)' }} />
           <div className="label">Current DB Rescan Pending</div>
           <button
             type="button"
@@ -540,6 +545,20 @@ function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: S
             title="Open claimed security DB rescans for the current revision"
           >
             {stats.security_db_rescan_request_counts?.claimed || 0}
+          </button>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+          <div className="label">Current DB Rescan Degraded</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => openCurrentDBRescans('degraded')}
+            disabled={!(stats?.security_db_revision || health?.security_db_revision)}
+            style={{ color: 'var(--medium)', background: 'transparent', border: 0, padding: 0, cursor: stats?.security_db_revision || health?.security_db_revision ? 'pointer' : 'default' }}
+            title="Open degraded security DB rescans for the current revision"
+          >
+            {stats.security_db_rescan_request_counts?.degraded || 0}
           </button>
         </div>
         <div className="stat-card">
