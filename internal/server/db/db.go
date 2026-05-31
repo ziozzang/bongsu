@@ -140,11 +140,7 @@ func (db *DB) PruneOperationalData(ctx context.Context, scanDays, requestDays, a
 	}
 	defer tx.Rollback()
 
-	oldScans := `WITH old_scans AS (
-		SELECT id FROM scans
-		WHERE created_at < $1
-		  AND id NOT IN (SELECT DISTINCT ON (host_id) id FROM scans WHERE status IN ('completed','degraded') ORDER BY host_id, created_at DESC)
-	)`
+	oldScans := pruneOldScansCTE()
 	countFor := func(table string) (int, error) {
 		var n int
 		err := tx.QueryRowContext(ctx, oldScans+fmt.Sprintf(` SELECT count(*) FROM %s WHERE scan_id IN (SELECT id FROM old_scans)`, table), scanCutoff).Scan(&n)
@@ -206,6 +202,15 @@ func (db *DB) PruneOperationalData(ctx context.Context, scanDays, requestDays, a
 		return nil, fmt.Errorf("delete old audit logs: %w", err)
 	}
 	return result, tx.Commit()
+}
+
+func pruneOldScansCTE() string {
+	return `WITH old_scans AS (
+		SELECT id FROM scans
+		WHERE created_at < $1
+		  AND status IN ('completed','degraded','failed')
+		  AND id NOT IN (SELECT DISTINCT ON (host_id) id FROM scans WHERE status IN ('completed','degraded') ORDER BY host_id, created_at DESC)
+	)`
 }
 
 func defaultString(v, def string) string {

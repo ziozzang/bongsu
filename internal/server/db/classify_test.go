@@ -299,6 +299,19 @@ func TestLatestScansIncludesDegradedInventory(t *testing.T) {
 	}
 }
 
+func TestRetentionPruneDoesNotDeleteRunningScans(t *testing.T) {
+	got := pruneOldScansCTE()
+	if !strings.Contains(got, "status IN ('completed','degraded','failed')") {
+		t.Fatalf("retention prune must only target terminal scans: %s", got)
+	}
+	if strings.Contains(got, "'running'") {
+		t.Fatalf("retention prune must not target running scans: %s", got)
+	}
+	if !strings.Contains(got, "status IN ('completed','degraded')") {
+		t.Fatalf("retention prune must still preserve latest usable inventory: %s", got)
+	}
+}
+
 func TestCveFixedVersionSQLIncludesTopLevelAndRangeEvents(t *testing.T) {
 	got := cveFixedVersionSQL("c")
 	for _, want := range []string{
