@@ -1715,7 +1715,7 @@ func (s *Server) handleCancelScanRequest(w http.ResponseWriter, r *http.Request)
 	}
 	if err := s.db.CompleteScanRequest(r.Context(), id, "cancelled", "cancelled by admin"); err != nil {
 		log.Printf("cancel scan request: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		http.Error(w, scanRequestErrorMessage(err), scanRequestErrorStatus(err))
 		return
 	}
 	s.audit(r, "scan_request.cancel", "scan_request", id, "cancelled", nil)
@@ -1841,13 +1841,39 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 	}
 	if err := s.db.CompleteScanRequest(r.Context(), id, body.Status, body.Message); err != nil {
 		log.Printf("complete scan request: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		http.Error(w, scanRequestErrorMessage(err), scanRequestErrorStatus(err))
 		return
 	}
 	s.audit(r, "scan_request.complete", "scan_request", id, body.Status, map[string]any{
 		"message": body.Message,
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"status": body.Status})
+}
+
+func scanRequestErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, db.ErrInvalidScanRequestStatus):
+		return http.StatusBadRequest
+	case errors.Is(err, db.ErrScanRequestNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, db.ErrScanRequestNotActive):
+		return http.StatusConflict
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func scanRequestErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, db.ErrInvalidScanRequestStatus):
+		return "invalid scan request status"
+	case errors.Is(err, db.ErrScanRequestNotFound):
+		return "scan request not found"
+	case errors.Is(err, db.ErrScanRequestNotActive):
+		return "scan request is not pending or claimed"
+	default:
+		return "db error"
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {

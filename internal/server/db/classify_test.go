@@ -319,6 +319,12 @@ func TestDeleteScanErrorsAreDistinct(t *testing.T) {
 	}
 }
 
+func TestScanRequestErrorsAreDistinct(t *testing.T) {
+	if ErrInvalidScanRequestStatus == ErrScanRequestNotFound || ErrInvalidScanRequestStatus == ErrScanRequestNotActive || ErrScanRequestNotFound == ErrScanRequestNotActive {
+		t.Fatal("scan request completion errors must be distinct")
+	}
+}
+
 func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
 	fn := "UpsertCveEntriesTx"
 	out, err := os.ReadFile("db.go")

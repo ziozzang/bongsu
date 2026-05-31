@@ -25,6 +25,9 @@ type DB struct {
 
 var ErrLatestInventoryScan = errors.New("cannot delete latest completed or degraded inventory scan")
 var ErrScanNotFound = errors.New("scan not found")
+var ErrInvalidScanRequestStatus = errors.New("invalid scan request status")
+var ErrScanRequestNotFound = errors.New("scan request not found")
+var ErrScanRequestNotActive = errors.New("scan request is not pending or claimed")
 
 type RetentionPruneResult struct {
 	DryRun      bool `json:"dry_run"`
@@ -1217,12 +1220,29 @@ RETURNING id, host_id, requested_by, scan_type, packages_only, reason, status, e
 
 func (db *DB) CompleteScanRequest(ctx context.Context, id, status, message string) error {
 	if status != "completed" && status != "failed" && status != "cancelled" {
-		return fmt.Errorf("invalid scan request status: %s", status)
+		return fmt.Errorf("%w: %s", ErrInvalidScanRequestStatus, status)
 	}
-	_, err := db.ExecContext(ctx, `UPDATE scan_requests
+	res, err := db.ExecContext(ctx, `UPDATE scan_requests
 SET status=$2, error_message=$3, completed_at=now()
 WHERE id=$1 AND status IN ('pending','claimed')`, id, status, message)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+	var exists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM scan_requests WHERE id=$1)`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return ErrScanRequestNotFound
+	}
+	return ErrScanRequestNotActive
 }
 
 type AuditLogFilter struct {

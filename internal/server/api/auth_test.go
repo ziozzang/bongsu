@@ -472,6 +472,26 @@ func TestReportWebhookPayloadIncludesQualitySignals(t *testing.T) {
 	}
 }
 
+func TestScanRequestErrorHTTPMapping(t *testing.T) {
+	tests := []struct {
+		err     error
+		status  int
+		message string
+	}{
+		{db.ErrInvalidScanRequestStatus, 400, "invalid scan request status"},
+		{db.ErrScanRequestNotFound, 404, "scan request not found"},
+		{db.ErrScanRequestNotActive, 409, "scan request is not pending or claimed"},
+	}
+	for _, tt := range tests {
+		if got := scanRequestErrorStatus(tt.err); got != tt.status {
+			t.Fatalf("scanRequestErrorStatus(%v) = %d, want %d", tt.err, got, tt.status)
+		}
+		if got := scanRequestErrorMessage(tt.err); got != tt.message {
+			t.Fatalf("scanRequestErrorMessage(%v) = %q, want %q", tt.err, got, tt.message)
+		}
+	}
+}
+
 func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{
