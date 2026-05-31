@@ -2690,7 +2690,14 @@ func (db *DB) UpsertCveEntries(ctx context.Context, entries []models.CveEntry) (
 		return 0, err
 	}
 	defer tx.Rollback()
+	count, err := db.UpsertCveEntriesTx(ctx, tx, entries)
+	if err != nil {
+		return 0, err
+	}
+	return count, tx.Commit()
+}
 
+func (db *DB) UpsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry) (int, error) {
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
 ON CONFLICT (vulnerability_id, source) DO UPDATE SET
@@ -2701,7 +2708,6 @@ ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 	affected_products=EXCLUDED.affected_products, refs=EXCLUDED.refs,
 	raw_data=EXCLUDED.raw_data, updated_at=now()`)
 	if err != nil {
-		tx.Rollback()
 		return 0, fmt.Errorf("prepare insert: %w", err)
 	}
 	defer stmt.Close()
@@ -2746,7 +2752,7 @@ ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 	if firstErr != nil {
 		return 0, firstErr
 	}
-	return count, tx.Commit()
+	return count, nil
 }
 
 func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source string, minCVSS float64, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {

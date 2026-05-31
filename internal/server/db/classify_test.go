@@ -320,7 +320,7 @@ func TestDeleteScanErrorsAreDistinct(t *testing.T) {
 }
 
 func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
-	fn := "UpsertCveEntries"
+	fn := "UpsertCveEntriesTx"
 	out, err := os.ReadFile("db.go")
 	if err != nil {
 		t.Fatal(err)

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -192,6 +193,24 @@ func TestValidateSecurityDBBundleChecksums(t *testing.T) {
 	}
 	if err := validateSecurityDBBundle(manifest, "/tmp/cve.jsonl", cveSHA, "/tmp/trivy.tar.gz", "bad"); err == nil || !strings.Contains(err.Error(), "trivy db checksum") {
 		t.Fatalf("trivy checksum error = %v", err)
+	}
+}
+
+func TestSecurityDBBundleImportUsesSingleCveTransaction(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"s.db.BeginTx",
+		"s.importCveJSONLTx",
+		"tx.Rollback()",
+		"tx.Commit()",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("bundle import must use one CVE transaction, missing %q", want)
+		}
 	}
 }
 

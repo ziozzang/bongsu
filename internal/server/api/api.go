@@ -2056,9 +2056,16 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "cve archive read failed", http.StatusInternalServerError)
 		return
 	}
-	imported, err = s.importCveJSONL(r.Context(), cveReader, "")
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		cveReader.Close()
+		http.Error(w, "cve import transaction failed", http.StatusInternalServerError)
+		return
+	}
+	imported, err = s.importCveJSONLTx(r.Context(), cveReader, "", tx)
 	cveReader.Close()
 	if err != nil {
+		tx.Rollback()
 		log.Printf("security-db bundle cve import: %v", err)
 		http.Error(w, "cve import failed", http.StatusInternalServerError)
 		return
@@ -2067,10 +2074,15 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 	if trivyArchive != "" {
 		if err := s.dbMgr.LoadFromFile(trivyArchive); err != nil {
 			log.Printf("security-db bundle trivy import: %v", err)
+			tx.Rollback()
 			http.Error(w, "trivy db import failed", http.StatusInternalServerError)
 			return
 		}
 		trivyLoaded = true
+	}
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "cve import commit failed", http.StatusInternalServerError)
+		return
 	}
 	s.audit(r, "security_db.import", "security_db", "bundle", "ok", map[string]any{
 		"imported":        imported,
@@ -2331,6 +2343,18 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string) (int, error) {
+	return s.importCveJSONLWithUpsert(ctx, reader, source, func(ctx context.Context, batch []models.CveEntry) (int, error) {
+		return s.db.UpsertCveEntries(ctx, batch)
+	})
+}
+
+func (s *Server) importCveJSONLTx(ctx context.Context, reader io.Reader, source string, tx *sql.Tx) (int, error) {
+	return s.importCveJSONLWithUpsert(ctx, reader, source, func(ctx context.Context, batch []models.CveEntry) (int, error) {
+		return s.db.UpsertCveEntriesTx(ctx, tx, batch)
+	})
+}
+
+func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader, source string, upsert func(context.Context, []models.CveEntry) (int, error)) (int, error) {
 	decoder := json.NewDecoder(reader)
 	batch := make([]models.CveEntry, 0, 1000)
 	total := 0
@@ -2338,7 +2362,7 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 		if len(batch) == 0 {
 			return nil
 		}
-		n, err := s.db.UpsertCveEntries(ctx, batch)
+		n, err := upsert(ctx, batch)
 		if err != nil {
 			return err
 		}
