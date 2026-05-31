@@ -2464,7 +2464,7 @@ func cvePackageEcosystemMismatchFilter(vulnAlias string) string {
 		FROM cve_database c
 		JOIN packages p ON p.id = %s.package_id
 		WHERE c.vulnerability_id = %s.vulnerability_id
-		  AND p.pkg_type IN ('python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget')
+		  AND p.pkg_type IN ('debian','ubuntu','deb','alpine','apk','redhat','centos','rocky','alma','amazon','rpm','suse','wolfi','python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget')
 		  AND EXISTS (
 			SELECT 1
 			FROM jsonb_array_elements(%s) ap

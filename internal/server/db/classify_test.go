@@ -338,6 +338,9 @@ func TestCvePackageEcosystemMismatchFilterChecksAllAffectedProducts(t *testing.T
 		"ap->>'ecosystem'",
 		"lower(ap->>'name')",
 		"p.ecosystem",
+		"'ubuntu'",
+		"'alpine'",
+		"'rpm'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("ecosystem mismatch filter missing %q: %s", want, got)
