@@ -41,6 +41,7 @@ type Server struct {
 	matcher      *cvematch.Matcher
 	dbMgr        *trivydb.Manager
 	secMgr       *secdb.Manager
+	notifier     *webhookNotifier
 }
 
 func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, secMgr *secdb.Manager) *Server {
@@ -66,6 +67,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		matcher:      matcher,
 		dbMgr:        dbMgr,
 		secMgr:       secMgr,
+		notifier:     newWebhookNotifierFromEnv(),
 	}
 	s.routes()
 	return s
@@ -482,16 +484,36 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.CompleteScan(ctx, report.ScanID); err != nil {
 		log.Printf("complete scan: %v", err)
 	}
+	sevCounts, vulnTotal, err := s.db.GetVulnCountsByScan(ctx, report.ScanID)
+	if err != nil {
+		log.Printf("scan vuln counts: %v", err)
+		sevCounts = map[string]int{}
+	}
 	s.audit(r, "agent.report", "scan", report.ScanID, "ok", map[string]any{
 		"host_id":         report.Host.ID,
 		"hostname":        report.Host.Hostname,
 		"packages":        len(report.Packages),
-		"vulnerabilities": len(report.Vulns),
+		"vulnerabilities": vulnTotal,
 		"containers":      len(report.Containers),
 		"users":           len(report.Users),
 		"processes":       len(report.Processes),
 		"ports":           len(report.Ports),
 	})
+	if s.notifier.ShouldSendSeverity(sevCounts) {
+		s.notifier.Send("scan.completed", map[string]any{
+			"scan_id":         report.ScanID,
+			"host_id":         report.Host.ID,
+			"hostname":        report.Host.Hostname,
+			"ip_address":      report.Host.IPAddress,
+			"os_name":         report.Host.OSName,
+			"os_version":      report.Host.OSVersion,
+			"scan_type":       report.ScanType,
+			"packages":        len(report.Packages),
+			"containers":      len(report.Containers),
+			"vulnerabilities": vulnTotal,
+			"severity_counts": sevCounts,
+		})
+	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "ok",
@@ -1661,6 +1683,9 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) SecurityDatabaseUpdated(reason string) {
 	s.auditSystem("security_db.changed", "security_db", "aggregate", "ok", map[string]any{"reason": reason})
+	if s.notifier.Enabled() {
+		s.notifier.Send("security_db.updated", map[string]any{"reason": reason})
+	}
 	s.recalculateSecurityFindings(reason)
 	s.queueSecurityDBRescans(reason)
 }

@@ -93,6 +93,10 @@ Each host can export its latest completed package inventory as CycloneDX 1.5 JSO
 
 Filtered vulnerability views can be exported through `/api/vulnerabilities/export` as CSV by default or JSON with `format=json`. The export reuses the same host, severity, triage status, package, container, sorting, fixed-version, ecosystem-mismatch, and RBAC filters as the interactive vulnerability list. `BONGSU_VULN_EXPORT_MAX_ROWS` limits export size and defaults to 100000 rows. Successful exports are audited as `vulnerability.export`.
 
+## Webhook Notifications
+
+Operators can configure `BONGSU_WEBHOOK_URL` to receive outbound JSON webhooks for `scan.completed` and `security_db.updated`. `scan.completed` includes host identity, package/container counts, vulnerability totals, and severity counts; `BONGSU_WEBHOOK_MIN_SEVERITY` controls the minimum severity that triggers scan notifications. `BONGSU_WEBHOOK_SECRET` signs payloads with `X-Bongsu-Signature-256: sha256=<hex hmac>` for receiver verification.
+
 ## Test Expectations
 
 Required test surface:

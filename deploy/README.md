@@ -177,6 +177,9 @@ spec:
 | `BONGSU_AUTO_RESCAN_ON_DB_UPDATE` | `true` | Queue background rescans after security DB changes |
 | `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` | `720` | Only auto-rescan hosts seen within this many hours (`0`=all hosts) |
 | `BONGSU_VULN_EXPORT_MAX_ROWS` | `100000` | Maximum vulnerability rows per report export |
+| `BONGSU_WEBHOOK_URL` | empty | Optional outbound webhook URL for scan/security DB events |
+| `BONGSU_WEBHOOK_SECRET` | empty | Optional HMAC-SHA256 signing secret for webhooks |
+| `BONGSU_WEBHOOK_MIN_SEVERITY` | `HIGH` | Minimum scan severity that triggers `scan.completed` webhook |
 | `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login) |
 
 ### Agent

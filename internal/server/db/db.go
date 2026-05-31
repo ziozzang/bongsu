@@ -1161,6 +1161,26 @@ func (db *DB) GetVulnCountsByHost(ctx context.Context) (map[string]map[string]in
 	return result, nil
 }
 
+func (db *DB) GetVulnCountsByScan(ctx context.Context, scanID string) (map[string]int, int, error) {
+	rows, err := db.QueryContext(ctx, `SELECT severity, count(*) FROM vulnerabilities WHERE scan_id=$1 GROUP BY severity`, scanID)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	total := 0
+	for rows.Next() {
+		var sev string
+		var cnt int
+		if err := rows.Scan(&sev, &cnt); err != nil {
+			return nil, 0, err
+		}
+		counts[sev] = cnt
+		total += cnt
+	}
+	return counts, total, rows.Err()
+}
+
 func (db *DB) GetLatestPackages(ctx context.Context, hostID string, limit, offset int) ([]models.Package, int, error) {
 	countQ := fmt.Sprintf(`SELECT count(*) FROM packages p JOIN %s ls ON p.scan_id = ls.id WHERE p.host_id=$1`, latestScansSub)
 	dataQ := fmt.Sprintf(`SELECT %s%s FROM packages p JOIN %s ls ON p.scan_id = ls.id%s WHERE p.host_id=$1 ORDER BY p.name LIMIT $2 OFFSET $3`, pkgCols, pkgVulnSelect, latestScansSub, pkgVulnJoin)
