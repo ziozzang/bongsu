@@ -208,6 +208,7 @@ spec:
 | `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope |
 | `GET` | `/api/packages` | List packages (supports `sort_by`, `q`, filters, pagination) |
 | `GET` | `/api/packages/{id}/vulnerabilities` | Package vulnerability details |
+| `GET` | `/api/containers` | List latest container/image assets with host-scoped RBAC |
 | `GET` | `/api/scans` | Scan history |
 | `DELETE` | `/api/scans/{id}` | Delete scan and associated data |
 | `POST` | `/api/admin/trivy-db` | Upload trivy-db (air-gapped update) |

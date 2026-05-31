@@ -1381,6 +1381,89 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 	return pkgs, total, nil
 }
 
+type ContainerFilter struct {
+	HostID     string
+	HostIDs    []string
+	Runtime    string
+	State      string
+	ImageName  string
+	NameSearch string
+	SortBy     string
+	SortDesc   bool
+	Limit      int
+	Offset     int
+}
+
+func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models.ContainerAsset, int, error) {
+	baseQ := `FROM container_assets c JOIN ` + latestScansSub + ` ls ON c.scan_id = ls.id WHERE 1=1`
+	args := []any{}
+	n := 1
+
+	if f.HostID != "" {
+		baseQ += fmt.Sprintf(" AND c.host_id=$%d", n)
+		args = append(args, f.HostID)
+		n++
+	} else if len(f.HostIDs) > 0 {
+		baseQ += fmt.Sprintf(" AND c.host_id = ANY($%d)", n)
+		args = append(args, pqStringArray(f.HostIDs))
+		n++
+	}
+	if f.Runtime != "" {
+		baseQ += fmt.Sprintf(" AND c.runtime=$%d", n)
+		args = append(args, f.Runtime)
+		n++
+	}
+	if f.State != "" {
+		baseQ += fmt.Sprintf(" AND c.state=$%d", n)
+		args = append(args, f.State)
+		n++
+	}
+	if f.ImageName != "" {
+		baseQ += fmt.Sprintf(" AND c.image_name ILIKE $%d", n)
+		args = append(args, "%"+f.ImageName+"%")
+		n++
+	}
+	if f.NameSearch != "" {
+		baseQ += fmt.Sprintf(" AND (c.name ILIKE $%d OR c.container_id ILIKE $%d OR c.image_id ILIKE $%d)", n, n, n)
+		args = append(args, "%"+f.NameSearch+"%")
+		n++
+	}
+
+	var total int
+	countArgs := make([]any, len(args))
+	copy(countArgs, args)
+	if err := db.QueryRowContext(ctx, "SELECT count(*) "+baseQ, countArgs...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+
+	q := `SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text, c.started_at, c.created_at ` +
+		baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", containerSortExpr(f.SortBy, f.SortDesc), n, n+1)
+	args = append(args, f.Limit, f.Offset)
+
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+
+	var out []models.ContainerAsset
+	for rows.Next() {
+		var c models.ContainerAsset
+		var started sql.NullTime
+		if err := rows.Scan(&c.ID, &c.ScanID, &c.HostID, &c.Runtime, &c.ContainerID, &c.Name, &c.ImageName, &c.ImageID, &c.ImageDigest, &c.State, &c.Labels, &started, &c.CreatedAt); err != nil {
+			return nil, 0, err
+		}
+		if started.Valid {
+			c.StartedAt = &started.Time
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}
+
 func (db *DB) GetPackageHostID(ctx context.Context, packageID string) (string, error) {
 	var hostID string
 	err := db.QueryRowContext(ctx, `SELECT host_id FROM packages WHERE id=$1`, packageID).Scan(&hostID)
@@ -1607,6 +1690,27 @@ func pkgSortExpr(col string, desc bool) string {
 	expr, ok := allowed[col]
 	if !ok {
 		expr = "p.name"
+	}
+	dir := "ASC"
+	if desc {
+		dir = "DESC"
+	}
+	return expr + " " + dir + " NULLS LAST"
+}
+
+func containerSortExpr(col string, desc bool) string {
+	allowed := map[string]string{
+		"name":         "c.name",
+		"image_name":   "c.image_name",
+		"state":        "c.state",
+		"runtime":      "c.runtime",
+		"started_at":   "c.started_at",
+		"created_at":   "c.created_at",
+		"container_id": "c.container_id",
+	}
+	expr, ok := allowed[col]
+	if !ok {
+		expr = "c.created_at"
 	}
 	dir := "ASC"
 	if desc {

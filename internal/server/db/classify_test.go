@@ -135,3 +135,12 @@ func TestApplyVulnerabilitySLA(t *testing.T) {
 		t.Fatal("accepted risk should not be overdue")
 	}
 }
+
+func TestContainerSortExprAllowlist(t *testing.T) {
+	if got := containerSortExpr("image_name", true); got != "c.image_name DESC NULLS LAST" {
+		t.Fatalf("sort expr = %q", got)
+	}
+	if got := containerSortExpr("c.name; DROP TABLE container_assets", false); got != "c.created_at ASC NULLS LAST" {
+		t.Fatalf("unsafe sort expr should fall back, got %q", got)
+	}
+}

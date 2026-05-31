@@ -68,6 +68,10 @@ The server stores force scan requests in `scan_requests`. The intended lifecycle
 
 Current implementation exposes request creation/listing plus agent claim/complete endpoints. Agents can run with `--daemon --poll-interval 60s` to claim pending requests, execute a scan, upload the report, and mark the request completed or failed. Security DB updates enqueue `security-db-update` scan requests automatically, deduplicated against existing pending or claimed work per host.
 
+## Container Inventory
+
+Running container metadata is stored separately from package rows in `container_assets`. The inventory preserves host ID, runtime, container instance ID/name, image name, image ID/digest, state, labels, and start time. `/api/containers` returns the latest completed scan per host and supports host, runtime, state, image, name, container ID, and image ID filters. Viewer RBAC is applied before returning rows, so container and image browsing follows the same host scope as package, vulnerability, scan, SBOM, and stats views.
+
 ## RBAC Model
 
 RBAC tables are present:

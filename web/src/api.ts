@@ -140,6 +140,22 @@ export interface Pkg {
   created_at: string;
 }
 
+export interface ContainerAsset {
+  id: string;
+  scan_id: string;
+  host_id: string;
+  runtime: string;
+  container_id: string;
+  name: string;
+  image_name: string;
+  image_id: string;
+  image_digest?: string;
+  state: string;
+  labels?: string;
+  started_at?: string | null;
+  created_at: string;
+}
+
 export interface FilterOptions {
   host_ids: string[];
   containers: string[];
@@ -218,6 +234,8 @@ export const api = {
   cveDbStats: () => request<{ sources: CveSourceStat[] }>('/cve-db/stats'),
   packages: (params: { host_id?: string; container?: string; pkg_type?: string; source?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Pkg[]; total: number }>('/packages', params),
+  containers: (params: { host_id?: string; runtime?: string; state?: string; image?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
+    request<{ items: ContainerAsset[]; total: number }>('/containers', params),
   packageFilters: () => request<FilterOptions>('/packages/filters'),
   packageVulns: (id: string) => request<Vuln[]>(`/packages/${id}/vulnerabilities`),
   triageVulnerability: (body: { vulnerability_id: string; host_id?: string; pkg_name?: string; status: string; reason?: string; comment?: string; expires_at?: string | null }) =>

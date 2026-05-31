@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type HealthStatus, type CveDbEntry, type CveSourceStat } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = a.replace(/^v?/, '').split(/[._-]/);
@@ -62,7 +62,7 @@ function parseCvssVector(vector: string) {
   return { version: '3.x', parts, labels, values };
 }
 
-type View = 'dashboard' | 'hosts' | 'packages' | 'vulns' | 'vuln-detail' | 'scans' | 'host-detail' | 'cve-search';
+type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'host-detail' | 'cve-search';
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard');
@@ -88,6 +88,7 @@ export default function App() {
         {view === 'hosts' && <HostsView onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
         {view === 'host-detail' && <HostDetailView hostId={selectedHostId} onBack={() => setView('hosts')} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'packages' && <PackagesView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
+        {view === 'containers' && <ContainersView />}
         {view === 'cve-search' && <CveSearchView />}
         {view === 'scans' && <ScansView />}
         {view === 'vulns' && <VulnsView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
@@ -127,6 +128,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
     ['dashboard', 'Dashboard', '■'],
     ['hosts', 'Hosts', '▣'],
     ['packages', 'Packages', '▦'],
+    ['containers', 'Containers', '▤'],
     ['vulns', 'Vulnerabilities', '◆'],
     ['cve-search', 'CVE Search', '◈'],
     ['scans', 'Scan History', '☰'],
@@ -1112,6 +1114,164 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
           <button disabled={page === 0} onClick={() => load(page - 1, hostId, container, lang, source, query, sortBy, sortDesc)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
           <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, hostId, container, lang, source, query, sortBy, sortDesc)}>Next</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function ContainersView() {
+  const [containers, setContainers] = useState<ContainerAsset[]>([]);
+  const [hosts, setHosts] = useState<Host[]>([]);
+  const [hostMap, setHostMap] = useState<Record<string, string>>({});
+  const [hostIPMap, setHostIPMap] = useState<Record<string, string>>({});
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+
+  const [hostId, setHostId] = useState('');
+  const [runtime, setRuntime] = useState('');
+  const [state, setState] = useState('');
+  const [image, setImage] = useState('');
+  const [query, setQuery] = useState('');
+  const [sortBy, setSortBy] = useState('created_at');
+  const [sortDesc, setSortDesc] = useState(true);
+  const limit = 100;
+
+  useEffect(() => {
+    api.hosts().then(hs => {
+      const m: Record<string, string> = {};
+      const ip: Record<string, string> = {};
+      (hs || []).forEach(h => { m[h.id] = h.hostname; ip[h.id] = h.ip_address; });
+      setHosts(hs || []);
+      setHostMap(m);
+      setHostIPMap(ip);
+    }).catch(() => {});
+  }, []);
+
+  const load = useCallback((p: number, hId: string, rt: string, st: string, img: string, q: string, sBy: string, sDesc: boolean) => {
+    setLoading(true);
+    const params: Record<string, string> = {
+      limit: String(limit),
+      offset: String(p * limit),
+    };
+    if (hId) params.host_id = hId;
+    if (rt) params.runtime = rt;
+    if (st) params.state = st;
+    if (img) params.image = img;
+    if (q) params.q = q;
+    if (sBy) { params.sort_by = sBy; params.sort_order = sDesc ? 'desc' : 'asc'; }
+
+    api.containers(params)
+      .then(r => {
+        setContainers(r.items || []);
+        setTotal(r.total || 0);
+        setPage(p);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(0, hostId, runtime, state, image, query, sortBy, sortDesc); }, [hostId, runtime, state]);
+
+  const handleSearch = () => { load(0, hostId, runtime, state, image, query, sortBy, sortDesc); };
+  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
+
+  const toggleSort = (col: string) => {
+    const nextDesc = sortBy === col ? !sortDesc : false;
+    setSortBy(col);
+    setSortDesc(nextDesc);
+    load(0, hostId, runtime, state, image, query, col, nextDesc);
+  };
+
+  const sortArrow = (col: string) => {
+    if (sortBy !== col) return ' ↕';
+    return sortDesc ? ' ▼' : ' ▲';
+  };
+
+  const runtimes = Array.from(new Set(['docker', 'containerd', 'podman', ...containers.map(c => c.runtime).filter(Boolean)])).sort();
+  const states = Array.from(new Set(['running', 'exited', 'created', 'paused', 'restarting', 'dead', ...containers.map(c => c.state).filter(Boolean)])).sort();
+  const cols: [string, string][] = [
+    ['name', 'Name'], ['state', 'State'], ['runtime', 'Runtime'],
+    ['image_name', 'Image'], ['container_id', 'Container ID'], ['started_at', 'Started'],
+  ];
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>Containers</h1>
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="filters">
+          <select value={hostId} onChange={(e) => setHostId(e.target.value)}>
+            <option value="">All Hosts</option>
+            {hosts.map(h => (
+              <option key={h.id} value={h.id}>{h.hostname || h.id}</option>
+            ))}
+          </select>
+          <select value={runtime} onChange={(e) => setRuntime(e.target.value)}>
+            <option value="">All Runtimes</option>
+            {runtimes.map(rt => <option key={rt} value={rt}>{rt}</option>)}
+          </select>
+          <select value={state} onChange={(e) => setState(e.target.value)}>
+            <option value="">All States</option>
+            {states.map(st => <option key={st} value={st}>{st}</option>)}
+          </select>
+          <input
+            type="text"
+            placeholder="Image name..."
+            value={image}
+            onChange={(e) => setImage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 180 }}
+          />
+          <input
+            type="text"
+            placeholder="Name, container ID, image ID..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 240 }}
+          />
+          <button className="filter-btn" onClick={handleSearch}>Search</button>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header">
+          <h2>{total} containers</h2>
+        </div>
+        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+          <table>
+            <thead>
+              <tr>
+                <th>Host</th>
+                {cols.map(([key, label]) => (
+                  <th key={key} className="clickable" onClick={() => toggleSort(key)} style={{ userSelect: 'none' }}>{label}{sortArrow(key)}</th>
+                ))}
+                <th>Image ID</th>
+                <th>Scanned</th>
+              </tr>
+            </thead>
+            <tbody>
+              {containers.map(c => (
+                <tr key={c.id}>
+                  <td><span className="host-link" title={`IP: ${hostIPMap[c.host_id] || ''}`}>{hostMap[c.host_id] || c.host_id}</span></td>
+                  <td className="mono">{c.name || '-'}</td>
+                  <td><span className="badge">{c.state || '-'}</span></td>
+                  <td>{c.runtime || '-'}</td>
+                  <td className="mono" title={c.image_name}>{c.image_name || '-'}</td>
+                  <td className="mono" title={c.container_id}>{c.container_id ? c.container_id.slice(0, 16) : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{c.started_at ? new Date(c.started_at).toLocaleString() : '-'}</td>
+                  <td className="mono" title={c.image_id}>{c.image_id ? c.image_id.replace(/^sha256:/, '').slice(0, 18) : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{c.created_at ? new Date(c.created_at).toLocaleString() : '-'}</td>
+                </tr>
+              ))}
+              {containers.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No containers found</td></tr>}
+            </tbody>
+          </table>
+        )}
+        <div className="pagination">
+          <button disabled={page === 0} onClick={() => load(page - 1, hostId, runtime, state, image, query, sortBy, sortDesc)}>Prev</button>
+          <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
+          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, hostId, runtime, state, image, query, sortBy, sortDesc)}>Next</button>
         </div>
       </div>
     </>

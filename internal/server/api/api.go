@@ -117,6 +117,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/packages", s.handleSearchPackages)
 	s.mux.HandleFunc("GET /api/packages/filters", s.handlePackageFilters)
 	s.mux.HandleFunc("GET /api/packages/{id}/vulnerabilities", s.handlePackageVulns)
+	s.mux.HandleFunc("GET /api/containers", s.handleSearchContainers)
 	s.mux.HandleFunc("GET /api/scans", s.handleListScans)
 	s.mux.HandleFunc("GET /api/scan-requests", s.handleListScanRequests)
 	s.mux.HandleFunc("POST /api/scan-requests", s.handleCreateScanRequest)
@@ -1247,6 +1248,49 @@ func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": pkgs,
+		"total": total,
+	})
+}
+
+func (s *Server) handleSearchContainers(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	ctx := r.Context()
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []models.ContainerAsset{}, "total": 0})
+		return
+	}
+	hostID := r.URL.Query().Get("host_id")
+	if hostID != "" && !scope.CanReadHost(hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	f := db.ContainerFilter{
+		HostID:     hostID,
+		HostIDs:    scope.HostIDs,
+		Runtime:    r.URL.Query().Get("runtime"),
+		State:      r.URL.Query().Get("state"),
+		ImageName:  r.URL.Query().Get("image"),
+		NameSearch: r.URL.Query().Get("q"),
+		SortBy:     r.URL.Query().Get("sort_by"),
+		SortDesc:   r.URL.Query().Get("sort_order") == "desc",
+		Limit:      intParam(r, "limit", 100),
+		Offset:     intParam(r, "offset", 0),
+	}
+
+	containers, total, err := s.db.SearchContainers(ctx, f)
+	if err != nil {
+		log.Printf("search containers: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": containers,
 		"total": total,
 	})
 }
