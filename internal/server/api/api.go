@@ -2809,6 +2809,14 @@ func (s *Server) SecurityDatabaseUpdated(reason string) {
 	s.recalculateSecurityFindings(reason)
 }
 
+func (s *Server) SecurityDatabaseSyncFailed(reason string, err error) {
+	meta := map[string]any{"reason": reason}
+	if err != nil {
+		meta["error"] = err.Error()
+	}
+	s.auditSystem("security_db.update", "security_db", "aggregate", "error", meta)
+}
+
 func (s *Server) recalculateSecurityFindings(reason string) {
 	s.securityRecalcMu.Lock()
 	if s.securityRecalcRunning {

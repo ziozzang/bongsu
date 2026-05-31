@@ -13,15 +13,16 @@ import (
 )
 
 type Manager struct {
-	command    string
-	interval   time.Duration
-	mu         sync.RWMutex
-	running    bool
-	lastSync   time.Time
-	lastStatus string
-	lastError  string
-	lastOutput string
-	updateHook func(string)
+	command     string
+	interval    time.Duration
+	mu          sync.RWMutex
+	running     bool
+	lastSync    time.Time
+	lastStatus  string
+	lastError   string
+	lastOutput  string
+	updateHook  func(string)
+	failureHook func(string, error)
 }
 
 func NewManager(command string, interval time.Duration) *Manager {
@@ -53,18 +54,31 @@ func (m *Manager) SetUpdateHook(hook func(string)) {
 	m.updateHook = hook
 }
 
+func (m *Manager) SetFailureHook(hook func(string, error)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.failureHook = hook
+}
+
 func (m *Manager) UpdateNow(ctx context.Context) error {
 	return m.UpdateNowWithReason(ctx, "security-db sync")
 }
 
 func (m *Manager) UpdateNowWithReason(ctx context.Context, reason string) error {
 	if m.command == "" {
-		return fmt.Errorf("security-db sync command is not configured")
+		err := fmt.Errorf("security-db sync command is not configured")
+		m.notifyFailure(reason, err)
+		return err
 	}
 	m.mu.Lock()
 	if m.running {
+		hook := m.failureHook
 		m.mu.Unlock()
-		return fmt.Errorf("security-db sync already running")
+		err := fmt.Errorf("security-db sync already running")
+		if hook != nil {
+			hook(reason, err)
+		}
+		return err
 	}
 	m.running = true
 	m.lastStatus = "running"
@@ -84,11 +98,19 @@ func (m *Manager) UpdateNowWithReason(ctx context.Context, reason string) error 
 	out, err := cmd.CombinedOutput()
 	output := trimCommandOutput(string(out), maxSyncOutputBytes())
 	if err != nil {
+		syncErr := fmt.Errorf("%w", err)
+		if output != "" {
+			syncErr = fmt.Errorf("%w: %s", err, output)
+		}
 		m.mu.Lock()
 		m.lastStatus = "failed"
-		m.lastError = commandErrorMessage(err, output)
+		m.lastError = syncErr.Error()
 		m.lastOutput = output
+		hook := m.failureHook
 		m.mu.Unlock()
+		if hook != nil {
+			hook(reason, syncErr)
+		}
 		return err
 	}
 	m.mu.Lock()
@@ -101,6 +123,15 @@ func (m *Manager) UpdateNowWithReason(ctx context.Context, reason string) error 
 		hook(reason)
 	}
 	return nil
+}
+
+func (m *Manager) notifyFailure(reason string, err error) {
+	m.mu.RLock()
+	hook := m.failureHook
+	m.mu.RUnlock()
+	if hook != nil {
+		hook(reason, err)
+	}
 }
 
 func (m *Manager) Status() map[string]any {
@@ -127,13 +158,6 @@ func (m *Manager) PublicStatus() map[string]any {
 		"status":     m.lastStatus,
 		"interval":   m.interval.String(),
 	}
-}
-
-func commandErrorMessage(err error, output string) string {
-	if output == "" {
-		return err.Error()
-	}
-	return err.Error() + ": " + output
 }
 
 func maxSyncOutputBytes() int {

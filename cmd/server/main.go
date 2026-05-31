@@ -64,6 +64,7 @@ func main() {
 	secMgr := secdb.NewManager(secSyncCmd, secInterval)
 
 	server := api.New(database, matcher, dbMgr, secMgr)
+	secMgr.SetFailureHook(server.SecurityDatabaseSyncFailed)
 	if dbMgr != nil {
 		dbMgr.SetUpdateHook(server.SecurityDatabaseUpdated)
 		bgCtx, bgCancel := context.WithCancel(context.Background())

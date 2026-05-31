@@ -38,8 +38,12 @@ func TestUpdateNowCallsHookAfterSuccessfulSync(t *testing.T) {
 func TestUpdateNowDoesNotCallHookAfterFailedSync(t *testing.T) {
 	m := NewManager("printf sync-failed >&2; exit 7", time.Hour)
 	called := make(chan string, 1)
+	failed := make(chan string, 1)
 	m.SetUpdateHook(func(reason string) {
 		called <- reason
+	})
+	m.SetFailureHook(func(reason string, err error) {
+		failed <- reason + ": " + err.Error()
 	})
 
 	if err := m.UpdateNowWithReason(context.Background(), "failed test"); err == nil {
@@ -50,6 +54,14 @@ func TestUpdateNowDoesNotCallHookAfterFailedSync(t *testing.T) {
 	case got := <-called:
 		t.Fatalf("hook should not be called after failed sync, got %q", got)
 	default:
+	}
+	select {
+	case got := <-failed:
+		if !strings.Contains(got, "failed test:") || !strings.Contains(got, "sync-failed") {
+			t.Fatalf("failure hook should include reason and bounded output, got %q", got)
+		}
+	default:
+		t.Fatal("expected failure hook after failed sync")
 	}
 	status := m.Status()
 	if status["status"] != "failed" {
@@ -67,6 +79,27 @@ func TestUpdateNowDoesNotCallHookAfterFailedSync(t *testing.T) {
 	}
 	if _, ok := publicStatus["last_error"]; ok {
 		t.Fatalf("public status must not expose command errors: %#v", publicStatus)
+	}
+}
+
+func TestUpdateNowFailureHookCoversConfigurationErrors(t *testing.T) {
+	m := NewManager("", time.Hour)
+	failed := make(chan string, 1)
+	m.SetFailureHook(func(reason string, err error) {
+		failed <- reason + ": " + err.Error()
+	})
+
+	if err := m.UpdateNowWithReason(context.Background(), "manual test"); err == nil {
+		t.Fatal("expected configuration error")
+	}
+
+	select {
+	case got := <-failed:
+		if !strings.Contains(got, "manual test") || !strings.Contains(got, "not configured") {
+			t.Fatalf("failure hook = %q", got)
+		}
+	default:
+		t.Fatal("expected failure hook for configuration error")
 	}
 }
 
