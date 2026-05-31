@@ -164,7 +164,7 @@ function parseCvssVector(vector: string) {
 }
 
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search';
-type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string };
+type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
 type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string; triageStatus?: string };
 
 export default function App() {
@@ -676,6 +676,32 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
           <div className="label">Scan Requests Degraded</div>
           <div className="value" style={{ color: 'var(--medium)' }}>{stats.scan_request_counts?.degraded || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+          <div className="label">Stale Pending Requests</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenScanRequests({ status: 'pending', stale: 'true' })}
+            style={{ color: 'var(--medium)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open pending scan requests older than the configured timeout"
+          >
+            {stats.scan_request_stale_counts?.pending || 0}
+          </button>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--critical)' }} />
+          <div className="label">Stale Claimed Requests</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenScanRequests({ status: 'claimed', stale: 'true' })}
+            style={{ color: 'var(--critical)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open claimed scan requests older than the configured timeout"
+          >
+            {stats.scan_request_stale_counts?.claimed || 0}
+          </button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
@@ -2476,6 +2502,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
   const [requestStatus, setRequestStatus] = useState(initialRequestFilters.status || '');
   const [requestType, setRequestType] = useState(initialRequestFilters.scan_type || '');
   const [requestRevision, setRequestRevision] = useState(initialRequestFilters.security_db_revision || '');
+  const [requestStale, setRequestStale] = useState(initialRequestFilters.stale || '');
   const [requestMsg, setRequestMsg] = useState('');
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -2502,19 +2529,20 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
       .catch(() => setLoading(false));
   }, []);
 
-  const loadRequests = useCallback((status: string, scanType: string, revision: string) => {
+  const loadRequests = useCallback((status: string, scanType: string, revision: string, stale: string) => {
     setRequestsLoading(true);
     const params: Record<string, string> = { limit: '50', offset: '0' };
     if (status) params.status = status;
     if (scanType) params.scan_type = scanType;
     if (revision.trim()) params.security_db_revision = revision.trim();
+    if (stale) params.stale = stale;
     api.scanRequests(params)
       .then(r => { setRequests(r.items || []); setRequestTotal(r.total || 0); setRequestsLoading(false); })
       .catch(() => setRequestsLoading(false));
   }, []);
 
   useEffect(() => { load(0); }, [load]);
-  useEffect(() => { loadRequests(requestStatus, requestType, requestRevision); }, [loadRequests, requestStatus, requestType, requestRevision]);
+  useEffect(() => { loadRequests(requestStatus, requestType, requestRevision, requestStale); }, [loadRequests, requestStatus, requestType, requestRevision, requestStale]);
 
   const statusColor = (s: string) => s === 'completed' ? 'var(--low)' : s === 'degraded' ? 'var(--medium)' : s === 'failed' ? 'var(--critical)' : 'var(--medium)';
   const cancelRequest = async (id: string) => {
@@ -2522,7 +2550,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
     try {
       await api.cancelScanRequest(id);
       setRequestMsg('Scan request cancelled');
-      loadRequests(requestStatus, requestType, requestRevision);
+      loadRequests(requestStatus, requestType, requestRevision, requestStale);
     } catch {
       setRequestMsg('Cancel failed');
     }
@@ -2532,7 +2560,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
     try {
       const r = await api.requeueStaleScanRequests();
       setRequestMsg(`Requeued ${r.requeued} stale claimed requests`);
-      loadRequests(requestStatus, requestType, requestRevision);
+      loadRequests(requestStatus, requestType, requestRevision, requestStale);
     } catch {
       setRequestMsg('Requeue failed');
     }
@@ -2542,7 +2570,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
     try {
       await api.requeueScanRequest(req.id, { message: `dashboard retry: ${req.scan_type}` });
       setRequestMsg('Scan request requeued');
-      loadRequests(requestStatus, requestType, requestRevision);
+      loadRequests(requestStatus, requestType, requestRevision, requestStale);
     } catch {
       setRequestMsg('Requeue failed');
     }
@@ -2572,7 +2600,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
         message: 'dashboard bulk retry',
       });
       setRequestMsg(`Requeued ${r.requeued} scan requests`);
-      loadRequests(requestStatus, requestType, requestRevision);
+      loadRequests(requestStatus, requestType, requestRevision, requestStale);
     } catch {
       setRequestMsg('Bulk requeue failed');
     }
@@ -2610,6 +2638,10 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
               <option value="daily">Daily</option>
               <option value="security-db-update">Security DB</option>
             </select>
+            <select value={requestStale} onChange={(e) => setRequestStale(e.target.value)}>
+              <option value="">All Ages</option>
+              <option value="true">Only Stale</option>
+            </select>
             <input
               type="text"
               className="mono"
@@ -2618,7 +2650,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
               onChange={(e) => setRequestRevision(e.target.value)}
               style={{ maxWidth: '12rem' }}
             />
-            {(requestStatus || requestType || requestRevision) && <button onClick={() => { setRequestStatus(''); setRequestType(''); setRequestRevision(''); }}>Clear</button>}
+            {(requestStatus || requestType || requestRevision || requestStale) && <button onClick={() => { setRequestStatus(''); setRequestType(''); setRequestRevision(''); setRequestStale(''); }}>Clear</button>}
           </div>
         </div>
         {requestMsg && <div style={{ padding: '0.75rem 1rem 0', color: requestMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{requestMsg}</div>}

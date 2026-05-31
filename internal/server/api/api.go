@@ -1704,6 +1704,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		log.Printf("scan request status counts: %v", err)
 		scanRequestCounts = map[string]int{}
 	}
+	staleScanRequestCounts, err := s.db.CountStaleScanRequestsByState(ctx, visibleHostIDs, scope.All, scanRequestClaimTimeoutSeconds())
+	if err != nil {
+		log.Printf("stale scan request counts: %v", err)
+		staleScanRequestCounts = map[string]int{}
+	}
 	securityDBRevision := ""
 	securityDBRescanCounts := map[string]int{}
 	if revision, err := s.db.GetSecurityDBRevision(ctx); err != nil {
@@ -1727,6 +1732,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"overdue_sla_count":                 overdueTotalVulns,
 		"overdue_sla_risk_counts":           overdueRiskCounts,
 		"scan_request_counts":               scanRequestCounts,
+		"scan_request_stale_counts":         staleScanRequestCounts,
 		"security_db_revision":              securityDBRevision,
 		"security_db_rescan_request_counts": securityDBRescanCounts,
 	}
@@ -2361,6 +2367,7 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid scan_type", http.StatusBadRequest)
 		return
 	}
+	staleOnly := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("stale")), "true")
 	items, total, err := s.db.ListScanRequests(
 		r.Context(),
 		hostID,
@@ -2368,6 +2375,8 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 		status,
 		scanType,
 		strings.TrimSpace(r.URL.Query().Get("security_db_revision")),
+		staleOnly,
+		scanRequestClaimTimeoutSeconds(),
 		limitParam(r, 50),
 		offsetParam(r),
 	)
@@ -3042,6 +3051,13 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			}
 		} else {
 			writePromGauge(&b, "bongsu_security_db_revision_metrics_error", nil, 1)
+		}
+		if counts, err := s.db.CountStaleScanRequestsByState(ctx, nil, true, scanRequestClaimTimeoutSeconds()); err == nil {
+			for _, state := range []string{"pending", "claimed"} {
+				writePromGauge(&b, "bongsu_scan_request_stale", map[string]string{"state": state}, float64(counts[state]))
+			}
+		} else {
+			writePromGauge(&b, "bongsu_scan_request_stale_metrics_error", nil, 1)
 		}
 	}
 	return b.String()

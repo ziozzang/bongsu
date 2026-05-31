@@ -617,10 +617,14 @@ func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"status, scanType, securityDBRevision string",
+		"staleOnly bool, timeoutSeconds int64",
 		"AND scan_type=$%d",
 		"AND security_db_revision=$%d",
+		"status='pending' AND created_at < now()",
+		"status='claimed' AND claimed_at IS NOT NULL AND claimed_at < now()",
 		"args = append(args, scanType)",
 		"args = append(args, securityDBRevision)",
+		"args = append(args, timeoutSeconds)",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("scan request operational filter missing %q: %s", want, fn)
@@ -682,6 +686,36 @@ func TestSecurityDBRescanCountsAreScopedByRevision(t *testing.T) {
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("security DB rescan count query missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestStaleScanRequestCountsAreScopedByTimeoutAndHost(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) CountStaleScanRequestsByState")
+	if start < 0 {
+		t.Fatal("CountStaleScanRequestsByState not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) CountSecurityDBRescanRequestsByStatus")
+	if end < 0 {
+		t.Fatal("CountStaleScanRequestsByState end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"timeoutSeconds int64",
+		"status='pending' AND created_at < now()",
+		"status='claimed' AND claimed_at IS NOT NULL AND claimed_at < now()",
+		"WHERE status IN ('pending','claimed')",
+		"host_id='' OR host_id = ANY($2)",
+		"host_id = ANY($2)",
+		"GROUP BY stale_state",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("stale scan request count query missing %q: %s", want, fn)
 		}
 	}
 }

@@ -1364,7 +1364,7 @@ DO UPDATE SET
 RETURNING (xmax = 0) AS inserted`
 }
 
-func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []string, status, scanType, securityDBRevision string, limit, offset int) ([]models.ScanRequest, int, error) {
+func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []string, status, scanType, securityDBRevision string, staleOnly bool, timeoutSeconds int64, limit, offset int) ([]models.ScanRequest, int, error) {
 	baseQ := `FROM scan_requests WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -1390,6 +1390,11 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	if securityDBRevision != "" {
 		baseQ += fmt.Sprintf(" AND security_db_revision=$%d", n)
 		args = append(args, securityDBRevision)
+		n++
+	}
+	if staleOnly {
+		baseQ += fmt.Sprintf(" AND ((status='pending' AND created_at < now() - ($%d::bigint * interval '1 second')) OR (status='claimed' AND claimed_at IS NOT NULL AND claimed_at < now() - ($%d::bigint * interval '1 second')))", n, n)
+		args = append(args, timeoutSeconds)
 		n++
 	}
 	var total int
@@ -1461,6 +1466,45 @@ func (db *DB) CountScanRequestsByStatus(ctx context.Context, hostIDs []string, i
 			return nil, err
 		}
 		out[status] = count
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) CountStaleScanRequestsByState(ctx context.Context, hostIDs []string, includeGlobal bool, timeoutSeconds int64) (map[string]int, error) {
+	q := `SELECT stale_state, count(*) FROM (
+	SELECT CASE
+		WHEN status='pending' AND created_at < now() - ($1::bigint * interval '1 second') THEN 'pending'
+		WHEN status='claimed' AND claimed_at IS NOT NULL AND claimed_at < now() - ($1::bigint * interval '1 second') THEN 'claimed'
+		ELSE ''
+	END AS stale_state
+	FROM scan_requests
+	WHERE status IN ('pending','claimed')`
+	args := []any{timeoutSeconds}
+	if len(hostIDs) > 0 {
+		if includeGlobal {
+			q += ` AND (host_id='' OR host_id = ANY($2))`
+		} else {
+			q += ` AND host_id = ANY($2)`
+		}
+		args = append(args, pqStringArray(hostIDs))
+	} else if !includeGlobal {
+		q += ` AND false`
+	}
+	q += `) stale_requests WHERE stale_state <> '' GROUP BY stale_state`
+
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return nil, err
+		}
+		out[state] = count
 	}
 	return out, rows.Err()
 }

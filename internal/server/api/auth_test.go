@@ -190,6 +190,34 @@ func TestAdminMetricsExposeActiveRiskLevelBacklog(t *testing.T) {
 	}
 }
 
+func TestAdminMetricsExposeStaleScanRequestBacklog(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) adminMetrics")
+	if start < 0 {
+		t.Fatal("adminMetrics not found")
+	}
+	end := strings.Index(body[start:], "func boolMetric")
+	if end < 0 {
+		t.Fatal("boolMetric not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"CountStaleScanRequestsByState(ctx, nil, true, scanRequestClaimTimeoutSeconds())",
+		"bongsu_scan_request_stale",
+		`map[string]string{"state": state}`,
+		`[]string{"pending", "claimed"}`,
+		"bongsu_scan_request_stale_metrics_error",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("admin metrics stale scan request backlog missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestAdminMetricsExposeTriageLifecycle(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
@@ -2891,8 +2919,10 @@ func TestStatsExposeActiveFindingCounts(t *testing.T) {
 		"active_severity_counts",
 		"GetSecurityDBRevision(ctx)",
 		"CountSecurityDBRescanRequestsByStatus",
+		"CountStaleScanRequestsByState",
 		"security_db_revision",
 		"security_db_rescan_request_counts",
+		"scan_request_stale_counts",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("stats active finding signal missing %q", want)
@@ -2914,11 +2944,16 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"initialRequestFilters.status || ''",
 		"initialRequestFilters.scan_type || ''",
 		"initialRequestFilters.security_db_revision || ''",
+		"initialRequestFilters.stale || ''",
 		"stats.security_db_rescan_request_counts?.pending",
 		"stats.security_db_rescan_request_counts?.claimed",
 		"stats.security_db_rescan_request_counts?.degraded",
 		"stats.security_db_rescan_request_counts?.failed",
+		"stats.scan_request_stale_counts?.pending",
+		"stats.scan_request_stale_counts?.claimed",
 		"stats.scan_request_counts?.degraded",
+		"params.stale = stale",
+		`stale: 'true'`,
 		"req.request_age_seconds",
 		"req.claim_age_seconds",
 		"req.request_stale",
@@ -2939,6 +2974,8 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"Current DB Rescan Degraded",
 		"Current DB Rescan Failed",
 		"Scan Requests Degraded",
+		"Stale Pending Requests",
+		"Stale Claimed Requests",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard DB rescan count missing %q", want)
