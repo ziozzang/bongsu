@@ -1760,6 +1760,35 @@ func TestScanWebhookCanCountRiskByScan(t *testing.T) {
 	}
 }
 
+func TestTriageLifecycleCountsForMetrics(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, fnName := range []string{"CountVulnerabilityTriageByStatus", "CountVulnerabilityTriageExpiringSoonByStatus"} {
+		start := strings.Index(body, "func (db *DB) "+fnName)
+		if start < 0 {
+			t.Fatalf("%s not found", fnName)
+		}
+		end := strings.Index(body[start+1:], "\nfunc ")
+		if end < 0 {
+			t.Fatalf("%s end not found", fnName)
+		}
+		fn := body[start : start+1+end]
+		for _, want := range []string{
+			"vulnerability_triage",
+			"expires_at",
+			"status",
+			"count(*)::int",
+		} {
+			if !strings.Contains(fn, want) {
+				t.Fatalf("%s missing %q: %s", fnName, want, fn)
+			}
+		}
+	}
+}
+
 func TestFilterOptionsAreHostScopedAndLatestOnly(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {

@@ -187,6 +187,38 @@ func TestAdminMetricsExposeActiveRiskLevelBacklog(t *testing.T) {
 	}
 }
 
+func TestAdminMetricsExposeTriageLifecycle(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) adminMetrics")
+	if start < 0 {
+		t.Fatal("adminMetrics not found")
+	}
+	end := strings.Index(body[start:], "func boolMetric")
+	if end < 0 {
+		t.Fatal("boolMetric not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`BONGSU_TRIAGE_EXPIRING_SOON_DAYS`,
+		"CountVulnerabilityTriageByStatus(ctx)",
+		"CountVulnerabilityTriageExpiringSoonByStatus(ctx, triageExpiringSoonDays)",
+		"bongsu_vulnerability_triage_decisions",
+		`map[string]string{"status": count.Status, "state": count.State}`,
+		"bongsu_vulnerability_triage_expiring_soon",
+		"bongsu_vulnerability_triage_expiring_soon_days",
+		"bongsu_vulnerability_triage_metrics_error",
+		"bongsu_vulnerability_triage_expiring_soon_metrics_error",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("admin metrics triage lifecycle missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestPrometheusLabelValueEscapesUnsafeCharacters(t *testing.T) {
 	var b strings.Builder
 	writePromGauge(&b, "bongsu_test_info", map[string]string{"revision": "rev\"x\\y\nz"}, 1)

@@ -218,6 +218,7 @@ spec:
 | `BONGSU_SLA_HIGH_DAYS` | `30` | Remediation SLA days for high findings |
 | `BONGSU_SLA_MEDIUM_DAYS` | `90` | Remediation SLA days for medium findings |
 | `BONGSU_SLA_LOW_DAYS` | `180` | Remediation SLA days for low findings |
+| `BONGSU_TRIAGE_EXPIRING_SOON_DAYS` | `14` | Window for Prometheus metrics that count triage decisions expiring soon |
 | `BONGSU_AGENT_ONLINE_MINUTES` | `1560` | Last-seen age treated as online (26h default for daily scans) |
 | `BONGSU_AGENT_OFFLINE_MINUTES` | `4320` | Last-seen age treated as offline after this threshold |
 | `BONGSU_INVENTORY_STALE_HOURS` | `48` | Latest completed inventory older than this is `stale` in host filters |

@@ -2853,6 +2853,25 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 0)
 	}
 	if s.db != nil {
+		triageExpiringSoonDays := envInt("BONGSU_TRIAGE_EXPIRING_SOON_DAYS", 14)
+		if triageExpiringSoonDays <= 0 {
+			triageExpiringSoonDays = 14
+		}
+		writePromGauge(&b, "bongsu_vulnerability_triage_expiring_soon_days", nil, float64(triageExpiringSoonDays))
+		if triageCounts, err := s.db.CountVulnerabilityTriageByStatus(ctx); err == nil {
+			for _, count := range triageCounts {
+				writePromGauge(&b, "bongsu_vulnerability_triage_decisions", map[string]string{"status": count.Status, "state": count.State}, float64(count.Count))
+			}
+		} else {
+			writePromGauge(&b, "bongsu_vulnerability_triage_metrics_error", nil, 1)
+		}
+		if expiringCounts, err := s.db.CountVulnerabilityTriageExpiringSoonByStatus(ctx, triageExpiringSoonDays); err == nil {
+			for _, status := range []string{"open", "in_progress", "accepted_risk", "false_positive", "fixed", "ignored"} {
+				writePromGauge(&b, "bongsu_vulnerability_triage_expiring_soon", map[string]string{"status": status}, float64(expiringCounts[status]))
+			}
+		} else {
+			writePromGauge(&b, "bongsu_vulnerability_triage_expiring_soon_metrics_error", nil, 1)
+		}
 		if riskCountsByHost, err := s.db.GetCurrentActionableVulnRiskCountsByHost(ctx, nil); err == nil {
 			activeRiskCounts := map[string]int{}
 			for _, counts := range riskCountsByHost {

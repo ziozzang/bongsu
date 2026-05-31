@@ -2330,6 +2330,57 @@ RETURNING id, created_at, updated_at`,
 	return err
 }
 
+type VulnerabilityTriageCount struct {
+	Status string
+	State  string
+	Count  int
+}
+
+func (db *DB) CountVulnerabilityTriageByStatus(ctx context.Context) ([]VulnerabilityTriageCount, error) {
+	rows, err := db.QueryContext(ctx, `SELECT status,
+CASE WHEN expires_at IS NOT NULL AND expires_at <= now() THEN 'expired' ELSE 'active' END AS state,
+count(*)::int
+FROM vulnerability_triage
+GROUP BY status, state`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []VulnerabilityTriageCount
+	for rows.Next() {
+		var row VulnerabilityTriageCount
+		if err := rows.Scan(&row.Status, &row.State, &row.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) CountVulnerabilityTriageExpiringSoonByStatus(ctx context.Context, days int) (map[string]int, error) {
+	if days <= 0 {
+		days = 14
+	}
+	rows, err := db.QueryContext(ctx, `SELECT status, count(*)::int
+FROM vulnerability_triage
+WHERE expires_at IS NOT NULL AND expires_at > now() AND expires_at <= now() + ($1::int * interval '1 day')
+GROUP BY status`, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		out[status] = count
+	}
+	return out, rows.Err()
+}
+
 const hostCols = `id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, owner, team, environment, criticality, tags::text, last_seen, created_at`
 
 func scanHost(scanner interface{ Scan(...interface{}) error }, h *models.Host) error {
