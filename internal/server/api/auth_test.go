@@ -80,6 +80,87 @@ func TestInstallAuthRequiresTokenOrAdminHeader(t *testing.T) {
 	}
 }
 
+func TestSecurityHeadersMiddlewareSetsBrowserHardeningHeaders(t *testing.T) {
+	t.Setenv("BONGSU_HSTS_ENABLED", "true")
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest("GET", "https://example.com/", nil)
+	rr := httptest.NewRecorder()
+
+	s.securityHeadersMiddleware(next).ServeHTTP(rr, req)
+
+	for name, want := range map[string]string{
+		"X-Content-Type-Options":    "nosniff",
+		"X-Frame-Options":           "DENY",
+		"Referrer-Policy":           "strict-origin-when-cross-origin",
+		"Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+	} {
+		if got := rr.Header().Get(name); got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+	}
+	csp := rr.Header().Get("Content-Security-Policy")
+	for _, want := range []string{
+		"default-src 'self'",
+		"script-src 'self'",
+		"connect-src 'self'",
+		"object-src 'none'",
+		"frame-ancestors 'none'",
+	} {
+		if !strings.Contains(csp, want) {
+			t.Fatalf("CSP missing %q: %s", want, csp)
+		}
+	}
+	permissions := rr.Header().Get("Permissions-Policy")
+	for _, want := range []string{"camera=()", "microphone=()", "geolocation=()", "payment=()", "usb=()"} {
+		if !strings.Contains(permissions, want) {
+			t.Fatalf("Permissions-Policy missing %q: %s", want, permissions)
+		}
+	}
+}
+
+func TestSecurityHeadersMiddlewareDoesNotSetHSTSOnPlainHTTP(t *testing.T) {
+	t.Setenv("BONGSU_HSTS_ENABLED", "true")
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest("GET", "http://example.com/", nil)
+	rr := httptest.NewRecorder()
+
+	s.securityHeadersMiddleware(next).ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("plain HTTP response should not set HSTS, got %q", got)
+	}
+}
+
+func TestSecurityHeadersMiddlewareHonorsForwardedHTTPSAndHSTSDisable(t *testing.T) {
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	t.Setenv("BONGSU_HSTS_ENABLED", "true")
+	req := httptest.NewRequest("GET", "http://example.com/", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	rr := httptest.NewRecorder()
+	s.securityHeadersMiddleware(next).ServeHTTP(rr, req)
+	if got := rr.Header().Get("Strict-Transport-Security"); got != "max-age=31536000; includeSubDomains" {
+		t.Fatalf("forwarded HTTPS HSTS = %q", got)
+	}
+
+	t.Setenv("BONGSU_HSTS_ENABLED", "false")
+	req = httptest.NewRequest("GET", "https://example.com/", nil)
+	rr = httptest.NewRecorder()
+	s.securityHeadersMiddleware(next).ServeHTTP(rr, req)
+	if got := rr.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("disabled HSTS should not be set, got %q", got)
+	}
+}
+
 func TestReportBodyLimitIsConfigured(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
