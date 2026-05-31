@@ -1515,6 +1515,9 @@ func TestListVulnerabilitiesSupportsFindingSourceFilter(t *testing.T) {
 	if !strings.Contains(filterDef, "FindingSource string") {
 		t.Fatalf("VulnFilter missing finding source: %s", filterDef)
 	}
+	if !strings.Contains(filterDef, "RiskLevel     string") {
+		t.Fatalf("VulnFilter missing risk level: %s", filterDef)
+	}
 	fnStart := start + end
 	fnEnd := strings.Index(body[fnStart:], "func (db *DB) GetHostVulnCounts")
 	if fnEnd < 0 {
@@ -1523,6 +1526,9 @@ func TestListVulnerabilitiesSupportsFindingSourceFilter(t *testing.T) {
 	fn := body[fnStart : fnStart+fnEnd]
 	if !strings.Contains(fn, "COALESCE(v.finding_source, 'scanner')=$") {
 		t.Fatalf("finding source filter SQL missing: %s", fn)
+	}
+	if !strings.Contains(fn, "vulnRiskLevelExpr") {
+		t.Fatalf("risk level filter SQL missing: %s", fn)
 	}
 }
 
@@ -1540,6 +1546,7 @@ func TestListVulnerabilitiesExposesCisaKevPrioritization(t *testing.T) {
 		"&v.EPSSScore",
 		"&v.EPSSPercentile",
 		"&v.RiskScore",
+		"&v.RiskLevel",
 		`kev.source = 'cisa-kev'`,
 		`epss.source = 'epss'`,
 		`kev.vulnerability_id = v.vulnerability_id`,
@@ -1549,7 +1556,9 @@ func TestListVulnerabilitiesExposesCisaKevPrioritization(t *testing.T) {
 		`"exploited":`,
 		`"epss_score":`,
 		`"risk_score":`,
+		`"risk_level":`,
 		"vulnRiskScoreExpr",
+		"vulnRiskLevelExpr",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("ListVulnerabilities KEV prioritization missing %q", want)

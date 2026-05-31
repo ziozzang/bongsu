@@ -1198,6 +1198,10 @@ func (s *Server) vulnFilterFromRequestWithScope(r *http.Request, scope db.Access
 	if err != nil {
 		return db.VulnFilter{}, false, false, err
 	}
+	riskLevel, err := riskLevelFilterParam(r)
+	if err != nil {
+		return db.VulnFilter{}, false, false, err
+	}
 	if scope.Empty() {
 		return db.VulnFilter{}, false, true, nil
 	}
@@ -1210,6 +1214,7 @@ func (s *Server) vulnFilterFromRequestWithScope(r *http.Request, scope db.Access
 		Severity:      r.URL.Query().Get("severity"),
 		TriageStatus:  r.URL.Query().Get("triage_status"),
 		FindingSource: findingSource,
+		RiskLevel:     riskLevel,
 		Overdue:       r.URL.Query().Get("overdue") == "true",
 		Exploited:     r.URL.Query().Get("exploited") == "true",
 		MinEPSS:       floatParam(r, "min_epss", 0),
@@ -1227,6 +1232,18 @@ func (s *Server) vulnFilterFromRequestWithScope(r *http.Request, scope db.Access
 		HideNoFix:     r.URL.Query().Get("show_no_fix") != "true",
 		HideMismatch:  r.URL.Query().Get("show_mismatch") != "true",
 	}, false, false, nil
+}
+
+func riskLevelFilterParam(r *http.Request) (string, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("risk_level"))
+	switch strings.ToLower(raw) {
+	case "":
+		return "", nil
+	case "critical", "high", "medium", "low":
+		return strings.ToLower(raw), nil
+	default:
+		return "", fmt.Errorf("invalid risk_level %q; allowed values are critical, high, medium, or low", raw)
+	}
 }
 
 func findingSourceFilterParam(r *http.Request) (string, error) {
@@ -1331,7 +1348,7 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
-		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "risk_score", "exploited", "epss_score", "epss_percentile", "severity", "cvss_score", "triage_status",
+		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "risk_score", "risk_level", "exploited", "epss_score", "epss_percentile", "severity", "cvss_score", "triage_status",
 		"sla_days", "due_at", "overdue", "pkg_name", "pkg_type", "ecosystem", "installed_version", "fixed_version", "finding_source", "pkg_path", "title", "primary_url",
 		"triage_reason", "triage_comment", "triage_expires_at", "triage_updated_by", "created_at",
 	}); err != nil {
@@ -1347,6 +1364,7 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 			csvSafeCell(v.Container),
 			csvSafeCell(v.VulnerabilityID),
 			fmt.Sprintf("%.1f", v.RiskScore),
+			csvSafeCell(v.RiskLevel),
 			strconv.FormatBool(v.Exploited),
 			fmt.Sprintf("%.5f", v.EPSSScore),
 			fmt.Sprintf("%.5f", v.EPSSPercentile),

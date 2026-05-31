@@ -1005,6 +1005,7 @@ const vulnExploitedExpr = `EXISTS(SELECT 1 FROM cve_database kev WHERE kev.sourc
 const vulnEPSSScoreExpr = `COALESCE((SELECT epss.epss_score FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)`
 const vulnEPSSPercentileExpr = `COALESCE((SELECT epss.epss_percentile FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)`
 const vulnRiskScoreExpr = `LEAST(100, GREATEST(0, (v.cvss_score * 5) + (` + vulnEPSSScoreExpr + ` * 30) + CASE WHEN ` + vulnExploitedExpr + ` THEN 20 ELSE 0 END + CASE lower(COALESCE(h.criticality, '')) WHEN 'critical' THEN 10 WHEN 'high' THEN 5 ELSE 0 END))`
+const vulnRiskLevelExpr = `CASE WHEN ` + vulnRiskScoreExpr + ` >= 80 THEN 'critical' WHEN ` + vulnRiskScoreExpr + ` >= 60 THEN 'high' WHEN ` + vulnRiskScoreExpr + ` >= 40 THEN 'medium' ELSE 'low' END`
 
 const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name,
 COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), ''),
@@ -1013,7 +1014,8 @@ v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url
 ` + vulnExploitedExpr + `,
 ` + vulnEPSSScoreExpr + `,
 ` + vulnEPSSPercentileExpr + `,
-` + vulnRiskScoreExpr
+` + vulnRiskScoreExpr + `,
+` + vulnRiskLevelExpr
 
 const vulnTriageJoin = ` LEFT JOIN LATERAL (
 	SELECT status, reason, comment, expires_at, updated_by, updated_at
@@ -1034,7 +1036,7 @@ func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnera
 		&v.PkgName, &v.PkgType, &v.Ecosystem, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
 		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
 		&v.FindingSource, &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
-		&v.Exploited, &v.EPSSScore, &v.EPSSPercentile, &v.RiskScore, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
+		&v.Exploited, &v.EPSSScore, &v.EPSSPercentile, &v.RiskScore, &v.RiskLevel, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
 }
 
 type VulnerabilityInsertResult struct {
@@ -2431,6 +2433,7 @@ type VulnFilter struct {
 	Severity      string
 	TriageStatus  string
 	FindingSource string
+	RiskLevel     string
 	Overdue       bool
 	Exploited     bool
 	MinEPSS       float64
@@ -2481,6 +2484,11 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	if f.FindingSource != "" {
 		baseQ += fmt.Sprintf(" AND COALESCE(v.finding_source, 'scanner')=$%d", argN)
 		args = append(args, f.FindingSource)
+		argN++
+	}
+	if f.RiskLevel != "" {
+		baseQ += fmt.Sprintf(" AND ("+vulnRiskLevelExpr+")=$%d", argN)
+		args = append(args, f.RiskLevel)
 		argN++
 	}
 	if f.PkgName != "" {
@@ -3406,6 +3414,7 @@ func vulnSortExpr(col string, desc bool) string {
 		"epss_score":      vulnEPSSScoreExpr,
 		"epss_percentile": vulnEPSSPercentileExpr,
 		"risk_score":      vulnRiskScoreExpr,
+		"risk_level":      vulnRiskLevelExpr,
 		"pkg_type":        "COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), '')",
 		"ecosystem":       "COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), '')",
 		"owner":           "h.owner", "team": "h.team", "environment": "h.environment", "criticality": "h.criticality",

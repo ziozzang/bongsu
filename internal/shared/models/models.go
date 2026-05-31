@@ -153,6 +153,7 @@ type Vulnerability struct {
 	EPSSScore       float64    `json:"epss_score,omitempty"`
 	EPSSPercentile  float64    `json:"epss_percentile,omitempty"`
 	RiskScore       float64    `json:"risk_score,omitempty"`
+	RiskLevel       string     `json:"risk_level,omitempty"`
 	TriageStatus    string     `json:"triage_status"`
 	TriageReason    string     `json:"triage_reason,omitempty"`
 	TriageComment   string     `json:"triage_comment,omitempty"`

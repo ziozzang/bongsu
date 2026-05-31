@@ -1197,7 +1197,7 @@ func TestHandleReportAppliesScanScopedCveRematch(t *testing.T) {
 }
 
 func TestVulnFilterFromRequestIncludesFindingSource(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api/vulnerabilities?finding_source=%20CVE_DB%20", nil)
+	req := httptest.NewRequest("GET", "/api/vulnerabilities?finding_source=%20CVE_DB%20&risk_level=%20HIGH%20", nil)
 	req.Header.Set("X-API-Key", "admin")
 	s := &Server{apiKey: "admin", webAuth: true}
 	filter, forbidden, empty, err := s.vulnFilterFromRequest(req)
@@ -1209,6 +1209,9 @@ func TestVulnFilterFromRequestIncludesFindingSource(t *testing.T) {
 	}
 	if filter.FindingSource != "cve-db" {
 		t.Fatalf("finding source = %q, want cve-db", filter.FindingSource)
+	}
+	if filter.RiskLevel != "high" {
+		t.Fatalf("risk level = %q, want high", filter.RiskLevel)
 	}
 }
 
@@ -1235,6 +1238,16 @@ func TestHandleListVulnerabilitiesRejectsInvalidFindingSource(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "invalid finding_source") {
 		t.Fatalf("body = %q, want invalid finding_source", w.Body.String())
+	}
+}
+
+func TestVulnFilterFromRequestRejectsInvalidRiskLevel(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/vulnerabilities?risk_level=urgent", nil)
+	req.Header.Set("X-API-Key", "admin")
+	s := &Server{apiKey: "admin", webAuth: true}
+	_, _, _, err := s.vulnFilterFromRequest(req)
+	if err == nil || !strings.Contains(err.Error(), "invalid risk_level") {
+		t.Fatalf("expected invalid risk_level error, got %v", err)
 	}
 }
 
@@ -1584,10 +1597,13 @@ func TestVulnerabilityAPIExposesExploitedFilterAndExportColumn(t *testing.T) {
 		`Exploited:     r.URL.Query().Get("exploited") == "true"`,
 		`MinEPSS:       floatParam(r, "min_epss", 0)`,
 		`MinEPSSPct:    floatParam(r, "min_epss_percentile", 0)`,
+		`RiskLevel:     riskLevel`,
+		"riskLevelFilterParam",
 		`"exploited"`,
 		`"epss_score"`,
 		`"epss_percentile"`,
 		`"risk_score"`,
+		`"risk_level"`,
 		`strconv.FormatBool(v.Exploited)`,
 	} {
 		if !strings.Contains(body, want) {
@@ -1678,7 +1694,10 @@ func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
 		"params.exploited = 'true'",
 		"params.min_epss = minEpssParam",
 		"risk_score",
+		"riskLevel",
+		"risk_level",
 		"Risk Score",
+		"All Risk",
 		"['exploited', 'KEV']",
 		"['risk_score', 'Risk']",
 		"['epss_score', 'EPSS']",
@@ -1694,7 +1713,7 @@ func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
 	}
 	if !strings.Contains(apiBody, "exploited: boolean") || !strings.Contains(apiBody, "exploited?: string") ||
 		!strings.Contains(apiBody, "epss_score?: number") || !strings.Contains(apiBody, "risk_score?: number") ||
-		!strings.Contains(apiBody, "min_epss?: string") {
+		!strings.Contains(apiBody, "risk_level?: string") || !strings.Contains(apiBody, "min_epss?: string") {
 		t.Fatal("web API types must expose exploited and EPSS vulnerability fields and filters")
 	}
 }
@@ -3130,6 +3149,8 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 		InstalledVer:    "1.0.0",
 		FixedVersion:    "1.0.1",
 		FindingSource:   "cve-db",
+		RiskScore:       72.3,
+		RiskLevel:       "high",
 		Title:           "csv title",
 		CreatedAt:       time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
 	}})
@@ -3145,6 +3166,9 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 	}
 	if !strings.Contains(out, "finding_source") || !strings.Contains(out, "cve-db") {
 		t.Fatalf("missing finding source: %s", out)
+	}
+	if !strings.Contains(out, "risk_level") || !strings.Contains(out, "high") || !strings.Contains(out, "72.3") {
+		t.Fatalf("missing risk fields: %s", out)
 	}
 	if !strings.Contains(out, "CVE-2026-0001") || !strings.Contains(out, "accepted_risk") || !strings.Contains(out, "platform") {
 		t.Fatalf("missing csv values: %s", out)

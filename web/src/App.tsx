@@ -73,6 +73,19 @@ function findingSourceLabel(source?: string): string {
   }
 }
 
+function riskLevelLabel(level?: string): string {
+  return level ? level.replace('_', ' ') : 'low';
+}
+
+function riskLevelColor(level?: string): string {
+  switch ((level || '').toLowerCase()) {
+    case 'critical': return 'var(--critical)';
+    case 'high': return 'var(--high)';
+    case 'medium': return 'var(--medium)';
+    default: return 'var(--text-muted)';
+  }
+}
+
 function accessSubjectRef(subject: AccessSubject): string {
   return `${subject.subject_type}:${subject.external_id}`;
 }
@@ -1100,6 +1113,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [severity, setSeverity] = useState('');
   const [triageStatus, setTriageStatus] = useState('');
   const [findingSource, setFindingSource] = useState('');
+  const [riskLevel, setRiskLevel] = useState('');
   const [hostId, setHostId] = useState('');
   const [container, setContainer] = useState('');
   const [pkgQuery, setPkgQuery] = useState('');
@@ -1123,12 +1137,13 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [exportMsg, setExportMsg] = useState('');
   const limit = 50;
 
-  const load = useCallback((p: number, sev: string, triage: string, source: string, overdue: boolean, exploited: boolean, epss: string, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
+  const load = useCallback((p: number, sev: string, triage: string, source: string, risk: string, overdue: boolean, exploited: boolean, epss: string, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
     setLoading(true);
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
     if (sev) params.severity = sev;
     if (triage) params.triage_status = triage;
     if (source) params.finding_source = source;
+    if (risk) params.risk_level = risk;
     if (overdue) params.overdue = 'true';
     if (exploited) params.exploited = 'true';
     const minEpssParam = epssParam(epss);
@@ -1163,16 +1178,16 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
+  useEffect(() => { load(0, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
 
-  const handleSearch = () => { load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
+  const handleSearch = () => { load(0, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
     const nextDesc = sortBy === col ? !sortDesc : col === 'risk_score' || col === 'cvss_score' || col === 'severity' || col === 'exploited' || col === 'epss_score' || col === 'epss_percentile';
     setSortBy(col);
     setSortDesc(nextDesc);
-    load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
+    load(0, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
   };
 
   const sortArrow = (col: string) => {
@@ -1191,6 +1206,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     if (severity) params.severity = severity;
     if (triageStatus) params.triage_status = triageStatus;
     if (findingSource) params.finding_source = findingSource;
+    if (riskLevel) params.risk_level = riskLevel;
     if (overdueOnly) params.overdue = 'true';
     if (exploitedOnly) params.exploited = 'true';
     const minEpssParam = epssParam(minEpss);
@@ -1254,6 +1270,13 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
             {(findingSources.length ? findingSources : ['scanner', 'cve-db']).map(s => (
               <option key={s} value={s}>{findingSourceLabel(s)}</option>
             ))}
+          </select>
+          <select value={riskLevel} onChange={(e) => setRiskLevel(e.target.value)}>
+            <option value="">All Risk</option>
+            <option value="critical">Critical Risk</option>
+            <option value="high">High Risk</option>
+            <option value="medium">Medium Risk</option>
+            <option value="low">Low Risk</option>
           </select>
           <select value={hostId} onChange={(e) => setHostId(e.target.value)}>
             <option value="">All Hosts</option>
@@ -1341,8 +1364,9 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   <td><span className="host-link">{hostMap[v.host_id] || v.host_id.slice(0, 8)}</span></td>
                   <td><span className="badge">{(v.triage_status || 'open').replace('_', ' ')}</span></td>
                   <td><span className="badge">{findingSourceLabel(v.finding_source)}</span></td>
-                  <td className="mono" style={{ fontWeight: 700, color: (v.risk_score || 0) >= 80 ? 'var(--critical)' : (v.risk_score || 0) >= 60 ? 'var(--high)' : (v.risk_score || 0) >= 40 ? 'var(--medium)' : 'var(--text-muted)' }}>
+                  <td className="mono" style={{ fontWeight: 700, color: riskLevelColor(v.risk_level) }}>
                     {v.risk_score ? v.risk_score.toFixed(1) : '-'}
+                    <div style={{ fontSize: '0.625rem', textTransform: 'uppercase', color: riskLevelColor(v.risk_level) }}>{riskLevelLabel(v.risk_level)}</div>
                   </td>
                   <td>{v.exploited ? <span className="badge badge-critical">KEV</span> : <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                   <td className="mono" style={{ color: (v.epss_score || 0) >= 0.5 ? 'var(--critical)' : (v.epss_score || 0) >= 0.1 ? 'var(--high)' : 'var(--text-muted)' }}>
@@ -1385,9 +1409,9 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
           </table>
         )}
         <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
+          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
+          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
         </div>
       </div>
     </>
@@ -1462,6 +1486,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
           <div className="value" style={{ color: (vuln.risk_score || 0) >= 80 ? 'var(--critical)' : (vuln.risk_score || 0) >= 60 ? 'var(--high)' : (vuln.risk_score || 0) >= 40 ? 'var(--medium)' : 'inherit' }}>
             {vuln.risk_score ? vuln.risk_score.toFixed(1) : '-'}
           </div>
+          <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', color: riskLevelColor(vuln.risk_level) }}>{riskLevelLabel(vuln.risk_level)} Risk</div>
         </div>
         <div className="stat-card">
           <div className="label">Host</div>
