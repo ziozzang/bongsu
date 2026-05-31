@@ -1801,7 +1801,7 @@ function RBACView() {
   const [subjectType, setSubjectType] = useState('user');
   const [externalID, setExternalID] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [policySubject, setPolicySubject] = useState('');
+  const [policySubjectID, setPolicySubjectID] = useState('');
   const [resourceType, setResourceType] = useState('host');
   const [resourceID, setResourceID] = useState('');
   const [permission, setPermission] = useState('read');
@@ -1835,7 +1835,6 @@ function RBACView() {
     api.upsertRbacSubject({ subject_type: subjectType, external_id: externalID.trim(), display_name: displayName.trim() })
       .then(() => {
         setMessage('Subject saved');
-        setPolicySubject(externalID.trim());
         setExternalID('');
         setDisplayName('');
         load();
@@ -1844,18 +1843,38 @@ function RBACView() {
   };
 
   const savePolicy = () => {
-    const subject = policySubject.trim();
+    const subject = policySubjectID.trim();
     if (!subject || !resourceType) {
       setMessage('subject and resource type are required');
       return;
     }
-    api.upsertRbacPolicy({ subject_external_id: subject, resource_type: resourceType, resource_id: resourceID.trim() || '*', permission })
+    api.upsertRbacPolicy({ subject_id: subject, resource_type: resourceType, resource_id: resourceID.trim() || '*', permission })
       .then(() => {
         setMessage('Policy saved');
         setResourceID('');
         load(subjectFilter);
       })
       .catch(() => setMessage('Failed to save policy. Create the subject first.'));
+  };
+
+  const deleteSubject = (subject: AccessSubject) => {
+    if (!confirm(`Revoke subject ${subject.subject_type}/${subject.external_id} and all attached policies?`)) return;
+    api.deleteRbacSubject(subject.id)
+      .then(() => {
+        setMessage('Subject revoked');
+        load(subjectFilter);
+      })
+      .catch(() => setMessage('Failed to revoke subject'));
+  };
+
+  const deletePolicy = (policy: AccessPolicy) => {
+    if (!confirm(`Revoke ${policy.permission} on ${policy.resource_type}/${policy.resource_id || '*'} for ${policy.subject_type}/${policy.subject_external_id}?`)) return;
+    api.deleteRbacPolicy(policy.id)
+      .then(() => {
+        setMessage('Policy revoked');
+        load(subjectFilter);
+      })
+      .catch(() => setMessage('Failed to revoke policy'));
   };
 
   return (
@@ -1877,7 +1896,10 @@ function RBACView() {
         <div className="card" style={{ padding: '1rem' }}>
           <div className="card-header"><h2>Policy</h2></div>
           <div className="filters">
-            <input list="rbac-subjects" type="text" placeholder="subject external_id" value={policySubject} onChange={(e) => setPolicySubject(e.target.value)} />
+            <select value={policySubjectID} onChange={(e) => setPolicySubjectID(e.target.value)}>
+              <option value="">Select Subject</option>
+              {subjects.map(s => <option key={s.id} value={s.id}>{s.subject_type}/{s.external_id}</option>)}
+            </select>
             <datalist id="rbac-subjects">{subjects.map(s => <option key={s.id} value={s.external_id} />)}</datalist>
             <select value={resourceType} onChange={(e) => setResourceType(e.target.value)}>
               <option value="host">Host</option>
@@ -1910,7 +1932,7 @@ function RBACView() {
           <div className="card-header"><h2>Subjects</h2></div>
           {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
             <table>
-              <thead><tr><th>Type</th><th>External ID</th><th>Name</th><th>Updated</th></tr></thead>
+              <thead><tr><th>Type</th><th>External ID</th><th>Name</th><th>Updated</th><th></th></tr></thead>
               <tbody>
                 {subjects.map(s => (
                   <tr key={s.id}>
@@ -1918,9 +1940,10 @@ function RBACView() {
                     <td className="mono">{s.external_id}</td>
                     <td>{s.display_name || '-'}</td>
                     <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(s.updated_at).toLocaleString()}</td>
+                    <td><button className="delete-btn" onClick={() => deleteSubject(s)}>Revoke</button></td>
                   </tr>
                 ))}
-                {subjects.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No subjects</td></tr>}
+                {subjects.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No subjects</td></tr>}
               </tbody>
             </table>
           )}
@@ -1929,7 +1952,7 @@ function RBACView() {
           <div className="card-header"><h2>Policies</h2></div>
           {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
             <table>
-              <thead><tr><th>Subject</th><th>Resource</th><th>Permission</th><th>Created</th></tr></thead>
+              <thead><tr><th>Subject</th><th>Resource</th><th>Permission</th><th>Created</th><th></th></tr></thead>
               <tbody>
                 {policies.map(p => (
                   <tr key={p.id}>
@@ -1937,9 +1960,10 @@ function RBACView() {
                     <td>{p.resource_type}<div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{p.resource_id || '*'}</div></td>
                     <td><span className="badge">{p.permission}</span></td>
                     <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(p.created_at).toLocaleString()}</td>
+                    <td><button className="delete-btn" onClick={() => deletePolicy(p)}>Revoke</button></td>
                   </tr>
                 ))}
-                {policies.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No policies</td></tr>}
+                {policies.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No policies</td></tr>}
               </tbody>
             </table>
           )}

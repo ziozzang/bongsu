@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
@@ -143,8 +144,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
 	s.mux.HandleFunc("GET /api/admin/rbac/subjects", s.handleListAccessSubjects)
 	s.mux.HandleFunc("POST /api/admin/rbac/subjects", s.handleUpsertAccessSubject)
+	s.mux.HandleFunc("DELETE /api/admin/rbac/subjects/{id}", s.handleDeleteAccessSubject)
 	s.mux.HandleFunc("GET /api/admin/rbac/policies", s.handleListAccessPolicies)
 	s.mux.HandleFunc("POST /api/admin/rbac/policies", s.handleUpsertAccessPolicy)
+	s.mux.HandleFunc("DELETE /api/admin/rbac/policies/{id}", s.handleDeleteAccessPolicy)
 	s.mux.HandleFunc("GET /api/admin/audit-logs", s.handleListAuditLogs)
 	s.mux.HandleFunc("GET /api/cve-db/stats", s.handleCveDbStats)
 	s.mux.HandleFunc("GET /api/cve-db/search", s.handleCveDbSearch)
@@ -2237,6 +2240,67 @@ func (s *Server) handleListAccessPolicies(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (s *Server) handleDeleteAccessSubject(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	subject, policyCount, err := s.db.DeleteAccessSubject(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("delete access subject: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	s.audit(r, "rbac.subject.delete", "access_subject", id, "ok", map[string]any{
+		"subject_type":       subject.SubjectType,
+		"external_id":        subject.ExternalID,
+		"display_name":       subject.DisplayName,
+		"revoked_policies":   policyCount,
+		"cascade_policy_del": true,
+	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (s *Server) handleDeleteAccessPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	policy, err := s.db.DeleteAccessPolicy(r.Context(), id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("delete access policy: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	s.audit(r, "rbac.policy.delete", "access_policy", id, "ok", map[string]any{
+		"subject_id":          policy.SubjectID,
+		"subject_type":        policy.SubjectType,
+		"subject_external_id": policy.SubjectExternalID,
+		"resource_type":       policy.ResourceType,
+		"resource_id":         policy.ResourceID,
+		"permission":          policy.Permission,
+	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
 func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -2244,6 +2308,7 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 	}
 	var body struct {
 		ID                string `json:"id"`
+		SubjectID         string `json:"subject_id"`
 		SubjectExternalID string `json:"subject_external_id"`
 		ResourceType      string `json:"resource_type"`
 		ResourceID        string `json:"resource_id"`
@@ -2253,8 +2318,12 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if body.SubjectExternalID == "" || body.ResourceType == "" {
-		http.Error(w, "subject_external_id and resource_type are required", http.StatusBadRequest)
+	if body.SubjectID == "" && body.SubjectExternalID == "" {
+		http.Error(w, "subject_id or subject_external_id is required", http.StatusBadRequest)
+		return
+	}
+	if body.ResourceType == "" {
+		http.Error(w, "resource_type is required", http.StatusBadRequest)
 		return
 	}
 	switch body.ResourceType {
@@ -2272,7 +2341,7 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 		http.Error(w, "invalid permission", http.StatusBadRequest)
 		return
 	}
-	if err := s.db.UpsertAccessPolicy(r.Context(), body.ID, body.SubjectExternalID, body.ResourceType, body.ResourceID, body.Permission); err != nil {
+	if err := s.db.UpsertAccessPolicy(r.Context(), body.ID, body.SubjectID, body.SubjectExternalID, body.ResourceType, body.ResourceID, body.Permission); err != nil {
 		log.Printf("upsert access policy: %v", err)
 		if strings.Contains(err.Error(), "not found") {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -2281,7 +2350,12 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	s.audit(r, "rbac.policy.upsert", "access_policy", body.SubjectExternalID, "ok", map[string]any{
+	subjectAuditID := body.SubjectExternalID
+	if subjectAuditID == "" {
+		subjectAuditID = body.SubjectID
+	}
+	s.audit(r, "rbac.policy.upsert", "access_policy", subjectAuditID, "ok", map[string]any{
+		"subject_id":    body.SubjectID,
 		"resource_type": body.ResourceType,
 		"resource_id":   body.ResourceID,
 		"permission":    body.Permission,

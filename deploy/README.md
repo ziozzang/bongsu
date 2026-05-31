@@ -221,8 +221,10 @@ spec:
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
 | `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
 | `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |
+| `DELETE` | `/api/admin/rbac/subjects/{id}` | Delete RBAC subject and its policies |
 | `GET` | `/api/admin/rbac/policies` | List RBAC policies, optionally filtered by `subject_external_id` |
-| `POST` | `/api/admin/rbac/policies` | Create RBAC policy |
+| `POST` | `/api/admin/rbac/policies` | Create RBAC policy by `subject_id` or `subject_external_id` |
+| `DELETE` | `/api/admin/rbac/policies/{id}` | Delete RBAC policy |
 | `GET` | `/api/admin/audit-logs` | Query audit log events by actor/action/resource/status; also available in Audit Log UI |
 | `POST` | `/api/scan-requests` | Request force scan for host/all |
 | `GET` | `/api/scan-requests` | List force scan requests with host-scoped RBAC |

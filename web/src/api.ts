@@ -55,6 +55,19 @@ async function requestJSON<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function requestEmpty<T>(path: string, method: string): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  const res = await fetch(API_BASE + path, { method, headers });
+  if (res.status === 401) {
+    clearApiKey();
+    if (onUnauthorized) onUnauthorized();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 async function download(path: string, filename: string, params?: Record<string, string>): Promise<void> {
   const headers: Record<string, string> = {};
   if (apiKey) headers['X-API-Key'] = apiKey;
@@ -325,8 +338,10 @@ export const api = {
     request<{ items: AccessPolicy[] }>('/admin/rbac/policies', params),
   upsertRbacSubject: (body: { subject_type?: string; external_id: string; display_name?: string }) =>
     requestJSON<{ status: string }>('/admin/rbac/subjects', body),
-  upsertRbacPolicy: (body: { subject_external_id: string; resource_type: string; resource_id?: string; permission?: string }) =>
+  deleteRbacSubject: (id: string) => requestEmpty<{ status: string }>(`/admin/rbac/subjects/${encodeURIComponent(id)}`, 'DELETE'),
+  upsertRbacPolicy: (body: { subject_id?: string; subject_external_id?: string; resource_type: string; resource_id?: string; permission?: string }) =>
     requestJSON<{ status: string }>('/admin/rbac/policies', body),
+  deleteRbacPolicy: (id: string) => requestEmpty<{ status: string }>(`/admin/rbac/policies/${encodeURIComponent(id)}`, 'DELETE'),
   updateTrivyDB: () => request<{status: string; message: string; trivy_db_ready: boolean; last_update: string}>('/admin/trivy-db/update', undefined, 'POST'),
   updateSecurityDB: () => request<{status: string; security_db: HealthStatus['security_db']}>('/admin/security-db/update', undefined, 'POST'),
   rematchCVEs: () => request<{matched: number; new_vulns: number; skipped: number}>('/admin/cve-db/rematch', undefined, 'POST'),

@@ -85,7 +85,7 @@ RBAC tables are present:
 - `access_subjects`: future users and groups from company identity systems.
 - `access_policies`: permissions on `host`, `container`, `image`, `asset_group`, or `all`.
 
-Runtime RBAC supports viewer API keys mapped to external subjects through `BONGSU_VIEWER_API_KEYS=key:subject`. Admins create and list `access_subjects` and `access_policies` through `/api/admin/rbac/*` or the dashboard RBAC view; viewer queries are scoped to allowed hosts across host, package, vulnerability, scan, and stats views. Policy creation requires a known subject so typos do not silently create ineffective access grants. Future SSO integration should replace static viewer keys with identity-provider subjects.
+Runtime RBAC supports viewer API keys mapped to external subjects through `BONGSU_VIEWER_API_KEYS=key:subject`. Admins create, list, and delete `access_subjects` and `access_policies` through `/api/admin/rbac/*` or the dashboard RBAC view; viewer queries are scoped to allowed hosts across host, package, vulnerability, scan, and stats views. Deleting a subject revokes all attached policies through database cascade. Policy creation accepts a subject UUID or external ID, and the dashboard uses UUIDs to avoid ambiguity when a user and group share the same external ID. Policy creation requires a known subject so typos do not silently create ineffective access grants. Future SSO integration should replace static viewer keys with identity-provider subjects.
 
 RBAC resource matching supports:
 
@@ -98,7 +98,7 @@ Container and image policies are resolved from the latest completed scan per hos
 
 ## Audit Trail
 
-Administration and agent events are written to append-only `audit_logs` rows. The current audit surface includes agent report submissions, force-scan request lifecycle events, scan deletion, SBOM export, vulnerability report export, Trivy DB upload/update, security DB import/export/update, CVE DB import/export/rematch/CVSS recalculation, vulnerability triage changes, RBAC subject/policy changes, and periodic security DB change hooks. Admins can query `/api/admin/audit-logs` with `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `status`, `limit`, and `offset`; the dashboard exposes the same data in the Audit Log view for operational review.
+Administration and agent events are written to append-only `audit_logs` rows. The current audit surface includes agent report submissions, force-scan request lifecycle events, scan deletion, SBOM export, vulnerability report export, Trivy DB upload/update, security DB import/export/update, CVE DB import/export/rematch/CVSS recalculation, vulnerability triage changes, RBAC subject/policy changes and deletions, and periodic security DB change hooks. Admins can query `/api/admin/audit-logs` with `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `status`, `limit`, and `offset`; the dashboard exposes the same data in the Audit Log view for operational review.
 
 ## Vulnerability Triage
 

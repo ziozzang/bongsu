@@ -1128,22 +1128,63 @@ JOIN access_subjects s ON s.id = p.subject_id`
 	return out, rows.Err()
 }
 
-func (db *DB) UpsertAccessPolicy(ctx context.Context, id, subjectExternalID, resourceType, resourceID, permission string) error {
+func (db *DB) DeleteAccessSubject(ctx context.Context, id string) (*models.AccessSubject, int, error) {
+	var policyCount int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM access_policies WHERE subject_id=$1`, id).Scan(&policyCount); err != nil {
+		return nil, 0, err
+	}
+	var item models.AccessSubject
+	err := db.QueryRowContext(ctx, `DELETE FROM access_subjects WHERE id=$1
+RETURNING id, subject_type, external_id, display_name, created_at, updated_at`, id).
+		Scan(&item.ID, &item.SubjectType, &item.ExternalID, &item.DisplayName, &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		return nil, 0, err
+	}
+	return &item, policyCount, nil
+}
+
+func (db *DB) DeleteAccessPolicy(ctx context.Context, id string) (*models.AccessPolicy, error) {
+	var item models.AccessPolicy
+	err := db.QueryRowContext(ctx, `WITH deleted AS (
+	DELETE FROM access_policies
+	WHERE id=$1
+	RETURNING id, subject_id, resource_type, resource_id, permission, created_at
+)
+SELECT d.id, d.subject_id, s.subject_type, s.external_id, d.resource_type, d.resource_id, d.permission, d.created_at
+FROM deleted d
+JOIN access_subjects s ON s.id = d.subject_id`, id).
+		Scan(&item.ID, &item.SubjectID, &item.SubjectType, &item.SubjectExternalID, &item.ResourceType, &item.ResourceID, &item.Permission, &item.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (db *DB) UpsertAccessPolicy(ctx context.Context, id, subjectID, subjectExternalID, resourceType, resourceID, permission string) error {
 	if id == "" {
 		id = uuid.New().String()
 	}
 	if resourceID == "" {
 		resourceID = "*"
 	}
-	var subjectID string
-	err := db.QueryRowContext(ctx, `SELECT id FROM access_subjects WHERE external_id=$1 ORDER BY subject_type LIMIT 1`, subjectExternalID).Scan(&subjectID)
-	if err == sql.ErrNoRows {
-		return fmt.Errorf("access subject %q not found", subjectExternalID)
+	if subjectID == "" {
+		err := db.QueryRowContext(ctx, `SELECT id FROM access_subjects WHERE external_id=$1 ORDER BY subject_type LIMIT 1`, subjectExternalID).Scan(&subjectID)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("access subject %q not found", subjectExternalID)
+		}
+		if err != nil {
+			return err
+		}
+	} else {
+		var exists bool
+		if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM access_subjects WHERE id=$1)`, subjectID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("access subject id %q not found", subjectID)
+		}
 	}
-	if err != nil {
-		return err
-	}
-	_, err = db.ExecContext(ctx, `INSERT INTO access_policies (id, subject_id, resource_type, resource_id, permission, created_at)
+	_, err := db.ExecContext(ctx, `INSERT INTO access_policies (id, subject_id, resource_type, resource_id, permission, created_at)
 VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (subject_id, resource_type, resource_id, permission) DO NOTHING`,
 		id, subjectID, resourceType, resourceID, permission)
