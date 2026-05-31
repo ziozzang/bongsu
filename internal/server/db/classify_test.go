@@ -20,6 +20,7 @@ func TestClassifySecuritySource(t *testing.T) {
 		{"osv pypi", "osv", `[{"name":"django","ecosystem":"PyPI"}]`, "code-library", "PyPI"},
 		{"osv debian", "osv", `[{"name":"openssl","ecosystem":"Debian"}]`, "os-package", "Debian"},
 		{"nvd fallback", "nvd", `[]`, "general-cve", ""},
+		{"cisa kev fallback", "cisa-kev", `[]`, "general-cve", ""},
 		{"custom fallback", "internal", ``, "custom", ""},
 	}
 
@@ -1520,6 +1521,26 @@ func TestListVulnerabilitiesSupportsFindingSourceFilter(t *testing.T) {
 	fn := body[fnStart : fnStart+fnEnd]
 	if !strings.Contains(fn, "COALESCE(v.finding_source, 'scanner')=$") {
 		t.Fatalf("finding source filter SQL missing: %s", fn)
+	}
+}
+
+func TestListVulnerabilitiesExposesCisaKevPrioritization(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"Exploited     bool",
+		"&v.Exploited",
+		`kev.source = 'cisa-kev'`,
+		`kev.vulnerability_id = v.vulnerability_id`,
+		"if f.Exploited",
+		`"exploited": "EXISTS(SELECT 1 FROM cve_database kev`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("ListVulnerabilities KEV prioritization missing %q", want)
+		}
 	}
 }
 

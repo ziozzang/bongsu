@@ -507,7 +507,7 @@ func ClassifySecuritySource(source, affectedProducts string) (string, string) {
 		return "code-library", ""
 	case "trivy":
 		return "os-package", ""
-	case "nvd":
+	case "nvd", "cisa-kev":
 		return "general-cve", ""
 	default:
 		return "custom", ""
@@ -1003,7 +1003,8 @@ const vulnCols = `id, package_id, scan_id, host_id, vulnerability_id, severity, 
 const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name,
 COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), ''),
-v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, '')`
+v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, ''),
+EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)`
 
 const vulnTriageJoin = ` LEFT JOIN LATERAL (
 	SELECT status, reason, comment, expires_at, updated_by, updated_at
@@ -1024,7 +1025,7 @@ func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnera
 		&v.PkgName, &v.PkgType, &v.Ecosystem, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
 		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
 		&v.FindingSource, &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
-		&v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
+		&v.Exploited, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
 }
 
 type VulnerabilityInsertResult struct {
@@ -2422,6 +2423,7 @@ type VulnFilter struct {
 	TriageStatus  string
 	FindingSource string
 	Overdue       bool
+	Exploited     bool
 	PkgName       string
 	Container     string
 	Owner         string
@@ -2507,6 +2509,9 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	}
 	if f.Overdue {
 		baseQ += overdueSQLCondition()
+	}
+	if f.Exploited {
+		baseQ += ` AND EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)`
 	}
 
 	if f.HideFixed {
@@ -3376,6 +3381,7 @@ func vulnSortExpr(col string, desc bool) string {
 		"cvss_score": "v.cvss_score", "pkg_name": "v.pkg_name",
 		"host_id": "v.host_id", "container": "v.container", "installed_version": "v.installed_version",
 		"fixed_version": "v.fixed_version", "created_at": "v.created_at", "due_at": "v.created_at",
+		"exploited": "EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)",
 		"pkg_type":  "COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), '')",
 		"ecosystem": "COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), '')",
 		"owner":     "h.owner", "team": "h.team", "environment": "h.environment", "criticality": "h.criticality",

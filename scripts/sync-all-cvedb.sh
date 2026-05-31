@@ -1,6 +1,6 @@
 #!/bin/bash
 # sync-all-cvedb.sh — Download from all CVE sources and import into Bongsu
-# Sources: OSV.dev (all ecosystems), NVD, Trivy DB
+# Sources: CISA KEV, OSV.dev (all ecosystems), NVD, Trivy DB
 # Usage: ./sync-all-cvedb.sh [server_url] [api_key]
 # Environment: NVD_API_KEY for higher NVD rate limits (optional)
 
@@ -55,8 +55,24 @@ echo " Server: ${SERVER_URL}"
 echo "=========================================="
 echo ""
 
-# --- 1. OSV.dev ---
-echo "[1/3] Downloading OSV.dev data..."
+# --- 1. CISA KEV ---
+echo "[1/4] Downloading CISA KEV data..."
+CISA_KEV_FILE="${TMPDIR}/cisa-kev.jsonl"
+"${SCRIPT_DIR}/download-cisa-kev.sh" "${CISA_KEV_FILE}"
+
+if [ -s "${CISA_KEV_FILE}" ]; then
+    echo "  Importing CISA KEV data ($(wc -l < "${CISA_KEV_FILE}") entries, $(du -h "${CISA_KEV_FILE}" | cut -f1))..."
+    IMPORTED=$(import_cve_file "${CISA_KEV_FILE}" "cisa-kev")
+    echo "  Imported/updated: ${IMPORTED}"
+    TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+else
+    echo "  ERROR: no CISA KEV data"
+    FAILED_SOURCES+=("cisa-kev:no-data")
+fi
+echo ""
+
+# --- 2. OSV.dev ---
+echo "[2/4] Downloading OSV.dev data..."
 OSV_FILE="${TMPDIR}/osv-all.jsonl"
 "${SCRIPT_DIR}/download-osv.sh" "${OSV_FILE}" \
     "PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,Alpine,Debian,SUSE,AlmaLinux,Chainguard"
@@ -72,8 +88,8 @@ else
 fi
 echo ""
 
-# --- 2. NVD ---
-echo "[2/3] Downloading NVD data..."
+# --- 3. NVD ---
+echo "[3/4] Downloading NVD data..."
 CURRENT_YEAR=$(date +%Y)
 NVD_ALL_FILE="${TMPDIR}/nvd-all.jsonl"
 NVD_FAILED=0
@@ -109,8 +125,8 @@ else
 fi
 echo ""
 
-# --- 3. Trivy DB ---
-echo "[3/3] Extracting Trivy DB CVE data..."
+# --- 4. Trivy DB ---
+echo "[4/4] Extracting Trivy DB CVE data..."
 TRIVY_FILE="${TMPDIR}/trivy-cve.jsonl"
 TRIVY_FAILED=0
 if command -v trivy &>/dev/null || [ -x /opt/bongsu/bin/trivy ]; then

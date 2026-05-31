@@ -1574,6 +1574,23 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	}
 }
 
+func TestVulnerabilityAPIExposesExploitedFilterAndExportColumn(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`Exploited:     r.URL.Query().Get("exploited") == "true"`,
+		`"exploited"`,
+		`strconv.FormatBool(v.Exploited)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("vulnerability API exploited support missing %q", want)
+		}
+	}
+}
+
 func TestSecurityRecalculationStatusIncludesAdminPendingReason(t *testing.T) {
 	s := &Server{securityRecalcRunning: true, securityRecalcPending: true, securityRecalcReason: "osv import"}
 	publicStatus := s.securityRecalculationStatus(false)
@@ -1636,6 +1653,34 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard DB health display missing %q", want)
 		}
+	}
+}
+
+func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBody := string(appOut)
+	apiBody := string(apiOut)
+	for _, want := range []string{
+		"exploitedOnly",
+		"params.exploited = 'true'",
+		"['exploited', 'KEV']",
+		"CISA KEV",
+		"Known exploited",
+		"v.exploited",
+	} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("dashboard KEV prioritization missing %q", want)
+		}
+	}
+	if !strings.Contains(apiBody, "exploited: boolean") || !strings.Contains(apiBody, "exploited?: string") {
+		t.Fatal("web API types must expose exploited vulnerability fields and filter")
 	}
 }
 
@@ -1728,6 +1773,8 @@ func TestSecurityDBSyncScriptFailsOnImportErrors(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"import_cve_file()",
+		`download-cisa-kev.sh`,
+		`import_cve_file "${CISA_KEV_FILE}" "cisa-kev"`,
 		"curl -fsS -X POST",
 		`data.get("status") != "ok"`,
 		"invalid import response",
@@ -1749,6 +1796,31 @@ func TestSecurityDBSyncScriptFailsOnImportErrors(t *testing.T) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("sync-all-cvedb must not hide import failures with %q", forbidden)
 		}
+	}
+}
+
+func TestDownloadCisaKevScriptIsFailClosedAndAtomic(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/download-cisa-kev.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`known_exploited_vulnerabilities.json`,
+		`OUTPUT_TMP="${OUTPUT}.tmp.$$"`,
+		`urllib.request.urlopen(req, timeout=180)`,
+		`CISA KEV feed produced no vulnerabilities`,
+		`CISA KEV conversion produced no CVE entries`,
+		`"source": "cisa-kev"`,
+		`"known_exploited": True`,
+		`mv "${OUTPUT_TMP}" "${OUTPUT}"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("download-cisa-kev must fail closed and write atomically, missing %q", want)
+		}
+	}
+	if strings.Contains(body, `> "${OUTPUT}"`) {
+		t.Fatal("download-cisa-kev must not write partial data directly to the final output")
 	}
 }
 

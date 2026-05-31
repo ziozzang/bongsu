@@ -1118,16 +1118,18 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [showNoFix, setShowNoFix] = useState(false);
   const [showMismatch, setShowMismatch] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
+  const [exploitedOnly, setExploitedOnly] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
   const limit = 50;
 
-  const load = useCallback((p: number, sev: string, triage: string, source: string, overdue: boolean, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
+  const load = useCallback((p: number, sev: string, triage: string, source: string, overdue: boolean, exploited: boolean, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
     setLoading(true);
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
     if (sev) params.severity = sev;
     if (triage) params.triage_status = triage;
     if (source) params.finding_source = source;
     if (overdue) params.overdue = 'true';
+    if (exploited) params.exploited = 'true';
     if (hId) params.host_id = hId;
     if (cont) params.container = cont;
     if (own) params.owner = own;
@@ -1158,16 +1160,16 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { load(0, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
+  useEffect(() => { load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
 
-  const handleSearch = () => { load(0, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
+  const handleSearch = () => { load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
-    const nextDesc = sortBy === col ? !sortDesc : col === 'cvss_score' || col === 'severity';
+    const nextDesc = sortBy === col ? !sortDesc : col === 'cvss_score' || col === 'severity' || col === 'exploited';
     setSortBy(col);
     setSortDesc(nextDesc);
-    load(0, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
+    load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
   };
 
   const sortArrow = (col: string) => {
@@ -1182,6 +1184,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     if (triageStatus) params.triage_status = triageStatus;
     if (findingSource) params.finding_source = findingSource;
     if (overdueOnly) params.overdue = 'true';
+    if (exploitedOnly) params.exploited = 'true';
     if (hostId) params.host_id = hostId;
     if (container) params.container = container;
     if (owner) params.owner = owner;
@@ -1210,7 +1213,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const criticalities = Array.from(new Set(Object.values(hostMeta).map(h => h.criticality || '').filter(Boolean))).sort();
 
   const cols: [string, string][] = [
-    ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
+    ['exploited', 'KEV'], ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
     ['pkg_name', 'Package'], ['owner', 'Owner'], ['environment', 'Env'], ['container', 'Container'], ['pkg_type', 'Pkg Type'],
     ['installed_version', 'Installed'], ['fixed_version', 'Fixed'], ['due_at', 'Due'],
   ];
@@ -1290,6 +1293,9 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             <input type="checkbox" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} /> Overdue
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={exploitedOnly} onChange={e => setExploitedOnly(e.target.checked)} /> CISA KEV
+          </label>
           <button className="filter-btn" onClick={() => exportVulns('csv')}>Export CSV</button>
           <button className="filter-btn" onClick={() => exportVulns('json')}>JSON</button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{exportMsg || `${total} results`}</span>
@@ -1314,6 +1320,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   <td><span className="host-link">{hostMap[v.host_id] || v.host_id.slice(0, 8)}</span></td>
                   <td><span className="badge">{(v.triage_status || 'open').replace('_', ' ')}</span></td>
                   <td><span className="badge">{findingSourceLabel(v.finding_source)}</span></td>
+                  <td>{v.exploited ? <span className="badge badge-critical">KEV</span> : <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                   <td className="mono">
                     <span className="host-link" style={{ color: 'var(--primary)' }}>{v.vulnerability_id}</span>
                   </td>
@@ -1346,14 +1353,14 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   </td>
                 </tr>
               ))}
-              {vulns.length === 0 && <tr><td colSpan={14} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
+              {vulns.length === 0 && <tr><td colSpan={15} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
             </tbody>
           </table>
         )}
         <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
+          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
+          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
         </div>
       </div>
     </>
@@ -1434,6 +1441,10 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         <div className="stat-card">
           <div className="label">Source</div>
           <div style={{ fontSize: '0.875rem' }}>{findingSourceLabel(vuln.finding_source)}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">CISA KEV</div>
+          <div style={{ fontSize: '0.875rem' }}>{vuln.exploited ? <span className="badge badge-critical">Known exploited</span> : '-'}</div>
         </div>
         <div className="stat-card">
           <div className="label">Triage</div>

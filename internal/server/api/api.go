@@ -1211,6 +1211,7 @@ func (s *Server) vulnFilterFromRequestWithScope(r *http.Request, scope db.Access
 		TriageStatus:  r.URL.Query().Get("triage_status"),
 		FindingSource: findingSource,
 		Overdue:       r.URL.Query().Get("overdue") == "true",
+		Exploited:     r.URL.Query().Get("exploited") == "true",
 		PkgName:       r.URL.Query().Get("pkg_name"),
 		Container:     r.URL.Query().Get("container"),
 		Owner:         r.URL.Query().Get("owner"),
@@ -1328,7 +1329,7 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
-		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "severity", "cvss_score", "triage_status",
+		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "exploited", "severity", "cvss_score", "triage_status",
 		"sla_days", "due_at", "overdue", "pkg_name", "pkg_type", "ecosystem", "installed_version", "fixed_version", "finding_source", "pkg_path", "title", "primary_url",
 		"triage_reason", "triage_comment", "triage_expires_at", "triage_updated_by", "created_at",
 	}); err != nil {
@@ -1343,6 +1344,7 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 			csvSafeCell(v.HostCriticality),
 			csvSafeCell(v.Container),
 			csvSafeCell(v.VulnerabilityID),
+			strconv.FormatBool(v.Exploited),
 			csvSafeCell(v.Severity),
 			fmt.Sprintf("%.1f", v.CVSSScore),
 			csvSafeCell(exportStatusLabel(v.TriageStatus)),
