@@ -315,4 +315,11 @@ func TestInsertableVulnerabilitiesDropsDanglingRows(t *testing.T) {
 	if len(items) != 1 || items[0].ID != valid.ID {
 		t.Fatalf("insertable vulnerabilities = %#v, want only %s", items, valid.ID)
 	}
+	if skipped := skippedVulnerabilities([]models.Vulnerability{
+		{ID: "vuln-empty-package", ScanID: "scan-1", HostID: "host-1", VulnerabilityID: "CVE-2026-0002"},
+		valid,
+		{ID: "vuln-empty-cve", PackageID: "pkg-1", ScanID: "scan-1", HostID: "host-1"},
+	}); skipped != 2 {
+		t.Fatalf("skipped vulnerabilities = %d, want 2", skipped)
+	}
 }

@@ -657,21 +657,28 @@ func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnera
 		&v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
 }
 
-func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerability) error {
+type VulnerabilityInsertResult struct {
+	Inserted int
+	Skipped  int
+}
+
+func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerability) (*VulnerabilityInsertResult, error) {
+	result := &VulnerabilityInsertResult{}
+	result.Skipped = skippedVulnerabilities(vulns)
 	vulns = insertableVulnerabilities(vulns)
 	if len(vulns) == 0 {
-		return nil
+		return result, nil
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer tx.Rollback()
 
 	q := fmt.Sprintf(`INSERT INTO vulnerabilities (%s) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())`, vulnCols)
 	stmt, err := tx.PrepareContext(ctx, q)
 	if err != nil {
-		return err
+		return result, err
 	}
 	defer stmt.Close()
 
@@ -684,10 +691,11 @@ func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerab
 			vulns[i].PkgPath, vulns[i].LayerID, vulns[i].Container,
 		)
 		if err != nil {
-			return err
+			return result, err
 		}
+		result.Inserted++
 	}
-	return tx.Commit()
+	return result, tx.Commit()
 }
 
 func insertableVulnerabilities(vulns []models.Vulnerability) []models.Vulnerability {
@@ -699,6 +707,10 @@ func insertableVulnerabilities(vulns []models.Vulnerability) []models.Vulnerabil
 		out = append(out, v)
 	}
 	return out
+}
+
+func skippedVulnerabilities(vulns []models.Vulnerability) int {
+	return len(vulns) - len(insertableVulnerabilities(vulns))
 }
 
 func (db *DB) InsertUserAccounts(ctx context.Context, users []models.UserAccount) error {

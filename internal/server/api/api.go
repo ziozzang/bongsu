@@ -449,6 +449,8 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("insert packages: %v", err)
 	}
 
+	insertedVulns := 0
+	skippedVulns := 0
 	if len(report.Vulns) > 0 {
 		for i := range report.Vulns {
 			if report.Vulns[i].ID == "" {
@@ -457,8 +459,11 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 			report.Vulns[i].ScanID = report.ScanID
 			report.Vulns[i].HostID = report.Host.ID
 		}
-		if err := s.db.InsertVulnerabilities(ctx, report.Vulns); err != nil {
+		if result, err := s.db.InsertVulnerabilities(ctx, report.Vulns); err != nil {
 			log.Printf("insert vulns: %v", err)
+		} else if result != nil {
+			insertedVulns += result.Inserted
+			skippedVulns += result.Skipped
 		}
 		if n, err := s.db.EnrichVulnerabilities(ctx); err == nil && n > 0 {
 			log.Printf("Enriched %d vulnerabilities with CVE DB info", n)
@@ -477,8 +482,11 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 				vulns[i].ScanID = report.ScanID
 				vulns[i].HostID = report.Host.ID
 			}
-			if err := s.db.InsertVulnerabilities(ctx, vulns); err != nil {
+			if result, err := s.db.InsertVulnerabilities(ctx, vulns); err != nil {
 				log.Printf("insert matched vulns: %v", err)
+			} else if result != nil {
+				insertedVulns += result.Inserted
+				skippedVulns += result.Skipped
 			}
 			if n, err := s.db.EnrichVulnerabilities(ctx); err == nil && n > 0 {
 				log.Printf("Enriched %d vulnerabilities with CVE DB scores", n)
@@ -536,6 +544,8 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"hostname":         report.Host.Hostname,
 		"packages":         len(report.Packages),
 		"vulnerabilities":  vulnTotal,
+		"vulns_inserted":   insertedVulns,
+		"vulns_skipped":    skippedVulns,
 		"containers":       len(report.Containers),
 		"inventory_status": inventoryStatus,
 		"users":            len(report.Users),
