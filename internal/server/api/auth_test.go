@@ -671,6 +671,56 @@ func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
 	}
 }
 
+func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
+	for _, path := range []string{
+		"../../../deploy/docker-compose.yml",
+		"../../../deploy/docker-compose.airgap.yml",
+	} {
+		t.Run(path, func(t *testing.T) {
+			out, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := string(out)
+			for _, want := range []string{
+				"${BONGSU_DB_PASSWORD:?Set BONGSU_DB_PASSWORD in .env}",
+				"${BONGSU_AGENT_API_KEY:?Set BONGSU_AGENT_API_KEY in .env}",
+				"${BONGSU_INSTALL_TOKEN:?Set BONGSU_INSTALL_TOKEN in .env}",
+				`pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"`,
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("compose hardening missing %q in %s", want, path)
+				}
+			}
+			for _, forbidden := range []string{
+				"${BONGSU_DB_PASSWORD:-bongsu}",
+				"POSTGRES_PASSWORD: ${BONGSU_DB_PASSWORD:-bongsu}",
+				"BONGSU_AGENT_API_KEY: ${BONGSU_AGENT_API_KEY:-${BONGSU_API_KEY}}",
+				"BONGSU_INSTALL_TOKEN: ${BONGSU_INSTALL_TOKEN:-}",
+				"pg_isready -U bongsu",
+			} {
+				if strings.Contains(body, forbidden) {
+					t.Fatalf("compose must not keep weak default %q in %s", forbidden, path)
+				}
+			}
+		})
+	}
+}
+
+func TestDeployEnvExampleKeepsWebAuthEnabled(t *testing.T) {
+	out, err := os.ReadFile("../../../deploy/.env.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	if !strings.Contains(body, "BONGSU_WEB_AUTH=true") {
+		t.Fatal("example deployment must default web auth to enabled")
+	}
+	if strings.Contains(body, "BONGSU_WEB_AUTH=false") {
+		t.Fatal("example deployment must not default web auth to disabled")
+	}
+}
+
 func TestInstallerAndBinaryDownloadsAreAudited(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {

@@ -31,7 +31,7 @@ cd deploy && docker compose up -d --build
 curl http://localhost:8080/api/health
 
 # 4. Install agent on target host
-./scripts/install-agent.sh http://your-server:8080 your-api-key
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://your-server:8080/api/install.sh" | sudo bash
 ```
 
 ## Air-Gapped Deployment
@@ -79,7 +79,7 @@ cd deploy && docker compose -f docker-compose.airgap.yml up -d
 ./scripts/import-security-db-bundle.sh http://localhost:8080 your-secret-key ../bongsu-security-db-bundle.tar.gz
 
 # 6. Install agents on target hosts
-./scripts/install-agent.sh http://server-host:8080 your-secret-key
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server-host:8080/api/install.sh" | sudo bash
 ```
 
 ## Updating Vulnerability Database (CVSS Data)
@@ -103,7 +103,7 @@ BONGSU_AUTO_RESCAN_ON_DB_UPDATE=true
 BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS=720
 ```
 
-After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Recalculation is serialized and coalesced, so a multi-source sync that imports OSV, NVD, and Trivy data does not run overlapping recalculation jobs. CVE JSONL imports are committed as a single transaction; malformed JSONL or row-level insert failures reject the whole payload and record a failed audit event. Active automatic rescan requests are deduplicated per host in the database, so overlapping DB update hooks do not create duplicate work. Agents running in daemon mode pick those requests up through the normal force-scan polling path; claimed scan requests record the claiming host and can only be completed by that same host.
+After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Recalculation is serialized and coalesced, so a multi-source sync that imports OSV, NVD, and Trivy data does not run overlapping recalculation jobs. CVE JSONL imports are committed as a single transaction; malformed JSONL or row-level insert failures reject the whole payload and record a failed audit event. Pending automatic rescan requests are deduplicated per host in the database, so overlapping DB update hooks do not create duplicate pending work. If a new CVE DB update lands while a previous automatic rescan is already claimed, bongsu still leaves a follow-up pending rescan for the newer DB contents. Agents running in daemon mode pick those requests up through the normal force-scan polling path; claimed scan requests record the claiming host and can only be completed by that same host.
 
 ### Air-Gapped Environment
 
@@ -164,7 +164,7 @@ spec:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BONGSU_API_KEY` | *required* | API key for authentication |
-| `BONGSU_AGENT_API_KEY` | `BONGSU_API_KEY` | Agent-only report upload and force-scan polling key |
+| `BONGSU_AGENT_API_KEY` | *required* | Agent-only report upload and force-scan polling key; keep it distinct from the admin key |
 | `BONGSU_INSTALL_TOKEN` | *required for installer* | Token required for `/api/install.sh`; binary downloads accept this token or an admin API key header |
 | `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC |
 | `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
@@ -200,7 +200,7 @@ spec:
 | `BONGSU_RETENTION_SCAN_REQUEST_DAYS` | `90` | Default completed/failed/cancelled scan request retention |
 | `BONGSU_RETENTION_AUDIT_DAYS` | `365` | Default audit log retention for admin prune action |
 | `BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES` | `60` | Requeue claimed force-scan requests after this age |
-| `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login) |
+| `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login for private lab networks only) |
 
 ### Agent
 
