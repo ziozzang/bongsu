@@ -243,12 +243,14 @@ func GenerateCycloneDX(pkgs []models.Package, host models.Host) ([]byte, error) 
 func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	docID := "SPDXRef-DOCUMENT"
+	docName := "bongsu-" + sanitizeSPDXID(defaultSPDXName(host.Hostname, host.ID))
+	namespaceID := sanitizeSPDXID(defaultSPDXName(host.ID, host.Hostname))
 	doc := spdxDocument{
 		SPDXID:            docID,
 		SPDXVersion:       "SPDX-2.3",
-		Name:              fmt.Sprintf("bongsu-%s", defaultSPDXName(host.Hostname, host.ID)),
+		Name:              docName,
 		DataLicense:       "CC0-1.0",
-		DocumentNamespace: fmt.Sprintf("https://bongsu.local/spdx/%s/%d", defaultSPDXName(host.ID, host.Hostname), time.Now().UnixNano()),
+		DocumentNamespace: fmt.Sprintf("https://bongsu.local/spdx/%s/%d", namespaceID, time.Now().UnixNano()),
 		CreationInfo: spdxCreationInfo{
 			Created:  now,
 			Creators: []string{"Tool: bongsu-0.1.0"},

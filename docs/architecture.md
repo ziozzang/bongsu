@@ -125,7 +125,7 @@ Findings expose computed SLA fields from first-seen time and severity: `sla_days
 
 ## SBOM Export
 
-Each host can export its latest completed package inventory as CycloneDX 1.5 JSON through `/api/hosts/{id}/sbom` or SPDX 2.3 JSON through `/api/hosts/{id}/sbom?format=spdx`. Exports include bongsu host/package context such as host ID, OS, asset type, container/image identifiers, source, package type, ecosystem, file path, and target. SPDX packages include purl external references, deterministic package verification codes based on stable package identity rather than database row IDs, and explicit `NOASSERTION` license/copyright/supplier fields when the scanner did not collect authoritative values. Viewer RBAC is enforced before export, and successful exports are audited as `sbom.export`.
+Each host can export its latest completed package inventory as CycloneDX 1.5 JSON through `/api/hosts/{id}/sbom` or SPDX 2.3 JSON through `/api/hosts/{id}/sbom?format=spdx`. Exports include bongsu host/package context such as host ID, OS, asset type, container/image identifiers, source, package type, ecosystem, file path, and target. SPDX packages include purl external references, deterministic package verification codes based on stable package identity rather than database row IDs, sanitized document names/namespaces derived from host identity, and explicit `NOASSERTION` license/copyright/supplier fields when the scanner did not collect authoritative values. Viewer RBAC is enforced before export, and successful exports are audited as `sbom.export`.
 
 ## Vulnerability Report Export
 

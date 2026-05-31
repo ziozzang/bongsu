@@ -2,6 +2,7 @@ package cvematch
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
@@ -166,5 +167,29 @@ func TestSPDXPackageVerificationCodeIgnoresRowIDs(t *testing.T) {
 	changed := spdxPackageVerificationCode(spdxPackageIdentity(next)...)
 	if changed == got {
 		t.Fatal("verification code should change when package version changes")
+	}
+}
+
+func TestGenerateSPDXSanitizesDocumentIdentity(t *testing.T) {
+	host := models.Host{ID: "host/with spaces", Hostname: "build node/1", OSName: "Ubuntu"}
+	pkgs := []models.Package{{Name: "openssl", Version: "3.0.13", PkgType: "deb"}}
+	data, err := GenerateSPDX(pkgs, host)
+	if err != nil {
+		t.Fatalf("GenerateSPDX: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unmarshal spdx: %v", err)
+	}
+	name := doc["name"].(string)
+	if strings.ContainsAny(name, " /") {
+		t.Fatalf("document name is not sanitized: %q", name)
+	}
+	ns := doc["documentNamespace"].(string)
+	if strings.Contains(ns, " ") {
+		t.Fatalf("namespace contains a space: %q", ns)
+	}
+	if strings.Contains(ns, "host/with spaces") {
+		t.Fatalf("namespace contains unsanitized host id: %q", ns)
 	}
 }
