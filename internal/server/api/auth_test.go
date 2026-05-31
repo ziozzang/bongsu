@@ -178,6 +178,15 @@ func TestHostInventoryStatus(t *testing.T) {
 	}
 }
 
+func TestReportAuditStatus(t *testing.T) {
+	if got := reportAuditStatus(0); got != "ok" {
+		t.Fatalf("status = %q, want ok", got)
+	}
+	if got := reportAuditStatus(2); got != "degraded" {
+		t.Fatalf("status = %q, want degraded", got)
+	}
+}
+
 func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{

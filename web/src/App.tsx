@@ -2254,6 +2254,7 @@ function AuditLogView() {
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All Status</option>
             <option value="ok">OK</option>
+            <option value="degraded">Degraded</option>
             <option value="failed">Failed</option>
             <option value="cancelled">Cancelled</option>
           </select>

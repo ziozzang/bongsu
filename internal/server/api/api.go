@@ -539,7 +539,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if len(report.Packages) == 0 {
 		inventoryStatus = "empty"
 	}
-	s.audit(r, "agent.report", "scan", report.ScanID, "ok", map[string]any{
+	s.audit(r, "agent.report", "scan", report.ScanID, reportAuditStatus(skippedVulns), map[string]any{
 		"host_id":          report.Host.ID,
 		"hostname":         report.Host.Hostname,
 		"packages":         len(report.Packages),
@@ -573,6 +573,13 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"scan_id": report.ScanID,
 	})
+}
+
+func reportAuditStatus(skippedVulns int) string {
+	if skippedVulns > 0 {
+		return "degraded"
+	}
+	return "ok"
 }
 
 func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
