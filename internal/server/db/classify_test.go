@@ -328,6 +328,26 @@ func TestCveEnrichmentFixedVersionSQLIsPackageAware(t *testing.T) {
 	}
 }
 
+func TestCvePackageEcosystemMismatchFilterChecksAllAffectedProducts(t *testing.T) {
+	got := cvePackageEcosystemMismatchFilter("v")
+	for _, want := range []string{
+		"jsonb_array_elements",
+		"NOT EXISTS",
+		"p.id = v.package_id",
+		"c.vulnerability_id = v.vulnerability_id",
+		"ap->>'ecosystem'",
+		"lower(ap->>'name')",
+		"p.ecosystem",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("ecosystem mismatch filter missing %q: %s", want, got)
+		}
+	}
+	if strings.Contains(got, "affected_products->0") {
+		t.Fatalf("ecosystem mismatch filter must not inspect only first affected product: %s", got)
+	}
+}
+
 func TestInsertableVulnerabilitiesDropsDanglingRows(t *testing.T) {
 	valid := models.Vulnerability{
 		ID:              "vuln-1",
