@@ -176,6 +176,7 @@ spec:
 | `BONGSU_SECURITY_DB_INTERVAL_HOURS` | `6` | Security source sync interval |
 | `BONGSU_AUTO_RESCAN_ON_DB_UPDATE` | `true` | Queue background rescans after security DB changes |
 | `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` | `720` | Only auto-rescan hosts seen within this many hours (`0`=all hosts) |
+| `BONGSU_VULN_EXPORT_MAX_ROWS` | `100000` | Maximum vulnerability rows per report export |
 | `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login) |
 
 ### Agent
@@ -196,6 +197,7 @@ spec:
 | `GET` | `/api/hosts` | List hosts |
 | `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON |
 | `GET` | `/api/vulnerabilities` | List CVEs (supports `sort_by`, `severity`, pagination) |
+| `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON |
 | `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope |
 | `GET` | `/api/packages` | List packages (supports `sort_by`, `q`, filters, pagination) |
 | `GET` | `/api/packages/{id}/vulnerabilities` | Package vulnerability details |

@@ -549,6 +549,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [containers, setContainers] = useState<string[]>([]);
   const [showNoFix, setShowNoFix] = useState(false);
   const [showMismatch, setShowMismatch] = useState(false);
+  const [exportMsg, setExportMsg] = useState('');
   const limit = 50;
 
   const load = useCallback((p: number, sev: string, triage: string, hId: string, cont: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
@@ -597,6 +598,27 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   };
 
   const badgeClass = (sev: string) => `badge badge-${sev.toLowerCase()}`;
+  const currentExportParams = (format: 'csv' | 'json') => {
+    const params: Record<string, string> = { format };
+    if (severity) params.severity = severity;
+    if (triageStatus) params.triage_status = triageStatus;
+    if (hostId) params.host_id = hostId;
+    if (container) params.container = container;
+    if (pkgQuery) params.pkg_name = pkgQuery;
+    if (sortBy) { params.sort_by = sortBy; params.sort_order = sortDesc ? 'desc' : 'asc'; }
+    if (showNoFix) params.show_no_fix = 'true';
+    if (showMismatch) params.show_mismatch = 'true';
+    return params;
+  };
+  const exportVulns = async (format: 'csv' | 'json') => {
+    setExportMsg('Exporting...');
+    try {
+      await api.exportVulnerabilities(currentExportParams(format));
+      setExportMsg('Exported');
+    } catch {
+      setExportMsg('Export failed');
+    }
+  };
 
   const cols: [string, string][] = [
     ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
@@ -654,7 +676,9 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             <input type="checkbox" checked={showMismatch} onChange={e => setShowMismatch(e.target.checked)} /> Wrong ecosystem
           </label>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{total} results</span>
+          <button className="filter-btn" onClick={() => exportVulns('csv')}>Export CSV</button>
+          <button className="filter-btn" onClick={() => exportVulns('json')}>JSON</button>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{exportMsg || `${total} results`}</span>
         </div>
       </div>
       <div className="card">

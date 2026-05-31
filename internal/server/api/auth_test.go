@@ -2,7 +2,11 @@ package api
 
 import (
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
 func TestAuthSeparation(t *testing.T) {
@@ -104,5 +108,32 @@ func TestAuditActorAndClientIP(t *testing.T) {
 	req.Header.Set("X-API-Key", "agent-key")
 	if got := s.actorType(req); got != "agent" {
 		t.Fatalf("agent actor type = %q", got)
+	}
+}
+
+func TestWriteVulnerabilityCSV(t *testing.T) {
+	var b strings.Builder
+	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{
+		HostID:          "host-1",
+		Container:       "api",
+		VulnerabilityID: "CVE-2026-0001",
+		Severity:        "HIGH",
+		CVSSScore:       8.1,
+		TriageStatus:    "accepted_risk",
+		PkgName:         "openssl",
+		InstalledVer:    "1.0.0",
+		FixedVersion:    "1.0.1",
+		Title:           "csv title",
+		CreatedAt:       time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
+	}})
+	if err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	out := b.String()
+	if !strings.Contains(out, "vulnerability_id") {
+		t.Fatal("missing csv header")
+	}
+	if !strings.Contains(out, "CVE-2026-0001") || !strings.Contains(out, "accepted_risk") {
+		t.Fatalf("missing csv values: %s", out)
 	}
 }

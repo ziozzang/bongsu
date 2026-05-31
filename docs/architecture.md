@@ -79,7 +79,7 @@ Runtime RBAC supports viewer API keys mapped to external subjects through `BONGS
 
 ## Audit Trail
 
-Administration and agent events are written to append-only `audit_logs` rows. The current audit surface includes agent report submissions, force-scan request lifecycle events, scan deletion, SBOM export, Trivy DB upload/update, security DB import/export/update, CVE DB import/export/rematch/CVSS recalculation, vulnerability triage changes, RBAC subject/policy changes, and periodic security DB change hooks. Admins can query `/api/admin/audit-logs` with `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `status`, `limit`, and `offset`.
+Administration and agent events are written to append-only `audit_logs` rows. The current audit surface includes agent report submissions, force-scan request lifecycle events, scan deletion, SBOM export, vulnerability report export, Trivy DB upload/update, security DB import/export/update, CVE DB import/export/rematch/CVSS recalculation, vulnerability triage changes, RBAC subject/policy changes, and periodic security DB change hooks. Admins can query `/api/admin/audit-logs` with `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `status`, `limit`, and `offset`.
 
 ## Vulnerability Triage
 
@@ -88,6 +88,10 @@ Triage decisions are stored separately from scan-result rows in `vulnerability_t
 ## SBOM Export
 
 Each host can export its latest completed package inventory as CycloneDX 1.5 JSON through `/api/hosts/{id}/sbom`. The export includes bongsu host/package properties such as host ID, OS, asset type, container/image identifiers, source, package type, ecosystem, file path, and target. Viewer RBAC is enforced before export, and successful exports are audited as `sbom.export`.
+
+## Vulnerability Report Export
+
+Filtered vulnerability views can be exported through `/api/vulnerabilities/export` as CSV by default or JSON with `format=json`. The export reuses the same host, severity, triage status, package, container, sorting, fixed-version, ecosystem-mismatch, and RBAC filters as the interactive vulnerability list. `BONGSU_VULN_EXPORT_MAX_ROWS` limits export size and defaults to 100000 rows. Successful exports are audited as `vulnerability.export`.
 
 ## Test Expectations
 

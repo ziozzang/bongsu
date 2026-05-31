@@ -55,10 +55,16 @@ async function requestJSON<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
-async function download(path: string, filename: string): Promise<void> {
+async function download(path: string, filename: string, params?: Record<string, string>): Promise<void> {
   const headers: Record<string, string> = {};
   if (apiKey) headers['X-API-Key'] = apiKey;
-  const res = await fetch(API_BASE + path, { headers });
+  const url = new URL(API_BASE + path, window.location.origin);
+  if (params) {
+    Object.entries(params).forEach(([k, v]) => {
+      if (v) url.searchParams.set(k, v);
+    });
+  }
+  const res = await fetch(url.toString(), { headers });
   if (res.status === 401) {
     clearApiKey();
     if (onUnauthorized) onUnauthorized();
@@ -66,14 +72,14 @@ async function download(path: string, filename: string): Promise<void> {
   }
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
+  const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
+  a.href = objectUrl;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(objectUrl);
 }
 
 export interface Host {
@@ -198,6 +204,8 @@ export const api = {
   hostVulnCounts: (id: string) => request<Record<string, number>>(`/hosts/${id}/vuln-counts`),
   vulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; min_cvss?: string; pkg_name?: string; container?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Vuln[]; total: number }>('/vulnerabilities', params),
+  exportVulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; pkg_name?: string; container?: string; sort_by?: string; sort_order?: string; show_no_fix?: string; show_mismatch?: string; format?: string }) =>
+    download('/vulnerabilities/export', `bongsu-vulnerabilities.${params.format === 'json' ? 'json' : 'csv'}`, params),
   vulnFilters: () => request<{ host_ids: string[]; containers: string[] }>('/vulnerabilities/filters'),
   cveSearch: (params: { q?: string; pkg_name?: string; severity?: string; min_cvss?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Vuln[]; total: number }>('/cve-search', params),

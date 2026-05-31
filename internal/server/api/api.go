@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -106,6 +107,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/hosts/{id}/sbom", s.handleHostSBOM)
 	s.mux.HandleFunc("GET /api/hosts/{id}/vuln-counts", s.handleHostVulnCounts)
 	s.mux.HandleFunc("GET /api/vulnerabilities", s.handleListVulnerabilities)
+	s.mux.HandleFunc("GET /api/vulnerabilities/export", s.handleExportVulnerabilities)
 	s.mux.HandleFunc("GET /api/vulnerabilities/filters", s.handleVulnFilters)
 	s.mux.HandleFunc("POST /api/vulnerabilities/triage", s.handleUpsertVulnerabilityTriage)
 	s.mux.HandleFunc("GET /api/cve-search", s.handleCveSearch)
@@ -664,39 +666,19 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 	}
 	ctx := r.Context()
 
-	hostID := r.URL.Query().Get("host_id")
-	scope := s.accessScope(r)
-	if scope.Empty() {
+	filter, forbidden, empty := s.vulnFilterFromRequest(r)
+	if empty {
 		writeJSON(w, http.StatusOK, map[string]any{"items": []models.Vulnerability{}, "total": 0})
 		return
 	}
-	if hostID != "" && !scope.CanReadHost(hostID) {
+	if forbidden {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	severity := r.URL.Query().Get("severity")
-	pkgName := r.URL.Query().Get("pkg_name")
-	container := r.URL.Query().Get("container")
-	minCVSS := floatParam(r, "min_cvss", 0.1)
 	limit := intParam(r, "limit", 100)
 	offset := intParam(r, "offset", 0)
-	sortBy := r.URL.Query().Get("sort_by")
-	sortOrder := r.URL.Query().Get("sort_order")
 
-	vulns, total, err := s.db.ListVulnerabilities(ctx, db.VulnFilter{
-		HostID:       hostID,
-		HostIDs:      scope.HostIDs,
-		Severity:     severity,
-		TriageStatus: r.URL.Query().Get("triage_status"),
-		PkgName:      pkgName,
-		Container:    container,
-		MinCVSS:      minCVSS,
-		SortBy:       sortBy,
-		SortDesc:     sortOrder == "desc",
-		HideFixed:    true,
-		HideNoFix:    r.URL.Query().Get("show_no_fix") != "true",
-		HideMismatch: r.URL.Query().Get("show_mismatch") != "true",
-	}, limit, offset)
+	vulns, total, err := s.db.ListVulnerabilities(ctx, filter, limit, offset)
 	if err != nil {
 		log.Printf("list vulns: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
@@ -707,6 +689,129 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 		"items": vulns,
 		"total": total,
 	})
+}
+
+func (s *Server) vulnFilterFromRequest(r *http.Request) (db.VulnFilter, bool, bool) {
+	hostID := r.URL.Query().Get("host_id")
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		return db.VulnFilter{}, false, true
+	}
+	if hostID != "" && !scope.CanReadHost(hostID) {
+		return db.VulnFilter{}, true, false
+	}
+	return db.VulnFilter{
+		HostID:       hostID,
+		HostIDs:      scope.HostIDs,
+		Severity:     r.URL.Query().Get("severity"),
+		TriageStatus: r.URL.Query().Get("triage_status"),
+		PkgName:      r.URL.Query().Get("pkg_name"),
+		Container:    r.URL.Query().Get("container"),
+		MinCVSS:      floatParam(r, "min_cvss", 0.1),
+		SortBy:       r.URL.Query().Get("sort_by"),
+		SortDesc:     r.URL.Query().Get("sort_order") == "desc",
+		HideFixed:    true,
+		HideNoFix:    r.URL.Query().Get("show_no_fix") != "true",
+		HideMismatch: r.URL.Query().Get("show_mismatch") != "true",
+	}, false, false
+}
+
+func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	filter, forbidden, empty := s.vulnFilterFromRequest(r)
+	if forbidden {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	maxRows := envInt("BONGSU_VULN_EXPORT_MAX_ROWS", 100000)
+	if requested := intParam(r, "limit", 0); requested > 0 && requested < maxRows {
+		maxRows = requested
+	}
+	if maxRows <= 0 {
+		maxRows = 100000
+	}
+	var vulns []models.Vulnerability
+	total := 0
+	var err error
+	if !empty {
+		vulns, total, err = s.db.ListVulnerabilities(r.Context(), filter, maxRows, 0)
+		if err != nil {
+			log.Printf("export vulnerabilities: %v", err)
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+	}
+	format := strings.ToLower(r.URL.Query().Get("format"))
+	if format == "json" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="bongsu-vulnerabilities.json"`)
+		writeJSON(w, http.StatusOK, map[string]any{"items": vulns, "total": total, "exported": len(vulns)})
+	} else {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="bongsu-vulnerabilities.csv"`)
+		if err := writeVulnerabilityCSV(w, vulns); err != nil {
+			log.Printf("write vulnerability export csv: %v", err)
+			return
+		}
+	}
+	s.audit(r, "vulnerability.export", "vulnerability", "filtered", "ok", map[string]any{
+		"format":   exportFormatLabel(format),
+		"exported": len(vulns),
+		"total":    total,
+		"max_rows": maxRows,
+	})
+}
+
+func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
+	cw := csv.NewWriter(w)
+	if err := cw.Write([]string{
+		"host_id", "container", "vulnerability_id", "severity", "cvss_score", "triage_status",
+		"pkg_name", "installed_version", "fixed_version", "pkg_path", "title", "primary_url",
+		"triage_reason", "triage_comment", "triage_updated_by", "created_at",
+	}); err != nil {
+		return err
+	}
+	for _, v := range vulns {
+		if err := cw.Write([]string{
+			v.HostID,
+			v.Container,
+			v.VulnerabilityID,
+			v.Severity,
+			fmt.Sprintf("%.1f", v.CVSSScore),
+			exportStatusLabel(v.TriageStatus),
+			v.PkgName,
+			v.InstalledVer,
+			v.FixedVersion,
+			v.PkgPath,
+			v.Title,
+			v.PrimaryURL,
+			v.TriageReason,
+			v.TriageComment,
+			v.TriageUpdatedBy,
+			v.CreatedAt.Format(time.RFC3339),
+		}); err != nil {
+			return err
+		}
+	}
+	cw.Flush()
+	return cw.Error()
+}
+
+func exportFormatLabel(format string) string {
+	if format == "" {
+		return "csv"
+	}
+	return format
+}
+
+func exportStatusLabel(status string) string {
+	if status == "" {
+		return "open"
+	}
+	return status
 }
 
 func (s *Server) handleVulnFilters(w http.ResponseWriter, r *http.Request) {
