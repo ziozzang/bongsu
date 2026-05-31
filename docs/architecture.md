@@ -54,6 +54,8 @@ Vulnerability inserts drop dangling scanner rows that have no package, scan, hos
 4. Each successful DB change, including periodic security DB sync, starts background CVSS recalculation, vulnerability enrichment, CVE rematching, and automatic package-only rescan requests for hosts seen within `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` (default 720). Recalculation runs as a serialized background worker: if OSV, NVD, and Trivy imports arrive while a pass is still running, bongsu queues one follow-up pass instead of running overlapping recalculations.
 5. Operators export `/api/admin/security-db/export` for air-gapped transfer. The bundle contains a manifest, CVE JSONL, source stats, and optionally the current Trivy DB archive.
 
+Database migrations are tracked in `schema_migrations` with per-file SHA-256 checksums. Startup applies each SQL migration once, records the checksum transactionally with the migration, skips already-applied files on later restarts, and refuses to start if an applied migration file is modified in place. This keeps cleanup and requeue migrations from repeating on every container restart and gives operators a deterministic upgrade trail.
+
 ## Air-Gapped Flow
 
 1. In a connected environment, build Docker images and static binaries.

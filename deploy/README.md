@@ -169,7 +169,7 @@ spec:
 | `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC |
 | `BONGSU_PORT` | `8080` | Server listen port |
 | `BONGSU_DB_DSN` | `postgres://bongsu:...` | PostgreSQL connection string |
-| `BONGSU_AUTO_MIGRATE` | `true` | Run DB migrations on startup |
+| `BONGSU_AUTO_MIGRATE` | `true` | Run checksum-tracked DB migrations on startup |
 | `BONGSU_TRIVY_PATH` | `trivy` | Trivy binary path |
 | `BONGSU_TRIVY_CACHE_DIR` | `/app/trivy-cache` | Trivy cache directory |
 | `BONGSU_TRIVY_DB_REPO` | `ghcr.io/aquasecurity/trivy-db` | Trivy DB registry |

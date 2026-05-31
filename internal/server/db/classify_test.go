@@ -317,6 +317,51 @@ func TestLatestScansIncludesDegradedInventory(t *testing.T) {
 	}
 }
 
+func TestRunMigrationsRecordsAppliedFiles(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) RunMigrations")
+	if start < 0 {
+		t.Fatal("RunMigrations not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) UpsertHost")
+	if end < 0 {
+		t.Fatal("RunMigrations end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"CREATE TABLE IF NOT EXISTS schema_migrations",
+		"db.appliedMigrations(ctx)",
+		"migrationChecksum(data)",
+		"checksum mismatch",
+		"db.BeginTx(ctx, nil)",
+		"INSERT INTO schema_migrations",
+		"tx.Commit()",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("RunMigrations tracking missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "log.Printf(\"rematch scan row") {
+		t.Fatal("RunMigrations must not log unrelated messages for skipped files")
+	}
+}
+
+func TestMigrationChecksumIsStable(t *testing.T) {
+	a := migrationChecksum([]byte("select 1;"))
+	b := migrationChecksum([]byte("select 1;"))
+	c := migrationChecksum([]byte("select 2;"))
+	if a == "" || a != b {
+		t.Fatalf("migration checksum must be stable, got %q and %q", a, b)
+	}
+	if a == c {
+		t.Fatal("migration checksum must change when migration contents change")
+	}
+}
+
 func TestDeleteScanProtectsLatestInventory(t *testing.T) {
 	got := deleteScanLatestInventorySQL()
 	for _, want := range []string{

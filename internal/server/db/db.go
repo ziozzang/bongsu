@@ -2,7 +2,9 @@ package db
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,20 +68,72 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("read migrations dir: %w", err)
 	}
+	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
+		filename TEXT PRIMARY KEY,
+		checksum TEXT NOT NULL,
+		applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+	)`); err != nil {
+		return fmt.Errorf("ensure schema_migrations: %w", err)
+	}
+	applied, err := db.appliedMigrations(ctx)
+	if err != nil {
+		return err
+	}
 	for _, f := range files {
 		if f.IsDir() || !(len(f.Name()) > 4 && f.Name()[len(f.Name())-4:] == ".sql") {
-			log.Printf("rematch scan row: %v", err)
 			continue
 		}
 		data, err := os.ReadFile("migrations/" + f.Name())
 		if err != nil {
 			return fmt.Errorf("read migration %s: %w", f.Name(), err)
 		}
-		if _, err := db.ExecContext(ctx, string(data)); err != nil {
+		checksum := migrationChecksum(data)
+		if got, ok := applied[f.Name()]; ok {
+			if got != checksum {
+				return fmt.Errorf("migration %s checksum mismatch", f.Name())
+			}
+			continue
+		}
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin migration %s: %w", f.Name(), err)
+		}
+		if _, err := tx.ExecContext(ctx, string(data)); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("run migration %s: %w", f.Name(), err)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations (filename, checksum, applied_at) VALUES ($1,$2,now())`, f.Name(), checksum); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("record migration %s: %w", f.Name(), err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", f.Name(), err)
 		}
 	}
 	return nil
+}
+
+func (db *DB) appliedMigrations(ctx context.Context) (map[string]string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT filename, checksum FROM schema_migrations`)
+	if err != nil {
+		return nil, fmt.Errorf("read schema_migrations: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]string{}
+	for rows.Next() {
+		var filename, checksum string
+		if err := rows.Scan(&filename, &checksum); err != nil {
+			return nil, fmt.Errorf("scan schema_migrations: %w", err)
+		}
+		out[filename] = checksum
+	}
+	return out, rows.Err()
+}
+
+func migrationChecksum(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 func (db *DB) UpsertHost(ctx context.Context, h *models.Host) error {
