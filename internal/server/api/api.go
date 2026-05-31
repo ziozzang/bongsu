@@ -393,9 +393,15 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAgentReportBytes())
 
 	var report models.ScanReport
 	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			http.Error(w, "report too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -3069,6 +3075,14 @@ func envInt(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func maxAgentReportBytes() int64 {
+	n := envInt("BONGSU_AGENT_REPORT_MAX_BYTES", 512<<20)
+	if n <= 0 {
+		n = 512 << 20
+	}
+	return int64(n)
 }
 
 func envBool(key string, def bool) bool {

@@ -71,6 +71,38 @@ func TestInstallAuthRequiresTokenOrAdminHeader(t *testing.T) {
 	}
 }
 
+func TestReportBodyLimitIsConfigured(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_AGENT_REPORT_MAX_BYTES`,
+		`512<<20`,
+		`http.MaxBytesReader`,
+		`http.StatusRequestEntityTooLarge`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("report body limit missing %q", want)
+		}
+	}
+}
+
+func TestMaxAgentReportBytes(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_REPORT_MAX_BYTES", "1048576")
+	if got := maxAgentReportBytes(); got != 1048576 {
+		t.Fatalf("maxAgentReportBytes() = %d, want 1048576", got)
+	}
+
+	for _, value := range []string{"0", "-1", "invalid"} {
+		t.Setenv("BONGSU_AGENT_REPORT_MAX_BYTES", value)
+		if got := maxAgentReportBytes(); got != 512<<20 {
+			t.Fatalf("maxAgentReportBytes(%q) = %d, want %d", value, got, 512<<20)
+		}
+	}
+}
+
 func TestWebAuthCanBeDisabledWithoutOpeningAdmin(t *testing.T) {
 	s := &Server{apiKey: "admin-key", agentKey: "agent-key", webAuth: false}
 	req := httptest.NewRequest("GET", "/", nil)
