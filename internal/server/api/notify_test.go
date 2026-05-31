@@ -129,8 +129,8 @@ func TestParseInventoryStatusesDefault(t *testing.T) {
 	if !got["empty"] || got["healthy"] {
 		t.Fatalf("default inventory statuses = %#v", got)
 	}
-	got = parseInventoryStatuses("empty, stale, invalid")
-	if !got["empty"] || !got["stale"] || got["invalid"] {
+	got = parseInventoryStatuses("empty, degraded, stale, invalid")
+	if !got["empty"] || !got["degraded"] || !got["stale"] || got["invalid"] {
 		t.Fatalf("parsed inventory statuses = %#v", got)
 	}
 }

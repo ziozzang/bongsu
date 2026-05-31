@@ -536,10 +536,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("scan vuln counts: %v", err)
 		sevCounts = map[string]int{}
 	}
-	inventoryStatus := "healthy"
-	if len(report.Packages) == 0 {
-		inventoryStatus = "empty"
-	}
+	inventoryStatus := reportInventoryStatus(len(report.Packages), scanStatus)
 	s.audit(r, "agent.report", "scan", report.ScanID, reportAuditStatus(skippedVulns), map[string]any{
 		"host_id":          report.Host.ID,
 		"hostname":         report.Host.Hostname,
@@ -589,6 +586,16 @@ func reportScanStatus(skippedVulns int) string {
 		return "degraded"
 	}
 	return "completed"
+}
+
+func reportInventoryStatus(packageCount int, scanStatus string) string {
+	if packageCount == 0 {
+		return "empty"
+	}
+	if scanStatus == "degraded" {
+		return "degraded"
+	}
+	return "healthy"
 }
 
 func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {

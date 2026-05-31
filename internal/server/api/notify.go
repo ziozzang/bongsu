@@ -140,7 +140,7 @@ func parseInventoryStatuses(v string) map[string]bool {
 	for _, part := range strings.Split(v, ",") {
 		part = strings.ToLower(strings.TrimSpace(part))
 		switch part {
-		case "healthy", "stale", "empty", "none":
+		case "healthy", "degraded", "stale", "empty", "none":
 			out[part] = true
 		}
 	}

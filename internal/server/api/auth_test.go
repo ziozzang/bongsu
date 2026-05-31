@@ -192,6 +192,15 @@ func TestReportAuditStatus(t *testing.T) {
 	if got := reportScanStatus(2); got != "degraded" {
 		t.Fatalf("scan status = %q, want degraded", got)
 	}
+	if got := reportInventoryStatus(0, "degraded"); got != "empty" {
+		t.Fatalf("inventory status = %q, want empty", got)
+	}
+	if got := reportInventoryStatus(10, "degraded"); got != "degraded" {
+		t.Fatalf("inventory status = %q, want degraded", got)
+	}
+	if got := reportInventoryStatus(10, "completed"); got != "healthy" {
+		t.Fatalf("inventory status = %q, want healthy", got)
+	}
 }
 
 func TestWriteVulnerabilityCSV(t *testing.T) {
