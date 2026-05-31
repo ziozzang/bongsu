@@ -312,6 +312,12 @@ func TestDeleteScanProtectsLatestInventory(t *testing.T) {
 	}
 }
 
+func TestDeleteScanErrorsAreDistinct(t *testing.T) {
+	if ErrLatestInventoryScan == ErrScanNotFound {
+		t.Fatal("delete scan guard and not-found errors must be distinct")
+	}
+}
+
 func TestRetentionPruneDoesNotDeleteRunningScans(t *testing.T) {
 	got := pruneOldScansCTE()
 	if !strings.Contains(got, "status IN ('completed','degraded','failed')") {

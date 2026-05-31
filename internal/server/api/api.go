@@ -1785,6 +1785,10 @@ func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "latest inventory scan requires force=true", http.StatusConflict)
 			return
 		}
+		if errors.Is(err, db.ErrScanNotFound) {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
 		log.Printf("delete scan %s: %v", scanID, err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return

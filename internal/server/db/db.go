@@ -24,6 +24,7 @@ type DB struct {
 }
 
 var ErrLatestInventoryScan = errors.New("cannot delete latest completed or degraded inventory scan")
+var ErrScanNotFound = errors.New("scan not found")
 
 type RetentionPruneResult struct {
 	DryRun      bool `json:"dry_run"`
@@ -129,8 +130,12 @@ func (db *DB) DeleteScan(ctx context.Context, id string, force bool) error {
 			return fmt.Errorf("delete from %s: %w", t, err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, "DELETE FROM scans WHERE id=$1", id); err != nil {
+	res, err := tx.ExecContext(ctx, "DELETE FROM scans WHERE id=$1", id)
+	if err != nil {
 		return fmt.Errorf("delete scan: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrScanNotFound
 	}
 	return tx.Commit()
 }
