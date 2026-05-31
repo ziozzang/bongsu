@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset, type VulnSummaryRow } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset, type VulnSummaryRow, type AuditLog } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = a.replace(/^v?/, '').split(/[._-]/);
@@ -62,7 +62,7 @@ function parseCvssVector(vector: string) {
   return { version: '3.x', parts, labels, values };
 }
 
-type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'host-detail' | 'cve-search';
+type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'host-detail' | 'cve-search';
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard');
@@ -91,6 +91,7 @@ export default function App() {
         {view === 'containers' && <ContainersView />}
         {view === 'cve-search' && <CveSearchView />}
         {view === 'scans' && <ScansView />}
+        {view === 'audit' && <AuditLogView />}
         {view === 'vulns' && <VulnsView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'vuln-detail' && <VulnDetailView vuln={selectedVuln} onBack={() => setView('vulns')} />}
       </div>
@@ -132,6 +133,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
     ['vulns', 'Vulnerabilities', '◆'],
     ['cve-search', 'CVE Search', '◈'],
     ['scans', 'Scan History', '☰'],
+    ['audit', 'Audit Log', '◇'],
   ];
   return (
     <div className="sidebar">
@@ -1783,6 +1785,125 @@ function ScansView() {
           <button disabled={page === 0} onClick={() => load(page - 1)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
           <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1)}>Next</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AuditLogView() {
+  const [items, setItems] = useState<AuditLog[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [actorType, setActorType] = useState('');
+  const [action, setAction] = useState('');
+  const [resourceType, setResourceType] = useState('');
+  const [status, setStatus] = useState('');
+  const [query, setQuery] = useState('');
+  const limit = 50;
+
+  const load = useCallback((p: number, at: string, act: string, rt: string, st: string, q: string) => {
+    setLoading(true);
+    setError('');
+    const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
+    if (at) params.actor_type = at;
+    if (act) params.action = act;
+    if (rt) params.resource_type = rt;
+    if (st) params.status = st;
+    if (q) {
+      if (q.includes('/')) {
+        const [rType, rID] = q.split('/', 2);
+        params.resource_type = rType;
+        params.resource_id = rID;
+      } else {
+        params.actor_id = q;
+      }
+    }
+    api.auditLogs(params)
+      .then(r => { setItems(r.items || []); setTotal(r.total || 0); setPage(p); setLoading(false); })
+      .catch(() => { setError('Audit logs require an admin API key'); setLoading(false); });
+  }, []);
+
+  useEffect(() => { load(0, actorType, action, resourceType, status, query); }, [load, actorType, action, resourceType, status]);
+  const handleSearch = () => load(0, actorType, action, resourceType, status, query);
+  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>Audit Log</h1>
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="filters">
+          <select value={actorType} onChange={(e) => setActorType(e.target.value)}>
+            <option value="">All Actors</option>
+            <option value="admin">Admin</option>
+            <option value="agent">Agent</option>
+            <option value="viewer">Viewer</option>
+            <option value="system">System</option>
+          </select>
+          <select value={resourceType} onChange={(e) => setResourceType(e.target.value)}>
+            <option value="">All Resources</option>
+            <option value="host">Host</option>
+            <option value="scan">Scan</option>
+            <option value="scan_request">Scan Request</option>
+            <option value="vulnerability">Vulnerability</option>
+            <option value="security_db">Security DB</option>
+            <option value="cve_db">CVE DB</option>
+            <option value="access_policy">RBAC Policy</option>
+          </select>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">All Status</option>
+            <option value="ok">OK</option>
+            <option value="failed">Failed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Action"
+            value={action}
+            onChange={(e) => setAction(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 180 }}
+          />
+          <input
+            type="text"
+            placeholder="Actor ID or resource_type/resource_id"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 260 }}
+          />
+          <button className="filter-btn" onClick={handleSearch}>Search</button>
+          <span style={{ color: error ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>{error || `${total} events`}</span>
+        </div>
+      </div>
+      <div className="card">
+        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+          <table>
+            <thead>
+              <tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>Status</th><th>Client</th><th>Metadata</th></tr>
+            </thead>
+            <tbody>
+              {items.map(item => (
+                <tr key={item.id}>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(item.created_at).toLocaleString()}</td>
+                  <td>{item.actor_type}<div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{item.actor_id || '-'}</div></td>
+                  <td className="mono">{item.action}</td>
+                  <td>{item.resource_type}<div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{item.resource_id || '-'}</div></td>
+                  <td><span className="badge">{item.status}</span></td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{item.ip_address || '-'}</td>
+                  <td className="path-cell">{JSON.stringify(item.metadata || {})}<span className="path-tip">{JSON.stringify(item.metadata || {}, null, 2)}</span></td>
+                </tr>
+              ))}
+              {items.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No audit events</td></tr>}
+            </tbody>
+          </table>
+        )}
+        <div className="pagination">
+          <button disabled={page === 0} onClick={() => load(page - 1, actorType, action, resourceType, status, query)}>Prev</button>
+          <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
+          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, actorType, action, resourceType, status, query)}>Next</button>
         </div>
       </div>
     </>

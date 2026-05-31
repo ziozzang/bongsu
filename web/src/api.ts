@@ -229,6 +229,20 @@ export interface ScanRequest {
   created_at: string;
 }
 
+export interface AuditLog {
+  id: string;
+  actor_type: string;
+  actor_id: string;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  status: string;
+  ip_address: string;
+  user_agent: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
 export interface CveDbEntry {
   id: string;
   vulnerability_id: string;
@@ -284,6 +298,8 @@ export const api = {
   stats: () => request<Stats>('/stats'),
   rawHealth: () => request<HealthStatus>('/health'),
   deleteScan: (id: string) => request<{status: string}>(`/scans/${id}`, undefined, 'DELETE'),
+  auditLogs: (params: { actor_type?: string; actor_id?: string; action?: string; resource_type?: string; resource_id?: string; status?: string; limit?: string; offset?: string }) =>
+    request<{ items: AuditLog[]; total: number }>('/admin/audit-logs', params),
   updateTrivyDB: () => request<{status: string; message: string; trivy_db_ready: boolean; last_update: string}>('/admin/trivy-db/update', undefined, 'POST'),
   updateSecurityDB: () => request<{status: string; security_db: HealthStatus['security_db']}>('/admin/security-db/update', undefined, 'POST'),
   rematchCVEs: () => request<{matched: number; new_vulns: number; skipped: number}>('/admin/cve-db/rematch', undefined, 'POST'),
