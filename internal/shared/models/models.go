@@ -216,19 +216,24 @@ type PortInfo struct {
 }
 
 type ContainerAsset struct {
-	ID          string     `json:"id"`
-	ScanID      string     `json:"scan_id"`
-	HostID      string     `json:"host_id"`
-	Runtime     string     `json:"runtime"`
-	ContainerID string     `json:"container_id"`
-	Name        string     `json:"name"`
-	ImageName   string     `json:"image_name"`
-	ImageID     string     `json:"image_id"`
-	ImageDigest string     `json:"image_digest,omitempty"`
-	State       string     `json:"state"`
-	Labels      string     `json:"labels,omitempty"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID                 string     `json:"id"`
+	ScanID             string     `json:"scan_id"`
+	HostID             string     `json:"host_id"`
+	Runtime            string     `json:"runtime"`
+	ContainerID        string     `json:"container_id"`
+	Name               string     `json:"name"`
+	ImageName          string     `json:"image_name"`
+	ImageID            string     `json:"image_id"`
+	ImageDigest        string     `json:"image_digest,omitempty"`
+	State              string     `json:"state"`
+	Labels             string     `json:"labels,omitempty"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	PackageCount       int        `json:"package_count"`
+	VulnerabilityCount int        `json:"vulnerability_count"`
+	CriticalCount      int        `json:"critical_count"`
+	HighCount          int        `json:"high_count"`
+	MaxCVSS            float64    `json:"max_cvss"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 type ScanReport struct {

@@ -80,7 +80,7 @@ Current implementation exposes request creation/listing/cancel/requeue plus agen
 
 ## Container Inventory
 
-Running container metadata is stored separately from package rows in `container_assets`. The inventory preserves host ID, runtime, container instance ID/name, image name, image ID/digest, state, labels, and start time. `/api/containers` returns the latest completed or degraded scan per host and supports host, runtime, state, image, name, container ID, and image ID filters. Viewer RBAC is applied before returning rows and before returning package/vulnerability filter options, so container names, package sources, package types, and host IDs are not exposed outside the viewer's allowed host scope.
+Running container metadata is stored separately from package rows in `container_assets`. The inventory preserves host ID, runtime, container instance ID/name, image name, image ID/digest, state, labels, and start time. `/api/containers` returns the latest completed or degraded scan per host and supports host, runtime, state, image, name, container ID, and image ID filters. Container rows include package count, actionable vulnerability count, critical/high counts, and max CVSS for that container in the latest scan, and the dashboard can sort by those fields so image risk triage does not require pivoting through package or CVE tables first. Viewer RBAC is applied before returning rows and before returning package/vulnerability filter options, so container names, package sources, package types, and host IDs are not exposed outside the viewer's allowed host scope.
 
 ## Scan Inventory Drift
 

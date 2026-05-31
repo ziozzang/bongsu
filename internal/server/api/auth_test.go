@@ -1977,6 +1977,38 @@ func TestDashboardExposesAirgapSecurityBundleActions(t *testing.T) {
 	}
 }
 
+func TestContainersViewShowsImageRiskSummary(t *testing.T) {
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBody := string(appOut)
+	apiBody := string(apiOut)
+	for _, want := range []string{
+		"vulnerability_count",
+		"critical_count",
+		"high_count",
+		"max_cvss",
+		"package_count",
+	} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("containers view risk summary missing %q", want)
+		}
+		if !strings.Contains(apiBody, want) {
+			t.Fatalf("container API type risk summary missing %q", want)
+		}
+	}
+	for _, want := range []string{"Max CVSS", "Findings"} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("containers view risk label missing %q", want)
+		}
+	}
+}
+
 func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/install-agent.sh")
 	if err != nil {

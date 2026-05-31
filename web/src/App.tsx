@@ -2113,7 +2113,9 @@ function ContainersView() {
   const states = Array.from(new Set(['running', 'exited', 'created', 'paused', 'restarting', 'dead', ...containers.map(c => c.state).filter(Boolean)])).sort();
   const cols: [string, string][] = [
     ['name', 'Name'], ['state', 'State'], ['runtime', 'Runtime'],
-    ['image_name', 'Image'], ['container_id', 'Container ID'], ['started_at', 'Started'],
+    ['image_name', 'Image'], ['container_id', 'Container ID'],
+    ['vulnerability_count', 'Findings'], ['critical_count', 'Critical'], ['high_count', 'High'], ['max_cvss', 'Max CVSS'], ['package_count', 'Packages'],
+    ['started_at', 'Started'],
   ];
 
   return (
@@ -2179,12 +2181,17 @@ function ContainersView() {
                   <td>{c.runtime || '-'}</td>
                   <td className="mono" title={c.image_name}>{c.image_name || '-'}</td>
                   <td className="mono" title={c.container_id}>{c.container_id ? c.container_id.slice(0, 16) : '-'}</td>
+                  <td className="mono" style={{ color: c.vulnerability_count ? 'var(--high)' : 'var(--text-muted)', fontWeight: c.vulnerability_count ? 700 : 400 }}>{c.vulnerability_count || 0}</td>
+                  <td className="mono" style={{ color: c.critical_count ? 'var(--critical)' : 'var(--text-muted)', fontWeight: c.critical_count ? 700 : 400 }}>{c.critical_count || 0}</td>
+                  <td className="mono" style={{ color: c.high_count ? 'var(--high)' : 'var(--text-muted)', fontWeight: c.high_count ? 700 : 400 }}>{c.high_count || 0}</td>
+                  <td className="mono" style={{ color: (c.max_cvss || 0) >= 9 ? 'var(--critical)' : (c.max_cvss || 0) >= 7 ? 'var(--high)' : 'var(--text-muted)' }}>{c.max_cvss ? c.max_cvss.toFixed(1) : '-'}</td>
+                  <td className="mono">{c.package_count || 0}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{c.started_at ? new Date(c.started_at).toLocaleString() : '-'}</td>
                   <td className="mono" title={c.image_id}>{c.image_id ? c.image_id.replace(/^sha256:/, '').slice(0, 18) : '-'}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{c.created_at ? new Date(c.created_at).toLocaleString() : '-'}</td>
                 </tr>
               ))}
-              {containers.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No containers found</td></tr>}
+              {containers.length === 0 && <tr><td colSpan={14} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No containers found</td></tr>}
             </tbody>
           </table>
         )}

@@ -213,6 +213,11 @@ export interface ContainerAsset {
   state: string;
   labels?: string;
   started_at?: string | null;
+  package_count: number;
+  vulnerability_count: number;
+  critical_count: number;
+  high_count: number;
+  max_cvss: number;
   created_at: string;
 }
 

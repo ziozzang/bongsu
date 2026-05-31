@@ -3076,7 +3076,13 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 		return nil, 0, err
 	}
 
-	q := `SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text, c.started_at, c.created_at ` +
+	q := `SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text, c.started_at,
+		(SELECT count(*) FROM packages p WHERE p.scan_id=c.scan_id AND (p.container_id=c.container_id OR p.container=c.name))::int AS package_count,
+		(SELECT count(*) FROM vulnerabilities v ` + vulnTriageJoin + ` WHERE v.scan_id=c.scan_id AND v.container=c.name AND ` + currentActionableVulnSQL() + `)::int AS vulnerability_count,
+		(SELECT count(*) FROM vulnerabilities v ` + vulnTriageJoin + ` WHERE v.scan_id=c.scan_id AND v.container=c.name AND v.severity='CRITICAL' AND ` + currentActionableVulnSQL() + `)::int AS critical_count,
+		(SELECT count(*) FROM vulnerabilities v ` + vulnTriageJoin + ` WHERE v.scan_id=c.scan_id AND v.container=c.name AND v.severity='HIGH' AND ` + currentActionableVulnSQL() + `)::int AS high_count,
+		COALESCE((SELECT max(v.cvss_score) FROM vulnerabilities v ` + vulnTriageJoin + ` WHERE v.scan_id=c.scan_id AND v.container=c.name AND ` + currentActionableVulnSQL() + `), 0)::float AS max_cvss,
+		c.created_at ` +
 		baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", containerSortExpr(f.SortBy, f.SortDesc), n, n+1)
 	args = append(args, f.Limit, f.Offset)
 
@@ -3090,7 +3096,10 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 	for rows.Next() {
 		var c models.ContainerAsset
 		var started sql.NullTime
-		if err := rows.Scan(&c.ID, &c.ScanID, &c.HostID, &c.Runtime, &c.ContainerID, &c.Name, &c.ImageName, &c.ImageID, &c.ImageDigest, &c.State, &c.Labels, &started, &c.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&c.ID, &c.ScanID, &c.HostID, &c.Runtime, &c.ContainerID, &c.Name, &c.ImageName, &c.ImageID, &c.ImageDigest, &c.State, &c.Labels, &started,
+			&c.PackageCount, &c.VulnerabilityCount, &c.CriticalCount, &c.HighCount, &c.MaxCVSS, &c.CreatedAt,
+		); err != nil {
 			return nil, 0, err
 		}
 		if started.Valid {
@@ -3521,13 +3530,18 @@ func pkgSortExpr(col string, desc bool) string {
 
 func containerSortExpr(col string, desc bool) string {
 	allowed := map[string]string{
-		"name":         "c.name",
-		"image_name":   "c.image_name",
-		"state":        "c.state",
-		"runtime":      "c.runtime",
-		"started_at":   "c.started_at",
-		"created_at":   "c.created_at",
-		"container_id": "c.container_id",
+		"name":                "c.name",
+		"image_name":          "c.image_name",
+		"state":               "c.state",
+		"runtime":             "c.runtime",
+		"started_at":          "c.started_at",
+		"created_at":          "c.created_at",
+		"container_id":        "c.container_id",
+		"package_count":       "(SELECT count(*) FROM packages p WHERE p.scan_id=c.scan_id AND (p.container_id=c.container_id OR p.container=c.name))",
+		"vulnerability_count": "(SELECT count(*) FROM vulnerabilities v " + vulnTriageJoin + " WHERE v.scan_id=c.scan_id AND v.container=c.name AND " + currentActionableVulnSQL() + ")",
+		"critical_count":      "(SELECT count(*) FROM vulnerabilities v " + vulnTriageJoin + " WHERE v.scan_id=c.scan_id AND v.container=c.name AND v.severity='CRITICAL' AND " + currentActionableVulnSQL() + ")",
+		"high_count":          "(SELECT count(*) FROM vulnerabilities v " + vulnTriageJoin + " WHERE v.scan_id=c.scan_id AND v.container=c.name AND v.severity='HIGH' AND " + currentActionableVulnSQL() + ")",
+		"max_cvss":            "COALESCE((SELECT max(v.cvss_score) FROM vulnerabilities v " + vulnTriageJoin + " WHERE v.scan_id=c.scan_id AND v.container=c.name AND " + currentActionableVulnSQL() + "), 0)",
 	}
 	expr, ok := allowed[col]
 	if !ok {
