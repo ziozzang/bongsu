@@ -289,6 +289,8 @@ export interface ScanRequest {
   claimed_at?: string | null;
   request_age_seconds?: number;
   claim_age_seconds?: number;
+  request_stale?: boolean;
+  claim_stale?: boolean;
   completed_at?: string | null;
   created_at: string;
 }

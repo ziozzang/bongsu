@@ -58,6 +58,8 @@ type ScanRequest struct {
 	ClaimedAt          *time.Time `json:"claimed_at,omitempty"`
 	RequestAgeS        int64      `json:"request_age_seconds,omitempty"`
 	ClaimAgeS          int64      `json:"claim_age_seconds,omitempty"`
+	RequestStale       bool       `json:"request_stale,omitempty"`
+	ClaimStale         bool       `json:"claim_stale,omitempty"`
 	CompletedAt        *time.Time `json:"completed_at,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 }

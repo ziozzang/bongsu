@@ -2078,7 +2078,27 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
+	annotateScanRequestStaleness(items, scanRequestClaimTimeoutSeconds())
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
+}
+
+func annotateScanRequestStaleness(items []models.ScanRequest, timeoutSeconds int64) {
+	for i := range items {
+		if items[i].Status == "pending" && items[i].RequestAgeS > timeoutSeconds {
+			items[i].RequestStale = true
+		}
+		if items[i].Status == "claimed" && items[i].ClaimAgeS > timeoutSeconds {
+			items[i].ClaimStale = true
+		}
+	}
+}
+
+func scanRequestClaimTimeoutSeconds() int64 {
+	timeoutMinutes := envInt("BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES", 60)
+	if timeoutMinutes <= 0 {
+		timeoutMinutes = 60
+	}
+	return int64(timeoutMinutes) * 60
 }
 
 func (s *Server) handleCancelScanRequest(w http.ResponseWriter, r *http.Request) {
@@ -2302,10 +2322,7 @@ func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "host_id is required", http.StatusBadRequest)
 		return
 	}
-	timeoutMinutes := envInt("BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES", 60)
-	if timeoutMinutes <= 0 {
-		timeoutMinutes = 60
-	}
+	timeoutMinutes := int(scanRequestClaimTimeoutSeconds() / 60)
 	req, requeued, err := s.db.ClaimScanRequest(r.Context(), hostID, time.Duration(timeoutMinutes)*time.Minute)
 	if err != nil {
 		log.Printf("claim scan request: %v", err)

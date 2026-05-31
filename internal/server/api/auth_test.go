@@ -1807,6 +1807,8 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"stats.security_db_rescan_request_counts?.failed",
 		"req.request_age_seconds",
 		"req.claim_age_seconds",
+		"req.request_stale",
+		"req.claim_stale",
 		"Claim Age",
 		"scan_type: 'security-db-update'",
 		"api.requeueScanRequest",
@@ -1825,6 +1827,24 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard DB rescan count missing %q", want)
 		}
+	}
+}
+
+func TestScanRequestStalenessUsesConfiguredTimeout(t *testing.T) {
+	items := []models.ScanRequest{
+		{Status: "pending", RequestAgeS: 3601},
+		{Status: "claimed", ClaimAgeS: 3601},
+		{Status: "failed", RequestAgeS: 7200, ClaimAgeS: 7200},
+	}
+	annotateScanRequestStaleness(items, 3600)
+	if !items[0].RequestStale || items[0].ClaimStale {
+		t.Fatalf("pending staleness = %#v", items[0])
+	}
+	if !items[1].ClaimStale || items[1].RequestStale {
+		t.Fatalf("claimed staleness = %#v", items[1])
+	}
+	if items[2].RequestStale || items[2].ClaimStale {
+		t.Fatalf("terminal requests should not be marked stale: %#v", items[2])
 	}
 }
 
