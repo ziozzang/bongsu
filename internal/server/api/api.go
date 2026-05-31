@@ -136,6 +136,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.corsMiddleware(h)
 	h = s.securityHeadersMiddleware(h)
 	h = s.requestIDMiddleware(h)
+	h = s.accessLogMiddleware(h)
 	return h
 }
 
@@ -4137,6 +4138,50 @@ func requestIDFromRequest(r *http.Request) string {
 		return rid
 	}
 	return cleanRequestID(r.Header.Get("X-Request-ID"))
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	if r.status != 0 {
+		return
+	}
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+func (r *statusRecorder) Write(p []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	n, err := r.ResponseWriter.Write(p)
+	r.bytes += n
+	return n, err
+}
+
+func (s *Server) accessLogMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !envBool("BONGSU_ACCESS_LOG", true) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r)
+		status := rec.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		if r.URL.Path == "/api/health" && !envBool("BONGSU_ACCESS_LOG_HEALTH", false) {
+			return
+		}
+		log.Printf("access request_id=%s method=%s path=%s status=%d bytes=%d duration_ms=%d ip=%s",
+			rec.Header().Get("X-Request-ID"), r.Method, r.URL.Path, status, rec.bytes, time.Since(start).Milliseconds(), clientIP(r))
+	})
 }
 
 func cleanRequestID(raw string) string {

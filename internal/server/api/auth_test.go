@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -253,6 +255,63 @@ func TestAuditAddsRequestIDMetadata(t *testing.T) {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("audit request id metadata missing %q: %s", want, fn)
 		}
+	}
+}
+
+func TestAccessLogMiddlewareLogsRequestIDStatusAndDuration(t *testing.T) {
+	t.Setenv("BONGSU_ACCESS_LOG", "true")
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		w.Write([]byte("ok"))
+	})
+	req := httptest.NewRequest("POST", "http://example.com/api/report", nil)
+	req.Header.Set("X-Request-ID", "req-123")
+	req.RemoteAddr = "192.0.2.1:12345"
+	rr := httptest.NewRecorder()
+
+	s.accessLogMiddleware(s.requestIDMiddleware(next)).ServeHTTP(rr, req)
+
+	out := buf.String()
+	for _, want := range []string{
+		"access request_id=req-123",
+		"method=POST",
+		"path=/api/report",
+		"status=201",
+		"bytes=2",
+		"duration_ms=",
+		"ip=192.0.2.1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("access log missing %q: %s", want, out)
+		}
+	}
+}
+
+func TestAccessLogMiddlewareSkipsHealthByDefault(t *testing.T) {
+	t.Setenv("BONGSU_ACCESS_LOG", "true")
+	t.Setenv("BONGSU_ACCESS_LOG_HEALTH", "false")
+	var buf bytes.Buffer
+	prev := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(prev)
+
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest("GET", "http://example.com/api/health", nil)
+	rr := httptest.NewRecorder()
+
+	s.accessLogMiddleware(s.requestIDMiddleware(next)).ServeHTTP(rr, req)
+
+	if got := buf.String(); got != "" {
+		t.Fatalf("health access log should be skipped by default, got %q", got)
 	}
 }
 
@@ -1453,6 +1512,8 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"${BONGSU_AGENT_API_KEY:?Set BONGSU_AGENT_API_KEY in .env}",
 				"${BONGSU_INSTALL_TOKEN:?Set BONGSU_INSTALL_TOKEN in .env}",
 				"BONGSU_ALLOW_WEAK_SECRETS: ${BONGSU_ALLOW_WEAK_SECRETS:-false}",
+				"BONGSU_ACCESS_LOG: ${BONGSU_ACCESS_LOG:-true}",
+				"BONGSU_ACCESS_LOG_HEALTH: ${BONGSU_ACCESS_LOG_HEALTH:-false}",
 				"BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES: ${BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES:-8192}",
 				"BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES: ${BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES:-2147483648}",
 				"BONGSU_CVE_DB_IMPORT_MAX_BYTES: ${BONGSU_CVE_DB_IMPORT_MAX_BYTES:-2147483648}",

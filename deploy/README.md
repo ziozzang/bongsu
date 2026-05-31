@@ -167,6 +167,8 @@ spec:
 | `BONGSU_AGENT_API_KEY` | *required* | Agent-only report upload and force-scan polling key; keep it distinct from the admin key |
 | `BONGSU_INSTALL_TOKEN` | *required for installer* | Token required for `/api/install.sh`; binary downloads accept this token or an admin API key header |
 | `BONGSU_ALLOW_WEAK_SECRETS` | `false` | Development-only override for missing, placeholder, short, or duplicate server secrets; keep `false` in production |
+| `BONGSU_ACCESS_LOG` | `true` | Emit request-scoped access logs with method, path, status, bytes, duration, IP, and `X-Request-ID` |
+| `BONGSU_ACCESS_LOG_HEALTH` | `false` | Include `/api/health` in access logs when enabled |
 | `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC; use `key:user:alice` or `key:group:platform` when user and group IDs may overlap |
 | `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
 | `BONGSU_PORT` | `8080` | Server listen port |
