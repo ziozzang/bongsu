@@ -165,7 +165,7 @@ function parseCvssVector(vector: string) {
 
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string };
-type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string };
+type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string; triageStatus?: string };
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard');
@@ -401,6 +401,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
     : cveMatchablePercent < 80 && cveTotalRecords > 0
       ? 'var(--medium)'
       : 'var(--low)';
+  const triageActiveCounts = stats?.triage_active_counts || {};
+  const triageExpiringSoonCounts = stats?.triage_expiring_soon_counts || {};
+  const suppressedTriageCount = ['accepted_risk', 'false_positive', 'fixed', 'ignored']
+    .reduce((sum, status) => sum + (triageActiveCounts[status] || 0), 0);
+  const triageExpiringSoonTotal = Object.values(triageExpiringSoonCounts).reduce((sum, count) => sum + count, 0);
 
   const handleCvssRecalc = async () => {
     setCvssRecalcBusy(true);
@@ -519,6 +524,38 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
           </button>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             Medium {stats.overdue_sla_risk_counts?.medium || 0} / Low {stats.overdue_sla_risk_counts?.low || 0}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: suppressedTriageCount ? 'var(--medium)' : 'var(--low)' }} />
+          <div className="label">Suppressed Findings</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenVulnerabilities({ triageStatus: 'accepted_risk' })}
+            style={{ color: suppressedTriageCount ? 'var(--medium)' : 'var(--low)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open accepted-risk findings"
+          >
+            {suppressedTriageCount}
+          </button>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            Accepted {triageActiveCounts.accepted_risk || 0} / FP {triageActiveCounts.false_positive || 0}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: triageExpiringSoonTotal ? 'var(--high)' : 'var(--low)' }} />
+          <div className="label">Expiring Exceptions</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenVulnerabilities({ triageStatus: 'accepted_risk' })}
+            style={{ color: triageExpiringSoonTotal ? 'var(--high)' : 'var(--low)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open accepted-risk findings with expiry dates"
+          >
+            {triageExpiringSoonTotal}
+          </button>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            Next {stats.triage_expiring_soon_days || 14}d, accepted {triageExpiringSoonCounts.accepted_risk || 0}
           </div>
         </div>
       </div>
@@ -1219,7 +1256,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [severity, setSeverity] = useState('');
-  const [triageStatus, setTriageStatus] = useState('');
+  const [triageStatus, setTriageStatus] = useState(initialFilters?.triageStatus || '');
   const [findingSource, setFindingSource] = useState('');
   const [riskLevel, setRiskLevel] = useState(initialFilters?.riskLevel || '');
   const [hostId, setHostId] = useState('');

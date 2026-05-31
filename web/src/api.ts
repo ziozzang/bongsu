@@ -219,6 +219,10 @@ export interface Stats {
   active_risk_level_counts?: Record<string, number>;
   overdue_sla_count?: number;
   overdue_sla_risk_counts?: Record<string, number>;
+  triage_active_counts?: Record<string, number>;
+  triage_expired_counts?: Record<string, number>;
+  triage_expiring_soon_counts?: Record<string, number>;
+  triage_expiring_soon_days?: number;
   scan_request_counts?: Record<string, number>;
   security_db_revision?: string;
   security_db_rescan_request_counts?: Record<string, number>;

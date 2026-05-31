@@ -3026,6 +3026,67 @@ func TestDashboardShowsRiskLevelSummary(t *testing.T) {
 	}
 }
 
+func TestStatsAndDashboardShowTriageExceptionLifecycle(t *testing.T) {
+	apiOut, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	typeOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiBody := string(apiOut)
+	appBody := string(appOut)
+	typeBody := string(typeOut)
+	start := strings.Index(apiBody, "func (s *Server) handleStats")
+	if start < 0 {
+		t.Fatal("handleStats not found")
+	}
+	end := strings.Index(apiBody[start:], "func scopeHostFilter")
+	if end < 0 {
+		t.Fatal("scopeHostFilter not found")
+	}
+	fn := apiBody[start : start+end]
+	for _, want := range []string{
+		"CountVulnerabilityTriageByStatus(ctx)",
+		"CountVulnerabilityTriageExpiringSoonByStatus(ctx, triageExpiringSoonDays)",
+		`resp["triage_active_counts"]`,
+		`resp["triage_expired_counts"]`,
+		`resp["triage_expiring_soon_counts"]`,
+		`resp["triage_expiring_soon_days"]`,
+		"s.authenticateAdmin(r) || !s.webAuth",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("stats triage lifecycle missing %q: %s", want, fn)
+		}
+	}
+	for _, want := range []string{
+		"Suppressed Findings",
+		"Expiring Exceptions",
+		"suppressedTriageCount",
+		"triageExpiringSoonTotal",
+		"triageStatus: 'accepted_risk'",
+	} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("dashboard triage lifecycle missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"triage_active_counts?: Record<string, number>",
+		"triage_expired_counts?: Record<string, number>",
+		"triage_expiring_soon_counts?: Record<string, number>",
+		"triage_expiring_soon_days?: number",
+	} {
+		if !strings.Contains(typeBody, want) {
+			t.Fatalf("web stats type missing %q", want)
+		}
+	}
+}
+
 func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {

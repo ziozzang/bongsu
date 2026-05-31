@@ -1712,7 +1712,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"total_hosts":                       visibleHosts,
 		"total_vulnerabilities":             totalVulns,
 		"severity_counts":                   sevCounts,
@@ -1724,7 +1724,37 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"scan_request_counts":               scanRequestCounts,
 		"security_db_revision":              securityDBRevision,
 		"security_db_rescan_request_counts": securityDBRescanCounts,
-	})
+	}
+	if s.authenticateAdmin(r) || !s.webAuth {
+		triageActiveCounts := map[string]int{}
+		triageExpiredCounts := map[string]int{}
+		if triageCounts, err := s.db.CountVulnerabilityTriageByStatus(ctx); err != nil {
+			log.Printf("triage status counts: %v", err)
+		} else {
+			for _, count := range triageCounts {
+				if count.State == "expired" {
+					triageExpiredCounts[count.Status] += count.Count
+				} else {
+					triageActiveCounts[count.Status] += count.Count
+				}
+			}
+		}
+		triageExpiringSoonDays := envInt("BONGSU_TRIAGE_EXPIRING_SOON_DAYS", 14)
+		if triageExpiringSoonDays <= 0 {
+			triageExpiringSoonDays = 14
+		}
+		triageExpiringSoonCounts := map[string]int{}
+		if counts, err := s.db.CountVulnerabilityTriageExpiringSoonByStatus(ctx, triageExpiringSoonDays); err != nil {
+			log.Printf("triage expiring soon counts: %v", err)
+		} else {
+			triageExpiringSoonCounts = counts
+		}
+		resp["triage_active_counts"] = triageActiveCounts
+		resp["triage_expired_counts"] = triageExpiredCounts
+		resp["triage_expiring_soon_counts"] = triageExpiringSoonCounts
+		resp["triage_expiring_soon_days"] = triageExpiringSoonDays
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func scopeHostFilter(scope db.AccessScope, visibleHostIDs []string) []string {
