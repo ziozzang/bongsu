@@ -385,7 +385,7 @@ export const api = {
     requestJSON<{ id: string; status: string }>('/vulnerabilities/triage', body),
   scans: (params: { host_id?: string; limit?: string; offset?: string }) =>
     request<{ items: Scan[]; total: number }>('/scans', params),
-  scanRequests: (params: { host_id?: string; status?: string; limit?: string; offset?: string }) =>
+  scanRequests: (params: { host_id?: string; status?: string; scan_type?: string; security_db_revision?: string; limit?: string; offset?: string }) =>
     request<{ items: ScanRequest[]; total: number }>('/scan-requests', params),
   createScanRequest: (body: { host_id?: string; requested_by?: string; scan_type?: string; packages_only?: boolean; reason?: string }) =>
     requestJSON<{ id: string; status: string }>('/scan-requests', body),

@@ -1490,6 +1490,32 @@ func TestNormalizeScanRequestCreateRejectsUnknownType(t *testing.T) {
 	}
 }
 
+func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleListScanRequests")
+	if start < 0 {
+		t.Fatal("handleListScanRequests not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleCancelScanRequest")
+	if end < 0 {
+		t.Fatal("handleListScanRequests end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`strings.TrimSpace(r.URL.Query().Get("scan_type"))`,
+		`http.Error(w, "invalid scan_type", http.StatusBadRequest)`,
+		`strings.TrimSpace(r.URL.Query().Get("security_db_revision"))`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("scan request API filter missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestCreateScanRequestValidatesTargetHost(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {

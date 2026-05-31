@@ -2041,11 +2041,19 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	scanType := strings.TrimSpace(r.URL.Query().Get("scan_type"))
+	if scanType != "" && !validScanRequestType(scanType) {
+		http.Error(w, "invalid scan_type", http.StatusBadRequest)
+		return
+	}
 	items, total, err := s.db.ListScanRequests(
 		r.Context(),
 		hostID,
 		scope.HostIDs,
-		r.URL.Query().Get("status"),
+		status,
+		scanType,
+		strings.TrimSpace(r.URL.Query().Get("security_db_revision")),
 		limitParam(r, 50),
 		offsetParam(r),
 	)
@@ -2154,9 +2162,7 @@ func normalizeScanRequestCreate(req *models.ScanRequest) error {
 	if req.ScanType == "" {
 		req.ScanType = "manual"
 	}
-	switch req.ScanType {
-	case "manual", "daily", "security-db-update":
-	default:
+	if !validScanRequestType(req.ScanType) {
 		return fmt.Errorf("invalid scan_type")
 	}
 	req.Status = "pending"
@@ -2166,6 +2172,15 @@ func normalizeScanRequestCreate(req *models.ScanRequest) error {
 	req.ClaimedAt = nil
 	req.CompletedAt = nil
 	return nil
+}
+
+func validScanRequestType(scanType string) bool {
+	switch scanType {
+	case "manual", "daily", "security-db-update":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) {

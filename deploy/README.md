@@ -257,7 +257,7 @@ spec:
 | `DELETE` | `/api/admin/rbac/policies/{id}` | Delete RBAC policy |
 | `GET` | `/api/admin/audit-logs` | Query audit log events by actor/action/resource/status; also available in Audit Log UI |
 | `POST` | `/api/scan-requests` | Request force scan for host/all |
-| `GET` | `/api/scan-requests` | List force scan requests with host-scoped RBAC |
+| `GET` | `/api/scan-requests` | List force scan requests with host-scoped RBAC; filter by `status`, `scan_type`, and `security_db_revision` |
 | `POST` | `/api/scan-requests/{id}/cancel` | Cancel pending or claimed force scan request |
 | `POST` | `/api/scan-requests/requeue-stale` | Requeue claimed force-scan requests older than timeout |
 | `POST` | `/api/agent/scan-requests/claim` | Agent claims a pending force scan |

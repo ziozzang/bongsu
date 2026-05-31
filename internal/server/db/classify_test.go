@@ -420,6 +420,34 @@ func TestAutoRescanPendingUniqueMigrationAllowsClaimedFollowUp(t *testing.T) {
 	}
 }
 
+func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) ListScanRequests")
+	if start < 0 {
+		t.Fatal("ListScanRequests not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) CountScanRequestsByStatus")
+	if end < 0 {
+		t.Fatal("ListScanRequests end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"status, scanType, securityDBRevision string",
+		"AND scan_type=$%d",
+		"AND security_db_revision=$%d",
+		"args = append(args, scanType)",
+		"args = append(args, securityDBRevision)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("scan request operational filter missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestScanRequestSecurityDBRevisionMigration(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/017_scan_request_security_db_revision.sql")
 	if err != nil {

@@ -1257,7 +1257,7 @@ DO UPDATE SET
 RETURNING (xmax = 0) AS inserted`
 }
 
-func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []string, status string, limit, offset int) ([]models.ScanRequest, int, error) {
+func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []string, status, scanType, securityDBRevision string, limit, offset int) ([]models.ScanRequest, int, error) {
 	baseQ := `FROM scan_requests WHERE 1=1`
 	args := []any{}
 	n := 1
@@ -1273,6 +1273,16 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	if status != "" {
 		baseQ += fmt.Sprintf(" AND status=$%d", n)
 		args = append(args, status)
+		n++
+	}
+	if scanType != "" {
+		baseQ += fmt.Sprintf(" AND scan_type=$%d", n)
+		args = append(args, scanType)
+		n++
+	}
+	if securityDBRevision != "" {
+		baseQ += fmt.Sprintf(" AND security_db_revision=$%d", n)
+		args = append(args, securityDBRevision)
 		n++
 	}
 	var total int

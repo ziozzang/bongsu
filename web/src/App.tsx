@@ -1998,6 +1998,8 @@ function ScansView() {
   const [requests, setRequests] = useState<ScanRequest[]>([]);
   const [requestTotal, setRequestTotal] = useState(0);
   const [requestStatus, setRequestStatus] = useState('');
+  const [requestType, setRequestType] = useState('');
+  const [requestRevision, setRequestRevision] = useState('');
   const [requestMsg, setRequestMsg] = useState('');
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -2024,17 +2026,19 @@ function ScansView() {
       .catch(() => setLoading(false));
   }, []);
 
-  const loadRequests = useCallback((status: string) => {
+  const loadRequests = useCallback((status: string, scanType: string, revision: string) => {
     setRequestsLoading(true);
     const params: Record<string, string> = { limit: '50', offset: '0' };
     if (status) params.status = status;
+    if (scanType) params.scan_type = scanType;
+    if (revision.trim()) params.security_db_revision = revision.trim();
     api.scanRequests(params)
       .then(r => { setRequests(r.items || []); setRequestTotal(r.total || 0); setRequestsLoading(false); })
       .catch(() => setRequestsLoading(false));
   }, []);
 
   useEffect(() => { load(0); }, [load]);
-  useEffect(() => { loadRequests(requestStatus); }, [loadRequests, requestStatus]);
+  useEffect(() => { loadRequests(requestStatus, requestType, requestRevision); }, [loadRequests, requestStatus, requestType, requestRevision]);
 
   const statusColor = (s: string) => s === 'completed' ? 'var(--low)' : s === 'degraded' ? 'var(--medium)' : s === 'failed' ? 'var(--critical)' : 'var(--medium)';
   const cancelRequest = async (id: string) => {
@@ -2042,7 +2046,7 @@ function ScansView() {
     try {
       await api.cancelScanRequest(id);
       setRequestMsg('Scan request cancelled');
-      loadRequests(requestStatus);
+      loadRequests(requestStatus, requestType, requestRevision);
     } catch {
       setRequestMsg('Cancel failed');
     }
@@ -2052,7 +2056,7 @@ function ScansView() {
     try {
       const r = await api.requeueStaleScanRequests();
       setRequestMsg(`Requeued ${r.requeued} stale claimed requests`);
-      loadRequests(requestStatus);
+      loadRequests(requestStatus, requestType, requestRevision);
     } catch {
       setRequestMsg('Requeue failed');
     }
@@ -2074,6 +2078,21 @@ function ScansView() {
               <option value="failed">Failed</option>
               <option value="cancelled">Cancelled</option>
             </select>
+            <select value={requestType} onChange={(e) => setRequestType(e.target.value)}>
+              <option value="">All Types</option>
+              <option value="manual">Manual</option>
+              <option value="daily">Daily</option>
+              <option value="security-db-update">Security DB</option>
+            </select>
+            <input
+              type="text"
+              className="mono"
+              placeholder="DB revision"
+              value={requestRevision}
+              onChange={(e) => setRequestRevision(e.target.value)}
+              style={{ maxWidth: '12rem' }}
+            />
+            {(requestStatus || requestType || requestRevision) && <button onClick={() => { setRequestStatus(''); setRequestType(''); setRequestRevision(''); }}>Clear</button>}
           </div>
         </div>
         {requestMsg && <div style={{ padding: '0.75rem 1rem 0', color: requestMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{requestMsg}</div>}
