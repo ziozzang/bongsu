@@ -29,13 +29,19 @@ type Host struct {
 }
 
 type Scan struct {
-	ID         string     `json:"id"`
-	HostID     string     `json:"host_id"`
-	ScanType   string     `json:"scan_type"` // "daily", "manual"
-	Status     string     `json:"status"`    // "running", "completed", "failed"
-	StartedAt  time.Time  `json:"started_at"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID              string     `json:"id"`
+	HostID          string     `json:"host_id"`
+	ScanType        string     `json:"scan_type"` // "daily", "manual"
+	Status          string     `json:"status"`    // "running", "completed", "failed"
+	PackageCount    int        `json:"package_count,omitempty"`
+	VulnCount       int        `json:"vulnerability_count,omitempty"`
+	ContainerCount  int        `json:"container_count,omitempty"`
+	PackagesAdded   int        `json:"packages_added,omitempty"`
+	PackagesRemoved int        `json:"packages_removed,omitempty"`
+	PackagesChanged int        `json:"packages_changed,omitempty"`
+	StartedAt       time.Time  `json:"started_at"`
+	FinishedAt      *time.Time `json:"finished_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 type ScanRequest struct {

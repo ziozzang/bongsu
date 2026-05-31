@@ -40,6 +40,7 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 - 소스 allowlist / matchable 비율 기반 취약점 rematch 품질 게이트
 - 온라인 환경 6시간 주기 업데이트와 air-gapped 환경 수동 import
 - 호스트/동작 중인 컨테이너 SBOM 수집 및 이미지/컨테이너 연관정보 저장
+- 스캔별 패키지/취약점/컨테이너 수와 이전 스캔 대비 inventory delta 추적
 - 패키지별 CVE 상세 정보 (air-gapped 환경 지원)
 - Docker / air-gapped 배포 지원
 - One-liner 에이전트 설치

@@ -230,6 +230,12 @@ export interface Scan {
   host_id: string;
   scan_type: string;
   status: string;
+  package_count?: number;
+  vulnerability_count?: number;
+  container_count?: number;
+  packages_added?: number;
+  packages_removed?: number;
+  packages_changed?: number;
   started_at: string;
   finished_at: string | null;
   created_at: string;

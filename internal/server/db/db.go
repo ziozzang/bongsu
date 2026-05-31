@@ -711,19 +711,16 @@ func (db *DB) InsertPorts(ctx context.Context, ports []models.PortInfo) error {
 }
 
 func (db *DB) ListScans(ctx context.Context, hostID string, hostIDs []string, limit, offset int) ([]models.Scan, int, error) {
-	countQ := `SELECT count(*) FROM scans WHERE 1=1`
-	dataQ := `SELECT id, host_id, scan_type, status, started_at, finished_at, created_at FROM scans WHERE 1=1`
+	baseWhere := ` WHERE 1=1`
 	args := []any{}
 	n := 1
 
 	if hostID != "" {
-		countQ += fmt.Sprintf(" AND host_id=$%d", n)
-		dataQ += fmt.Sprintf(" AND host_id=$%d", n)
+		baseWhere += fmt.Sprintf(" AND host_id=$%d", n)
 		args = append(args, hostID)
 		n++
 	} else if len(hostIDs) > 0 {
-		countQ += fmt.Sprintf(" AND host_id = ANY($%d)", n)
-		dataQ += fmt.Sprintf(" AND host_id = ANY($%d)", n)
+		baseWhere += fmt.Sprintf(" AND host_id = ANY($%d)", n)
 		args = append(args, pqStringArray(hostIDs))
 		n++
 	}
@@ -731,11 +728,52 @@ func (db *DB) ListScans(ctx context.Context, hostID string, hostIDs []string, li
 	var total int
 	countArgs := make([]any, len(args))
 	copy(countArgs, args)
-	if err := db.QueryRowContext(ctx, countQ, countArgs...).Scan(&total); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM scans`+baseWhere, countArgs...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 
-	dataQ += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", n, n+1)
+	dataQ := fmt.Sprintf(`
+WITH page_scans AS (
+	SELECT id, host_id, scan_type, status, started_at, finished_at, created_at
+	FROM scans
+	%s
+	ORDER BY created_at DESC
+	LIMIT $%d OFFSET $%d
+),
+scan_prev AS (
+	SELECT s.*,
+		(SELECT ps.id FROM scans ps
+		 WHERE ps.host_id=s.host_id AND ps.status='completed' AND ps.created_at < s.created_at
+		 ORDER BY ps.created_at DESC LIMIT 1) AS prev_scan_id
+	FROM page_scans s
+)
+SELECT
+	s.id, s.host_id, s.scan_type, s.status,
+	(SELECT count(*) FROM packages p WHERE p.scan_id=s.id)::int AS package_count,
+	(SELECT count(*) FROM vulnerabilities v WHERE v.scan_id=s.id)::int AS vulnerability_count,
+	(SELECT count(*) FROM container_assets c WHERE c.scan_id=s.id)::int AS container_count,
+	(SELECT count(*) FROM packages cp
+	 WHERE cp.scan_id=s.id AND s.prev_scan_id IS NOT NULL
+	   AND NOT EXISTS (
+		SELECT 1 FROM packages pp
+		WHERE pp.scan_id=s.prev_scan_id AND %s
+	   ))::int AS packages_added,
+	(SELECT count(*) FROM packages pp
+	 WHERE pp.scan_id=s.prev_scan_id AND s.prev_scan_id IS NOT NULL
+	   AND NOT EXISTS (
+		SELECT 1 FROM packages cp
+		WHERE cp.scan_id=s.id AND %s
+	   ))::int AS packages_removed,
+	(SELECT count(*) FROM packages cp
+	 WHERE cp.scan_id=s.id AND s.prev_scan_id IS NOT NULL
+	   AND EXISTS (
+		SELECT 1 FROM packages pp
+		WHERE pp.scan_id=s.prev_scan_id AND %s
+		  AND COALESCE(pp.version, '') != COALESCE(cp.version, '')
+	   ))::int AS packages_changed,
+	s.started_at, s.finished_at, s.created_at
+FROM scan_prev s
+ORDER BY s.created_at DESC`, baseWhere, n, n+1, packageIdentitySQL("cp", "pp"), packageIdentitySQL("cp", "pp"), packageIdentitySQL("cp", "pp"))
 	args = append(args, limit, offset)
 
 	rows, err := db.QueryContext(ctx, dataQ, args...)
@@ -747,12 +785,21 @@ func (db *DB) ListScans(ctx context.Context, hostID string, hostIDs []string, li
 	var scans []models.Scan
 	for rows.Next() {
 		var s models.Scan
-		if err := rows.Scan(&s.ID, &s.HostID, &s.ScanType, &s.Status, &s.StartedAt, &s.FinishedAt, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.HostID, &s.ScanType, &s.Status, &s.PackageCount, &s.VulnCount, &s.ContainerCount, &s.PackagesAdded, &s.PackagesRemoved, &s.PackagesChanged, &s.StartedAt, &s.FinishedAt, &s.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		scans = append(scans, s)
 	}
 	return scans, total, nil
+}
+
+func packageIdentitySQL(a, b string) string {
+	cols := []string{"asset_type", "asset_id", "source", "container", "container_id", "image_name", "name", "arch", "pkg_type", "ecosystem", "purl", "src_name", "file_path", "target"}
+	parts := make([]string, 0, len(cols))
+	for _, col := range cols {
+		parts = append(parts, fmt.Sprintf("COALESCE(%s.%s, '') = COALESCE(%s.%s, '')", a, col, b, col))
+	}
+	return strings.Join(parts, " AND ")
 }
 
 func (db *DB) CreateScanRequest(ctx context.Context, req *models.ScanRequest) error {

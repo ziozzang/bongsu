@@ -219,7 +219,7 @@ spec:
 | `GET` | `/api/packages` | List packages (supports `sort_by`, `q`, filters, pagination) |
 | `GET` | `/api/packages/{id}/vulnerabilities` | Package vulnerability details |
 | `GET` | `/api/containers` | List latest container/image assets with host-scoped RBAC |
-| `GET` | `/api/scans` | Scan history |
+| `GET` | `/api/scans` | Scan history with inventory counts and package delta |
 | `DELETE` | `/api/scans/{id}` | Delete scan and associated data |
 | `POST` | `/api/admin/trivy-db` | Upload trivy-db (air-gapped update) |
 | `POST` | `/api/admin/security-db/update` | Run configured source sync command |

@@ -1912,7 +1912,7 @@ function ScansView() {
         {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
           <table>
             <thead>
-              <tr><th>Date</th><th>Host</th><th>Type</th><th>Status</th><th>Started</th><th>Finished</th><th></th></tr>
+              <tr><th>Date</th><th>Host</th><th>Type</th><th>Status</th><th>Inventory</th><th>Delta</th><th>Started</th><th>Finished</th><th></th></tr>
             </thead>
             <tbody>
               {scans.map(s => (
@@ -1921,12 +1921,14 @@ function ScansView() {
                   <td><span className="host-link" title={`IP: ${hostIPMap[s.host_id] || ''}`}>{hostMap[s.host_id] || s.host_id}</span></td>
                   <td>{s.scan_type}</td>
                   <td style={{ color: statusColor(s.status), fontWeight: 600 }}>{s.status}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{s.package_count || 0} pkgs / {s.vulnerability_count || 0} vulns / {s.container_count || 0} ctrs</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>+{s.packages_added || 0} / -{s.packages_removed || 0} / ~{s.packages_changed || 0}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{s.started_at ? new Date(s.started_at).toLocaleString() : '-'}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{s.finished_at ? new Date(s.finished_at).toLocaleString() : '-'}</td>
                   <td><button className="delete-btn" onClick={() => { if (confirm('Delete this scan and all associated data?')) { api.deleteScan(s.id).then(() => load(page)).catch(() => alert('Delete failed')); } }}>Delete</button></td>
                 </tr>
               ))}
-              {scans.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scans recorded</td></tr>}
+              {scans.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scans recorded</td></tr>}
             </tbody>
           </table>
         )}

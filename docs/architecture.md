@@ -74,6 +74,10 @@ Current implementation exposes request creation/listing/cancel plus agent claim/
 
 Running container metadata is stored separately from package rows in `container_assets`. The inventory preserves host ID, runtime, container instance ID/name, image name, image ID/digest, state, labels, and start time. `/api/containers` returns the latest completed scan per host and supports host, runtime, state, image, name, container ID, and image ID filters. Viewer RBAC is applied before returning rows, so container and image browsing follows the same host scope as package, vulnerability, scan, SBOM, and stats views.
 
+## Scan Inventory Drift
+
+`/api/scans` includes package, vulnerability, and container counts for each scan plus package inventory delta against the previous completed scan for the same host. Delta identity uses asset/source/container/package metadata without the version field, so version movement is reported as `packages_changed`, while new or missing identities are reported as added/removed. The Scan History dashboard exposes these counters to help operators spot broken collectors, unexpected package churn, or container image drift.
+
 ## Asset Metadata
 
 Hosts preserve operator-owned metadata independently from agent reports: owner, team, environment, criticality, and JSON tags. Agent check-ins update technical facts such as OS, IP, CPU, and memory without overwriting this metadata. Admins can update it through `/api/hosts/{id}/metadata`, the dashboard shows it on host inventory/detail pages, and CycloneDX SBOM exports include it as `bongsu:*` root component properties.

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -184,5 +185,15 @@ func TestParseAssetGroupRef(t *testing.T) {
 				t.Fatalf("got (%q, %q, %v), want (%q, %q, %v)", key, value, ok, tt.wantKey, tt.wantValue, tt.wantOK)
 			}
 		})
+	}
+}
+
+func TestPackageIdentitySQLExcludesVersion(t *testing.T) {
+	got := packageIdentitySQL("current", "previous")
+	if !strings.Contains(got, "current.name") || !strings.Contains(got, "previous.name") {
+		t.Fatalf("identity SQL missing package name: %s", got)
+	}
+	if strings.Contains(got, ".version") {
+		t.Fatalf("identity SQL must exclude version so upgrades become changes: %s", got)
 	}
 }
