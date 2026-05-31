@@ -16,6 +16,8 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 		OSVersion: "24.04",
 		Kernel:    "6.8.0",
 		Arch:      "amd64",
+		Owner:     "platform",
+		Team:      "security",
 	}
 	pkgs := []models.Package{{
 		ID:          "pkg-1",
@@ -65,5 +67,19 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 	}
 	if !foundAsset {
 		t.Fatal("bongsu asset context property missing")
+	}
+	metadata := doc["metadata"].(map[string]any)
+	root := metadata["component"].(map[string]any)
+	rootProps := root["properties"].([]any)
+	foundOwner := false
+	for _, item := range rootProps {
+		prop := item.(map[string]any)
+		if prop["name"] == "bongsu:owner" && prop["value"] == "platform" {
+			foundOwner = true
+			break
+		}
+	}
+	if !foundOwner {
+		t.Fatal("bongsu host owner property missing")
 	}
 }

@@ -144,6 +144,11 @@ func GenerateCycloneDX(pkgs []models.Package, host models.Host) ([]byte, error) 
 		{Name: "bongsu:os_version", Value: host.OSVersion},
 		{Name: "bongsu:kernel", Value: host.Kernel},
 		{Name: "bongsu:arch", Value: host.Arch},
+		{Name: "bongsu:owner", Value: host.Owner},
+		{Name: "bongsu:team", Value: host.Team},
+		{Name: "bongsu:environment", Value: host.Environment},
+		{Name: "bongsu:criticality", Value: host.Criticality},
+		{Name: "bongsu:tags", Value: host.Tags},
 	}
 
 	components := make([]cdxComponent, 0, len(pkgs))

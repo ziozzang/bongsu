@@ -1122,8 +1122,16 @@ RETURNING id, created_at, updated_at`,
 	return err
 }
 
+const hostCols = `id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, owner, team, environment, criticality, tags::text, last_seen, created_at`
+
+func scanHost(scanner interface{ Scan(...interface{}) error }, h *models.Host) error {
+	return scanner.Scan(&h.ID, &h.Hostname, &h.IPAddress, &h.OSName, &h.OSVersion,
+		&h.Kernel, &h.Arch, &h.CPUModel, &h.CPUCores, &h.MemoryMB, &h.AgentVersion,
+		&h.Owner, &h.Team, &h.Environment, &h.Criticality, &h.Tags, &h.LastSeen, &h.CreatedAt)
+}
+
 func (db *DB) ListHosts(ctx context.Context) ([]models.Host, error) {
-	q := `SELECT id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, last_seen, created_at FROM hosts ORDER BY hostname`
+	q := `SELECT ` + hostCols + ` FROM hosts ORDER BY hostname`
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
@@ -1133,9 +1141,7 @@ func (db *DB) ListHosts(ctx context.Context) ([]models.Host, error) {
 	var hosts []models.Host
 	for rows.Next() {
 		var h models.Host
-		if err := rows.Scan(&h.ID, &h.Hostname, &h.IPAddress, &h.OSName, &h.OSVersion,
-			&h.Kernel, &h.Arch, &h.CPUModel, &h.CPUCores, &h.MemoryMB, &h.AgentVersion,
-			&h.LastSeen, &h.CreatedAt); err != nil {
+		if err := scanHost(rows, &h); err != nil {
 			return nil, err
 		}
 		hosts = append(hosts, h)
@@ -1144,15 +1150,23 @@ func (db *DB) ListHosts(ctx context.Context) ([]models.Host, error) {
 }
 
 func (db *DB) GetHost(ctx context.Context, id string) (*models.Host, error) {
-	q := `SELECT id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, last_seen, created_at FROM hosts WHERE id=$1`
+	q := `SELECT ` + hostCols + ` FROM hosts WHERE id=$1`
 	var h models.Host
-	err := db.QueryRowContext(ctx, q, id).Scan(&h.ID, &h.Hostname, &h.IPAddress, &h.OSName,
-		&h.OSVersion, &h.Kernel, &h.Arch, &h.CPUModel, &h.CPUCores, &h.MemoryMB,
-		&h.AgentVersion, &h.LastSeen, &h.CreatedAt)
+	err := scanHost(db.QueryRowContext(ctx, q, id), &h)
 	if err != nil {
 		return nil, err
 	}
 	return &h, nil
+}
+
+func (db *DB) UpdateHostMetadata(ctx context.Context, id, owner, team, environment, criticality, tags string) error {
+	if tags == "" {
+		tags = "{}"
+	}
+	_, err := db.ExecContext(ctx, `UPDATE hosts
+SET owner=$2, team=$3, environment=$4, criticality=$5, tags=$6::jsonb, updated_at=now()
+WHERE id=$1`, id, owner, team, environment, criticality, tags)
+	return err
 }
 
 const latestScansSub = `(SELECT DISTINCT ON (host_id) id FROM scans WHERE status='completed' ORDER BY host_id, created_at DESC)`

@@ -17,6 +17,11 @@ type Host struct {
 	CPUCores     int       `json:"cpu_cores"`
 	MemoryMB     int64     `json:"memory_mb"`
 	AgentVersion string    `json:"agent_version"`
+	Owner        string    `json:"owner,omitempty"`
+	Team         string    `json:"team,omitempty"`
+	Environment  string    `json:"environment,omitempty"`
+	Criticality  string    `json:"criticality,omitempty"`
+	Tags         string    `json:"tags,omitempty"`
 	LastSeen     time.Time `json:"last_seen"`
 	CreatedAt    time.Time `json:"created_at"`
 }

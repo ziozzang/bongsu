@@ -94,6 +94,11 @@ export interface Host {
   cpu_cores: number;
   memory_mb: number;
   agent_version: string;
+  owner?: string;
+  team?: string;
+  environment?: string;
+  criticality?: string;
+  tags?: string;
   last_seen: string;
   vuln_counts?: Record<string, number>;
 }
@@ -231,6 +236,8 @@ export interface CveDbEntry {
 export const api = {
   hosts: () => request<Host[]>('/hosts'),
   host: (id: string) => request<Host>(`/hosts/${id}`),
+  updateHostMetadata: (id: string, body: { owner?: string; team?: string; environment?: string; criticality?: string; tags?: string }) =>
+    requestJSON<Host>(`/hosts/${id}/metadata`, body),
   hostPackages: (id: string, limit: number, offset: number) =>
     request<{ items: Pkg[]; total: number }>(`/hosts/${id}/packages`, { limit: String(limit), offset: String(offset) }),
   exportHostSBOM: (id: string, hostname: string) => download(`/hosts/${id}/sbom`, `${hostname || id}-cyclonedx.json`),

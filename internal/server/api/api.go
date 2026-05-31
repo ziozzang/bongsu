@@ -105,6 +105,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/report", s.handleReport)
 	s.mux.HandleFunc("GET /api/hosts", s.handleListHosts)
 	s.mux.HandleFunc("GET /api/hosts/{id}", s.handleGetHost)
+	s.mux.HandleFunc("POST /api/hosts/{id}/metadata", s.handleUpdateHostMetadata)
 	s.mux.HandleFunc("GET /api/hosts/{id}/packages", s.handleHostPackages)
 	s.mux.HandleFunc("GET /api/hosts/{id}/sbom", s.handleHostSBOM)
 	s.mux.HandleFunc("GET /api/hosts/{id}/vuln-counts", s.handleHostVulnCounts)
@@ -576,6 +577,54 @@ func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	host, err := s.db.GetHost(ctx, hostID)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, host)
+}
+
+func (s *Server) handleUpdateHostMetadata(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	hostID := r.PathValue("id")
+	if hostID == "" {
+		http.Error(w, "host id is required", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Owner       string `json:"owner"`
+		Team        string `json:"team"`
+		Environment string `json:"environment"`
+		Criticality string `json:"criticality"`
+		Tags        string `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.Tags == "" {
+		body.Tags = "{}"
+	}
+	var tags any
+	if err := json.Unmarshal([]byte(body.Tags), &tags); err != nil {
+		http.Error(w, "tags must be valid JSON", http.StatusBadRequest)
+		return
+	}
+	if err := s.db.UpdateHostMetadata(r.Context(), hostID, body.Owner, body.Team, body.Environment, body.Criticality, body.Tags); err != nil {
+		log.Printf("update host metadata: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	s.audit(r, "host.metadata.update", "host", hostID, "ok", map[string]any{
+		"owner":       body.Owner,
+		"team":        body.Team,
+		"environment": body.Environment,
+		"criticality": body.Criticality,
+	})
+	host, err := s.db.GetHost(r.Context(), hostID)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return

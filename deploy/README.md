@@ -202,6 +202,7 @@ spec:
 |--------|------|-------------|
 | `POST` | `/api/report` | Agent scan report submission |
 | `GET` | `/api/hosts` | List hosts |
+| `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
 | `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON |
 | `GET` | `/api/vulnerabilities` | List CVEs (supports `sort_by`, `severity`, pagination) |
 | `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON |

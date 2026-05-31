@@ -400,6 +400,9 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
             <tr>
               <th>Hostname</th>
               <th>OS</th>
+              <th>Owner</th>
+              <th>Env</th>
+              <th>Criticality</th>
               <th>IP</th>
               <th>Critical</th>
               <th>High</th>
@@ -414,6 +417,9 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
               <tr key={h.id}>
                 <td><span className="host-link" title={`IP: ${h.ip_address}`} onClick={() => onSelectHost(h.id)}>{h.hostname}</span></td>
                 <td>{h.os_name} {h.os_version}</td>
+                <td>{h.owner || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                <td>{h.environment || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                <td>{h.criticality || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                 <td className="mono">{h.ip_address}</td>
                 <td style={{ color: sevColor('CRITICAL'), fontWeight: 600 }}>{h.vuln_counts?.CRITICAL || 0}</td>
                 <td style={{ color: sevColor('HIGH'), fontWeight: 600 }}>{h.vuln_counts?.HIGH || 0}</td>
@@ -439,7 +445,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
                 </td>
               </tr>
             ))}
-            {hosts.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
+            {hosts.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
           </tbody>
         </table>
       </div>
@@ -454,10 +460,21 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
   const [totalPkgs, setTotalPkgs] = useState(0);
   const [pkgPage, setPkgPage] = useState(0);
   const [exportMsg, setExportMsg] = useState('');
+  const [metadata, setMetadata] = useState({ owner: '', team: '', environment: '', criticality: '', tags: '{}' });
+  const [metadataMsg, setMetadataMsg] = useState('');
   const limit = 50;
 
   useEffect(() => {
-    api.host(hostId).then(setHost).catch(() => {});
+    api.host(hostId).then(h => {
+      setHost(h);
+      setMetadata({
+        owner: h.owner || '',
+        team: h.team || '',
+        environment: h.environment || '',
+        criticality: h.criticality || '',
+        tags: h.tags || '{}',
+      });
+    }).catch(() => {});
     api.hostVulnCounts(hostId).then(setVulnCounts).catch(() => {});
   }, [hostId]);
 
@@ -468,6 +485,18 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
   useEffect(() => { loadPkgs(0); }, [loadPkgs]);
 
   if (!host) return <div>Loading...</div>;
+
+  const saveMetadata = async () => {
+    setMetadataMsg('Saving...');
+    try {
+      JSON.parse(metadata.tags || '{}');
+      const updated = await api.updateHostMetadata(host.id, metadata);
+      setHost(updated);
+      setMetadataMsg('Saved');
+    } catch {
+      setMetadataMsg('Save failed');
+    }
+  };
 
   return (
     <>
@@ -498,8 +527,37 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
         <div className="stat-card"><div className="label">Kernel</div><div className="mono" style={{ fontSize: '0.875rem' }}>{host.kernel}</div></div>
         <div className="stat-card"><div className="label">CPU</div><div style={{ fontSize: '0.875rem' }}>{host.cpu_cores} cores</div></div>
         <div className="stat-card"><div className="label">Memory</div><div style={{ fontSize: '0.875rem' }}>{(host.memory_mb / 1024).toFixed(1)} GB</div></div>
+        <div className="stat-card"><div className="label">Owner</div><div style={{ fontSize: '0.875rem' }}>{host.owner || '-'}</div></div>
+        <div className="stat-card"><div className="label">Environment</div><div style={{ fontSize: '0.875rem' }}>{host.environment || '-'}</div></div>
         <div className="stat-card"><div className="label">Critical</div><div className="value" style={{ color: 'var(--critical)', fontSize: '1.25rem' }}>{vulnCounts.CRITICAL || 0}</div></div>
         <div className="stat-card"><div className="label">High</div><div className="value" style={{ color: 'var(--high)', fontSize: '1.25rem' }}>{vulnCounts.HIGH || 0}</div></div>
+      </div>
+
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 1rem' }}>
+          <h2>Asset Metadata</h2>
+        </div>
+        <div className="filters">
+          <input type="text" placeholder="Owner" value={metadata.owner} onChange={(e) => setMetadata({ ...metadata, owner: e.target.value })} />
+          <input type="text" placeholder="Team" value={metadata.team} onChange={(e) => setMetadata({ ...metadata, team: e.target.value })} />
+          <select value={metadata.environment} onChange={(e) => setMetadata({ ...metadata, environment: e.target.value })}>
+            <option value="">Environment</option>
+            <option value="production">Production</option>
+            <option value="staging">Staging</option>
+            <option value="development">Development</option>
+            <option value="test">Test</option>
+          </select>
+          <select value={metadata.criticality} onChange={(e) => setMetadata({ ...metadata, criticality: e.target.value })}>
+            <option value="">Criticality</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+          <input type="text" placeholder='Tags JSON, e.g. {"service":"api"}' value={metadata.tags} onChange={(e) => setMetadata({ ...metadata, tags: e.target.value })} style={{ minWidth: 260 }} />
+          <button className="filter-btn" onClick={saveMetadata}>Save</button>
+          {metadataMsg && <span style={{ color: metadataMsg.includes('failed') ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>{metadataMsg}</span>}
+        </div>
       </div>
 
       <div className="card">
