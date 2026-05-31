@@ -2474,10 +2474,20 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	count, err := s.importCveJSONL(ctx, file, source)
 	if err != nil {
 		log.Printf("cve-db import: %v", err)
-		http.Error(w, "import failed", http.StatusInternalServerError)
+		status := cveImportErrorStatus(err)
+		s.audit(r, "cve_db.import", "cve_db", source, "error", map[string]any{
+			"source": source,
+			"status": status,
+			"error":  err.Error(),
+		})
+		http.Error(w, cveImportErrorMessage(err), status)
 		return
 	}
 	if count == 0 {
+		s.audit(r, "cve_db.import", "cve_db", source, "error", map[string]any{
+			"source": source,
+			"reason": "no valid entries",
+		})
 		http.Error(w, "no valid entries found", http.StatusBadRequest)
 		return
 	}
@@ -2495,9 +2505,20 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string) (int, error) {
-	return s.importCveJSONLWithUpsert(ctx, reader, source, func(ctx context.Context, batch []models.CveEntry) (int, error) {
-		return s.db.UpsertCveEntries(ctx, batch)
-	})
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	count, err := s.importCveJSONLTx(ctx, reader, source, tx)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func (s *Server) importCveJSONLTx(ctx context.Context, reader io.Reader, source string, tx *sql.Tx) (int, error) {
@@ -2548,6 +2569,22 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 		}
 	}
 	return total, flush()
+}
+
+func cveImportErrorStatus(err error) int {
+	var syntaxErr *json.SyntaxError
+	var typeErr *json.UnmarshalTypeError
+	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+func cveImportErrorMessage(err error) string {
+	if cveImportErrorStatus(err) == http.StatusBadRequest {
+		return "invalid cve jsonl"
+	}
+	return "import failed"
 }
 
 func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {

@@ -3,6 +3,9 @@ package api
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -543,6 +546,75 @@ func TestVulnSummaryUsesActiveFindingCounts(t *testing.T) {
 	fn := body[start : start+end]
 	if !strings.Contains(fn, "GetCurrentActionableVulnCountsByHost") {
 		t.Fatalf("vuln summary host counts must use active findings: %s", fn)
+	}
+}
+
+func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) importCveJSONL(")
+	if start < 0 {
+		t.Fatal("importCveJSONL not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) importCveJSONLTx")
+	if end < 0 {
+		t.Fatal("importCveJSONLTx not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"s.db.BeginTx",
+		"s.importCveJSONLTx",
+		"tx.Commit()",
+		"return 0, err",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("cve jsonl import transaction handling missing %q", want)
+		}
+	}
+	if strings.Contains(fn, "UpsertCveEntries(ctx, batch)") {
+		t.Fatal("cve jsonl import must not commit each batch outside a single transaction")
+	}
+}
+
+func TestCveDbImportAuditsFailures(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleCveDbImport")
+	if start < 0 {
+		t.Fatal("handleCveDbImport not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) importCveJSONL")
+	if end < 0 {
+		t.Fatal("importCveJSONL not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`cveImportErrorStatus(err)`,
+		`cveImportErrorMessage(err)`,
+		`"cve_db.import", "cve_db", source, "error"`,
+		`"reason": "no valid entries"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("cve db import failure handling missing %q", want)
+		}
+	}
+}
+
+func TestCveImportErrorStatusMapsJsonErrors(t *testing.T) {
+	if got := cveImportErrorStatus(&json.SyntaxError{}); got != http.StatusBadRequest {
+		t.Fatalf("syntax error status = %d, want %d", got, http.StatusBadRequest)
+	}
+	if got := cveImportErrorStatus(&json.UnmarshalTypeError{}); got != http.StatusBadRequest {
+		t.Fatalf("type error status = %d, want %d", got, http.StatusBadRequest)
+	}
+	if got := cveImportErrorStatus(errors.New("database unavailable")); got != http.StatusInternalServerError {
+		t.Fatalf("generic error status = %d, want %d", got, http.StatusInternalServerError)
 	}
 }
 

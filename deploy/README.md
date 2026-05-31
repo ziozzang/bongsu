@@ -103,7 +103,7 @@ BONGSU_AUTO_RESCAN_ON_DB_UPDATE=true
 BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS=720
 ```
 
-After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Recalculation is serialized and coalesced, so a multi-source sync that imports OSV, NVD, and Trivy data does not run overlapping recalculation jobs. Active automatic rescan requests are deduplicated per host in the database, so overlapping DB update hooks do not create duplicate work. Agents running in daemon mode pick those requests up through the normal force-scan polling path.
+After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Recalculation is serialized and coalesced, so a multi-source sync that imports OSV, NVD, and Trivy data does not run overlapping recalculation jobs. CVE JSONL imports are committed as a single transaction; malformed JSONL or row-level insert failures reject the whole payload and record a failed audit event. Active automatic rescan requests are deduplicated per host in the database, so overlapping DB update hooks do not create duplicate work. Agents running in daemon mode pick those requests up through the normal force-scan polling path.
 
 ### Air-Gapped Environment
 
@@ -233,7 +233,7 @@ spec:
 | `POST` | `/api/admin/security-db/import` | Import exported security DB bundle |
 | `GET` | `/api/cve-db/stats` | Source counts and quality counters for matchable/fixed/range/CVSS data |
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
-| `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
+| `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL atomically |
 | `POST` | `/api/admin/cve-db/rematch` | Rematch packages, optionally with `sources` and `min_source_matchable_percent` JSON filters |
 | `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs |
 | `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
