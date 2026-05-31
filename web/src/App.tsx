@@ -65,6 +65,14 @@ function preReleaseNumber(v: string, marker: string): number {
   return match ? Number.parseInt(match[0], 10) : 0;
 }
 
+function findingSourceLabel(source?: string): string {
+  switch (source || 'scanner') {
+    case 'scanner': return 'Scanner';
+    case 'cve-db': return 'CVE DB';
+    default: return source || 'Scanner';
+  }
+}
+
 function agentStatusColor(status?: string) {
   switch (status) {
     case 'online': return 'var(--low)';
@@ -1065,7 +1073,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
           <select value={findingSource} onChange={(e) => setFindingSource(e.target.value)}>
             <option value="">All Sources</option>
             {(findingSources.length ? findingSources : ['scanner', 'cve-db']).map(s => (
-              <option key={s} value={s}>{s === 'cve-db' ? 'CVE DB' : 'Scanner'}</option>
+              <option key={s} value={s}>{findingSourceLabel(s)}</option>
             ))}
           </select>
           <select value={hostId} onChange={(e) => setHostId(e.target.value)}>
@@ -1139,7 +1147,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                 <tr key={v.id} style={{ cursor: 'pointer' }} onClick={() => onSelectVuln(v)}>
                   <td><span className="host-link">{hostMap[v.host_id] || v.host_id.slice(0, 8)}</span></td>
                   <td><span className="badge">{(v.triage_status || 'open').replace('_', ' ')}</span></td>
-                  <td><span className="badge">{(v.finding_source || 'scanner') === 'cve-db' ? 'CVE DB' : 'Scanner'}</span></td>
+                  <td><span className="badge">{findingSourceLabel(v.finding_source)}</span></td>
                   <td className="mono">
                     <span className="host-link" style={{ color: 'var(--primary)' }}>{v.vulnerability_id}</span>
                   </td>
@@ -1258,7 +1266,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         </div>
         <div className="stat-card">
           <div className="label">Source</div>
-          <div style={{ fontSize: '0.875rem' }}>{(vuln.finding_source || 'scanner') === 'cve-db' ? 'CVE DB' : 'Scanner'}</div>
+          <div style={{ fontSize: '0.875rem' }}>{findingSourceLabel(vuln.finding_source)}</div>
         </div>
         <div className="stat-card">
           <div className="label">Triage</div>

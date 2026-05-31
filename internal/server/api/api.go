@@ -1028,7 +1028,11 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 	}
 	ctx := r.Context()
 
-	filter, forbidden, empty := s.vulnFilterFromRequest(r)
+	filter, forbidden, empty, err := s.vulnFilterFromRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if empty {
 		writeJSON(w, http.StatusOK, map[string]any{"items": []models.Vulnerability{}, "total": 0})
 		return
@@ -1053,21 +1057,25 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-func (s *Server) vulnFilterFromRequest(r *http.Request) (db.VulnFilter, bool, bool) {
+func (s *Server) vulnFilterFromRequest(r *http.Request) (db.VulnFilter, bool, bool, error) {
 	hostID := r.URL.Query().Get("host_id")
+	findingSource, err := findingSourceFilterParam(r)
+	if err != nil {
+		return db.VulnFilter{}, false, false, err
+	}
 	scope := s.accessScope(r)
 	if scope.Empty() {
-		return db.VulnFilter{}, false, true
+		return db.VulnFilter{}, false, true, nil
 	}
 	if hostID != "" && !scope.CanReadHost(hostID) {
-		return db.VulnFilter{}, true, false
+		return db.VulnFilter{}, true, false, nil
 	}
 	return db.VulnFilter{
 		HostID:        hostID,
 		HostIDs:       scope.HostIDs,
 		Severity:      r.URL.Query().Get("severity"),
 		TriageStatus:  r.URL.Query().Get("triage_status"),
-		FindingSource: r.URL.Query().Get("finding_source"),
+		FindingSource: findingSource,
 		Overdue:       r.URL.Query().Get("overdue") == "true",
 		PkgName:       r.URL.Query().Get("pkg_name"),
 		Container:     r.URL.Query().Get("container"),
@@ -1081,7 +1089,21 @@ func (s *Server) vulnFilterFromRequest(r *http.Request) (db.VulnFilter, bool, bo
 		HideFixed:     true,
 		HideNoFix:     r.URL.Query().Get("show_no_fix") != "true",
 		HideMismatch:  r.URL.Query().Get("show_mismatch") != "true",
-	}, false, false
+	}, false, false, nil
+}
+
+func findingSourceFilterParam(r *http.Request) (string, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get("finding_source"))
+	switch strings.ToLower(raw) {
+	case "":
+		return "", nil
+	case "scanner":
+		return "scanner", nil
+	case "cve-db", "cve_db", "cvedb":
+		return "cve-db", nil
+	default:
+		return "", fmt.Errorf("invalid finding_source %q; allowed values are scanner or cve-db", raw)
+	}
 }
 
 func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Request) {
@@ -1089,7 +1111,11 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	filter, forbidden, empty := s.vulnFilterFromRequest(r)
+	filter, forbidden, empty, err := s.vulnFilterFromRequest(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	if forbidden {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -1103,7 +1129,6 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 	}
 	var vulns []models.Vulnerability
 	total := 0
-	var err error
 	if !empty {
 		vulns, total, err = s.db.ListVulnerabilities(r.Context(), filter, maxRows, 0)
 		if err != nil {

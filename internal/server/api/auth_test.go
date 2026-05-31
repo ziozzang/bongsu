@@ -823,15 +823,44 @@ func TestHandleReportAppliesScanScopedCveRematch(t *testing.T) {
 }
 
 func TestVulnFilterFromRequestIncludesFindingSource(t *testing.T) {
-	req := httptest.NewRequest("GET", "/api/vulnerabilities?finding_source=cve-db", nil)
+	req := httptest.NewRequest("GET", "/api/vulnerabilities?finding_source=%20CVE_DB%20", nil)
 	req.Header.Set("X-API-Key", "admin")
 	s := &Server{apiKey: "admin", webAuth: true}
-	filter, forbidden, empty := s.vulnFilterFromRequest(req)
+	filter, forbidden, empty, err := s.vulnFilterFromRequest(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 	if forbidden || empty {
 		t.Fatalf("unexpected forbidden=%v empty=%v", forbidden, empty)
 	}
 	if filter.FindingSource != "cve-db" {
 		t.Fatalf("finding source = %q, want cve-db", filter.FindingSource)
+	}
+}
+
+func TestVulnFilterFromRequestRejectsInvalidFindingSource(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/vulnerabilities?finding_source=python", nil)
+	req.Header.Set("X-API-Key", "admin")
+	s := &Server{apiKey: "admin", webAuth: true}
+	_, _, _, err := s.vulnFilterFromRequest(req)
+	if err == nil || !strings.Contains(err.Error(), "invalid finding_source") {
+		t.Fatalf("expected invalid finding_source error, got %v", err)
+	}
+}
+
+func TestHandleListVulnerabilitiesRejectsInvalidFindingSource(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/vulnerabilities?finding_source=python", nil)
+	req.Header.Set("X-API-Key", "admin")
+	w := httptest.NewRecorder()
+	s := &Server{apiKey: "admin", webAuth: true}
+
+	s.handleListVulnerabilities(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+	if !strings.Contains(w.Body.String(), "invalid finding_source") {
+		t.Fatalf("body = %q, want invalid finding_source", w.Body.String())
 	}
 }
 
