@@ -163,3 +163,26 @@ func TestVulnSummaryGroupExprAllowlist(t *testing.T) {
 		t.Fatalf("unsafe group expr should fall back to owner, got %q", got)
 	}
 }
+
+func TestParseAssetGroupRef(t *testing.T) {
+	tests := []struct {
+		ref       string
+		wantKey   string
+		wantValue string
+		wantOK    bool
+	}{
+		{"team:platform", "team", "platform", true},
+		{"environment=prod", "environment", "prod", true},
+		{"tag:service=api", "tag", "service=api", true},
+		{"missing-separator", "", "", false},
+		{"owner:", "", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.ref, func(t *testing.T) {
+			key, value, ok := parseAssetGroupRef(tt.ref)
+			if key != tt.wantKey || value != tt.wantValue || ok != tt.wantOK {
+				t.Fatalf("got (%q, %q, %v), want (%q, %q, %v)", key, value, ok, tt.wantKey, tt.wantValue, tt.wantOK)
+			}
+		})
+	}
+}

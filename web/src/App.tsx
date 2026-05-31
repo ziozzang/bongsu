@@ -1977,9 +1977,10 @@ function RBACView() {
               <option value="host">Host</option>
               <option value="container">Container</option>
               <option value="image">Image</option>
+              <option value="asset_group">Asset Group</option>
               <option value="all">All</option>
             </select>
-            <input type="text" placeholder="resource_id or *" value={resourceID} onChange={(e) => setResourceID(e.target.value)} />
+            <input type="text" placeholder={resourceType === 'asset_group' ? 'team:platform or tag:service=api' : 'resource_id or *'} value={resourceID} onChange={(e) => setResourceID(e.target.value)} />
             <select value={permission} onChange={(e) => setPermission(e.target.value)}>
               <option value="read">Read</option>
               <option value="write">Write</option>

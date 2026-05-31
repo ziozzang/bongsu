@@ -254,6 +254,11 @@ curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json"
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
   -d '{"subject_external_id":"alice","resource_type":"image","resource_id":"registry.local/app/api:2026.06","permission":"read"}' \
   http://localhost:8080/api/admin/rbac/policies
+
+# Asset group policies resolve through current host metadata
+curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
+  -d '{"subject_external_id":"alice","resource_type":"asset_group","resource_id":"team:platform","permission":"read"}' \
+  http://localhost:8080/api/admin/rbac/policies
 ```
 
 ## Troubleshooting

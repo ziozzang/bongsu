@@ -966,8 +966,10 @@ WHERE s.external_id=$1 AND p.permission IN ('read','admin')`, externalID)
 	scope := AccessScope{}
 	containerRefs := []string{}
 	imageRefs := []string{}
+	assetGroupRefs := []string{}
 	containerWildcard := false
 	imageWildcard := false
+	assetGroupWildcard := false
 	for rows.Next() {
 		var rt, rid string
 		if err := rows.Scan(&rt, &rid); err != nil {
@@ -992,6 +994,12 @@ WHERE s.external_id=$1 AND p.permission IN ('read','admin')`, externalID)
 			} else if rid != "" {
 				imageRefs = append(imageRefs, rid)
 			}
+		case "asset_group":
+			if rid == "*" {
+				assetGroupWildcard = true
+			} else if rid != "" {
+				assetGroupRefs = append(assetGroupRefs, rid)
+			}
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -1008,6 +1016,13 @@ WHERE s.external_id=$1 AND p.permission IN ('read','admin')`, externalID)
 		scope.HostIDs = appendUnique(scope.HostIDs, id)
 	}
 	hostIDs, err = db.hostIDsForImagePolicies(ctx, imageRefs, imageWildcard)
+	if err != nil {
+		return AccessScope{}, err
+	}
+	for _, id := range hostIDs {
+		scope.HostIDs = appendUnique(scope.HostIDs, id)
+	}
+	hostIDs, err = db.hostIDsForAssetGroupPolicies(ctx, assetGroupRefs, assetGroupWildcard)
 	if err != nil {
 		return AccessScope{}, err
 	}
@@ -1041,6 +1056,64 @@ func (db *DB) hostIDsForImagePolicies(ctx context.Context, refs []string, wildca
 		args = append(args, pqStringArray(refs))
 	}
 	return db.queryStringList(ctx, q, args...)
+}
+
+func (db *DB) hostIDsForAssetGroupPolicies(ctx context.Context, refs []string, wildcard bool) ([]string, error) {
+	if wildcard {
+		return db.queryStringList(ctx, `SELECT id FROM hosts`)
+	}
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	hostIDs := []string{}
+	for _, ref := range refs {
+		key, value, ok := parseAssetGroupRef(ref)
+		if !ok {
+			continue
+		}
+		var (
+			ids []string
+			err error
+		)
+		switch key {
+		case "owner":
+			ids, err = db.queryStringList(ctx, `SELECT id FROM hosts WHERE owner=$1`, value)
+		case "team":
+			ids, err = db.queryStringList(ctx, `SELECT id FROM hosts WHERE team=$1`, value)
+		case "environment":
+			ids, err = db.queryStringList(ctx, `SELECT id FROM hosts WHERE environment=$1`, value)
+		case "criticality":
+			ids, err = db.queryStringList(ctx, `SELECT id FROM hosts WHERE criticality=$1`, value)
+		case "tag":
+			tagKey, tagValue, ok := strings.Cut(value, "=")
+			if !ok || strings.TrimSpace(tagKey) == "" {
+				continue
+			}
+			ids, err = db.queryStringList(ctx, `SELECT id FROM hosts WHERE tags ->> $1 = $2`, strings.TrimSpace(tagKey), strings.TrimSpace(tagValue))
+		default:
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, id := range ids {
+			hostIDs = appendUnique(hostIDs, id)
+		}
+	}
+	return hostIDs, nil
+}
+
+func parseAssetGroupRef(ref string) (string, string, bool) {
+	key, value, ok := strings.Cut(ref, ":")
+	if !ok {
+		key, value, ok = strings.Cut(ref, "=")
+	}
+	key = strings.ToLower(strings.TrimSpace(key))
+	value = strings.TrimSpace(value)
+	if !ok || key == "" || value == "" {
+		return "", "", false
+	}
+	return key, value, true
 }
 
 func (db *DB) queryStringList(ctx context.Context, q string, args ...any) ([]string, error) {

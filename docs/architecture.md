@@ -95,8 +95,9 @@ RBAC resource matching supports:
 - `host:<host_id>`: read one host and its packages, vulnerabilities, scans, SBOM, and containers.
 - `container:<container_id_or_name>`: resolve the latest matching container asset to its host scope.
 - `image:<image_name_or_id_or_digest>`: resolve the latest matching image asset to its host scope.
+- `asset_group:<selector>`: resolve hosts by operator metadata. Supported selectors are `owner:<value>`, `team:<value>`, `environment:<value>`, `criticality:<value>`, and `tag:<key>=<value>`.
 
-Container and image policies are resolved from the latest completed scan per host so access follows the current runtime inventory instead of stale historical scans.
+Container and image policies are resolved from the latest completed scan per host so access follows the current runtime inventory instead of stale historical scans. Asset group policies are resolved from current host metadata so ownership transfers or environment changes immediately affect viewer scope.
 
 ## Audit Trail
 
