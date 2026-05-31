@@ -527,7 +527,8 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("insert ports: %v", err)
 	}
 
-	if err := s.db.CompleteScan(ctx, report.ScanID); err != nil {
+	scanStatus := reportScanStatus(skippedVulns)
+	if err := s.db.CompleteScan(ctx, report.ScanID, scanStatus); err != nil {
 		log.Printf("complete scan: %v", err)
 	}
 	sevCounts, vulnTotal, err := s.db.GetVulnCountsByScan(ctx, report.ScanID)
@@ -551,6 +552,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"users":            len(report.Users),
 		"processes":        len(report.Processes),
 		"ports":            len(report.Ports),
+		"scan_status":      scanStatus,
 	})
 	if s.notifier.ShouldSendScan(sevCounts, inventoryStatus) {
 		s.notifier.Send("scan.completed", map[string]any{
@@ -580,6 +582,13 @@ func reportAuditStatus(skippedVulns int) string {
 		return "degraded"
 	}
 	return "ok"
+}
+
+func reportScanStatus(skippedVulns int) string {
+	if skippedVulns > 0 {
+		return "degraded"
+	}
+	return "completed"
 }
 
 func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {

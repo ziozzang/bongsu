@@ -286,6 +286,12 @@ func TestQueueSecurityDBRescanInsertSQLUsesAtomicDedupe(t *testing.T) {
 	}
 }
 
+func TestLatestScansIncludesDegradedInventory(t *testing.T) {
+	if !strings.Contains(latestScansSub, "status IN ('completed','degraded')") {
+		t.Fatalf("latest scans must include degraded scans: %s", latestScansSub)
+	}
+}
+
 func TestCveFixedVersionSQLIncludesTopLevelAndRangeEvents(t *testing.T) {
 	got := cveFixedVersionSQL("c")
 	for _, want := range []string{

@@ -185,6 +185,12 @@ func TestReportAuditStatus(t *testing.T) {
 	if got := reportAuditStatus(2); got != "degraded" {
 		t.Fatalf("status = %q, want degraded", got)
 	}
+	if got := reportScanStatus(0); got != "completed" {
+		t.Fatalf("scan status = %q, want completed", got)
+	}
+	if got := reportScanStatus(2); got != "degraded" {
+		t.Fatalf("scan status = %q, want degraded", got)
+	}
 }
 
 func TestWriteVulnerabilityCSV(t *testing.T) {

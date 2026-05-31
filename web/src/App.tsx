@@ -588,7 +588,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
             <option value="none">No Completed Scan</option>
           </select>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            Agent status uses last_seen; inventory status uses latest completed scan
+            Agent status uses last_seen; inventory status uses latest completed or degraded scan
           </span>
         </div>
       </div>
@@ -632,7 +632,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
                       {h.latest_inventory.latest_package_count || 0} pkgs / {h.latest_inventory.latest_vulnerability_count || 0} vulns / {h.latest_inventory.latest_container_count || 0} ctrs
                       <div style={{ color: 'var(--text-muted)' }}>{h.latest_inventory.latest_scan_at ? new Date(h.latest_inventory.latest_scan_at).toLocaleString() : '-'}</div>
                     </>
-                  ) : <span style={{ color: 'var(--text-muted)' }}>No completed scan</span>}
+                  ) : <span style={{ color: 'var(--text-muted)' }}>No completed or degraded scan</span>}
                 </td>
                 <td style={{ color: sevColor('CRITICAL'), fontWeight: 600 }}>{h.vuln_counts?.CRITICAL || 0}</td>
                 <td style={{ color: sevColor('HIGH'), fontWeight: 600 }}>{h.vuln_counts?.HIGH || 0}</td>
@@ -1907,7 +1907,7 @@ function ScansView() {
   useEffect(() => { load(0); }, [load]);
   useEffect(() => { loadRequests(requestStatus); }, [loadRequests, requestStatus]);
 
-  const statusColor = (s: string) => s === 'completed' ? 'var(--low)' : s === 'failed' ? 'var(--critical)' : 'var(--medium)';
+  const statusColor = (s: string) => s === 'completed' ? 'var(--low)' : s === 'degraded' ? 'var(--medium)' : s === 'failed' ? 'var(--critical)' : 'var(--medium)';
   const cancelRequest = async (id: string) => {
     setRequestMsg('');
     try {

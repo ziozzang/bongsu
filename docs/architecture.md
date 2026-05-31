@@ -43,7 +43,7 @@ The merge strategy is:
 Scanner package ecosystems are kept distro-specific for OS advisories. For example, Trivy `ubuntu` packages are stored as `Ubuntu` rather than collapsed into `Debian`, so Ubuntu advisories can match without weakening Debian/Ubuntu separation.
 Version comparisons treat pre-release markers such as `alpha`, `beta`, and `rc` as lower than the corresponding final release so release candidates are not incorrectly considered fixed.
 Scanner-imported vulnerabilities are bound back to packages by scanner target and package name, with name-only fallback only when the package name is unique in the scan. This avoids linking same-named packages from different ecosystems or manifests to the wrong package row.
-Vulnerability inserts drop dangling scanner rows that have no package, scan, host, or vulnerability identity instead of letting one malformed row discard the whole batch. Report audit metadata records inserted and skipped vulnerability counts; scans with skipped vulnerability rows are audited with `degraded` status so operators can filter for scanner output quality issues.
+Vulnerability inserts drop dangling scanner rows that have no package, scan, host, or vulnerability identity instead of letting one malformed row discard the whole batch. Report audit metadata records inserted and skipped vulnerability counts; scans with skipped vulnerability rows are stored and audited with `degraded` status so operators can filter for scanner output quality issues while still using the scan as the latest inventory.
 
 ## Connected Update Flow
 
@@ -77,11 +77,11 @@ Current implementation exposes request creation/listing/cancel plus agent claim/
 
 ## Container Inventory
 
-Running container metadata is stored separately from package rows in `container_assets`. The inventory preserves host ID, runtime, container instance ID/name, image name, image ID/digest, state, labels, and start time. `/api/containers` returns the latest completed scan per host and supports host, runtime, state, image, name, container ID, and image ID filters. Viewer RBAC is applied before returning rows, so container and image browsing follows the same host scope as package, vulnerability, scan, SBOM, and stats views.
+Running container metadata is stored separately from package rows in `container_assets`. The inventory preserves host ID, runtime, container instance ID/name, image name, image ID/digest, state, labels, and start time. `/api/containers` returns the latest completed or degraded scan per host and supports host, runtime, state, image, name, container ID, and image ID filters. Viewer RBAC is applied before returning rows, so container and image browsing follows the same host scope as package, vulnerability, scan, SBOM, and stats views.
 
 ## Scan Inventory Drift
 
-`/api/scans` includes package, vulnerability, and container counts for each scan plus package inventory delta against the previous completed scan for the same host. Delta identity uses asset/source/container/package metadata without the version field, so version movement is reported as `packages_changed`, while new or missing identities are reported as added/removed. The Scan History dashboard exposes these counters to help operators spot broken collectors, unexpected package churn, or container image drift.
+`/api/scans` includes package, vulnerability, and container counts for each scan plus package inventory delta against the previous completed or degraded scan for the same host. Delta identity uses asset/source/container/package metadata without the version field, so version movement is reported as `packages_changed`, while new or missing identities are reported as added/removed. The Scan History dashboard exposes these counters to help operators spot broken collectors, unexpected package churn, or container image drift.
 
 ## Asset Metadata
 
@@ -89,7 +89,7 @@ Hosts preserve operator-owned metadata independently from agent reports: owner, 
 
 Agent status is derived from each host's `last_seen` timestamp at read time. The dashboard and `/api/hosts?agent_status=...` expose `online`, `stale`, `offline`, or `unknown`; defaults mark agents online for 26 hours and offline after 72 hours, controlled by `BONGSU_AGENT_ONLINE_MINUTES` and `BONGSU_AGENT_OFFLINE_MINUTES`.
 
-Host list responses include `latest_inventory`, summarizing the latest completed scan ID, finish time, package count, vulnerability count, and container count. This gives operators a quick signal for stale agents that are checking in but producing empty or incomplete SBOM data. `/api/hosts?inventory_status=...` supports `healthy`, `stale`, `empty`, and `none`; `stale` is controlled by `BONGSU_INVENTORY_STALE_HOURS` and defaults to 48 hours. The dashboard uses the same filtered API to show RBAC-scoped SBOM health counts.
+Host list responses include `latest_inventory`, summarizing the latest completed or degraded scan ID, finish time, package count, vulnerability count, and container count. This gives operators a quick signal for stale agents that are checking in but producing empty or incomplete SBOM data. `/api/hosts?inventory_status=...` supports `healthy`, `stale`, `empty`, and `none`; `stale` is controlled by `BONGSU_INVENTORY_STALE_HOURS` and defaults to 48 hours. The dashboard uses the same filtered API to show RBAC-scoped SBOM health counts.
 
 Dashboard summary views can group current findings by `owner`, `team`, `environment`, or `criticality` through `/api/vuln-summary?group_by=...`. The summary is RBAC-scoped and includes total, severity, and SLA-overdue counts so remediation queues can be routed by operational ownership.
 
@@ -110,7 +110,7 @@ RBAC resource matching supports:
 - `image:<image_name_or_id_or_digest>`: resolve the latest matching image asset to its host scope.
 - `asset_group:<selector>`: resolve hosts by operator metadata. Supported selectors are `owner:<value>`, `team:<value>`, `environment:<value>`, `criticality:<value>`, and `tag:<key>=<value>`.
 
-Container and image policies are resolved from the latest completed scan per host so access follows the current runtime inventory instead of stale historical scans. Asset group policies are resolved from current host metadata so ownership transfers or environment changes immediately affect viewer scope.
+Container and image policies are resolved from the latest completed or degraded scan per host so access follows the current runtime inventory instead of stale historical scans. Asset group policies are resolved from current host metadata so ownership transfers or environment changes immediately affect viewer scope.
 
 ## Audit Trail
 
@@ -118,7 +118,7 @@ Administration and agent events are written to append-only `audit_logs` rows. Th
 
 ## Retention
 
-Admins can dry-run or execute `/api/admin/retention/prune` from the dashboard to remove old operational history. The prune action deletes scans older than `BONGSU_RETENTION_SCAN_DAYS` while preserving each host's latest completed scan, removes completed/failed/cancelled scan requests older than `BONGSU_RETENTION_SCAN_REQUEST_DAYS`, and removes audit events older than `BONGSU_RETENTION_AUDIT_DAYS`. Triage decisions and the current host inventory are not pruned by this action.
+Admins can dry-run or execute `/api/admin/retention/prune` from the dashboard to remove old operational history. The prune action deletes scans older than `BONGSU_RETENTION_SCAN_DAYS` while preserving each host's latest completed or degraded scan, removes completed/failed/cancelled scan requests older than `BONGSU_RETENTION_SCAN_REQUEST_DAYS`, and removes audit events older than `BONGSU_RETENTION_AUDIT_DAYS`. Triage decisions and the current host inventory are not pruned by this action.
 
 ## Vulnerability Triage
 
@@ -130,7 +130,7 @@ Findings expose computed SLA fields from first-seen time and severity: `sla_days
 
 ## SBOM Export
 
-Each host can export its latest completed package inventory as CycloneDX 1.5 JSON through `/api/hosts/{id}/sbom` or SPDX 2.3 JSON through `/api/hosts/{id}/sbom?format=spdx`. Exports include bongsu host/package context such as host ID, OS, asset type, container/image identifiers, source, package type, ecosystem, file path, and target. SPDX packages include purl external references, deterministic package verification codes based on stable package identity rather than database row IDs, sanitized document names/namespaces derived from host identity, and explicit `NOASSERTION` license/copyright/supplier fields when the scanner did not collect authoritative values. Viewer RBAC is enforced before export, and successful exports are audited as `sbom.export`.
+Each host can export its latest completed or degraded package inventory as CycloneDX 1.5 JSON through `/api/hosts/{id}/sbom` or SPDX 2.3 JSON through `/api/hosts/{id}/sbom?format=spdx`. Exports include bongsu host/package context such as host ID, OS, asset type, container/image identifiers, source, package type, ecosystem, file path, and target. SPDX packages include purl external references, deterministic package verification codes based on stable package identity rather than database row IDs, sanitized document names/namespaces derived from host identity, and explicit `NOASSERTION` license/copyright/supplier fields when the scanner did not collect authoritative values. Viewer RBAC is enforced before export, and successful exports are audited as `sbom.export`.
 
 ## Vulnerability Report Export
 

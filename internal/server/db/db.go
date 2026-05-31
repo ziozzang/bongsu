@@ -91,9 +91,15 @@ func (db *DB) CreateScan(ctx context.Context, s *models.Scan) error {
 	return err
 }
 
-func (db *DB) CompleteScan(ctx context.Context, id string) error {
-	q := `UPDATE scans SET status='completed', finished_at=now() WHERE id=$1`
-	_, err := db.ExecContext(ctx, q, id)
+func (db *DB) CompleteScan(ctx context.Context, id, status string) error {
+	if status == "" {
+		status = "completed"
+	}
+	if status != "completed" && status != "degraded" {
+		return fmt.Errorf("invalid scan status: %s", status)
+	}
+	q := `UPDATE scans SET status=$2, finished_at=now() WHERE id=$1`
+	_, err := db.ExecContext(ctx, q, id, status)
 	return err
 }
 
@@ -137,7 +143,7 @@ func (db *DB) PruneOperationalData(ctx context.Context, scanDays, requestDays, a
 	oldScans := `WITH old_scans AS (
 		SELECT id FROM scans
 		WHERE created_at < $1
-		  AND id NOT IN (SELECT DISTINCT ON (host_id) id FROM scans WHERE status='completed' ORDER BY host_id, created_at DESC)
+		  AND id NOT IN (SELECT DISTINCT ON (host_id) id FROM scans WHERE status IN ('completed','degraded') ORDER BY host_id, created_at DESC)
 	)`
 	countFor := func(table string) (int, error) {
 		var n int
@@ -834,7 +840,7 @@ WITH page_scans AS (
 scan_prev AS (
 	SELECT s.*,
 		(SELECT ps.id FROM scans ps
-		 WHERE ps.host_id=s.host_id AND ps.status='completed' AND ps.created_at < s.created_at
+		 WHERE ps.host_id=s.host_id AND ps.status IN ('completed','degraded') AND ps.created_at < s.created_at
 		 ORDER BY ps.created_at DESC LIMIT 1) AS prev_scan_id
 	FROM page_scans s
 )
@@ -1651,7 +1657,7 @@ WHERE id=$1`, id, owner, team, environment, criticality, tags)
 	return err
 }
 
-const latestScansSub = `(SELECT DISTINCT ON (host_id) id FROM scans WHERE status='completed' ORDER BY host_id, created_at DESC)`
+const latestScansSub = `(SELECT DISTINCT ON (host_id) id FROM scans WHERE status IN ('completed','degraded') ORDER BY host_id, created_at DESC)`
 
 type VulnFilter struct {
 	HostID       string
