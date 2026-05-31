@@ -108,6 +108,8 @@ func TestSecurityDBUploadLimitsAreConfigured(t *testing.T) {
 		`envBytes("BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES", 2<<30)`,
 		`envBytes("BONGSU_CVE_DB_IMPORT_MAX_BYTES", 2<<30)`,
 		`envBytes("BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES", 4<<30)`,
+		`envBytes("BONGSU_MULTIPART_MEMORY_MAX_BYTES", 32<<20)`,
+		"ParseMultipartForm(maxMultipartMemoryBytes())",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("security DB upload limit missing %q", want)
@@ -118,6 +120,7 @@ func TestSecurityDBUploadLimitsAreConfigured(t *testing.T) {
 		"MaxBytesReader(w, r.Body, 4<<30)",
 		"ParseMultipartForm(2 << 30)",
 		"ParseMultipartForm(4 << 30)",
+		"ParseMultipartForm(uploadLimit)",
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("security DB uploads must not use hard-coded body limit %q", forbidden)
@@ -152,6 +155,10 @@ func TestMaxSecurityDBUploadBytes(t *testing.T) {
 	if got := maxSecurityDBBundleBytes(); got != 34567 {
 		t.Fatalf("bundle max = %d, want 34567", got)
 	}
+	t.Setenv("BONGSU_MULTIPART_MEMORY_MAX_BYTES", "45678")
+	if got := maxMultipartMemoryBytes(); got != 45678 {
+		t.Fatalf("multipart memory max = %d, want 45678", got)
+	}
 
 	for _, tt := range []struct {
 		key  string
@@ -161,6 +168,7 @@ func TestMaxSecurityDBUploadBytes(t *testing.T) {
 		{"BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES", 2 << 30, maxTrivyDBUploadBytes},
 		{"BONGSU_CVE_DB_IMPORT_MAX_BYTES", 2 << 30, maxCveDBImportBytes},
 		{"BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES", 4 << 30, maxSecurityDBBundleBytes},
+		{"BONGSU_MULTIPART_MEMORY_MAX_BYTES", 32 << 20, maxMultipartMemoryBytes},
 	} {
 		for _, value := range []string{"0", "-1", "invalid"} {
 			t.Setenv(tt.key, value)
@@ -751,6 +759,7 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES: ${BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES:-2147483648}",
 				"BONGSU_CVE_DB_IMPORT_MAX_BYTES: ${BONGSU_CVE_DB_IMPORT_MAX_BYTES:-2147483648}",
 				"BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES: ${BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES:-4294967296}",
+				"BONGSU_MULTIPART_MEMORY_MAX_BYTES: ${BONGSU_MULTIPART_MEMORY_MAX_BYTES:-33554432}",
 				`pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"`,
 			} {
 				if !strings.Contains(body, want) {

@@ -2090,7 +2090,7 @@ func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
 
 	uploadLimit := maxTrivyDBUploadBytes()
 	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
-	if err := r.ParseMultipartForm(uploadLimit); err != nil {
+	if err := r.ParseMultipartForm(maxMultipartMemoryBytes()); err != nil {
 		http.Error(w, "file too large or invalid form", http.StatusBadRequest)
 		return
 	}
@@ -2273,7 +2273,7 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 	}
 	uploadLimit := maxSecurityDBBundleBytes()
 	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
-	if err := r.ParseMultipartForm(uploadLimit); err != nil {
+	if err := r.ParseMultipartForm(maxMultipartMemoryBytes()); err != nil {
 		fail(http.StatusBadRequest, "file too large or invalid form", "parse_form", err)
 		return
 	}
@@ -2638,7 +2638,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 
 	uploadLimit := maxCveDBImportBytes()
 	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
-	if err := r.ParseMultipartForm(uploadLimit); err != nil {
+	if err := r.ParseMultipartForm(maxMultipartMemoryBytes()); err != nil {
 		http.Error(w, "file too large", http.StatusBadRequest)
 		return
 	}
@@ -3412,6 +3412,10 @@ func maxCveDBImportBytes() int64 {
 
 func maxSecurityDBBundleBytes() int64 {
 	return envBytes("BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES", 4<<30)
+}
+
+func maxMultipartMemoryBytes() int64 {
+	return envBytes("BONGSU_MULTIPART_MEMORY_MAX_BYTES", 32<<20)
 }
 
 func envBytes(key string, def int64) int64 {
