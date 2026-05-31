@@ -549,14 +549,16 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [containers, setContainers] = useState<string[]>([]);
   const [showNoFix, setShowNoFix] = useState(false);
   const [showMismatch, setShowMismatch] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
   const limit = 50;
 
-  const load = useCallback((p: number, sev: string, triage: string, hId: string, cont: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
+  const load = useCallback((p: number, sev: string, triage: string, overdue: boolean, hId: string, cont: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
     setLoading(true);
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
     if (sev) params.severity = sev;
     if (triage) params.triage_status = triage;
+    if (overdue) params.overdue = 'true';
     if (hId) params.host_id = hId;
     if (cont) params.container = cont;
     if (pq) params.pkg_name = pq;
@@ -580,16 +582,16 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { load(0, severity, triageStatus, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, hostId, container, showNoFix, showMismatch]);
+  useEffect(() => { load(0, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, overdueOnly, hostId, container, showNoFix, showMismatch]);
 
-  const handleSearch = () => { load(0, severity, triageStatus, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
+  const handleSearch = () => { load(0, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
     const nextDesc = sortBy === col ? !sortDesc : col === 'cvss_score' || col === 'severity';
     setSortBy(col);
     setSortDesc(nextDesc);
-    load(0, severity, triageStatus, hostId, container, pkgQuery, col, nextDesc, showNoFix, showMismatch);
+    load(0, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, col, nextDesc, showNoFix, showMismatch);
   };
 
   const sortArrow = (col: string) => {
@@ -602,6 +604,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     const params: Record<string, string> = { format };
     if (severity) params.severity = severity;
     if (triageStatus) params.triage_status = triageStatus;
+    if (overdueOnly) params.overdue = 'true';
     if (hostId) params.host_id = hostId;
     if (container) params.container = container;
     if (pkgQuery) params.pkg_name = pkgQuery;
@@ -623,7 +626,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const cols: [string, string][] = [
     ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
     ['pkg_name', 'Package'], ['container', 'Container'],
-    ['installed_version', 'Installed'], ['fixed_version', 'Fixed'],
+    ['installed_version', 'Installed'], ['fixed_version', 'Fixed'], ['due_at', 'Due'],
   ];
 
   return (
@@ -676,6 +679,9 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             <input type="checkbox" checked={showMismatch} onChange={e => setShowMismatch(e.target.checked)} /> Wrong ecosystem
           </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} /> Overdue
+          </label>
           <button className="filter-btn" onClick={() => exportVulns('csv')}>Export CSV</button>
           <button className="filter-btn" onClick={() => exportVulns('json')}>JSON</button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{exportMsg || `${total} results`}</span>
@@ -722,16 +728,19 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                         : v.fixed_version)
                       : <span style={{ color: 'var(--text-muted)' }}>-</span>}
                   </td>
+                  <td className="mono" style={{ color: v.overdue ? 'var(--critical)' : 'var(--text-muted)' }}>
+                    {v.due_at ? new Date(v.due_at).toLocaleDateString() : '-'}
+                  </td>
                 </tr>
               ))}
-              {vulns.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
+              {vulns.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
             </tbody>
           </table>
         )}
         <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
+          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
+          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
         </div>
       </div>
     </>
@@ -809,6 +818,12 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         <div className="stat-card">
           <div className="label">Triage</div>
           <div style={{ fontSize: '0.875rem', textTransform: 'capitalize' }}>{(triageStatus || 'open').replace('_', ' ')}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">SLA Due</div>
+          <div style={{ fontSize: '0.875rem', color: vuln.overdue ? 'var(--critical)' : 'inherit' }}>
+            {vuln.due_at ? new Date(vuln.due_at).toLocaleDateString() : '-'}
+          </div>
         </div>
       </div>
 

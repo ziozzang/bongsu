@@ -1,6 +1,11 @@
 package db
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/ziozzang/bongsu/internal/shared/models"
+)
 
 func TestClassifySecuritySource(t *testing.T) {
 	tests := []struct {
@@ -104,5 +109,29 @@ func TestCalcCvssScoreVersions(t *testing.T) {
 				t.Fatalf("score = %.1f, want %.1f", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestApplyVulnerabilitySLA(t *testing.T) {
+	v := models.Vulnerability{
+		Severity:     "HIGH",
+		TriageStatus: "open",
+		CreatedAt:    time.Now().Add(-31 * 24 * time.Hour),
+	}
+	ApplyVulnerabilitySLA(&v)
+	if v.SLADays != 30 {
+		t.Fatalf("sla days = %d", v.SLADays)
+	}
+	if v.DueAt == nil {
+		t.Fatal("due_at should be set")
+	}
+	if !v.Overdue {
+		t.Fatal("high finding older than SLA should be overdue")
+	}
+
+	v.TriageStatus = "accepted_risk"
+	ApplyVulnerabilitySLA(&v)
+	if v.Overdue {
+		t.Fatal("accepted risk should not be overdue")
 	}
 }

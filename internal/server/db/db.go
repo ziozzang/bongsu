@@ -883,6 +883,69 @@ func pqStringArray(v []string) any {
 	return pq.Array(v)
 }
 
+func ApplyVulnerabilitySLA(v *models.Vulnerability) {
+	days := SLADaysForSeverity(v.Severity)
+	v.SLADays = days
+	if days <= 0 || v.CreatedAt.IsZero() {
+		v.DueAt = nil
+		v.Overdue = false
+		return
+	}
+	due := v.CreatedAt.Add(time.Duration(days) * 24 * time.Hour)
+	v.DueAt = &due
+	v.Overdue = time.Now().After(due) && slaAppliesToTriage(v.TriageStatus)
+}
+
+func SLADaysForSeverity(severity string) int {
+	switch strings.ToUpper(severity) {
+	case "CRITICAL":
+		return envInt("BONGSU_SLA_CRITICAL_DAYS", 7)
+	case "HIGH":
+		return envInt("BONGSU_SLA_HIGH_DAYS", 30)
+	case "MEDIUM":
+		return envInt("BONGSU_SLA_MEDIUM_DAYS", 90)
+	case "LOW":
+		return envInt("BONGSU_SLA_LOW_DAYS", 180)
+	default:
+		return 0
+	}
+}
+
+func slaAppliesToTriage(status string) bool {
+	switch status {
+	case "", "open", "in_progress":
+		return true
+	default:
+		return false
+	}
+}
+
+func overdueSQLCondition() string {
+	return fmt.Sprintf(` AND COALESCE(vt.status, 'open') IN ('open', 'in_progress') AND (
+		(v.severity='CRITICAL' AND v.created_at < now() - interval '%d days') OR
+		(v.severity='HIGH' AND v.created_at < now() - interval '%d days') OR
+		(v.severity='MEDIUM' AND v.created_at < now() - interval '%d days') OR
+		(v.severity='LOW' AND v.created_at < now() - interval '%d days')
+	)`,
+		SLADaysForSeverity("CRITICAL"),
+		SLADaysForSeverity("HIGH"),
+		SLADaysForSeverity("MEDIUM"),
+		SLADaysForSeverity("LOW"),
+	)
+}
+
+func envInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
 func (db *DB) GetAccessScope(ctx context.Context, externalID string) (AccessScope, error) {
 	rows, err := db.QueryContext(ctx, `
 SELECT p.resource_type, p.resource_id
@@ -1004,6 +1067,7 @@ type VulnFilter struct {
 	HostIDs      []string
 	Severity     string
 	TriageStatus string
+	Overdue      bool
 	PkgName      string
 	Container    string
 	MinCVSS      float64
@@ -1061,6 +1125,9 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 		args = append(args, f.MinCVSS)
 		argN++
 	}
+	if f.Overdue {
+		baseQ += overdueSQLCondition()
+	}
 
 	if f.HideFixed {
 		baseQ += ` AND NOT (
@@ -1113,6 +1180,7 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 		if err := scanVuln(rows, &v); err != nil {
 			return nil, 0, err
 		}
+		ApplyVulnerabilitySLA(&v)
 		vulns = append(vulns, v)
 	}
 	return vulns, total, nil
@@ -1417,6 +1485,7 @@ func (db *DB) SearchCVEs(ctx context.Context, f CveSearchFilter, limit, offset i
 		if err := scanVuln(rows, &v); err != nil {
 			return nil, 0, err
 		}
+		ApplyVulnerabilitySLA(&v)
 		vulns = append(vulns, v)
 	}
 	return vulns, total, nil
@@ -1551,7 +1620,7 @@ func vulnSortExpr(col string, desc bool) string {
 		"vulnerability_id": "v.vulnerability_id", "severity": "CASE v.severity WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4 END",
 		"cvss_score": "v.cvss_score", "pkg_name": "v.pkg_name",
 		"host_id": "v.host_id", "container": "v.container", "installed_version": "v.installed_version",
-		"fixed_version": "v.fixed_version", "created_at": "v.created_at",
+		"fixed_version": "v.fixed_version", "created_at": "v.created_at", "due_at": "v.created_at",
 	}
 	expr, ok := allowed[col]
 	if !ok {
@@ -1595,6 +1664,7 @@ func (db *DB) GetVulnsByPackageID(ctx context.Context, packageID string) ([]mode
 		if err := scanVuln(rows, &v); err != nil {
 			return nil, err
 		}
+		ApplyVulnerabilitySLA(&v)
 		vulns = append(vulns, v)
 	}
 	return vulns, nil

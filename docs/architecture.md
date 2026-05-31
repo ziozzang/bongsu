@@ -85,6 +85,10 @@ Administration and agent events are written to append-only `audit_logs` rows. Th
 
 Triage decisions are stored separately from scan-result rows in `vulnerability_triage`, so they survive rescans and security DB updates. A decision can target one CVE globally, one CVE on a host, or one CVE/package pair on a host. Current statuses are `open`, `in_progress`, `accepted_risk`, `false_positive`, `fixed`, and `ignored`; expired decisions stop applying automatically. Triage changes are audited through `vulnerability.triage`.
 
+## Remediation SLA
+
+Findings expose computed SLA fields from first-seen time and severity: `sla_days`, `due_at`, and `overdue`. Defaults are 7 days for critical, 30 for high, 90 for medium, and 180 for low, controlled by `BONGSU_SLA_*_DAYS`. SLA overdue filtering excludes triaged `accepted_risk`, `false_positive`, `fixed`, and `ignored` findings so accepted exceptions do not pollute operational breach queues.
+
 ## SBOM Export
 
 Each host can export its latest completed package inventory as CycloneDX 1.5 JSON through `/api/hosts/{id}/sbom`. The export includes bongsu host/package properties such as host ID, OS, asset type, container/image identifiers, source, package type, ecosystem, file path, and target. Viewer RBAC is enforced before export, and successful exports are audited as `sbom.export`.

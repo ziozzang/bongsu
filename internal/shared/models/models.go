@@ -109,6 +109,9 @@ type Vulnerability struct {
 	TriageExpiresAt *time.Time `json:"triage_expires_at,omitempty"`
 	TriageUpdatedBy string     `json:"triage_updated_by,omitempty"`
 	TriageUpdatedAt *time.Time `json:"triage_updated_at,omitempty"`
+	SLADays         int        `json:"sla_days,omitempty"`
+	DueAt           *time.Time `json:"due_at,omitempty"`
+	Overdue         bool       `json:"overdue"`
 	CreatedAt       time.Time  `json:"created_at"`
 }
 

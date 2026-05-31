@@ -727,6 +727,7 @@ func (s *Server) vulnFilterFromRequest(r *http.Request) (db.VulnFilter, bool, bo
 		HostIDs:      scope.HostIDs,
 		Severity:     r.URL.Query().Get("severity"),
 		TriageStatus: r.URL.Query().Get("triage_status"),
+		Overdue:      r.URL.Query().Get("overdue") == "true",
 		PkgName:      r.URL.Query().Get("pkg_name"),
 		Container:    r.URL.Query().Get("container"),
 		MinCVSS:      floatParam(r, "min_cvss", 0.1),
@@ -791,7 +792,7 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
 		"host_id", "container", "vulnerability_id", "severity", "cvss_score", "triage_status",
-		"pkg_name", "installed_version", "fixed_version", "pkg_path", "title", "primary_url",
+		"sla_days", "due_at", "overdue", "pkg_name", "installed_version", "fixed_version", "pkg_path", "title", "primary_url",
 		"triage_reason", "triage_comment", "triage_updated_by", "created_at",
 	}); err != nil {
 		return err
@@ -804,6 +805,9 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 			v.Severity,
 			fmt.Sprintf("%.1f", v.CVSSScore),
 			exportStatusLabel(v.TriageStatus),
+			strconv.Itoa(v.SLADays),
+			formatTimePtr(v.DueAt),
+			strconv.FormatBool(v.Overdue),
 			v.PkgName,
 			v.InstalledVer,
 			v.FixedVersion,
@@ -820,6 +824,13 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+func formatTimePtr(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }
 
 func exportFormatLabel(format string) string {
