@@ -655,6 +655,11 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("scan vuln counts: %v", err)
 		sevCounts = map[string]int{}
 	}
+	riskCounts, err := s.db.GetVulnRiskCountsByScan(ctx, report.ScanID)
+	if err != nil {
+		log.Printf("scan vuln risk counts: %v", err)
+		riskCounts = map[string]int{}
+	}
 	inventoryStatus := reportInventoryStatus(len(report.Packages), scanStatus)
 	s.audit(r, "agent.report", "scan", report.ScanID, reportAuditStatus(skippedVulns, len(ingestErrors)), map[string]any{
 		"host_id":          report.Host.ID,
@@ -671,8 +676,8 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"scan_status":      scanStatus,
 		"ingest_errors":    ingestErrors,
 	})
-	if s.notifier.ShouldSendScan(sevCounts, inventoryStatus) {
-		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, ingestErrors))
+	if s.notifier.ShouldSendScan(sevCounts, riskCounts, inventoryStatus) {
+		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, riskCounts, ingestErrors))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -811,24 +816,25 @@ func reportInventoryStatus(packageCount int, scanStatus string) string {
 	return "healthy"
 }
 
-func reportWebhookPayload(report *models.ScanReport, scanStatus, inventoryStatus string, insertedVulns, skippedVulns, vulnTotal int, sevCounts map[string]int, ingestErrors []string) map[string]any {
+func reportWebhookPayload(report *models.ScanReport, scanStatus, inventoryStatus string, insertedVulns, skippedVulns, vulnTotal int, sevCounts, riskCounts map[string]int, ingestErrors []string) map[string]any {
 	return map[string]any{
-		"scan_id":          report.ScanID,
-		"scan_status":      scanStatus,
-		"host_id":          report.Host.ID,
-		"hostname":         report.Host.Hostname,
-		"ip_address":       report.Host.IPAddress,
-		"os_name":          report.Host.OSName,
-		"os_version":       report.Host.OSVersion,
-		"scan_type":        report.ScanType,
-		"inventory_status": inventoryStatus,
-		"packages":         len(report.Packages),
-		"containers":       len(report.Containers),
-		"vulnerabilities":  vulnTotal,
-		"vulns_inserted":   insertedVulns,
-		"vulns_skipped":    skippedVulns,
-		"ingest_errors":    ingestErrors,
-		"severity_counts":  sevCounts,
+		"scan_id":           report.ScanID,
+		"scan_status":       scanStatus,
+		"host_id":           report.Host.ID,
+		"hostname":          report.Host.Hostname,
+		"ip_address":        report.Host.IPAddress,
+		"os_name":           report.Host.OSName,
+		"os_version":        report.Host.OSVersion,
+		"scan_type":         report.ScanType,
+		"inventory_status":  inventoryStatus,
+		"packages":          len(report.Packages),
+		"containers":        len(report.Containers),
+		"vulnerabilities":   vulnTotal,
+		"vulns_inserted":    insertedVulns,
+		"vulns_skipped":     skippedVulns,
+		"ingest_errors":     ingestErrors,
+		"severity_counts":   sevCounts,
+		"risk_level_counts": riskCounts,
 	}
 }
 

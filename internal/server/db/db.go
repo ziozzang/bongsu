@@ -2795,6 +2795,24 @@ func (db *DB) GetVulnCountsByScan(ctx context.Context, scanID string) (map[strin
 	return counts, total, rows.Err()
 }
 
+func (db *DB) GetVulnRiskCountsByScan(ctx context.Context, scanID string) (map[string]int, error) {
+	rows, err := db.QueryContext(ctx, `SELECT (`+vulnRiskLevelExpr+`) AS risk_level, count(*) FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id WHERE v.scan_id=$1 GROUP BY risk_level`, scanID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	counts := map[string]int{}
+	for rows.Next() {
+		var riskLevel string
+		var count int
+		if err := rows.Scan(&riskLevel, &count); err != nil {
+			return nil, err
+		}
+		counts[riskLevel] = count
+	}
+	return counts, rows.Err()
+}
+
 func (db *DB) GetLatestPackages(ctx context.Context, hostID string, limit, offset int) ([]models.Package, int, error) {
 	countQ := fmt.Sprintf(`SELECT count(*) FROM packages p JOIN %s ls ON p.scan_id = ls.id WHERE p.host_id=$1`, latestScansSub)
 	dataQ := fmt.Sprintf(`SELECT %s%s FROM packages p JOIN %s ls ON p.scan_id = ls.id%s WHERE p.host_id=$1 ORDER BY p.name LIMIT $2 OFFSET $3`, pkgCols, pkgVulnSelect, latestScansSub, pkgVulnJoin)

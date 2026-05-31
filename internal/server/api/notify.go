@@ -18,6 +18,7 @@ type webhookNotifier struct {
 	url               string
 	secret            string
 	minSeverity       string
+	minRiskLevel      string
 	inventoryStatuses map[string]bool
 	client            *http.Client
 	maxAttempts       int
@@ -40,6 +41,7 @@ func newWebhookNotifierFromEnv() *webhookNotifier {
 		url:               url,
 		secret:            os.Getenv("BONGSU_WEBHOOK_SECRET"),
 		minSeverity:       strings.ToUpper(strings.TrimSpace(os.Getenv("BONGSU_WEBHOOK_MIN_SEVERITY"))),
+		minRiskLevel:      webhookRiskLevelFromEnv(),
 		inventoryStatuses: parseInventoryStatuses(os.Getenv("BONGSU_WEBHOOK_INVENTORY_STATUSES")),
 		client:            &http.Client{Timeout: 10 * time.Second},
 		maxAttempts:       webhookRetryAttemptsFromEnv(),
@@ -164,17 +166,46 @@ func (n *webhookNotifier) ShouldSendSeverity(counts map[string]int) bool {
 	return false
 }
 
-func (n *webhookNotifier) ShouldSendScan(counts map[string]int, inventoryStatus string) bool {
+func (n *webhookNotifier) ShouldSendRiskLevel(counts map[string]int) bool {
 	if !n.Enabled() {
 		return false
 	}
-	if n.ShouldSendSeverity(counts) {
+	if n.minRiskLevel == "" {
+		return false
+	}
+	for riskLevel, count := range counts {
+		if count > 0 && riskRank(riskLevel) >= riskRank(n.minRiskLevel) {
+			return true
+		}
+	}
+	return false
+}
+
+func (n *webhookNotifier) ShouldSendScan(severityCounts, riskCounts map[string]int, inventoryStatus string) bool {
+	if !n.Enabled() {
+		return false
+	}
+	if n.ShouldSendSeverity(severityCounts) || n.ShouldSendRiskLevel(riskCounts) {
 		return true
 	}
 	if n.inventoryStatuses == nil {
 		n.inventoryStatuses = parseInventoryStatuses("")
 	}
 	return n.inventoryStatuses[strings.ToLower(strings.TrimSpace(inventoryStatus))]
+}
+
+func webhookRiskLevelFromEnv() string {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv("BONGSU_WEBHOOK_MIN_RISK_LEVEL")))
+	switch raw {
+	case "":
+		return "high"
+	case "none", "off", "disabled", "disable":
+		return ""
+	case "critical", "high", "medium", "low":
+		return raw
+	default:
+		return "high"
+	}
 }
 
 func parseInventoryStatuses(v string) map[string]bool {
@@ -201,6 +232,21 @@ func severityRank(severity string) int {
 	case "MEDIUM":
 		return 2
 	case "LOW":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func riskRank(level string) int {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "critical":
+		return 4
+	case "high":
+		return 3
+	case "medium":
+		return 2
+	case "low":
 		return 1
 	default:
 		return 0

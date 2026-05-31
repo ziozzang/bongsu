@@ -1162,6 +1162,8 @@ func TestHandleReportNormalizesScannerInput(t *testing.T) {
 		`uuid.Parse(report.ScanID)`,
 		`"invalid scan_type"`,
 		`ingestErrors := append([]string{}, report.Errors...)`,
+		"GetVulnRiskCountsByScan",
+		"riskCounts",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("report normalization missing %q: %s", want, fn)
@@ -2373,7 +2375,7 @@ func TestReportWebhookPayloadIncludesQualitySignals(t *testing.T) {
 		Packages:   []models.Package{{ID: "pkg-1"}},
 		Containers: []models.ContainerAsset{{ID: "ctr-1"}},
 	}
-	payload := reportWebhookPayload(report, "degraded", "degraded", 3, 2, 5, map[string]int{"HIGH": 1}, []string{"packages: failed"})
+	payload := reportWebhookPayload(report, "degraded", "degraded", 3, 2, 5, map[string]int{"HIGH": 1}, map[string]int{"high": 1}, []string{"packages: failed"})
 	tests := map[string]any{
 		"scan_status":      "degraded",
 		"inventory_status": "degraded",
@@ -2390,6 +2392,9 @@ func TestReportWebhookPayloadIncludesQualitySignals(t *testing.T) {
 	}
 	if counts, ok := payload["severity_counts"].(map[string]int); !ok || counts["HIGH"] != 1 {
 		t.Fatalf("severity_counts = %#v", payload["severity_counts"])
+	}
+	if counts, ok := payload["risk_level_counts"].(map[string]int); !ok || counts["high"] != 1 {
+		t.Fatalf("risk_level_counts = %#v", payload["risk_level_counts"])
 	}
 	if errs, ok := payload["ingest_errors"].([]string); !ok || len(errs) != 1 {
 		t.Fatalf("ingest_errors = %#v", payload["ingest_errors"])

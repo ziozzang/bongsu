@@ -197,16 +197,55 @@ func TestWebhookSeverityThreshold(t *testing.T) {
 	}
 }
 
+func TestWebhookRiskLevelThreshold(t *testing.T) {
+	n := &webhookNotifier{url: "http://example.invalid", minRiskLevel: "high"}
+	if n.ShouldSendRiskLevel(map[string]int{"medium": 10}) {
+		t.Fatal("medium risk should not pass high threshold")
+	}
+	if !n.ShouldSendRiskLevel(map[string]int{"high": 1}) {
+		t.Fatal("high risk should pass high threshold")
+	}
+	if !n.ShouldSendRiskLevel(map[string]int{"critical": 1}) {
+		t.Fatal("critical risk should pass high threshold")
+	}
+	if riskRank("CRITICAL") != 4 {
+		t.Fatal("risk rank should be case-insensitive")
+	}
+}
+
+func TestWebhookRiskLevelFromEnv(t *testing.T) {
+	t.Setenv("BONGSU_WEBHOOK_MIN_RISK_LEVEL", "")
+	if got := webhookRiskLevelFromEnv(); got != "high" {
+		t.Fatalf("default risk threshold = %q, want high", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_MIN_RISK_LEVEL", "off")
+	if got := webhookRiskLevelFromEnv(); got != "" {
+		t.Fatalf("off risk threshold = %q, want empty", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_MIN_RISK_LEVEL", "medium")
+	if got := webhookRiskLevelFromEnv(); got != "medium" {
+		t.Fatalf("medium risk threshold = %q, want medium", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_MIN_RISK_LEVEL", "urgent")
+	if got := webhookRiskLevelFromEnv(); got != "high" {
+		t.Fatalf("invalid risk threshold = %q, want high", got)
+	}
+}
+
 func TestWebhookScanInventoryThreshold(t *testing.T) {
 	n := &webhookNotifier{url: "http://example.invalid", minSeverity: "CRITICAL", inventoryStatuses: parseInventoryStatuses("empty,none")}
-	if !n.ShouldSendScan(map[string]int{"LOW": 1}, "empty") {
+	if !n.ShouldSendScan(map[string]int{"LOW": 1}, nil, "empty") {
 		t.Fatal("empty inventory should trigger scan webhook")
 	}
-	if n.ShouldSendScan(map[string]int{"LOW": 1}, "healthy") {
+	if n.ShouldSendScan(map[string]int{"LOW": 1}, map[string]int{"medium": 1}, "healthy") {
 		t.Fatal("healthy inventory below severity threshold should not trigger scan webhook")
 	}
-	if !n.ShouldSendScan(map[string]int{"CRITICAL": 1}, "healthy") {
+	if !n.ShouldSendScan(map[string]int{"CRITICAL": 1}, nil, "healthy") {
 		t.Fatal("critical finding should trigger scan webhook")
+	}
+	n.minRiskLevel = "high"
+	if !n.ShouldSendScan(map[string]int{"LOW": 1}, map[string]int{"high": 1}, "healthy") {
+		t.Fatal("high risk finding should trigger scan webhook")
 	}
 }
 

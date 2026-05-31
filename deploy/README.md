@@ -210,6 +210,7 @@ spec:
 | `BONGSU_WEBHOOK_URL` | empty | Optional outbound webhook URL for scan/security DB events |
 | `BONGSU_WEBHOOK_SECRET` | empty | Optional HMAC-SHA256 signing secret for webhooks |
 | `BONGSU_WEBHOOK_MIN_SEVERITY` | `HIGH` | Minimum scan severity that triggers `scan.completed` webhook |
+| `BONGSU_WEBHOOK_MIN_RISK_LEVEL` | `high` | Minimum computed risk level that triggers `scan.completed` webhook (`critical`,`high`,`medium`,`low`; use `off` to disable) |
 | `BONGSU_WEBHOOK_INVENTORY_STATUSES` | `empty` | Comma-separated inventory states that trigger `scan.completed` webhook (`healthy`,`degraded`,`stale`,`empty`,`none`) |
 | `BONGSU_WEBHOOK_RETRY_ATTEMPTS` | `3` | Webhook delivery attempts for network errors, HTTP 429, and HTTP 5xx responses; clamped to 1-10 |
 | `BONGSU_WEBHOOK_RETRY_DELAY_MS` | `1000` | Delay between retryable webhook attempts in milliseconds |

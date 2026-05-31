@@ -1733,6 +1733,33 @@ func TestStatsCanCountCurrentActionableRiskByHost(t *testing.T) {
 	}
 }
 
+func TestScanWebhookCanCountRiskByScan(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetVulnRiskCountsByScan")
+	if start < 0 {
+		t.Fatal("GetVulnRiskCountsByScan not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetLatestPackages")
+	if end < 0 {
+		t.Fatal("GetLatestPackages not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"vulnRiskLevelExpr",
+		"JOIN hosts h ON h.id = v.host_id",
+		"WHERE v.scan_id=$1",
+		"GROUP BY risk_level",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("scan risk count query missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestFilterOptionsAreHostScopedAndLatestOnly(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
