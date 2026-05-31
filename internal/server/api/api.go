@@ -552,20 +552,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"scan_status":      scanStatus,
 	})
 	if s.notifier.ShouldSendScan(sevCounts, inventoryStatus) {
-		s.notifier.Send("scan.completed", map[string]any{
-			"scan_id":          report.ScanID,
-			"host_id":          report.Host.ID,
-			"hostname":         report.Host.Hostname,
-			"ip_address":       report.Host.IPAddress,
-			"os_name":          report.Host.OSName,
-			"os_version":       report.Host.OSVersion,
-			"scan_type":        report.ScanType,
-			"inventory_status": inventoryStatus,
-			"packages":         len(report.Packages),
-			"containers":       len(report.Containers),
-			"vulnerabilities":  vulnTotal,
-			"severity_counts":  sevCounts,
-		})
+		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
@@ -596,6 +583,26 @@ func reportInventoryStatus(packageCount int, scanStatus string) string {
 		return "degraded"
 	}
 	return "healthy"
+}
+
+func reportWebhookPayload(report *models.ScanReport, scanStatus, inventoryStatus string, insertedVulns, skippedVulns, vulnTotal int, sevCounts map[string]int) map[string]any {
+	return map[string]any{
+		"scan_id":          report.ScanID,
+		"scan_status":      scanStatus,
+		"host_id":          report.Host.ID,
+		"hostname":         report.Host.Hostname,
+		"ip_address":       report.Host.IPAddress,
+		"os_name":          report.Host.OSName,
+		"os_version":       report.Host.OSVersion,
+		"scan_type":        report.ScanType,
+		"inventory_status": inventoryStatus,
+		"packages":         len(report.Packages),
+		"containers":       len(report.Containers),
+		"vulnerabilities":  vulnTotal,
+		"vulns_inserted":   insertedVulns,
+		"vulns_skipped":    skippedVulns,
+		"severity_counts":  sevCounts,
+	}
 }
 
 func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {

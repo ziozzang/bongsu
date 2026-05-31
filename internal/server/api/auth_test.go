@@ -203,6 +203,40 @@ func TestReportAuditStatus(t *testing.T) {
 	}
 }
 
+func TestReportWebhookPayloadIncludesQualitySignals(t *testing.T) {
+	report := &models.ScanReport{
+		ScanID:   "scan-1",
+		ScanType: "manual",
+		Host: models.Host{
+			ID:        "host-1",
+			Hostname:  "app-1",
+			IPAddress: "10.0.0.1",
+			OSName:    "Ubuntu",
+			OSVersion: "24.04",
+		},
+		Packages:   []models.Package{{ID: "pkg-1"}},
+		Containers: []models.ContainerAsset{{ID: "ctr-1"}},
+	}
+	payload := reportWebhookPayload(report, "degraded", "degraded", 3, 2, 5, map[string]int{"HIGH": 1})
+	tests := map[string]any{
+		"scan_status":      "degraded",
+		"inventory_status": "degraded",
+		"vulns_inserted":   3,
+		"vulns_skipped":    2,
+		"vulnerabilities":  5,
+		"packages":         1,
+		"containers":       1,
+	}
+	for k, want := range tests {
+		if got := payload[k]; got != want {
+			t.Fatalf("payload[%s] = %#v, want %#v", k, got, want)
+		}
+	}
+	if counts, ok := payload["severity_counts"].(map[string]int); !ok || counts["HIGH"] != 1 {
+		t.Fatalf("severity_counts = %#v", payload["severity_counts"])
+	}
+}
+
 func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{
