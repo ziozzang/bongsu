@@ -1658,9 +1658,16 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		log.Printf("active vuln risk counts: %v", err)
 		activeRiskCountsByHost = map[string]map[string]int{}
 	}
+	overdueRiskCountsByHost, err := s.db.GetCurrentActionableOverdueRiskCountsByHost(ctx, scopeHostFilter(scope, visibleHostIDs))
+	if err != nil {
+		log.Printf("active overdue vuln risk counts: %v", err)
+		overdueRiskCountsByHost = map[string]map[string]int{}
+	}
 	activeTotalVulns := 0
 	activeSevCounts := map[string]int{}
 	activeRiskCounts := map[string]int{}
+	overdueTotalVulns := 0
+	overdueRiskCounts := map[string]int{}
 	for hostID, vc := range activeVulnCounts {
 		if !scope.CanReadHost(hostID) {
 			continue
@@ -1676,6 +1683,15 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 		for riskLevel, cnt := range rc {
 			activeRiskCounts[riskLevel] += cnt
+		}
+	}
+	for hostID, rc := range overdueRiskCountsByHost {
+		if !scope.CanReadHost(hostID) {
+			continue
+		}
+		for riskLevel, cnt := range rc {
+			overdueTotalVulns += cnt
+			overdueRiskCounts[riskLevel] += cnt
 		}
 	}
 	scanRequestCounts, err := s.db.CountScanRequestsByStatus(ctx, visibleHostIDs, scope.All)
@@ -1703,6 +1719,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"active_vulnerabilities":            activeTotalVulns,
 		"active_severity_counts":            activeSevCounts,
 		"active_risk_level_counts":          activeRiskCounts,
+		"overdue_sla_count":                 overdueTotalVulns,
+		"overdue_sla_risk_counts":           overdueRiskCounts,
 		"scan_request_counts":               scanRequestCounts,
 		"security_db_revision":              securityDBRevision,
 		"security_db_rescan_request_counts": securityDBRescanCounts,
@@ -2939,6 +2957,19 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			}
 		} else {
 			writePromGauge(&b, "bongsu_active_vulnerability_risk_metrics_error", nil, 1)
+		}
+		if overdueCountsByHost, err := s.db.GetCurrentActionableOverdueRiskCountsByHost(ctx, nil); err == nil {
+			overdueRiskCounts := map[string]int{}
+			for _, counts := range overdueCountsByHost {
+				for riskLevel, count := range counts {
+					overdueRiskCounts[riskLevel] += count
+				}
+			}
+			for _, riskLevel := range []string{"critical", "high", "medium", "low"} {
+				writePromGauge(&b, "bongsu_overdue_sla_vulnerabilities_by_risk_level", map[string]string{"risk_level": riskLevel}, float64(overdueRiskCounts[riskLevel]))
+			}
+		} else {
+			writePromGauge(&b, "bongsu_overdue_sla_vulnerability_risk_metrics_error", nil, 1)
 		}
 		freshness := s.securityDBFreshnessStatus(ctx, true)
 		writePromGauge(&b, "bongsu_security_db_source_stale", nil, boolMetric(freshness["stale"]))

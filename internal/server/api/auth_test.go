@@ -177,9 +177,12 @@ func TestAdminMetricsExposeActiveRiskLevelBacklog(t *testing.T) {
 	for _, want := range []string{
 		"GetCurrentActionableVulnRiskCountsByHost(ctx, nil)",
 		"bongsu_active_vulnerabilities_by_risk_level",
+		"GetCurrentActionableOverdueRiskCountsByHost(ctx, nil)",
+		"bongsu_overdue_sla_vulnerabilities_by_risk_level",
 		`map[string]string{"risk_level": riskLevel}`,
 		`[]string{"critical", "high", "medium", "low"}`,
 		"bongsu_active_vulnerability_risk_metrics_error",
+		"bongsu_overdue_sla_vulnerability_risk_metrics_error",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("admin metrics risk backlog missing %q: %s", want, fn)
@@ -2955,7 +2958,10 @@ func TestHostsExposeActiveFindingCounts(t *testing.T) {
 	for _, want := range []string{
 		"ActiveVulnCounts",
 		"GetCurrentActionableVulnRiskCountsByHost",
+		"GetCurrentActionableOverdueRiskCountsByHost",
 		`"active_risk_level_counts"`,
+		`"overdue_sla_count"`,
+		`"overdue_sla_risk_counts"`,
 		`json:"active_vuln_counts"`,
 		"GetCurrentActionableVulnCountsByHost",
 	} {
@@ -2998,8 +3004,13 @@ func TestDashboardShowsRiskLevelSummary(t *testing.T) {
 	apiBody := string(apiOut)
 	for _, want := range []string{
 		"active_risk_level_counts",
+		"overdue_sla_count",
+		"overdue_sla_risk_counts",
 		"Critical Risk",
 		"High Risk",
+		"SLA Overdue",
+		"High Risk Overdue",
+		"onOpenVulnerabilities({ overdueOnly: true",
 		"row.risk?.critical",
 		"row.risk?.high",
 	} {
@@ -3008,6 +3019,8 @@ func TestDashboardShowsRiskLevelSummary(t *testing.T) {
 		}
 	}
 	if !strings.Contains(apiBody, "active_risk_level_counts?: Record<string, number>") ||
+		!strings.Contains(apiBody, "overdue_sla_count?: number") ||
+		!strings.Contains(apiBody, "overdue_sla_risk_counts?: Record<string, number>") ||
 		!strings.Contains(apiBody, "risk?: Record<string, number>") {
 		t.Fatal("web API types must expose risk-level summary fields")
 	}

@@ -2813,6 +2813,34 @@ func (db *DB) GetCurrentActionableVulnRiskCountsByHost(ctx context.Context, host
 	return out, rows.Err()
 }
 
+func (db *DB) GetCurrentActionableOverdueRiskCountsByHost(ctx context.Context, hostIDs []string) (map[string]map[string]int, error) {
+	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL()
+	baseQ += overdueSQLCondition()
+	args := []any{}
+	if len(hostIDs) > 0 {
+		baseQ += ` AND v.host_id = ANY($1)`
+		args = append(args, pqStringArray(hostIDs))
+	}
+	rows, err := db.QueryContext(ctx, `SELECT v.host_id, (`+vulnRiskLevelExpr+`) AS risk_level, count(*) `+baseQ+` GROUP BY v.host_id, risk_level`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[string]int{}
+	for rows.Next() {
+		var hostID, riskLevel string
+		var count int
+		if err := rows.Scan(&hostID, &riskLevel, &count); err != nil {
+			return nil, err
+		}
+		if out[hostID] == nil {
+			out[hostID] = map[string]int{}
+		}
+		out[hostID][riskLevel] = count
+	}
+	return out, rows.Err()
+}
+
 func vulnSummaryGroupExpr(groupBy string) string {
 	switch groupBy {
 	case "team":

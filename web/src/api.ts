@@ -217,6 +217,8 @@ export interface Stats {
   active_vulnerabilities?: number;
   active_severity_counts?: Record<string, number>;
   active_risk_level_counts?: Record<string, number>;
+  overdue_sla_count?: number;
+  overdue_sla_risk_counts?: Record<string, number>;
   scan_request_counts?: Record<string, number>;
   security_db_revision?: string;
   security_db_rescan_request_counts?: Record<string, number>;

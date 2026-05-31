@@ -165,10 +165,12 @@ function parseCvssVector(vector: string) {
 
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string };
+type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string };
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard');
   const [scanRequestFilters, setScanRequestFilters] = useState<ScanRequestFilters>({});
+  const [vulnerabilityFilters, setVulnerabilityFilters] = useState<VulnerabilityFilters>({});
   const [selectedHostId, setSelectedHostId] = useState('');
   const [selectedVuln, setSelectedVuln] = useState<Vuln | null>(null);
   const [authed, setAuthed] = useState(!!getApiKey());
@@ -185,18 +187,23 @@ export default function App() {
 
   const navigate = (v: View) => {
     if (v === 'scans') setScanRequestFilters({});
+    if (v === 'vulns') setVulnerabilityFilters({});
     setView(v);
   };
   const openScanRequests = (filters: ScanRequestFilters) => {
     setScanRequestFilters(filters);
     setView('scans');
   };
+  const openVulnerabilities = (filters: VulnerabilityFilters) => {
+    setVulnerabilityFilters(filters);
+    setView('vulns');
+  };
 
   return (
     <div className="layout">
       <Sidebar view={view} onNavigate={navigate} onLogout={noAuthMode ? undefined : () => { clearApiKey(); setAuthed(false); }} />
       <div className="main">
-        {view === 'dashboard' && <DashboardView onOpenScanRequests={openScanRequests} />}
+        {view === 'dashboard' && <DashboardView onOpenScanRequests={openScanRequests} onOpenVulnerabilities={openVulnerabilities} />}
         {view === 'hosts' && <HostsView onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
         {view === 'host-detail' && <HostDetailView hostId={selectedHostId} onBack={() => setView('hosts')} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'packages' && <PackagesView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
@@ -205,7 +212,7 @@ export default function App() {
         {view === 'scans' && <ScansView initialRequestFilters={scanRequestFilters} />}
         {view === 'rbac' && <RBACView />}
         {view === 'audit' && <AuditLogView />}
-        {view === 'vulns' && <VulnsView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
+        {view === 'vulns' && <VulnsView initialFilters={vulnerabilityFilters} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'vuln-detail' && <VulnDetailView vuln={selectedVuln} onBack={() => setView('vulns')} />}
       </div>
     </div>
@@ -267,7 +274,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
   );
 }
 
-function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: ScanRequestFilters) => void }) {
+function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenScanRequests: (filters: ScanRequestFilters) => void; onOpenVulnerabilities: (filters: VulnerabilityFilters) => void }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
@@ -481,6 +488,38 @@ function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: S
           <div className="accent-bar" style={{ background: 'var(--low)' }} />
           <div className="label">Low Risk</div>
           <div className="value" style={{ color: 'var(--low)' }}>{stats.active_risk_level_counts?.low || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--critical)' }} />
+          <div className="label">SLA Overdue</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenVulnerabilities({ overdueOnly: true })}
+            style={{ color: 'var(--critical)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open overdue actionable vulnerabilities"
+          >
+            {stats.overdue_sla_count || 0}
+          </button>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            C {stats.overdue_sla_risk_counts?.critical || 0} / H {stats.overdue_sla_risk_counts?.high || 0}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--high)' }} />
+          <div className="label">High Risk Overdue</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenVulnerabilities({ overdueOnly: true, riskLevel: 'high' })}
+            style={{ color: 'var(--high)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open overdue high-risk vulnerabilities"
+          >
+            {stats.overdue_sla_risk_counts?.high || 0}
+          </button>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            Medium {stats.overdue_sla_risk_counts?.medium || 0} / Low {stats.overdue_sla_risk_counts?.low || 0}
+          </div>
         </div>
       </div>
       <div className="stats-grid" style={{ marginTop: '1rem' }}>
@@ -1175,14 +1214,14 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
   );
 }
 
-function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
+function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: VulnerabilityFilters; onSelectVuln: (v: Vuln) => void }) {
   const [vulns, setVulns] = useState<Vuln[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [severity, setSeverity] = useState('');
   const [triageStatus, setTriageStatus] = useState('');
   const [findingSource, setFindingSource] = useState('');
-  const [riskLevel, setRiskLevel] = useState('');
+  const [riskLevel, setRiskLevel] = useState(initialFilters?.riskLevel || '');
   const [hostId, setHostId] = useState('');
   const [container, setContainer] = useState('');
   const [pkgQuery, setPkgQuery] = useState('');
@@ -1200,7 +1239,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [criticality, setCriticality] = useState('');
   const [showNoFix, setShowNoFix] = useState(false);
   const [showMismatch, setShowMismatch] = useState(false);
-  const [overdueOnly, setOverdueOnly] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(!!initialFilters?.overdueOnly);
   const [exploitedOnly, setExploitedOnly] = useState(false);
   const [minEpss, setMinEpss] = useState('');
   const [exportMsg, setExportMsg] = useState('');
