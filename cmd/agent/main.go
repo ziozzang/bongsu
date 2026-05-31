@@ -32,6 +32,7 @@ func main() {
 	pollInterval := flag.Duration("poll-interval", 60*time.Second, "Force scan polling interval")
 	configFile := flag.String("config", "", "Config file path (YAML)")
 	flag.Parse()
+	agentToken := ""
 
 	if *configFile != "" {
 		cfg, err := loadConfig(*configFile)
@@ -44,6 +45,7 @@ func main() {
 		if *apiKey == "" {
 			*apiKey = cfg.APIKey
 		}
+		agentToken = cfg.AgentToken
 		if *workDir == "/opt/bongsu" && cfg.WorkDir != "" {
 			*workDir = cfg.WorkDir
 		}
@@ -61,23 +63,34 @@ func main() {
 	if *serverURL == "" || *apiKey == "" {
 		log.Fatal("server URL and API key are required (use -server, -api-key, or config file)")
 	}
+	if agentToken == "" {
+		agentToken = os.Getenv("BONGSU_AGENT_TOKEN")
+	}
+	if agentToken == "" {
+		var err error
+		agentToken, err = ensureAgentToken(*workDir)
+		if err != nil {
+			log.Fatalf("agent token: %v", err)
+		}
+	}
 
 	if *daemon {
-		if err := runDaemon(*serverURL, *apiKey, *workDir, *pollInterval); err != nil {
+		if err := runDaemon(*serverURL, *apiKey, agentToken, *workDir, *pollInterval); err != nil {
 			log.Fatalf("daemon failed: %v", err)
 		}
 		return
 	}
 
-	if err := run(*serverURL, *apiKey, *workDir, *scanType, *packagesOnly); err != nil {
+	if err := run(*serverURL, *apiKey, agentToken, *workDir, *scanType, *packagesOnly); err != nil {
 		log.Fatalf("scan failed: %v", err)
 	}
 }
 
 type config struct {
-	ServerURL string `yaml:"server_url"`
-	APIKey    string `yaml:"api_key"`
-	WorkDir   string `yaml:"work_dir"`
+	ServerURL  string `yaml:"server_url"`
+	APIKey     string `yaml:"api_key"`
+	AgentToken string `yaml:"agent_token"`
+	WorkDir    string `yaml:"work_dir"`
 }
 
 func loadConfig(path string) (*config, error) {
@@ -97,6 +110,8 @@ func loadConfig(path string) (*config, error) {
 			cfg.ServerURL = trimQuotes(v)
 		case "api_key":
 			cfg.APIKey = trimQuotes(v)
+		case "agent_token":
+			cfg.AgentToken = trimQuotes(v)
 		case "work_dir":
 			cfg.WorkDir = trimQuotes(v)
 		}
@@ -124,13 +139,33 @@ func parseKV(line string) (string, string, bool) {
 	return "", "", false
 }
 
-func runDaemon(serverURL, apiKey, workDir string, pollInterval time.Duration) error {
+func ensureAgentToken(workDir string) (string, error) {
+	if err := os.MkdirAll(workDir, 0700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(workDir, "agent.token")
+	if data, err := os.ReadFile(path); err == nil {
+		token := trimSpace(string(data))
+		if token != "" {
+			return token, nil
+		}
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
+	token := uuid.NewString() + uuid.NewString()
+	if err := os.WriteFile(path, []byte(token+"\n"), 0600); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+func runDaemon(serverURL, apiKey, agentToken, workDir string, pollInterval time.Duration) error {
 	log.Println("=== Bongsu Agent Daemon Starting ===")
 	host, err := system.CollectHostInfo()
 	if err != nil {
 		return fmt.Errorf("system info: %w", err)
 	}
-	rep := reporter.New(serverURL, apiKey)
+	rep := reporter.New(serverURL, apiKey, agentToken)
 	for {
 		req, err := rep.ClaimScanRequest(host.ID)
 		if err != nil {
@@ -143,7 +178,7 @@ func runDaemon(serverURL, apiKey, workDir string, pollInterval time.Duration) er
 			continue
 		}
 		log.Printf("claimed scan request %s type=%s packages_only=%v", req.ID, req.ScanType, req.PackagesOnly)
-		if err := run(serverURL, apiKey, workDir, req.ScanType, req.PackagesOnly); err != nil {
+		if err := run(serverURL, apiKey, agentToken, workDir, req.ScanType, req.PackagesOnly); err != nil {
 			log.Printf("scan request %s failed: %v", req.ID, err)
 			_ = rep.CompleteScanRequest(req.ID, host.ID, "failed", err.Error())
 			continue
@@ -154,7 +189,7 @@ func runDaemon(serverURL, apiKey, workDir string, pollInterval time.Duration) er
 	}
 }
 
-func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
+func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly bool) error {
 	log.Println("=== Bongsu Agent Starting ===")
 	log.Printf("Server: %s", serverURL)
 	log.Printf("Work dir: %s", workDir)
@@ -293,7 +328,7 @@ func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
 	log.Printf("Total: %d packages, %d vulnerabilities", len(allPkgs), len(allVulns))
 
 	log.Println("Sending report to server...")
-	rep := reporter.New(serverURL, apiKey)
+	rep := reporter.New(serverURL, apiKey, agentToken)
 	if err := rep.Send(report); err != nil {
 		return fmt.Errorf("send report: %w", err)
 	}
@@ -353,10 +388,10 @@ func indexOf(s, sub string) int {
 }
 
 func trimSpace(s string) string {
-	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t') {
+	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t' || s[0] == '\n' || s[0] == '\r') {
 		s = s[1:]
 	}
-	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t') {
+	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t' || s[len(s)-1] == '\n' || s[len(s)-1] == '\r') {
 		s = s[:len(s)-1]
 	}
 	return s

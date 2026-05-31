@@ -13,9 +13,10 @@ import (
 )
 
 type Reporter struct {
-	serverURL string
-	apiKey    string
-	client    *http.Client
+	serverURL  string
+	apiKey     string
+	agentToken string
+	client     *http.Client
 }
 
 func (r *Reporter) ClaimScanRequest(hostID string) (*models.ScanRequest, error) {
@@ -24,6 +25,7 @@ func (r *Reporter) ClaimScanRequest(hostID string) (*models.ScanRequest, error) 
 		return nil, err
 	}
 	req.Header.Set("X-API-Key", r.apiKey)
+	r.setAgentIdentityHeaders(req, hostID)
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -50,6 +52,7 @@ func (r *Reporter) CompleteScanRequest(id, hostID, status, message string) error
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", r.apiKey)
+	r.setAgentIdentityHeaders(req, hostID)
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return err
@@ -62,12 +65,25 @@ func (r *Reporter) CompleteScanRequest(id, hostID, status, message string) error
 	return nil
 }
 
-func New(serverURL, apiKey string) *Reporter {
-	return &Reporter{
-		serverURL: serverURL,
-		apiKey:    apiKey,
-		client:    &http.Client{Timeout: 5 * time.Minute},
+func New(serverURL, apiKey string, agentToken ...string) *Reporter {
+	token := ""
+	if len(agentToken) > 0 {
+		token = agentToken[0]
 	}
+	return &Reporter{
+		serverURL:  serverURL,
+		apiKey:     apiKey,
+		agentToken: token,
+		client:     &http.Client{Timeout: 5 * time.Minute},
+	}
+}
+
+func (r *Reporter) setAgentIdentityHeaders(req *http.Request, hostID string) {
+	if r.agentToken == "" {
+		return
+	}
+	req.Header.Set("X-Bongsu-Agent-Token", r.agentToken)
+	req.Header.Set("X-Bongsu-Host-ID", hostID)
 }
 
 func (r *Reporter) Send(report *models.ScanReport) error {
@@ -82,6 +98,7 @@ func (r *Reporter) Send(report *models.ScanReport) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", r.apiKey)
+	r.setAgentIdentityHeaders(req, report.Host.ID)
 
 	resp, err := r.client.Do(req)
 	if err != nil {

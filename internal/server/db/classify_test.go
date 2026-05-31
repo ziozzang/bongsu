@@ -787,6 +787,7 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		`{table: "hosts"}`,
+		`{table: "hosts", column: "agent_token_hash"}`,
 		`{table: "packages", column: "asset_type"}`,
 		`{table: "packages", column: "purl"}`,
 		`{table: "vulnerabilities", column: "pkg_path"}`,
@@ -806,6 +807,40 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("legacy schema completeness check missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestHostAgentTokenBindingPersistence(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"ErrAgentHostTokenMismatch",
+		"UpsertHostWithAgentToken",
+		"agent_token_hash=CASE WHEN hosts.agent_token_hash=''",
+		"WHERE $12='' OR hosts.agent_token_hash='' OR hosts.agent_token_hash=$12",
+		"VerifyOrBindHostAgentToken",
+		"agent_token_hash=CASE WHEN agent_token_hash=''",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("host agent token binding missing %q", want)
+		}
+	}
+
+	migration, err := os.ReadFile("../../../migrations/019_host_agent_token_hash.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationBody := string(migration)
+	for _, want := range []string{
+		"ADD COLUMN IF NOT EXISTS agent_token_hash",
+		"idx_hosts_agent_token_hash",
+	} {
+		if !strings.Contains(migrationBody, want) {
+			t.Fatalf("host agent token migration missing %q: %s", want, migrationBody)
 		}
 	}
 }

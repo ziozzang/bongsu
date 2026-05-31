@@ -481,9 +481,20 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	tokenHash, err := s.agentHostTokenHash(r, report.Host.ID)
+	if err != nil {
+		s.audit(r, "agent.report", "host", report.Host.ID, "forbidden", map[string]any{"reason": err.Error()})
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 
-	if err := s.db.UpsertHost(ctx, &report.Host); err != nil {
+	if err := s.db.UpsertHostWithAgentToken(ctx, &report.Host, tokenHash); err != nil {
 		log.Printf("upsert host: %v", err)
+		if errors.Is(err, db.ErrAgentHostTokenMismatch) {
+			s.audit(r, "agent.report", "host", report.Host.ID, "forbidden", map[string]any{"reason": "agent token mismatch"})
+			http.Error(w, "agent token does not match host binding", http.StatusForbidden)
+			return
+		}
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
@@ -666,6 +677,41 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"scan_id": report.ScanID,
 	})
+}
+
+func (s *Server) agentHostTokenHash(r *http.Request, hostID string) (string, error) {
+	if !envBool("BONGSU_AGENT_HOST_BINDING", true) {
+		return "", nil
+	}
+	token := strings.TrimSpace(r.Header.Get("X-Bongsu-Agent-Token"))
+	if token == "" {
+		return "", fmt.Errorf("missing agent host token")
+	}
+	if len(token) < 32 {
+		return "", fmt.Errorf("agent host token is too short")
+	}
+	if strings.TrimSpace(r.Header.Get("X-Bongsu-Host-ID")) != hostID {
+		return "", fmt.Errorf("agent host id header mismatch")
+	}
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func (s *Server) verifyAgentHostBinding(r *http.Request, hostID string) error {
+	tokenHash, err := s.agentHostTokenHash(r, hostID)
+	if err != nil {
+		return err
+	}
+	if tokenHash == "" {
+		return nil
+	}
+	if err := s.db.VerifyOrBindHostAgentToken(r.Context(), hostID, tokenHash); err != nil {
+		if errors.Is(err, db.ErrAgentHostTokenMismatch) {
+			return fmt.Errorf("agent token does not match host binding")
+		}
+		return err
+	}
+	return nil
 }
 
 func normalizeScanReport(report *models.ScanReport) error {
@@ -1116,7 +1162,7 @@ func (s *Server) vulnFilterFromRequest(r *http.Request) (db.VulnFilter, bool, bo
 }
 
 func (s *Server) vulnFilterFromRequestWithScope(r *http.Request, scope db.AccessScope) (db.VulnFilter, bool, bool, error) {
-	hostID := r.URL.Query().Get("host_id")
+	hostID := strings.TrimSpace(r.URL.Query().Get("host_id"))
 	findingSource, err := findingSourceFilterParam(r)
 	if err != nil {
 		return db.VulnFilter{}, false, false, err
@@ -1640,6 +1686,7 @@ WORK_DIR="${BONGSU_WORK_DIR:-/opt/bongsu}"
 INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
 FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
+AGENT_TOKEN="${BONGSU_AGENT_TOKEN:-}"
 
 curl_download() {
     local url="$1"
@@ -1713,12 +1760,31 @@ verify_download_sha256() {
     fi
 }
 
+generate_agent_token() {
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex 32
+    elif command -v uuidgen >/dev/null 2>&1; then
+        printf '%%s%%s\n' "$(uuidgen)" "$(uuidgen)" | tr -d '-'
+    else
+        date +%%s%%N | sha256sum | awk '{print $1}'
+    fi
+}
+
 echo "=== Bongsu Agent Installer ==="
 echo "Server:  $SERVER"
 echo "WorkDir: $WORK_DIR"
 echo "Mode:    $INSTALL_MODE"
 
 mkdir -p "$WORK_DIR/bin"
+if [ -z "$AGENT_TOKEN" ]; then
+    if [ -s "$WORK_DIR/agent.token" ]; then
+        AGENT_TOKEN="$(tr -d '\r\n' < "$WORK_DIR/agent.token")"
+    else
+        AGENT_TOKEN="$(generate_agent_token)"
+        umask 077
+        printf '%%s\n' "$AGENT_TOKEN" > "$WORK_DIR/agent.token"
+    fi
+fi
 
 # Download agent binary from server
 echo "Downloading bongsu-agent..."
@@ -1747,9 +1813,11 @@ umask 077
 cat > "$WORK_DIR/config.yaml" <<EOF
 server_url: ${SERVER}
 api_key: ${API_KEY}
+agent_token: ${AGENT_TOKEN}
 work_dir: ${WORK_DIR}
 EOF
 chmod 600 "$WORK_DIR/config.yaml"
+chmod 600 "$WORK_DIR/agent.token" 2>/dev/null || true
 
 AGENT_CMD="$WORK_DIR/bin/bongsu-agent --config $WORK_DIR/config.yaml --type daily --packages-only"
 
@@ -2422,6 +2490,11 @@ func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "host_id is required", http.StatusBadRequest)
 		return
 	}
+	if err := s.verifyAgentHostBinding(r, hostID); err != nil {
+		s.audit(r, "scan_request.claim", "host", hostID, "forbidden", map[string]any{"reason": err.Error()})
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
 	timeoutMinutes := int(scanRequestClaimTimeoutSeconds() / 60)
 	req, requeued, err := s.db.ClaimScanRequest(r.Context(), hostID, time.Duration(timeoutMinutes)*time.Minute)
 	if err != nil {
@@ -2465,8 +2538,15 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	body.HostID = strings.TrimSpace(body.HostID)
+	body.Status = strings.TrimSpace(body.Status)
 	if body.Status == "" {
 		body.Status = "completed"
+	}
+	if err := s.verifyAgentHostBinding(r, body.HostID); err != nil {
+		s.audit(r, "scan_request.complete", "host", body.HostID, "forbidden", map[string]any{"reason": err.Error()})
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
 	}
 	if err := s.db.CompleteClaimedScanRequest(r.Context(), id, body.HostID, body.Status, body.Message); err != nil {
 		log.Printf("complete scan request: %v", err)

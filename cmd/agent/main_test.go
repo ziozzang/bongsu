@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -42,5 +44,44 @@ func TestAppendCollectionErrorBoundsReportErrors(t *testing.T) {
 	}
 	if errs[maxCollectionErrors-1] != "additional collection errors omitted" {
 		t.Fatalf("overflow marker missing: %q", errs[maxCollectionErrors-1])
+	}
+}
+
+func TestLoadConfigReadsAgentToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("server_url: http://server\napi_key: key\nagent_token: token-123\nwork_dir: /tmp/bongsu\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AgentToken != "token-123" {
+		t.Fatalf("agent token = %q", cfg.AgentToken)
+	}
+}
+
+func TestEnsureAgentTokenPersistsToken(t *testing.T) {
+	dir := t.TempDir()
+	first, err := ensureAgentToken(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first) < 32 {
+		t.Fatalf("token too short: %q", first)
+	}
+	info, err := os.Stat(filepath.Join(dir, "agent.token"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("agent token mode = %v, want 0600", info.Mode().Perm())
+	}
+	second, err := ensureAgentToken(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second != first {
+		t.Fatalf("token was not persisted: %q != %q", second, first)
 	}
 }

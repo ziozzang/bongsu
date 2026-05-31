@@ -895,6 +895,10 @@ func TestInstallScriptHardensAgentCredentialFile(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"umask 077",
+		"AGENT_TOKEN=",
+		"generate_agent_token()",
+		`agent_token: ${AGENT_TOKEN}`,
+		`chmod 600 "$WORK_DIR/agent.token"`,
 		`chmod 600 "$WORK_DIR/config.yaml"`,
 		"UMask=0077",
 		"ProtectSystem=strict",
@@ -904,6 +908,36 @@ func TestInstallScriptHardensAgentCredentialFile(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("install script hardening missing %q", want)
 		}
+	}
+}
+
+func TestAgentHostTokenBindingValidation(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_HOST_BINDING", "true")
+	token := strings.Repeat("a", 32)
+	req := httptest.NewRequest("POST", "/api/report", nil)
+	req.Header.Set("X-Bongsu-Agent-Token", token)
+	req.Header.Set("X-Bongsu-Host-ID", "host-1")
+	got, err := (&Server{}).agentHostTokenHash(req, "host-1")
+	if err != nil {
+		t.Fatalf("agentHostTokenHash: %v", err)
+	}
+	sum := sha256.Sum256([]byte(token))
+	if got != hex.EncodeToString(sum[:]) {
+		t.Fatalf("token hash = %q", got)
+	}
+
+	req.Header.Set("X-Bongsu-Host-ID", "other")
+	if _, err := (&Server{}).agentHostTokenHash(req, "host-1"); err == nil {
+		t.Fatal("host id header mismatch should fail")
+	}
+	req.Header.Set("X-Bongsu-Host-ID", "host-1")
+	req.Header.Set("X-Bongsu-Agent-Token", "short")
+	if _, err := (&Server{}).agentHostTokenHash(req, "host-1"); err == nil {
+		t.Fatal("short token should fail")
+	}
+	t.Setenv("BONGSU_AGENT_HOST_BINDING", "false")
+	if got, err := (&Server{}).agentHostTokenHash(req, "host-1"); err != nil || got != "" {
+		t.Fatalf("disabled binding = (%q, %v), want empty nil", got, err)
 	}
 }
 
@@ -1113,6 +1147,8 @@ func TestHandleReportNormalizesScannerInput(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"normalizeScanReport(&report)",
+		"agentHostTokenHash(r, report.Host.ID)",
+		"UpsertHostWithAgentToken",
 		`http.Error(w, err.Error(), http.StatusBadRequest)`,
 		`uuid.Parse(report.ScanID)`,
 		`"invalid scan_type"`,
@@ -1665,6 +1701,7 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"${BONGSU_AGENT_API_KEY:?Set BONGSU_AGENT_API_KEY in .env}",
 				"${BONGSU_INSTALL_TOKEN:?Set BONGSU_INSTALL_TOKEN in .env}",
 				"BONGSU_ALLOW_WEAK_SECRETS: ${BONGSU_ALLOW_WEAK_SECRETS:-false}",
+				"BONGSU_AGENT_HOST_BINDING: ${BONGSU_AGENT_HOST_BINDING:-true}",
 				"BONGSU_ACCESS_LOG: ${BONGSU_ACCESS_LOG:-true}",
 				"BONGSU_ACCESS_LOG_HEALTH: ${BONGSU_ACCESS_LOG_HEALTH:-false}",
 				"BONGSU_DB_MAX_OPEN_CONNS: ${BONGSU_DB_MAX_OPEN_CONNS:-25}",
@@ -2128,6 +2165,7 @@ func TestAgentScanRequestCompletionRequiresClaimedHost(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		`HostID  string ` + "`json:\"host_id\"`",
+		"verifyAgentHostBinding",
 		"CompleteClaimedScanRequest",
 		"scanRequestAuditMeta(req, body.Message, body.HostID)",
 	} {

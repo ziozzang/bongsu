@@ -167,6 +167,7 @@ spec:
 | `BONGSU_AGENT_API_KEY` | *required* | Agent-only report upload and force-scan polling key; keep it distinct from the admin key |
 | `BONGSU_INSTALL_TOKEN` | *required for installer* | Token required for `/api/install.sh`; binary downloads accept this token or an admin API key header |
 | `BONGSU_ALLOW_WEAK_SECRETS` | `false` | Development-only override for missing, placeholder, short, or duplicate server secrets; keep `false` in production |
+| `BONGSU_AGENT_HOST_BINDING` | `true` | Require each agent to present a persistent per-host token in addition to `BONGSU_AGENT_API_KEY` |
 | `BONGSU_ACCESS_LOG` | `true` | Emit request-scoped access logs with method, path, status, bytes, duration, IP, and `X-Request-ID` |
 | `BONGSU_ACCESS_LOG_HEALTH` | `false` | Include `/api/health` in access logs when enabled |
 | `BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS` | `10` | Maximum seconds allowed to read request headers before closing the connection |
@@ -227,6 +228,7 @@ spec:
 |----------|------|-------------|
 | `BONGSU_SERVER_URL` | `--server` | Server URL |
 | `BONGSU_API_KEY` | `--api-key` | Agent API key, preferably `BONGSU_AGENT_API_KEY` from server config |
+| `BONGSU_AGENT_TOKEN` | config `agent_token` | Optional persistent per-host token; generated automatically by the installer/agent if omitted |
 | - | `--work-dir` | Working directory (default: `/opt/bongsu`) |
 | - | `--packages-only` | Server-side CVE matching |
 | - | `--type` | Scan type: `daily` or `manual` |

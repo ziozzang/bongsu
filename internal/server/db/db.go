@@ -32,6 +32,7 @@ var ErrScanRequestNotFound = errors.New("scan request not found")
 var ErrScanRequestNotActive = errors.New("scan request is not pending or claimed")
 var ErrScanRequestClaimMismatch = errors.New("scan request was not claimed by this host")
 var ErrScanRequestNotRetryable = errors.New("scan request is not failed or cancelled")
+var ErrAgentHostTokenMismatch = errors.New("agent token does not match host binding")
 
 type RetentionPruneResult struct {
 	DryRun      bool `json:"dry_run"`
@@ -174,6 +175,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		index  string
 	}{
 		{table: "hosts"},
+		{table: "hosts", column: "agent_token_hash"},
 		{table: "packages", column: "asset_type"},
 		{table: "packages", column: "purl"},
 		{table: "vulnerabilities", column: "pkg_path"},
@@ -261,14 +263,49 @@ func migrationChecksum(data []byte) string {
 }
 
 func (db *DB) UpsertHost(ctx context.Context, h *models.Host) error {
-	q := `INSERT INTO hosts (id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, api_key_hash, last_seen, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', now(), now(), now())
-ON CONFLICT (id) DO UPDATE SET hostname=$2, ip_address=$3, os_name=$4, os_version=$5, kernel=$6, arch=$7, cpu_model=$8, cpu_cores=$9, memory_mb=$10, agent_version=$11, last_seen=now(), updated_at=now()`
-	_, err := db.ExecContext(ctx, q,
+	return db.UpsertHostWithAgentToken(ctx, h, "")
+}
+
+func (db *DB) UpsertHostWithAgentToken(ctx context.Context, h *models.Host, tokenHash string) error {
+	q := `INSERT INTO hosts (id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, api_key_hash, agent_token_hash, last_seen, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', $12, now(), now(), now())
+ON CONFLICT (id) DO UPDATE SET hostname=$2, ip_address=$3, os_name=$4, os_version=$5, kernel=$6, arch=$7, cpu_model=$8, cpu_cores=$9, memory_mb=$10, agent_version=$11, agent_token_hash=CASE WHEN hosts.agent_token_hash='' THEN $12 ELSE hosts.agent_token_hash END, last_seen=now(), updated_at=now()
+WHERE $12='' OR hosts.agent_token_hash='' OR hosts.agent_token_hash=$12`
+	res, err := db.ExecContext(ctx, q,
 		h.ID, h.Hostname, h.IPAddress, h.OSName, h.OSVersion,
-		h.Kernel, h.Arch, h.CPUModel, h.CPUCores, h.MemoryMB, h.AgentVersion,
+		h.Kernel, h.Arch, h.CPUModel, h.CPUCores, h.MemoryMB, h.AgentVersion, tokenHash,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrAgentHostTokenMismatch
+	}
+	return nil
+}
+
+func (db *DB) VerifyOrBindHostAgentToken(ctx context.Context, hostID, tokenHash string) error {
+	if hostID == "" || tokenHash == "" {
+		return ErrAgentHostTokenMismatch
+	}
+	res, err := db.ExecContext(ctx, `UPDATE hosts
+SET agent_token_hash=CASE WHEN agent_token_hash='' THEN $2 ELSE agent_token_hash END
+WHERE id=$1 AND (agent_token_hash='' OR agent_token_hash=$2)`, hostID, tokenHash)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return ErrAgentHostTokenMismatch
+	}
+	return nil
 }
 
 func (db *DB) CreateScan(ctx context.Context, s *models.Scan) error {
