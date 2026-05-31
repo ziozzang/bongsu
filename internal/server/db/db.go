@@ -615,7 +615,7 @@ func preReleaseNumber(v, marker string) (int, bool) {
 
 const pkgCols = `p.id, p.scan_id, p.host_id, p.asset_type, p.asset_id, p.source, p.container, p.container_id, p.image_name, p.image_id, p.name, p.version, p.arch, p.pkg_type, p.ecosystem, p.purl, p.src_name, p.file_path, p.layer_id, p.target, p.created_at`
 
-var pkgVulnJoin = ` LEFT JOIN (SELECT package_id, MAX(cvss_score) as max_cvss, COUNT(*) as vuln_count FROM vulnerabilities WHERE NOT (fixed_version IS NOT NULL AND fixed_version != '' AND installed_version IS NOT NULL AND installed_version != '' AND regexp_replace(regexp_replace(installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND regexp_replace(regexp_replace(fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND array_remove(string_to_array(regexp_replace(regexp_replace(installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[] >= array_remove(string_to_array(regexp_replace(regexp_replace(fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]) AND NOT EXISTS (SELECT 1 FROM packages p2 WHERE p2.id = vulnerabilities.package_id AND p2.pkg_type IN ('python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget') AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','ALPINE','SUSE','ALSA','UBUNTU','RHSA')) AND vulnerability_id NOT LIKE 'CGA-%' AND fixed_version !~ '^[0-9a-f]{40}$'
+var pkgVulnJoin = ` LEFT JOIN (SELECT package_id, MAX(cvss_score) as max_cvss, COUNT(*) as vuln_count FROM vulnerabilities WHERE NOT (` + fixedVersionSQLCondition("vulnerabilities") + `) AND NOT EXISTS (SELECT 1 FROM packages p2 WHERE p2.id = vulnerabilities.package_id AND p2.pkg_type IN ('python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget') AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','ALPINE','SUSE','ALSA','UBUNTU','RHSA')) AND vulnerability_id NOT LIKE 'CGA-%' AND fixed_version !~ '^[0-9a-f]{40}$'
 			AND NOT (EXISTS (SELECT 1 FROM packages p3 WHERE p3.id = vulnerabilities.package_id AND p3.pkg_type = 'debian') AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('ALPINE','SUSE','ALSA','RHSA','UBUNTU'))
 			AND NOT (EXISTS (SELECT 1 FROM packages p3 WHERE p3.id = vulnerabilities.package_id AND p3.pkg_type IN ('apk','alpine')) AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','SUSE','ALSA','RHSA','UBUNTU'))
 			AND NOT (EXISTS (SELECT 1 FROM packages p3 WHERE p3.id = vulnerabilities.package_id AND p3.pkg_type = 'ubuntu') AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('ALPINE','SUSE','ALSA','RHSA'))
@@ -625,6 +625,23 @@ var pkgVulnJoin = ` LEFT JOIN (SELECT package_id, MAX(cvss_score) as max_cvss, C
 const pkgVulnSelect = `, COALESCE(vx.max_cvss, 0), COALESCE(vx.vuln_count, 0)`
 
 const pkgInsertCols = `id, scan_id, host_id, asset_type, asset_id, source, container, container_id, image_name, image_id, name, version, arch, pkg_type, ecosystem, purl, src_name, file_path, layer_id, target`
+
+func fixedVersionSQLCondition(alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	installed := prefix + "installed_version"
+	fixed := prefix + "fixed_version"
+	return fmt.Sprintf(`%s IS NOT NULL AND %s != ''
+			AND %s IS NOT NULL AND %s != ''
+			AND %s !~* '(~|alpha|beta|rc|pre|preview|dev|snapshot)'
+			AND regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
+			AND regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
+			AND array_remove(string_to_array(regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]
+			  >= array_remove(string_to_array(regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]`,
+		fixed, fixed, installed, installed, installed, installed, fixed, installed, fixed)
+}
 
 func scanPkg(scanner interface{ Scan(...interface{}) error }, p *models.Package) error {
 	return scanner.Scan(&p.ID, &p.ScanID, &p.HostID, &p.AssetType, &p.AssetID, &p.Source, &p.Container,
@@ -1812,14 +1829,7 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	}
 
 	if f.HideFixed {
-		baseQ += ` AND NOT (
-			v.fixed_version IS NOT NULL AND v.fixed_version != ''
-			AND v.installed_version IS NOT NULL AND v.installed_version != ''
-			AND regexp_replace(regexp_replace(v.installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
-			AND regexp_replace(regexp_replace(v.fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
-			AND array_remove(string_to_array(regexp_replace(regexp_replace(v.installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]
-			  >= array_remove(string_to_array(regexp_replace(regexp_replace(v.fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]
-		)`
+		baseQ += ` AND NOT (` + fixedVersionSQLCondition("v") + `)`
 		baseQ += ` AND v.vulnerability_id NOT LIKE 'CGA-%'`
 		baseQ += ` AND v.fixed_version !~ '^[0-9a-f]{40}$'`
 	}
@@ -2611,8 +2621,7 @@ func vulnSortExpr(col string, desc bool) string {
 }
 
 func (db *DB) GetVulnsByPackageID(ctx context.Context, packageID string) ([]models.Vulnerability, error) {
-	q := `SELECT ` + vulnSelectCols + vulnTriageCols + ` FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id` + vulnTriageJoin + ` WHERE v.package_id=$1 AND NOT (v.fixed_version IS NOT NULL AND v.fixed_version != '' AND v.installed_version IS NOT NULL AND v.installed_version != '' AND regexp_replace(regexp_replace(v.installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND regexp_replace(regexp_replace(v.fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND v.fixed_version !~ '^[0-9a-f]{40}$'
-			AND array_remove(string_to_array(regexp_replace(regexp_replace(v.installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[] >= array_remove(string_to_array(regexp_replace(regexp_replace(v.fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]) AND v.vulnerability_id NOT LIKE 'CGA-%' AND v.fixed_version !~ '^[0-9a-f]{40}$'
+	q := `SELECT ` + vulnSelectCols + vulnTriageCols + ` FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id` + vulnTriageJoin + ` WHERE v.package_id=$1 AND NOT (` + fixedVersionSQLCondition("v") + ` AND v.fixed_version !~ '^[0-9a-f]{40}$') AND v.vulnerability_id NOT LIKE 'CGA-%' AND v.fixed_version !~ '^[0-9a-f]{40}$'
 			` + cvePackageEcosystemMismatchFilter("v") + ` ORDER BY v.cvss_score DESC`
 	rows, err := db.QueryContext(ctx, q, packageID)
 	if err != nil {

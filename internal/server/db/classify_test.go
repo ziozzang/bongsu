@@ -351,6 +351,23 @@ func TestCvePackageEcosystemMismatchFilterChecksAllAffectedProducts(t *testing.T
 	}
 }
 
+func TestFixedVersionSQLConditionDoesNotHidePrereleases(t *testing.T) {
+	got := fixedVersionSQLCondition("v")
+	for _, want := range []string{
+		"v.installed_version",
+		"v.fixed_version",
+		"!~*",
+		"alpha",
+		"beta",
+		"rc",
+		"snapshot",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("fixed condition missing %q: %s", want, got)
+		}
+	}
+}
+
 func TestInsertableVulnerabilitiesDropsDanglingRows(t *testing.T) {
 	valid := models.Vulnerability{
 		ID:              "vuln-1",
