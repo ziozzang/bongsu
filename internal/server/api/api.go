@@ -3175,7 +3175,7 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		tx.Rollback()
 		log.Printf("security-db bundle cve import: %v", err)
-		fail(http.StatusInternalServerError, "cve import failed", "import_cve", err)
+		fail(cveImportErrorStatus(err), cveImportErrorMessage(err), "import_cve", err)
 		return
 	}
 	if imported == 0 {
@@ -3218,6 +3218,7 @@ type securityDBBundleManifest struct {
 }
 
 var errNoValidCveEntries = errors.New("no valid cve entries")
+var errInvalidCveSource = errors.New("invalid cve source")
 
 func writeBundleEntryTemp(r io.Reader, pattern string) (string, string, error) {
 	tmp, err := os.CreateTemp("", pattern)
@@ -3498,9 +3499,14 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	source := strings.TrimSpace(r.FormValue("source"))
-	if source == "" {
-		source = "custom"
+	source, err := normalizeCveSource(r.FormValue("source"), "custom")
+	if err != nil {
+		s.audit(r, "cve_db.import", "cve_db", "invalid", "error", map[string]any{
+			"source": r.FormValue("source"),
+			"error":  err.Error(),
+		})
+		http.Error(w, "invalid source", http.StatusBadRequest)
+		return
 	}
 
 	count, err := s.importCveJSONL(ctx, file, source)
@@ -3557,7 +3563,10 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 	}
 	defer tx.Rollback()
 
-	source = strings.TrimSpace(source)
+	source, err = normalizeCveSource(source, "")
+	if err != nil {
+		return 0, err
+	}
 	if source != "" {
 		if _, err := s.db.DeleteCveEntriesBySourceTx(ctx, tx, source); err != nil {
 			return 0, err
@@ -3583,6 +3592,10 @@ func (s *Server) importCveJSONLTx(ctx context.Context, reader io.Reader, source 
 }
 
 func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader, source string, upsert func(context.Context, []models.CveEntry) (int, error)) (int, error) {
+	source, err := normalizeCveSource(source, "")
+	if err != nil {
+		return 0, err
+	}
 	decoder := json.NewDecoder(reader)
 	batch := make([]models.CveEntry, 0, 1000)
 	total := 0
@@ -3611,8 +3624,12 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 		}
 		if source != "" {
 			e.Source = source
-		} else if e.Source == "" {
-			e.Source = "bundle"
+		} else {
+			normalized, err := normalizeCveSource(e.Source, "bundle")
+			if err != nil {
+				return total, err
+			}
+			e.Source = normalized
 		}
 		batch = append(batch, e)
 		if len(batch) >= 1000 {
@@ -3624,7 +3641,30 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 	return total, flush()
 }
 
+func normalizeCveSource(source, fallback string) (string, error) {
+	source = strings.ToLower(strings.TrimSpace(source))
+	if source == "" {
+		source = strings.ToLower(strings.TrimSpace(fallback))
+	}
+	if source == "" {
+		return "", nil
+	}
+	if len(source) > 64 {
+		return "", fmt.Errorf("%w: source is too long", errInvalidCveSource)
+	}
+	for _, r := range source {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			continue
+		}
+		return "", fmt.Errorf("%w: source must contain only lowercase letters, digits, dot, underscore, or hyphen", errInvalidCveSource)
+	}
+	return source, nil
+}
+
 func cveImportErrorStatus(err error) int {
+	if errors.Is(err, errInvalidCveSource) {
+		return http.StatusBadRequest
+	}
 	var syntaxErr *json.SyntaxError
 	var typeErr *json.UnmarshalTypeError
 	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) {
@@ -3634,6 +3674,9 @@ func cveImportErrorStatus(err error) int {
 }
 
 func cveImportErrorMessage(err error) string {
+	if errors.Is(err, errInvalidCveSource) {
+		return "invalid cve source"
+	}
 	if cveImportErrorStatus(err) == http.StatusBadRequest {
 		return "invalid cve jsonl"
 	}

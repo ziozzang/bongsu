@@ -2676,7 +2676,7 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 func TestCveJSONLImportOverridesDirectSource(t *testing.T) {
 	seen := []models.CveEntry{}
 	input := strings.NewReader(`{"vulnerability_id":"CVE-2026-0001","source":"wrong"}`)
-	count, err := (&Server{}).importCveJSONLWithUpsert(context.Background(), input, "osv", func(ctx context.Context, batch []models.CveEntry) (int, error) {
+	count, err := (&Server{}).importCveJSONLWithUpsert(context.Background(), input, "OSV", func(ctx context.Context, batch []models.CveEntry) (int, error) {
 		seen = append(seen, batch...)
 		return len(batch), nil
 	})
@@ -2685,6 +2685,41 @@ func TestCveJSONLImportOverridesDirectSource(t *testing.T) {
 	}
 	if count != 1 || len(seen) != 1 || seen[0].Source != "osv" {
 		t.Fatalf("count=%d seen=%#v, want direct source override", count, seen)
+	}
+}
+
+func TestNormalizeCveSource(t *testing.T) {
+	tests := []struct {
+		name     string
+		source   string
+		fallback string
+		want     string
+		wantErr  bool
+	}{
+		{name: "lowercase", source: " OSV ", want: "osv"},
+		{name: "slug", source: "nvd-2026.feed", want: "nvd-2026.feed"},
+		{name: "fallback", fallback: "custom", want: "custom"},
+		{name: "empty", want: ""},
+		{name: "space", source: "nvd feed", wantErr: true},
+		{name: "slash", source: "../nvd", wantErr: true},
+		{name: "too long", source: strings.Repeat("a", 65), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := normalizeCveSource(tt.source, tt.fallback)
+			if tt.wantErr {
+				if !errors.Is(err, errInvalidCveSource) {
+					t.Fatalf("err = %v, want invalid source", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("source = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -2706,6 +2741,7 @@ func TestCveDbImportAuditsFailures(t *testing.T) {
 	for _, want := range []string{
 		`cveImportErrorStatus(err)`,
 		`cveImportErrorMessage(err)`,
+		`normalizeCveSource(r.FormValue("source"), "custom")`,
 		`"cve_db.import", "cve_db", source, "error"`,
 		`"reason": "no valid entries"`,
 	} {
