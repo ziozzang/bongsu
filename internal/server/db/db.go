@@ -1073,7 +1073,7 @@ INSERT INTO scan_requests (id, host_id, requested_by, scan_type, packages_only, 
 SELECT $1,$2,$3,'security-db-update',true,$4,'pending',now()
 WHERE NOT EXISTS (
 	SELECT 1 FROM scan_requests
-	WHERE host_id=$2 AND status IN ('pending','claimed')
+	WHERE host_id=$2 AND scan_type='security-db-update' AND status IN ('pending','claimed')
 )
 ON CONFLICT (host_id) WHERE host_id <> '' AND scan_type='security-db-update' AND status IN ('pending','claimed') DO NOTHING`
 }

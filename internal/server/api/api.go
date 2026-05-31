@@ -1886,13 +1886,12 @@ func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "security db manager not available", http.StatusServiceUnavailable)
 		return
 	}
-	if err := s.secMgr.UpdateNow(r.Context()); err != nil {
+	if err := s.secMgr.UpdateNowWithReason(r.Context(), "security-db update"); err != nil {
 		log.Printf("security-db update failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error(), "security_db": s.secMgr.Status()})
 		return
 	}
 	s.audit(r, "security_db.update", "security_db", "aggregate", "ok", nil)
-	s.SecurityDatabaseUpdated("security-db update")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "security_db": s.secMgr.Status()})
 }
 
@@ -2099,28 +2098,51 @@ func (s *Server) runSecurityRecalculation(reason string) {
 	defer cancel()
 	log.Printf("security recalculation started (%s)", reason)
 	s.auditSystem("security_db.recalculation", "security_db", "aggregate", "started", map[string]any{"reason": reason})
+	meta := map[string]any{"reason": reason}
+	failures := []string{}
 	if n, err := s.db.CalcCvssScores(ctx); err != nil {
 		log.Printf("security recalculation cvss failed: %v", err)
+		failures = append(failures, "cvss: "+err.Error())
 	} else if n > 0 {
 		log.Printf("security recalculation updated CVSS for %d CVE records", n)
+		meta["cvss_updated"] = n
+	} else {
+		meta["cvss_updated"] = n
 	}
 	if n, err := s.db.EnrichVulnerabilities(ctx); err != nil {
 		log.Printf("security recalculation enrich failed: %v", err)
+		failures = append(failures, "enrich: "+err.Error())
 	} else if n > 0 {
 		log.Printf("security recalculation enriched %d findings", n)
+		meta["findings_enriched"] = n
+	} else {
+		meta["findings_enriched"] = n
 	}
 	if r, err := s.db.RematchCVEs(ctx, rematchOptionsFromEnv()); err != nil {
 		log.Printf("security recalculation rematch failed: %v", err)
+		failures = append(failures, "rematch: "+err.Error())
 	} else {
 		log.Printf("security recalculation rematched candidates=%d new=%d skipped=%d", r.Matched, r.NewVulns, r.Skipped)
+		meta["rematch_candidates"] = r.Matched
+		meta["rematch_new_vulns"] = r.NewVulns
+		meta["rematch_skipped"] = r.Skipped
 	}
 	if n, err := s.db.NormalizeVulnSeverity(ctx); err != nil {
 		log.Printf("security recalculation severity normalization failed: %v", err)
+		failures = append(failures, "severity: "+err.Error())
 	} else if n > 0 {
 		log.Printf("security recalculation normalized %d findings", n)
+		meta["severity_normalized"] = n
+	} else {
+		meta["severity_normalized"] = n
 	}
 	log.Printf("security recalculation finished (%s)", reason)
-	s.auditSystem("security_db.recalculation", "security_db", "aggregate", "ok", map[string]any{"reason": reason})
+	status := "ok"
+	if len(failures) > 0 {
+		status = "error"
+		meta["errors"] = failures
+	}
+	s.auditSystem("security_db.recalculation", "security_db", "aggregate", status, meta)
 }
 
 func coalesceSecurityRecalcReason(previous, next string) string {

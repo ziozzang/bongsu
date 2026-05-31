@@ -122,15 +122,23 @@ func (m *Manager) download(ctx context.Context) error {
 	dlCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(dlCtx, m.trivyPath,
-		"image",
-		"--download-db-only",
-		"--cache-dir", m.cacheDir,
-	)
+	cmd := exec.CommandContext(dlCtx, m.trivyPath, m.downloadArgs()...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("trivy download-db: %s: %w", string(out), err)
 	}
 	return nil
+}
+
+func (m *Manager) downloadArgs() []string {
+	args := []string{
+		"image",
+		"--download-db-only",
+		"--cache-dir", m.cacheDir,
+	}
+	if m.dbRepo != "" {
+		args = append(args, "--db-repository", m.dbRepo)
+	}
+	return args
 }
 
 func (m *Manager) LoadFromFile(path string) error {

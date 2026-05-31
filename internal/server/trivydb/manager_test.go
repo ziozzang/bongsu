@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -44,4 +45,17 @@ func TestWriteArchiveIncludesTrivyDB(t *testing.T) {
 		}
 	}
 	t.Fatal("db/trivy.db not found in archive")
+}
+
+func TestDownloadArgsIncludeConfiguredDBRepository(t *testing.T) {
+	m := NewManager("trivy", "/cache", "registry.local/aqua/trivy-db", 0)
+	want := []string{
+		"image",
+		"--download-db-only",
+		"--cache-dir", "/cache",
+		"--db-repository", "registry.local/aqua/trivy-db",
+	}
+	if got := m.downloadArgs(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("download args = %#v, want %#v", got, want)
+	}
 }

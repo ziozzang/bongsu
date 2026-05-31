@@ -18,6 +18,7 @@ type Manager struct {
 	lastSync   time.Time
 	lastStatus string
 	lastError  string
+	updateHook func(string)
 }
 
 func NewManager(command string, interval time.Duration) *Manager {
@@ -36,14 +37,24 @@ func (m *Manager) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := m.UpdateNow(ctx); err != nil {
+			if err := m.UpdateNowWithReason(ctx, "security-db periodic sync"); err != nil {
 				log.Printf("security-db sync failed: %v", err)
 			}
 		}
 	}
 }
 
+func (m *Manager) SetUpdateHook(hook func(string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.updateHook = hook
+}
+
 func (m *Manager) UpdateNow(ctx context.Context) error {
+	return m.UpdateNowWithReason(ctx, "security-db sync")
+}
+
+func (m *Manager) UpdateNowWithReason(ctx context.Context, reason string) error {
 	if m.command == "" {
 		return fmt.Errorf("security-db sync command is not configured")
 	}
@@ -78,7 +89,11 @@ func (m *Manager) UpdateNow(ctx context.Context) error {
 	m.mu.Lock()
 	m.lastStatus = "ok"
 	m.lastSync = time.Now()
+	hook := m.updateHook
 	m.mu.Unlock()
+	if hook != nil {
+		hook(reason)
+	}
 	return nil
 }
 

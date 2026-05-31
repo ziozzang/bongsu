@@ -62,11 +62,6 @@ func main() {
 	secSyncCmd := os.Getenv("BONGSU_SECURITY_DB_SYNC_CMD")
 	secInterval := time.Duration(envInt("BONGSU_SECURITY_DB_INTERVAL_HOURS", 6)) * time.Hour
 	secMgr := secdb.NewManager(secSyncCmd, secInterval)
-	if secSyncCmd != "" {
-		bgCtx, bgCancel := context.WithCancel(context.Background())
-		defer bgCancel()
-		go secMgr.Start(bgCtx)
-	}
 
 	server := api.New(database, matcher, dbMgr, secMgr)
 	if dbMgr != nil {
@@ -75,6 +70,13 @@ func main() {
 		defer bgCancel()
 		go dbMgr.Start(bgCtx)
 		log.Println("Trivy DB manager started")
+	}
+	if secSyncCmd != "" {
+		secMgr.SetUpdateHook(server.SecurityDatabaseUpdated)
+		bgCtx, bgCancel := context.WithCancel(context.Background())
+		defer bgCancel()
+		go secMgr.Start(bgCtx)
+		log.Println("Security DB sync manager started")
 	}
 	if n, err := database.CalcCvssScores(ctx); err == nil && n > 0 {
 		log.Printf("Calculated CVSS scores for %d entries", n)
