@@ -242,18 +242,22 @@ func ClassifySecuritySource(source, affectedProducts string) (string, string) {
 }
 
 type affectedProduct struct {
-	Name      string   `json:"name"`
-	Ecosystem string   `json:"ecosystem"`
-	Fixed     []string `json:"fixed"`
-	Ranges    []struct {
-		Type   string `json:"type"`
-		Events []struct {
-			Introduced   string `json:"introduced"`
-			Fixed        string `json:"fixed"`
-			LastAffected string `json:"last_affected"`
-			Limit        string `json:"limit"`
-		} `json:"events"`
-	} `json:"ranges"`
+	Name      string          `json:"name"`
+	Ecosystem string          `json:"ecosystem"`
+	Fixed     []string        `json:"fixed"`
+	Ranges    []affectedRange `json:"ranges"`
+}
+
+type affectedRange struct {
+	Type   string               `json:"type"`
+	Events []affectedRangeEvent `json:"events"`
+}
+
+type affectedRangeEvent struct {
+	Introduced   string `json:"introduced"`
+	Fixed        string `json:"fixed"`
+	LastAffected string `json:"last_affected"`
+	Limit        string `json:"limit"`
 }
 
 func packageCategory(pkgType, ecosystem string) string {
@@ -386,12 +390,7 @@ func fixedVersions(p affectedProduct) []string {
 	return out
 }
 
-func versionInRange(installed string, events []struct {
-	Introduced   string `json:"introduced"`
-	Fixed        string `json:"fixed"`
-	LastAffected string `json:"last_affected"`
-	Limit        string `json:"limit"`
-}) bool {
+func versionInRange(installed string, events []affectedRangeEvent) bool {
 	active := false
 	for _, ev := range events {
 		if ev.Introduced != "" {
@@ -405,21 +404,30 @@ func versionInRange(installed string, events []struct {
 		}
 		if active && ev.Fixed != "" {
 			if less, ok := versionLess(installed, ev.Fixed); ok {
-				active = less
+				if less {
+					return true
+				}
+				active = false
 			} else {
 				return false
 			}
 		}
 		if active && ev.LastAffected != "" {
 			if cmp, ok := compareVersions(installed, ev.LastAffected); ok {
-				active = cmp <= 0
+				if cmp <= 0 {
+					return true
+				}
+				active = false
 			} else {
 				return false
 			}
 		}
 		if active && ev.Limit != "" {
 			if less, ok := versionLess(installed, ev.Limit); ok {
-				active = less
+				if less {
+					return true
+				}
+				active = false
 			} else {
 				return false
 			}

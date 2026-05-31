@@ -116,6 +116,29 @@ func TestCompatibleSecurityCandidateUsesRangeFixedVersion(t *testing.T) {
 	}
 }
 
+func TestVersionInRangeHandlesMultipleIntervals(t *testing.T) {
+	events := []affectedRangeEvent{
+		{Introduced: "0"},
+		{Fixed: "1.0.0"},
+		{Introduced: "2.0.0"},
+		{Fixed: "3.0.0"},
+	}
+	tests := []struct {
+		version string
+		want    bool
+	}{
+		{"0.5.0", true},
+		{"1.5.0", false},
+		{"2.5.0", true},
+		{"3.0.0", false},
+	}
+	for _, tt := range tests {
+		if got := versionInRange(tt.version, events); got != tt.want {
+			t.Fatalf("versionInRange(%q) = %v, want %v", tt.version, got, tt.want)
+		}
+	}
+}
+
 func TestCalcCvssScoreVersions(t *testing.T) {
 	tests := []struct {
 		name   string
