@@ -370,7 +370,7 @@ export const api = {
     requestJSON<{ status: string; requeued: number; timeout_minutes: number }>('/scan-requests/requeue-stale', body || {}),
   stats: () => request<Stats>('/stats'),
   rawHealth: () => request<HealthStatus>('/health'),
-  deleteScan: (id: string) => request<{status: string}>(`/scans/${id}`, undefined, 'DELETE'),
+  deleteScan: (id: string, force = false) => request<{status: string}>(`/scans/${id}`, force ? { force: 'true' } : undefined, 'DELETE'),
   auditLogs: (params: { actor_type?: string; actor_id?: string; action?: string; resource_type?: string; resource_id?: string; status?: string; limit?: string; offset?: string }) =>
     request<{ items: AuditLog[]; total: number }>('/admin/audit-logs', params),
   rbacSubjects: () => request<{ items: AccessSubject[] }>('/admin/rbac/subjects'),

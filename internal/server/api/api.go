@@ -10,6 +10,7 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -1778,12 +1779,17 @@ func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scanID := r.PathValue("id")
-	if err := s.db.DeleteScan(r.Context(), scanID); err != nil {
+	force := r.URL.Query().Get("force") == "true"
+	if err := s.db.DeleteScan(r.Context(), scanID, force); err != nil {
+		if errors.Is(err, db.ErrLatestInventoryScan) {
+			http.Error(w, "latest inventory scan requires force=true", http.StatusConflict)
+			return
+		}
 		log.Printf("delete scan %s: %v", scanID, err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	s.audit(r, "scan.delete", "scan", scanID, "ok", nil)
+	s.audit(r, "scan.delete", "scan", scanID, "ok", map[string]any{"force": force})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 

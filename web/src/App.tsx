@@ -2054,7 +2054,16 @@ function ScansView() {
                   <td className="mono" style={{ fontSize: '0.75rem' }}>+{s.packages_added || 0} / -{s.packages_removed || 0} / ~{s.packages_changed || 0}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{s.started_at ? new Date(s.started_at).toLocaleString() : '-'}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{s.finished_at ? new Date(s.finished_at).toLocaleString() : '-'}</td>
-                  <td><button className="delete-btn" onClick={() => { if (confirm('Delete this scan and all associated data?')) { api.deleteScan(s.id).then(() => load(page)).catch(() => alert('Delete failed')); } }}>Delete</button></td>
+                  <td><button className="delete-btn" onClick={() => {
+                    if (!confirm('Delete this scan and all associated data?')) return;
+                    api.deleteScan(s.id).then(() => load(page)).catch(() => {
+                      if (['completed', 'degraded'].includes(s.status) && confirm('This appears to be the latest usable inventory scan for its host. Force delete it anyway?')) {
+                        api.deleteScan(s.id, true).then(() => load(page)).catch(() => alert('Delete failed'));
+                      } else {
+                        alert('Delete failed');
+                      }
+                    });
+                  }}>Delete</button></td>
                 </tr>
               ))}
               {scans.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scans recorded</td></tr>}

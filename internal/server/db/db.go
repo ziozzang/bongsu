@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -21,6 +22,8 @@ import (
 type DB struct {
 	*sql.DB
 }
+
+var ErrLatestInventoryScan = errors.New("cannot delete latest completed or degraded inventory scan")
 
 type RetentionPruneResult struct {
 	DryRun      bool `json:"dry_run"`
@@ -103,12 +106,22 @@ func (db *DB) CompleteScan(ctx context.Context, id, status string) error {
 	return err
 }
 
-func (db *DB) DeleteScan(ctx context.Context, id string) error {
+func (db *DB) DeleteScan(ctx context.Context, id string, force bool) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+
+	if !force {
+		var latest bool
+		if err := tx.QueryRowContext(ctx, deleteScanLatestInventorySQL(), id).Scan(&latest); err != nil {
+			return fmt.Errorf("check latest inventory scan: %w", err)
+		}
+		if latest {
+			return ErrLatestInventoryScan
+		}
+	}
 
 	tables := []string{"vulnerabilities", "packages", "container_assets", "user_accounts", "process_snapshots", "port_info"}
 	for _, t := range tables {
@@ -120,6 +133,16 @@ func (db *DB) DeleteScan(ctx context.Context, id string) error {
 		return fmt.Errorf("delete scan: %w", err)
 	}
 	return tx.Commit()
+}
+
+func deleteScanLatestInventorySQL() string {
+	return `SELECT EXISTS(
+		SELECT 1
+		FROM scans s
+		JOIN ` + latestScansSub + ` ls ON ls.id = s.id
+		WHERE s.id = $1
+		  AND s.status IN ('completed','degraded')
+	)`
 }
 
 func (db *DB) PruneOperationalData(ctx context.Context, scanDays, requestDays, auditDays int, dryRun bool) (*RetentionPruneResult, error) {

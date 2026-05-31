@@ -299,6 +299,19 @@ func TestLatestScansIncludesDegradedInventory(t *testing.T) {
 	}
 }
 
+func TestDeleteScanProtectsLatestInventory(t *testing.T) {
+	got := deleteScanLatestInventorySQL()
+	for _, want := range []string{
+		"JOIN " + latestScansSub,
+		"s.id = $1",
+		"s.status IN ('completed','degraded')",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("delete latest inventory guard missing %q: %s", want, got)
+		}
+	}
+}
+
 func TestRetentionPruneDoesNotDeleteRunningScans(t *testing.T) {
 	got := pruneOldScansCTE()
 	if !strings.Contains(got, "status IN ('completed','degraded','failed')") {
