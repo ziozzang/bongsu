@@ -1652,6 +1652,42 @@ func TestCveDbImportAuditsFailures(t *testing.T) {
 	}
 }
 
+func TestSecurityDBBundleExportStagesCompleteArchiveBeforeResponse(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleSecurityDbExport")
+	if start < 0 {
+		t.Fatal("handleSecurityDbExport not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleSecurityDbImport")
+	if end < 0 {
+		t.Fatal("handleSecurityDbImport not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"s.buildSecurityDBBundleTemp",
+		"os.Open(bundleFile)",
+		`w.Header().Set("Content-Length"`,
+		"io.Copy(w, f)",
+		`"bytes":`,
+		"gzip.NewWriter(tmp)",
+		"tar.NewWriter(gz)",
+		"tw.Close()",
+		"gz.Close()",
+		"os.Stat(path)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("bundle export staging missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "gzip.NewWriter(w)") {
+		t.Fatalf("bundle export must not stream gzip directly to response: %s", fn)
+	}
+}
+
 func TestCveDbExportStagesCompleteJSONLBeforeResponse(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {

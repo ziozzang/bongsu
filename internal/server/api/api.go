@@ -2437,19 +2437,45 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	ctx := r.Context()
-
-	cveFile, cveCount, cveSHA, err := s.writeCveJSONLTemp(ctx, "")
+	includeTrivy := r.URL.Query().Get("include_trivy") != "false"
+	bundleFile, cveCount, trivyIncluded, bundleSize, err := s.buildSecurityDBBundleTemp(r.Context(), includeTrivy)
 	if err != nil {
-		log.Printf("security-db bundle cve export: %v", err)
+		log.Printf("security-db bundle export: %v", err)
 		http.Error(w, "export failed", http.StatusInternalServerError)
 		return
+	}
+	defer os.Remove(bundleFile)
+
+	f, err := os.Open(bundleFile)
+	if err != nil {
+		log.Printf("security-db bundle open: %v", err)
+		http.Error(w, "export failed", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", "attachment; filename=bongsu-security-db-bundle.tar.gz")
+	w.Header().Set("Content-Length", strconv.FormatInt(bundleSize, 10))
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("security-db bundle copy: %v", err)
+		return
+	}
+	s.audit(r, "security_db.export", "security_db", "bundle", "ok", map[string]any{
+		"cve_records":       cveCount,
+		"trivy_db_included": trivyIncluded,
+		"bytes":             bundleSize,
+	})
+}
+
+func (s *Server) buildSecurityDBBundleTemp(ctx context.Context, includeTrivy bool) (string, int, bool, int64, error) {
+	cveFile, cveCount, cveSHA, err := s.writeCveJSONLTemp(ctx, "")
+	if err != nil {
+		return "", 0, false, 0, err
 	}
 	defer os.Remove(cveFile)
 
 	var trivyBytes []byte
 	trivySHA := ""
-	includeTrivy := r.URL.Query().Get("include_trivy") != "false"
 	if includeTrivy && s.dbMgr != nil && s.dbMgr.IsReady() {
 		if b, err := s.dbMgr.ArchiveBytes(); err == nil {
 			trivyBytes = b
@@ -2471,33 +2497,51 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 		TrivyDBSHA256:     trivySHA,
 		Sources:           sourceStats,
 	}
-	manifestBytes, _ := json.MarshalIndent(manifest, "", "  ")
+	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return "", 0, false, 0, err
+	}
 
-	w.Header().Set("Content-Type", "application/gzip")
-	w.Header().Set("Content-Disposition", "attachment; filename=bongsu-security-db-bundle.tar.gz")
-	gz := gzip.NewWriter(w)
-	defer gz.Close()
+	tmp, err := os.CreateTemp("", "bongsu-security-db-bundle-*.tar.gz")
+	if err != nil {
+		return "", 0, false, 0, err
+	}
+	path := tmp.Name()
+	cleanup := func(err error) (string, int, bool, int64, error) {
+		tmp.Close()
+		os.Remove(path)
+		return "", 0, false, 0, err
+	}
+
+	gz := gzip.NewWriter(tmp)
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
-
 	if err := writeTarBytes(tw, "manifest.json", manifestBytes); err != nil {
-		log.Printf("security-db bundle manifest: %v", err)
-		return
+		return cleanup(err)
 	}
 	if err := writeTarFile(tw, "cve-database.jsonl", cveFile); err != nil {
-		log.Printf("security-db bundle cve: %v", err)
-		return
+		return cleanup(err)
 	}
 	if len(trivyBytes) > 0 {
 		if err := writeTarBytes(tw, "trivy-db.tar.gz", trivyBytes); err != nil {
-			log.Printf("security-db bundle trivy: %v", err)
-			return
+			return cleanup(err)
 		}
 	}
-	s.audit(r, "security_db.export", "security_db", "bundle", "ok", map[string]any{
-		"cve_records":       cveCount,
-		"trivy_db_included": len(trivyBytes) > 0,
-	})
+	if err := tw.Close(); err != nil {
+		return cleanup(err)
+	}
+	if err := gz.Close(); err != nil {
+		return cleanup(err)
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(path)
+		return "", 0, false, 0, err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		os.Remove(path)
+		return "", 0, false, 0, err
+	}
+	return path, cveCount, len(trivyBytes) > 0, info.Size(), nil
 }
 
 func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) {
