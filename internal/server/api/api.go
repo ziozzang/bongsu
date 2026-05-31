@@ -2592,12 +2592,23 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusInternalServerError, "cve import transaction failed", "begin_tx", err)
 		return
 	}
+	if _, err := s.db.DeleteAllCveEntriesTx(r.Context(), tx); err != nil {
+		cveReader.Close()
+		tx.Rollback()
+		fail(http.StatusInternalServerError, "cve import reset failed", "reset_cve", err)
+		return
+	}
 	imported, err = s.importCveJSONLTx(r.Context(), cveReader, "", tx)
 	cveReader.Close()
 	if err != nil {
 		tx.Rollback()
 		log.Printf("security-db bundle cve import: %v", err)
 		fail(http.StatusInternalServerError, "cve import failed", "import_cve", err)
+		return
+	}
+	if imported == 0 {
+		tx.Rollback()
+		fail(http.StatusBadRequest, "no valid cve entries found", "import_cve", errNoValidCveEntries)
 		return
 	}
 	if err := tx.Commit(); err != nil {
@@ -2631,6 +2642,8 @@ type securityDBBundleManifest struct {
 	TrivyDBSHA256     string              `json:"trivy_db_sha256"`
 	Sources           []db.CveSourceStats `json:"sources,omitempty"`
 }
+
+var errNoValidCveEntries = errors.New("no valid cve entries")
 
 func writeBundleEntryTemp(r io.Reader, pattern string) (string, string, error) {
 	tmp, err := os.CreateTemp("", pattern)
@@ -2866,7 +2879,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	source := r.FormValue("source")
+	source := strings.TrimSpace(r.FormValue("source"))
 	if source == "" {
 		source = "custom"
 	}
@@ -2874,6 +2887,14 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	count, err := s.importCveJSONL(ctx, file, source)
 	if err != nil {
 		log.Printf("cve-db import: %v", err)
+		if errors.Is(err, errNoValidCveEntries) {
+			s.audit(r, "cve_db.import", "cve_db", source, "error", map[string]any{
+				"source": source,
+				"reason": "no valid entries",
+			})
+			http.Error(w, "no valid entries found", http.StatusBadRequest)
+			return
+		}
 		status := cveImportErrorStatus(err)
 		s.audit(r, "cve_db.import", "cve_db", source, "error", map[string]any{
 			"source": source,
@@ -2911,9 +2932,18 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 	}
 	defer tx.Rollback()
 
+	source = strings.TrimSpace(source)
+	if source != "" {
+		if _, err := s.db.DeleteCveEntriesBySourceTx(ctx, tx, source); err != nil {
+			return 0, err
+		}
+	}
 	count, err := s.importCveJSONLTx(ctx, reader, source, tx)
 	if err != nil {
 		return 0, err
+	}
+	if count == 0 {
+		return 0, errNoValidCveEntries
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
@@ -2954,12 +2984,10 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 		if e.VulnerabilityID == "" || strings.HasPrefix(e.VulnerabilityID, "CGA-") {
 			continue
 		}
-		if e.Source == "" {
-			if source != "" {
-				e.Source = source
-			} else {
-				e.Source = "bundle"
-			}
+		if source != "" {
+			e.Source = source
+		} else if e.Source == "" {
+			e.Source = "bundle"
 		}
 		batch = append(batch, e)
 		if len(batch) >= 1000 {

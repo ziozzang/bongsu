@@ -676,6 +676,24 @@ func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
 	}
 }
 
+func TestCveReplacementDeleteHelpersAreTransactional(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"func (db *DB) DeleteCveEntriesBySourceTx",
+		"DELETE FROM cve_database WHERE source=$1",
+		"func (db *DB) DeleteAllCveEntriesTx",
+		"DELETE FROM cve_database",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("cve replacement helper missing %q", want)
+		}
+	}
+}
+
 func TestVulnerabilityFindingsAreUniquePerPackageScanAndCVE(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/013_unique_vulnerability_findings.sql")
 	if err != nil {

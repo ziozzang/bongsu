@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/tar"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -491,6 +492,7 @@ func TestSecurityDBBundleImportUsesSingleCveTransaction(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"s.db.BeginTx",
+		"s.db.DeleteAllCveEntriesTx",
 		"s.importCveJSONLTx",
 		"tx.Rollback()",
 		"tx.Commit()",
@@ -1536,7 +1538,9 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"s.db.BeginTx",
+		"s.db.DeleteCveEntriesBySourceTx",
 		"s.importCveJSONLTx",
+		"errNoValidCveEntries",
 		"tx.Commit()",
 		"return 0, err",
 	} {
@@ -1546,6 +1550,21 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 	}
 	if strings.Contains(fn, "UpsertCveEntries(ctx, batch)") {
 		t.Fatal("cve jsonl import must not commit each batch outside a single transaction")
+	}
+}
+
+func TestCveJSONLImportOverridesDirectSource(t *testing.T) {
+	seen := []models.CveEntry{}
+	input := strings.NewReader(`{"vulnerability_id":"CVE-2026-0001","source":"wrong"}`)
+	count, err := (&Server{}).importCveJSONLWithUpsert(context.Background(), input, "osv", func(ctx context.Context, batch []models.CveEntry) (int, error) {
+		seen = append(seen, batch...)
+		return len(batch), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || len(seen) != 1 || seen[0].Source != "osv" {
+		t.Fatalf("count=%d seen=%#v, want direct source override", count, seen)
 	}
 }
 

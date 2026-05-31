@@ -3108,6 +3108,24 @@ ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 	return count, nil
 }
 
+func (db *DB) DeleteCveEntriesBySourceTx(ctx context.Context, tx *sql.Tx, source string) (int, error) {
+	res, err := tx.ExecContext(ctx, `DELETE FROM cve_database WHERE source=$1`, source)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+func (db *DB) DeleteAllCveEntriesTx(ctx context.Context, tx *sql.Tx) (int, error) {
+	res, err := tx.ExecContext(ctx, `DELETE FROM cve_database`)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source string, minCVSS float64, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {
 	baseQ := `FROM cve_database WHERE 1=1`
 	args := []any{}
