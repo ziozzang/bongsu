@@ -488,6 +488,11 @@ function DashboardView() {
             Sources: {health.security_db.configured ? health.security_db.status : 'not configured'}
           </span>
         )}
+        {health?.security_recalculation && (
+          <span className={`status-dot ${health.security_recalculation.running || health.security_recalculation.pending ? 'not-ready' : 'ready'}`} title={health.security_recalculation.pending_reason || ''}>
+            Recalc: {health.security_recalculation.running ? 'running' : health.security_recalculation.pending ? 'queued' : 'idle'}
+          </span>
+        )}
         {(health?.trivy_db_last_update || health?.trivy_db?.last_update) && (
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             Trivy updated: {new Date(health.trivy_db_last_update || health.trivy_db?.last_update || '').toLocaleString()}

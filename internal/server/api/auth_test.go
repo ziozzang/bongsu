@@ -996,11 +996,12 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	}
 	fn := body[start : start+1+end]
 	for _, want := range []string{
-		"s.authenticateAdmin(r)",
+		"isAdmin := s.authenticateAdmin(r)",
 		"s.dbMgr.Status()",
 		"s.dbMgr.PublicStatus()",
 		"s.secMgr.Status()",
 		"s.secMgr.PublicStatus()",
+		`"security_recalculation": s.securityRecalculationStatus(isAdmin)`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("health handler missing %q: %s", want, fn)
@@ -1011,6 +1012,21 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	}
 	if strings.Index(fn, "s.dbMgr.PublicStatus()") < strings.Index(fn, "else") {
 		t.Fatalf("public Trivy DB status should be used only for non-admin health: %s", fn)
+	}
+}
+
+func TestSecurityRecalculationStatusIncludesAdminPendingReason(t *testing.T) {
+	s := &Server{securityRecalcRunning: true, securityRecalcPending: true, securityRecalcReason: "osv import"}
+	publicStatus := s.securityRecalculationStatus(false)
+	if publicStatus["running"] != true || publicStatus["pending"] != true {
+		t.Fatalf("public status = %#v, want running and pending", publicStatus)
+	}
+	if _, ok := publicStatus["pending_reason"]; ok {
+		t.Fatalf("public status must not expose pending reason: %#v", publicStatus)
+	}
+	adminStatus := s.securityRecalculationStatus(true)
+	if adminStatus["pending_reason"] != "osv import" {
+		t.Fatalf("admin pending reason = %#v, want osv import", adminStatus["pending_reason"])
 	}
 }
 
@@ -1045,6 +1061,8 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"health?.trivy_db?.status",
 		"health?.trivy_db?.last_error",
 		"health?.security_db?.last_error",
+		"health?.security_recalculation",
+		"Recalc:",
 		"Trivy DB:",
 		"Security sources:",
 	} {

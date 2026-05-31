@@ -2266,10 +2266,12 @@ func scanRequestErrorMessage(err error) string {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	isAdmin := s.authenticateAdmin(r)
 	resp := map[string]any{
-		"status":         "ok",
-		"trivy_db_ready": false,
-		"web_auth":       s.webAuth,
+		"status":                 "ok",
+		"trivy_db_ready":         false,
+		"web_auth":               s.webAuth,
+		"security_recalculation": s.securityRecalculationStatus(isAdmin),
 	}
 	if err := s.db.PingContext(r.Context()); err != nil {
 		resp["status"] = "degraded"
@@ -2280,20 +2282,33 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		if lu := s.dbMgr.LastUpdate(); !lu.IsZero() {
 			resp["trivy_db_last_update"] = lu.Format("2006-01-02T15:04:05Z07:00")
 		}
-		if s.authenticateAdmin(r) {
+		if isAdmin {
 			resp["trivy_db"] = s.dbMgr.Status()
 		} else {
 			resp["trivy_db"] = s.dbMgr.PublicStatus()
 		}
 	}
 	if s.secMgr != nil {
-		if s.authenticateAdmin(r) {
+		if isAdmin {
 			resp["security_db"] = s.secMgr.Status()
 		} else {
 			resp["security_db"] = s.secMgr.PublicStatus()
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) securityRecalculationStatus(includeReason bool) map[string]any {
+	s.securityRecalcMu.Lock()
+	defer s.securityRecalcMu.Unlock()
+	status := map[string]any{
+		"running": s.securityRecalcRunning,
+		"pending": s.securityRecalcPending,
+	}
+	if includeReason && s.securityRecalcReason != "" {
+		status["pending_reason"] = s.securityRecalcReason
+	}
+	return status
 }
 
 func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {

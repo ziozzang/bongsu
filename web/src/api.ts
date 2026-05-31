@@ -230,6 +230,11 @@ export interface HealthStatus {
     last_error?: string;
   };
   web_auth: boolean;
+  security_recalculation?: {
+    running: boolean;
+    pending: boolean;
+    pending_reason?: string;
+  };
   security_db?: {
     configured: boolean;
     running: boolean;
