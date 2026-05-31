@@ -334,7 +334,8 @@ export const api = {
     requestJSON<Host>(`/hosts/${id}/metadata`, body),
   hostPackages: (id: string, limit: number, offset: number) =>
     request<{ items: Pkg[]; total: number }>(`/hosts/${id}/packages`, { limit: String(limit), offset: String(offset) }),
-  exportHostSBOM: (id: string, hostname: string) => download(`/hosts/${id}/sbom`, `${hostname || id}-cyclonedx.json`),
+  exportHostSBOM: (id: string, hostname: string, format = 'cyclonedx') =>
+    download(`/hosts/${id}/sbom`, `${hostname || id}-${format === 'spdx' ? 'spdx.json' : 'cyclonedx.json'}`, { format }),
   hostVulnCounts: (id: string) => request<Record<string, number>>(`/hosts/${id}/vuln-counts`),
   vulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; overdue?: string; min_cvss?: string; pkg_name?: string; container?: string; owner?: string; team?: string; environment?: string; criticality?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Vuln[]; total: number }>('/vulnerabilities', params),

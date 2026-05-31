@@ -83,3 +83,47 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 		t.Fatal("bongsu host owner property missing")
 	}
 }
+
+func TestGenerateSPDXIncludesPackagePURLAndRelationships(t *testing.T) {
+	host := models.Host{ID: "host-1", Hostname: "build-node-1", OSName: "Ubuntu", OSVersion: "24.04"}
+	pkgs := []models.Package{{
+		ID:        "pkg-1",
+		HostID:    "host-1",
+		AssetType: "host",
+		AssetID:   "host-1",
+		Source:    "trivy",
+		Name:      "openssl",
+		Version:   "3.0.13",
+		Arch:      "amd64",
+		PkgType:   "deb",
+		Ecosystem: "Ubuntu",
+	}}
+
+	data, err := GenerateSPDX(pkgs, host)
+	if err != nil {
+		t.Fatalf("GenerateSPDX: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unmarshal spdx: %v", err)
+	}
+	if doc["spdxVersion"] != "SPDX-2.3" {
+		t.Fatalf("spdxVersion = %v", doc["spdxVersion"])
+	}
+	packages := doc["packages"].([]any)
+	if len(packages) != 2 {
+		t.Fatalf("packages = %d", len(packages))
+	}
+	pkg := packages[1].(map[string]any)
+	if pkg["packageUrl"] == "" {
+		t.Fatal("SPDX packageUrl is empty")
+	}
+	refs := pkg["externalRefs"].([]any)
+	if len(refs) != 1 || refs[0].(map[string]any)["referenceType"] != "purl" {
+		t.Fatalf("missing purl external ref: %#v", refs)
+	}
+	relationships := doc["relationships"].([]any)
+	if len(relationships) < 2 {
+		t.Fatalf("relationships = %d", len(relationships))
+	}
+}

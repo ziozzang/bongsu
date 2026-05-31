@@ -759,7 +759,27 @@ func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no packages available for host", http.StatusNotFound)
 		return
 	}
-	data, err := cvematch.GenerateCycloneDX(pkgs, *host)
+	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	if format == "" {
+		format = "cyclonedx"
+	}
+	var data []byte
+	var contentType, suffix, auditFormat string
+	switch format {
+	case "spdx":
+		data, err = cvematch.GenerateSPDX(pkgs, *host)
+		contentType = "application/spdx+json"
+		suffix = "spdx.json"
+		auditFormat = "SPDX 2.3"
+	case "cyclonedx", "cdx":
+		data, err = cvematch.GenerateCycloneDX(pkgs, *host)
+		contentType = "application/vnd.cyclonedx+json"
+		suffix = "cyclonedx.json"
+		auditFormat = "CycloneDX 1.5"
+	default:
+		http.Error(w, "unsupported sbom format", http.StatusBadRequest)
+		return
+	}
 	if err != nil {
 		log.Printf("generate host sbom: %v", err)
 		http.Error(w, "sbom generation failed", http.StatusInternalServerError)
@@ -769,8 +789,8 @@ func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 	if filename == "" {
 		filename = sanitizeFilename(host.ID)
 	}
-	w.Header().Set("Content-Type", "application/vnd.cyclonedx+json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-cyclonedx.json"`, filename))
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s"`, filename, suffix))
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(data); err != nil {
 		log.Printf("write host sbom: %v", err)
@@ -779,7 +799,7 @@ func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "sbom.export", "host", hostID, "ok", map[string]any{
 		"hostname": host.Hostname,
 		"packages": len(pkgs),
-		"format":   "CycloneDX 1.5",
+		"format":   auditFormat,
 	})
 }
 

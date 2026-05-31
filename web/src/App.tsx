@@ -723,14 +723,28 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
             onClick={async () => {
               setExportMsg('Exporting...');
               try {
-                await api.exportHostSBOM(host.id, host.hostname);
-                setExportMsg('Exported');
+                await api.exportHostSBOM(host.id, host.hostname, 'cyclonedx');
+                setExportMsg('CycloneDX exported');
               } catch {
                 setExportMsg('Export failed');
               }
             }}
           >
-            Export SBOM
+            CycloneDX
+          </button>
+          <button
+            className="filter-btn"
+            onClick={async () => {
+              setExportMsg('Exporting...');
+              try {
+                await api.exportHostSBOM(host.id, host.hostname, 'spdx');
+                setExportMsg('SPDX exported');
+              } catch {
+                setExportMsg('Export failed');
+              }
+            }}
+          >
+            SPDX
           </button>
         </div>
       </div>
