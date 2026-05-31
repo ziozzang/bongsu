@@ -272,6 +272,8 @@ func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
 		"shellQuote(tokenQuery)",
 		"url.QueryEscape(s.installToken)",
 		`w.Header().Set("Cache-Control", "no-store")`,
+		`curl -fsSL "$SERVER/api/downloads/bongsu-agent$INSTALL_TOKEN_QUERY"`,
+		`rm -f "$WORK_DIR/bin/bongsu-agent"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("installer credential rendering missing %q", want)

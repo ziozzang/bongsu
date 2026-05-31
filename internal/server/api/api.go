@@ -1275,7 +1275,11 @@ mkdir -p "$WORK_DIR/bin"
 
 # Download agent binary from server
 echo "Downloading bongsu-agent..."
-curl -sL "$SERVER/api/downloads/bongsu-agent$INSTALL_TOKEN_QUERY" -o "$WORK_DIR/bin/bongsu-agent"
+if ! curl -fsSL "$SERVER/api/downloads/bongsu-agent$INSTALL_TOKEN_QUERY" -o "$WORK_DIR/bin/bongsu-agent"; then
+    rm -f "$WORK_DIR/bin/bongsu-agent"
+    echo "ERROR: Failed to download bongsu-agent"
+    exit 1
+fi
 chmod +x "$WORK_DIR/bin/bongsu-agent"
 
 if [ ! -x "$WORK_DIR/bin/bongsu-agent" ]; then
@@ -1403,6 +1407,7 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	info, _ := f.Stat()
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", "attachment; filename=bongsu-agent")
@@ -1426,6 +1431,7 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 
 	info, _ := f.Stat()
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", "attachment; filename=trivy")
