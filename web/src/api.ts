@@ -221,6 +221,12 @@ export interface HealthStatus {
   status: string;
   trivy_db_ready: boolean;
   trivy_db_last_update?: string;
+  trivy_db?: {
+    ready: boolean;
+    last_update?: string;
+    status: string;
+    last_error?: string;
+  };
   web_auth: boolean;
   security_db?: {
     configured: boolean;

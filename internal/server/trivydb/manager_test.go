@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"errors"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestWriteArchiveIncludesTrivyDB(t *testing.T) {
@@ -59,6 +61,56 @@ func TestDownloadArgsIncludeConfiguredDBRepository(t *testing.T) {
 	}
 	if got := m.downloadArgs(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("download args = %#v, want %#v", got, want)
+	}
+}
+
+func TestStatusTracksFailuresWithoutExposingErrorsPublicly(t *testing.T) {
+	m := NewManager(filepath.Join(t.TempDir(), "missing-trivy"), t.TempDir(), "", 0)
+	if err := m.UpdateNow(context.Background()); err == nil {
+		t.Fatal("expected update to fail")
+	}
+	status := m.Status()
+	if status["status"] != "failed" {
+		t.Fatalf("status = %#v", status)
+	}
+	if got, _ := status["last_error"].(string); !strings.Contains(got, "trivy download-db") {
+		t.Fatalf("last_error = %q, want download failure", got)
+	}
+	publicStatus := m.PublicStatus()
+	if _, ok := publicStatus["last_error"]; ok {
+		t.Fatalf("public status must not expose command errors: %#v", publicStatus)
+	}
+	if publicStatus["status"] != "failed" {
+		t.Fatalf("public status = %#v", publicStatus)
+	}
+}
+
+func TestStatusResetsAfterSuccessfulLoad(t *testing.T) {
+	cache := t.TempDir()
+	m := NewManager(filepath.Join(t.TempDir(), "missing-trivy"), cache, "", 0)
+	if err := m.UpdateNow(context.Background()); err == nil {
+		t.Fatal("expected update to fail")
+	}
+	archive := filepath.Join(t.TempDir(), "valid-trivy.tar.gz")
+	if err := writeTrivyArchive(archive, map[string]string{"db/trivy.db": "db"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.LoadFromFile(archive); err != nil {
+		t.Fatalf("load archive: %v", err)
+	}
+	status := m.Status()
+	if status["status"] != "ok" || status["last_error"] != "" || status["ready"] != true {
+		t.Fatalf("status not reset after load: %#v", status)
+	}
+}
+
+func TestBoundedErrorKeepsUTF8Valid(t *testing.T) {
+	got := boundedError(strings.Repeat("한", maxStatusErrorBytes), maxStatusErrorBytes)
+	if !utf8.ValidString(got) {
+		t.Fatalf("bounded error is not valid UTF-8: %q", got)
+	}
+	if !strings.HasSuffix(got, "...(truncated)") {
+		t.Fatalf("bounded error missing truncation marker: %q", got)
 	}
 }
 

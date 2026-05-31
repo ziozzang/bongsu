@@ -14,9 +14,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 var ErrInvalidArchive = errors.New("invalid trivy db archive")
+
+const maxStatusErrorBytes = 8192
 
 type Manager struct {
 	trivyPath  string
@@ -26,6 +29,8 @@ type Manager struct {
 	mu         sync.RWMutex
 	ready      bool
 	lastUpdate time.Time
+	lastStatus string
+	lastError  string
 	onUpdate   func(string)
 }
 
@@ -53,9 +58,12 @@ func (m *Manager) Start(ctx context.Context) {
 		m.mu.Lock()
 		m.ready = true
 		m.lastUpdate = time.Now()
+		m.lastStatus = "ok"
+		m.lastError = ""
 		m.mu.Unlock()
 		log.Printf("trivy-db ready (loaded from cache)")
 	} else {
+		m.recordError("missing", fmt.Errorf("trivy-db not found in %s", filepath.Join(m.cacheDir, "db", "trivy.db")))
 		log.Printf("WARNING: trivy-db not found, server-side CVE matching disabled")
 		log.Printf("  To update: docker compose run --rm trivy-db && docker compose restart server")
 	}
@@ -73,12 +81,15 @@ func (m *Manager) Start(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if err := m.download(ctx); err != nil {
+				m.recordError("failed", err)
 				log.Printf("trivy-db periodic update failed: %v", err)
 				continue
 			}
 			m.mu.Lock()
 			m.ready = true
 			m.lastUpdate = time.Now()
+			m.lastStatus = "ok"
+			m.lastError = ""
 			onUpdate := m.onUpdate
 			m.mu.Unlock()
 			log.Printf("trivy-db updated")
@@ -101,13 +112,37 @@ func (m *Manager) LastUpdate() time.Time {
 	return m.lastUpdate
 }
 
+func (m *Manager) Status() map[string]any {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return map[string]any{
+		"ready":       m.ready,
+		"last_update": m.lastUpdate,
+		"status":      m.statusLocked(),
+		"last_error":  m.lastError,
+	}
+}
+
+func (m *Manager) PublicStatus() map[string]any {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return map[string]any{
+		"ready":       m.ready,
+		"last_update": m.lastUpdate,
+		"status":      m.statusLocked(),
+	}
+}
+
 func (m *Manager) UpdateNow(ctx context.Context) error {
 	if err := m.download(ctx); err != nil {
+		m.recordError("failed", err)
 		return err
 	}
 	m.mu.Lock()
 	m.ready = true
 	m.lastUpdate = time.Now()
+	m.lastStatus = "ok"
+	m.lastError = ""
 	m.mu.Unlock()
 	log.Printf("trivy-db updated (on-demand)")
 	return nil
@@ -149,6 +184,7 @@ func (m *Manager) LoadFromFile(path string) error {
 	dbDir := filepath.Join(m.cacheDir, "db")
 	_, stagedDB, cleanup, err := m.stageArchive(path)
 	if err != nil {
+		m.recordError("failed", err)
 		return err
 	}
 	defer cleanup()
@@ -158,6 +194,7 @@ func (m *Manager) LoadFromFile(path string) error {
 	if _, err := os.Stat(dbDir); err == nil {
 		hadExisting = true
 		if err := os.Rename(dbDir, backup); err != nil {
+			m.recordError("failed", fmt.Errorf("backup existing db: %w", err))
 			return fmt.Errorf("backup existing db: %w", err)
 		}
 	}
@@ -165,6 +202,7 @@ func (m *Manager) LoadFromFile(path string) error {
 		if hadExisting {
 			_ = os.Rename(backup, dbDir)
 		}
+		m.recordError("failed", fmt.Errorf("activate staged db: %w", err))
 		return fmt.Errorf("activate staged db: %w", err)
 	}
 	if hadExisting {
@@ -174,6 +212,8 @@ func (m *Manager) LoadFromFile(path string) error {
 	m.mu.Lock()
 	m.ready = true
 	m.lastUpdate = time.Now()
+	m.lastStatus = "ok"
+	m.lastError = ""
 	m.mu.Unlock()
 	log.Printf("trivy-db loaded from file")
 	return nil
@@ -185,6 +225,39 @@ func (m *Manager) ValidateArchive(path string) error {
 		defer cleanup()
 	}
 	return err
+}
+
+func (m *Manager) recordError(status string, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastStatus = status
+	if err == nil {
+		m.lastError = ""
+		return
+	}
+	m.lastError = boundedError(err.Error(), maxStatusErrorBytes)
+}
+
+func (m *Manager) statusLocked() string {
+	if m.lastStatus != "" {
+		return m.lastStatus
+	}
+	if m.ready {
+		return "ok"
+	}
+	return "unknown"
+}
+
+func boundedError(s string, limit int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= limit {
+		return s
+	}
+	s = s[:limit]
+	for !utf8.ValidString(s) && len(s) > 0 {
+		s = s[:len(s)-1]
+	}
+	return strings.TrimSpace(s) + "...(truncated)"
 }
 
 func (m *Manager) stageArchive(path string) (string, string, func(), error) {

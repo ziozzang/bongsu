@@ -847,7 +847,7 @@ func TestHostSBOMAuditIncludesLatestScanID(t *testing.T) {
 	}
 }
 
-func TestHealthOnlyShowsSecuritySyncOutputToAdmins(t *testing.T) {
+func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
 		t.Fatal(err)
@@ -864,6 +864,8 @@ func TestHealthOnlyShowsSecuritySyncOutputToAdmins(t *testing.T) {
 	fn := body[start : start+1+end]
 	for _, want := range []string{
 		"s.authenticateAdmin(r)",
+		"s.dbMgr.Status()",
+		"s.dbMgr.PublicStatus()",
 		"s.secMgr.Status()",
 		"s.secMgr.PublicStatus()",
 	} {
@@ -873,6 +875,9 @@ func TestHealthOnlyShowsSecuritySyncOutputToAdmins(t *testing.T) {
 	}
 	if strings.Index(fn, "s.secMgr.PublicStatus()") < strings.Index(fn, "else") {
 		t.Fatalf("public security DB status should be used only for non-admin health: %s", fn)
+	}
+	if strings.Index(fn, "s.dbMgr.PublicStatus()") < strings.Index(fn, "else") {
+		t.Fatalf("public Trivy DB status should be used only for non-admin health: %s", fn)
 	}
 }
 

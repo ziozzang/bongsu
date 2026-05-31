@@ -2235,6 +2235,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		if lu := s.dbMgr.LastUpdate(); !lu.IsZero() {
 			resp["trivy_db_last_update"] = lu.Format("2006-01-02T15:04:05Z07:00")
 		}
+		if s.authenticateAdmin(r) {
+			resp["trivy_db"] = s.dbMgr.Status()
+		} else {
+			resp["trivy_db"] = s.dbMgr.PublicStatus()
+		}
 	}
 	if s.secMgr != nil {
 		if s.authenticateAdmin(r) {
