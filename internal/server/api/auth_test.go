@@ -151,6 +151,7 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 		Severity:        "HIGH",
 		CVSSScore:       8.1,
 		TriageStatus:    "accepted_risk",
+		TriageExpiresAt: ptrTime(time.Date(2026, 6, 30, 0, 0, 0, 0, time.UTC)),
 		PkgName:         "openssl",
 		InstalledVer:    "1.0.0",
 		FixedVersion:    "1.0.1",
@@ -164,7 +165,14 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 	if !strings.Contains(out, "vulnerability_id") {
 		t.Fatal("missing csv header")
 	}
+	if !strings.Contains(out, "triage_expires_at") || !strings.Contains(out, "2026-06-30T00:00:00Z") {
+		t.Fatalf("missing triage expiry: %s", out)
+	}
 	if !strings.Contains(out, "CVE-2026-0001") || !strings.Contains(out, "accepted_risk") || !strings.Contains(out, "platform") {
 		t.Fatalf("missing csv values: %s", out)
 	}
+}
+
+func ptrTime(t time.Time) *time.Time {
+	return &t
 }

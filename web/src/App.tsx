@@ -32,6 +32,11 @@ function formatAge(seconds?: number) {
   return `${Math.floor(hours / 24)}d`;
 }
 
+function dateInputValue(value?: string | null) {
+  if (!value) return '';
+  return value.slice(0, 10);
+}
+
 function parseCvssVector(vector: string) {
   const isV4 = vector.startsWith('CVSS:4.0/');
   const isV3 = vector.startsWith('CVSS:3.');
@@ -963,6 +968,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
   const [triageStatus, setTriageStatus] = useState(vuln?.triage_status || 'open');
   const [triageReason, setTriageReason] = useState(vuln?.triage_reason || '');
   const [triageComment, setTriageComment] = useState(vuln?.triage_comment || '');
+  const [triageExpiresAt, setTriageExpiresAt] = useState(dateInputValue(vuln?.triage_expires_at));
   const [triageScope, setTriageScope] = useState<'finding' | 'host' | 'global'>('finding');
   const [triageMsg, setTriageMsg] = useState('');
 
@@ -979,6 +985,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
     setTriageStatus(vuln?.triage_status || 'open');
     setTriageReason(vuln?.triage_reason || '');
     setTriageComment(vuln?.triage_comment || '');
+    setTriageExpiresAt(dateInputValue(vuln?.triage_expires_at));
     setTriageMsg('');
   }, [vuln]);
 
@@ -996,6 +1003,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         status: triageStatus,
         reason: triageReason,
         comment: triageComment,
+        expires_at: triageExpiresAt ? `${triageExpiresAt}T00:00:00Z` : null,
       });
       setTriageMsg('Saved');
     } catch {
@@ -1028,6 +1036,9 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         <div className="stat-card">
           <div className="label">Triage</div>
           <div style={{ fontSize: '0.875rem', textTransform: 'capitalize' }}>{(triageStatus || 'open').replace('_', ' ')}</div>
+          <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+            {triageExpiresAt ? `expires ${triageExpiresAt}` : 'no expiry'}
+          </div>
         </div>
         <div className="stat-card">
           <div className="label">SLA Due</div>
@@ -1054,6 +1065,8 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
             <option value="global">All hosts for this CVE</option>
           </select>
           <input type="text" placeholder="Reason" value={triageReason} onChange={(e) => setTriageReason(e.target.value)} />
+          <input type="date" value={triageExpiresAt} onChange={(e) => setTriageExpiresAt(e.target.value)} title="Triage expiry date" />
+          {triageExpiresAt && <button onClick={() => setTriageExpiresAt('')}>Clear Expiry</button>}
         </div>
         <textarea
           value={triageComment}

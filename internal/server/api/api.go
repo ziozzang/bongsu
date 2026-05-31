@@ -860,7 +860,7 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	if err := cw.Write([]string{
 		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "severity", "cvss_score", "triage_status",
 		"sla_days", "due_at", "overdue", "pkg_name", "installed_version", "fixed_version", "pkg_path", "title", "primary_url",
-		"triage_reason", "triage_comment", "triage_updated_by", "created_at",
+		"triage_reason", "triage_comment", "triage_expires_at", "triage_updated_by", "created_at",
 	}); err != nil {
 		return err
 	}
@@ -887,6 +887,7 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 			v.PrimaryURL,
 			v.TriageReason,
 			v.TriageComment,
+			formatTimePtr(v.TriageExpiresAt),
 			v.TriageUpdatedBy,
 			v.CreatedAt.Format(time.RFC3339),
 		}); err != nil {
@@ -966,10 +967,11 @@ func (s *Server) handleUpsertVulnerabilityTriage(w http.ResponseWriter, r *http.
 		return
 	}
 	s.audit(r, "vulnerability.triage", "vulnerability", body.VulnerabilityID, "ok", map[string]any{
-		"host_id":  body.HostID,
-		"pkg_name": body.PkgName,
-		"status":   body.Status,
-		"reason":   body.Reason,
+		"host_id":    body.HostID,
+		"pkg_name":   body.PkgName,
+		"status":     body.Status,
+		"reason":     body.Reason,
+		"expires_at": formatTimePtr(body.ExpiresAt),
 	})
 	writeJSON(w, http.StatusOK, body)
 }
