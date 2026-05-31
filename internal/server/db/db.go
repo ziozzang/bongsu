@@ -2667,6 +2667,7 @@ type VulnerabilitySummaryRow struct {
 	Total    int            `json:"total"`
 	Overdue  int            `json:"overdue"`
 	Severity map[string]int `json:"severity"`
+	Risk     map[string]int `json:"risk"`
 }
 
 func (db *DB) GetVulnSummaryByMetadata(ctx context.Context, groupBy string, hostIDs []string) ([]VulnerabilitySummaryRow, error) {
@@ -2683,6 +2684,10 @@ func (db *DB) GetVulnSummaryByMetadata(ctx context.Context, groupBy string, host
 		count(*) FILTER (WHERE v.severity='HIGH')::int AS high,
 		count(*) FILTER (WHERE v.severity='MEDIUM')::int AS medium,
 		count(*) FILTER (WHERE v.severity='LOW')::int AS low,
+		count(*) FILTER (WHERE (`+vulnRiskLevelExpr+`)='critical')::int AS risk_critical,
+		count(*) FILTER (WHERE (`+vulnRiskLevelExpr+`)='high')::int AS risk_high,
+		count(*) FILTER (WHERE (`+vulnRiskLevelExpr+`)='medium')::int AS risk_medium,
+		count(*) FILTER (WHERE (`+vulnRiskLevelExpr+`)='low')::int AS risk_low,
 		count(*) FILTER (WHERE (
 			(v.severity='CRITICAL' AND v.created_at < now() - interval '%d days') OR
 			(v.severity='HIGH' AND v.created_at < now() - interval '%d days') OR
@@ -2691,7 +2696,7 @@ func (db *DB) GetVulnSummaryByMetadata(ctx context.Context, groupBy string, host
 		))::int AS overdue
 		%s
 		GROUP BY group_value
-		ORDER BY critical DESC, high DESC, total DESC, group_value`,
+		ORDER BY risk_critical DESC, risk_high DESC, critical DESC, high DESC, total DESC, group_value`,
 		groupExpr,
 		SLADaysForSeverity("CRITICAL"),
 		SLADaysForSeverity("HIGH"),
@@ -2709,7 +2714,8 @@ func (db *DB) GetVulnSummaryByMetadata(ctx context.Context, groupBy string, host
 	for rows.Next() {
 		var row VulnerabilitySummaryRow
 		var critical, high, medium, low int
-		if err := rows.Scan(&row.Group, &row.Total, &critical, &high, &medium, &low, &row.Overdue); err != nil {
+		var riskCritical, riskHigh, riskMedium, riskLow int
+		if err := rows.Scan(&row.Group, &row.Total, &critical, &high, &medium, &low, &riskCritical, &riskHigh, &riskMedium, &riskLow, &row.Overdue); err != nil {
 			return nil, err
 		}
 		row.Severity = map[string]int{
@@ -2718,7 +2724,40 @@ func (db *DB) GetVulnSummaryByMetadata(ctx context.Context, groupBy string, host
 			"MEDIUM":   medium,
 			"LOW":      low,
 		}
+		row.Risk = map[string]int{
+			"critical": riskCritical,
+			"high":     riskHigh,
+			"medium":   riskMedium,
+			"low":      riskLow,
+		}
 		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) GetCurrentActionableVulnRiskCountsByHost(ctx context.Context, hostIDs []string) (map[string]map[string]int, error) {
+	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL()
+	args := []any{}
+	if len(hostIDs) > 0 {
+		baseQ += ` AND v.host_id = ANY($1)`
+		args = append(args, pqStringArray(hostIDs))
+	}
+	rows, err := db.QueryContext(ctx, `SELECT v.host_id, (`+vulnRiskLevelExpr+`) AS risk_level, count(*) `+baseQ+` GROUP BY v.host_id, risk_level`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[string]int{}
+	for rows.Next() {
+		var hostID, riskLevel string
+		var count int
+		if err := rows.Scan(&hostID, &riskLevel, &count); err != nil {
+			return nil, err
+		}
+		if out[hostID] == nil {
+			out[hostID] = map[string]int{}
+		}
+		out[hostID][riskLevel] = count
 	}
 	return out, rows.Err()
 }

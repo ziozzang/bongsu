@@ -242,7 +242,7 @@ spec:
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/report` | Agent scan report submission, including bounded optional `errors[]` collection failures that mark scans degraded |
-| `GET` | `/api/stats` | Dashboard totals, raw vulnerability rows, active remediation finding counts, and scan request backlog counts |
+| `GET` | `/api/stats` | Dashboard totals, raw vulnerability rows, active remediation finding/risk-level counts, and scan request backlog counts |
 | `GET` | `/api/hosts` | List hosts with `agent_status` and `inventory_status` filters (`healthy`,`degraded`,`stale`,`empty`,`none`), RBAC scope, raw and active vulnerability counts, and latest inventory summary |
 | `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
 | `POST` | `/api/hosts/{id}/agent-token/reset` | Admin-only reset of a host's bound agent token for reinstall or token-loss recovery |
@@ -250,7 +250,7 @@ spec:
 | `GET` | `/api/vulnerabilities` | List latest-scan CVEs with risk score/level, host/container/owner/team/environment/finding-source/CISA-KEV/EPSS filters, and package type/ecosystem context |
 | `GET` | `/api/vulnerabilities/filters` | List vulnerability filter options scoped to the caller's latest-scan RBAC visibility |
 | `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON with host metadata |
-| `GET` | `/api/vuln-summary?group_by=owner` | Group active remediation findings by owner/team/environment/criticality |
+| `GET` | `/api/vuln-summary?group_by=owner` | Group active remediation findings and risk-level counts by owner/team/environment/criticality |
 | `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope/expiry |
 | `GET` | `/api/packages` | List latest-scan packages with active finding `max_cvss`/`vuln_count` (supports `sort_by`, `q`, filters, pagination) |
 | `GET` | `/api/packages/filters` | List package filter options scoped to the caller's latest-scan RBAC visibility |

@@ -1647,8 +1647,14 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		log.Printf("active vuln status counts: %v", err)
 		activeVulnCounts = map[string]map[string]int{}
 	}
+	activeRiskCountsByHost, err := s.db.GetCurrentActionableVulnRiskCountsByHost(ctx, scopeHostFilter(scope, visibleHostIDs))
+	if err != nil {
+		log.Printf("active vuln risk counts: %v", err)
+		activeRiskCountsByHost = map[string]map[string]int{}
+	}
 	activeTotalVulns := 0
 	activeSevCounts := map[string]int{}
+	activeRiskCounts := map[string]int{}
 	for hostID, vc := range activeVulnCounts {
 		if !scope.CanReadHost(hostID) {
 			continue
@@ -1656,6 +1662,14 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		for sev, cnt := range vc {
 			activeTotalVulns += cnt
 			activeSevCounts[sev] += cnt
+		}
+	}
+	for hostID, rc := range activeRiskCountsByHost {
+		if !scope.CanReadHost(hostID) {
+			continue
+		}
+		for riskLevel, cnt := range rc {
+			activeRiskCounts[riskLevel] += cnt
 		}
 	}
 	scanRequestCounts, err := s.db.CountScanRequestsByStatus(ctx, visibleHostIDs, scope.All)
@@ -1682,6 +1696,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"severity_counts":                   sevCounts,
 		"active_vulnerabilities":            activeTotalVulns,
 		"active_severity_counts":            activeSevCounts,
+		"active_risk_level_counts":          activeRiskCounts,
 		"scan_request_counts":               scanRequestCounts,
 		"security_db_revision":              securityDBRevision,
 		"security_db_rescan_request_counts": securityDBRescanCounts,

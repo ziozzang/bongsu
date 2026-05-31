@@ -437,23 +437,23 @@ function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: S
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--critical)' }} />
-          <div className="label">Active Critical</div>
-          <div className="value" style={{ color: 'var(--critical)' }}>{stats.active_severity_counts?.CRITICAL || 0}</div>
+          <div className="label">Critical Risk</div>
+          <div className="value" style={{ color: 'var(--critical)' }}>{stats.active_risk_level_counts?.critical || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--high)' }} />
-          <div className="label">Active High</div>
-          <div className="value" style={{ color: 'var(--high)' }}>{stats.active_severity_counts?.HIGH || 0}</div>
+          <div className="label">High Risk</div>
+          <div className="value" style={{ color: 'var(--high)' }}>{stats.active_risk_level_counts?.high || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
-          <div className="label">Active Medium</div>
-          <div className="value" style={{ color: 'var(--medium)' }}>{stats.active_severity_counts?.MEDIUM || 0}</div>
+          <div className="label">Medium Risk</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{stats.active_risk_level_counts?.medium || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--low)' }} />
-          <div className="label">Active Low</div>
-          <div className="value" style={{ color: 'var(--low)' }}>{stats.active_severity_counts?.LOW || 0}</div>
+          <div className="label">Low Risk</div>
+          <div className="value" style={{ color: 'var(--low)' }}>{stats.active_risk_level_counts?.low || 0}</div>
         </div>
       </div>
       <div className="stats-grid" style={{ marginTop: '1rem' }}>
@@ -769,15 +769,15 @@ function SummaryTable({ title, rows }: { title: string; rows: VulnSummaryRow[] }
       <div className="card-header"><h2>{title}</h2></div>
       <table>
         <thead>
-          <tr><th>Group</th><th>Total</th><th>Critical</th><th>High</th><th>Overdue</th></tr>
+          <tr><th>Group</th><th>Total</th><th>Critical Risk</th><th>High Risk</th><th>Overdue</th></tr>
         </thead>
         <tbody>
           {topRows.map(row => (
             <tr key={row.group}>
               <td>{row.group}</td>
               <td className="mono">{row.total.toLocaleString()}</td>
-              <td className="mono" style={{ color: 'var(--critical)', fontWeight: row.severity.CRITICAL ? 700 : 400 }}>{row.severity.CRITICAL || 0}</td>
-              <td className="mono" style={{ color: 'var(--high)', fontWeight: row.severity.HIGH ? 700 : 400 }}>{row.severity.HIGH || 0}</td>
+              <td className="mono" style={{ color: 'var(--critical)', fontWeight: row.risk?.critical ? 700 : 400 }}>{row.risk?.critical || 0}</td>
+              <td className="mono" style={{ color: 'var(--high)', fontWeight: row.risk?.high ? 700 : 400 }}>{row.risk?.high || 0}</td>
               <td className="mono" style={{ color: row.overdue ? 'var(--critical)' : 'var(--text-muted)', fontWeight: row.overdue ? 700 : 400 }}>{row.overdue || 0}</td>
             </tr>
           ))}

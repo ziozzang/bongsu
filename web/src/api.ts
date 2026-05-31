@@ -216,6 +216,7 @@ export interface Stats {
   severity_counts: Record<string, number>;
   active_vulnerabilities?: number;
   active_severity_counts?: Record<string, number>;
+  active_risk_level_counts?: Record<string, number>;
   scan_request_counts?: Record<string, number>;
   security_db_revision?: string;
   security_db_rescan_request_counts?: Record<string, number>;
@@ -226,6 +227,7 @@ export interface VulnSummaryRow {
   total: number;
   overdue: number;
   severity: Record<string, number>;
+  risk?: Record<string, number>;
 }
 
 export interface HealthStatus {

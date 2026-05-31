@@ -1695,9 +1695,40 @@ func TestVulnSummaryUsesActiveFindingFilter(t *testing.T) {
 		"currentActionableVulnSQL()",
 		"JOIN ` + latestScansSub",
 		"v.host_id = ANY($1)",
+		"vulnRiskLevelExpr",
+		"riskCritical",
+		`"critical": riskCritical`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("vuln summary active filter missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestStatsCanCountCurrentActionableRiskByHost(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetCurrentActionableVulnRiskCountsByHost")
+	if start < 0 {
+		t.Fatal("GetCurrentActionableVulnRiskCountsByHost not found")
+	}
+	end := strings.Index(body[start:], "func vulnSummaryGroupExpr")
+	if end < 0 {
+		t.Fatal("vulnSummaryGroupExpr not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"currentActionableVulnSQL()",
+		"JOIN ` + latestScansSub",
+		"vulnRiskLevelExpr",
+		"GROUP BY v.host_id, risk_level",
+		"v.host_id = ANY($1)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("active risk count query missing %q: %s", want, fn)
 		}
 	}
 }

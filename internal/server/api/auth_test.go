@@ -2784,6 +2784,8 @@ func TestHostsExposeActiveFindingCounts(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"ActiveVulnCounts",
+		"GetCurrentActionableVulnRiskCountsByHost",
+		`"active_risk_level_counts"`,
 		`json:"active_vuln_counts"`,
 		"GetCurrentActionableVulnCountsByHost",
 	} {
@@ -2810,6 +2812,34 @@ func TestVulnSummaryUsesActiveFindingCounts(t *testing.T) {
 	fn := body[start : start+end]
 	if !strings.Contains(fn, "GetCurrentActionableVulnCountsByHost") {
 		t.Fatalf("vuln summary host counts must use active findings: %s", fn)
+	}
+}
+
+func TestDashboardShowsRiskLevelSummary(t *testing.T) {
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBody := string(appOut)
+	apiBody := string(apiOut)
+	for _, want := range []string{
+		"active_risk_level_counts",
+		"Critical Risk",
+		"High Risk",
+		"row.risk?.critical",
+		"row.risk?.high",
+	} {
+		if !strings.Contains(appBody, want) && !strings.Contains(apiBody, want) {
+			t.Fatalf("dashboard risk summary missing %q", want)
+		}
+	}
+	if !strings.Contains(apiBody, "active_risk_level_counts?: Record<string, number>") ||
+		!strings.Contains(apiBody, "risk?: Record<string, number>") {
+		t.Fatal("web API types must expose risk-level summary fields")
 	}
 }
 
