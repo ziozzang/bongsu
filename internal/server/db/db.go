@@ -158,6 +158,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "packages", column: "asset_type"},
 		{table: "packages", column: "purl"},
 		{table: "vulnerabilities", column: "pkg_path"},
+		{table: "vulnerabilities", column: "finding_source"},
 		{table: "cve_database", column: "category"},
 		{table: "container_assets"},
 		{table: "scan_requests", column: "claimed_by_host_id"},
@@ -165,6 +166,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "vulnerability_triage"},
 		{index: "idx_scan_requests_pending_security_db_host"},
 		{index: "idx_vulnerabilities_package_scan_vuln"},
+		{index: "idx_vulnerabilities_finding_source"},
 	}
 	for _, check := range checks {
 		var ok bool
@@ -908,9 +910,9 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,now())`
 	return tx.Commit()
 }
 
-const vulnCols = `id, package_id, scan_id, host_id, vulnerability_id, severity, title, description, pkg_name, installed_version, fixed_version, cvss_score, cvss_vector, primary_url, pkg_path, layer_id, container, created_at`
+const vulnCols = `id, package_id, scan_id, host_id, vulnerability_id, severity, title, description, pkg_name, installed_version, fixed_version, cvss_score, cvss_vector, primary_url, pkg_path, layer_id, container, finding_source, created_at`
 
-const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name, v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, '')`
+const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name, v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, '')`
 
 const vulnTriageJoin = ` LEFT JOIN LATERAL (
 	SELECT status, reason, comment, expires_at, updated_by, updated_at
@@ -930,7 +932,7 @@ func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnera
 		&v.VulnerabilityID, &v.Severity, &v.Title, &v.Description,
 		&v.PkgName, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
 		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
-		&v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
+		&v.FindingSource, &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
 		&v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
 }
 
@@ -952,7 +954,7 @@ func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerab
 	}
 	defer tx.Rollback()
 
-	q := fmt.Sprintf(`INSERT INTO vulnerabilities (%s) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
+	q := fmt.Sprintf(`INSERT INTO vulnerabilities (%s) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
 ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`, vulnCols)
 	stmt, err := tx.PrepareContext(ctx, q)
 	if err != nil {
@@ -966,7 +968,7 @@ ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`, vulnCols)
 			vulns[i].VulnerabilityID, vulns[i].Severity, vulns[i].Title,
 			vulns[i].Description, vulns[i].PkgName, vulns[i].InstalledVer,
 			vulns[i].FixedVersion, vulns[i].CVSSScore, vulns[i].CVSSVector, vulns[i].PrimaryURL,
-			vulns[i].PkgPath, vulns[i].LayerID, vulns[i].Container,
+			vulns[i].PkgPath, vulns[i].LayerID, vulns[i].Container, defaultString(vulns[i].FindingSource, "scanner"),
 		)
 		if err != nil {
 			return result, err
@@ -2774,6 +2776,33 @@ func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
 	return int(n1) + int(n2), nil
 }
 
+func (db *DB) RemoveStaleRematchedVulnerabilities(ctx context.Context) (int, error) {
+	res, err := db.ExecContext(ctx, fmt.Sprintf(`
+DELETE FROM vulnerabilities v
+USING packages p
+WHERE v.package_id = p.id
+  AND v.finding_source = 'cve-db'
+  AND NOT EXISTS (
+	SELECT 1
+	FROM cve_database c
+	JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap ON true
+	WHERE c.vulnerability_id = v.vulnerability_id
+	  AND COALESCE(ap->>'name', '') != ''
+	  AND lower(ap->>'name') = lower(COALESCE(NULLIF(p.name, ''), NULLIF(v.pkg_name, '')))
+	  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
+	  AND %s = %s
+	  AND (
+		(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
+		OR jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') IS NOT NULL
+	  )
+  )`, affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("p")))
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 func cveEnrichmentFixedVersionSQL(cveAlias, vulnAlias string) string {
 	return fmt.Sprintf(`COALESCE(
 		%s,
@@ -3774,7 +3803,7 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 			VulnerabilityID: m.vulnID, Severity: sev, Title: truncate(m.title, 500),
 			Description: truncate(m.description, 2000), PkgName: m.pkgName, PkgPath: m.filePath,
 			InstalledVer: m.version, FixedVersion: fixedVersions(affected)[0], CVSSScore: m.cvssScore, CVSSVector: m.cvssVector,
-			PrimaryURL: primaryURL, Container: m.container,
+			PrimaryURL: primaryURL, Container: m.container, FindingSource: "cve-db",
 		}
 		key := rematchVulnerabilityKey(v)
 		if idx, ok := pending[key]; ok {
@@ -3798,8 +3827,8 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		stmt, err := tx.PrepareContext(ctx, `INSERT INTO vulnerabilities
 (id, package_id, scan_id, host_id, vulnerability_id, severity, title, description,
  pkg_name, pkg_path, installed_version, fixed_version, cvss_score, cvss_vector,
- primary_url, container, layer_id, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,now())
+ primary_url, container, layer_id, finding_source, created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
 ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`)
 		if err != nil {
 			return nil, fmt.Errorf("prepare: %w", err)
@@ -3810,7 +3839,7 @@ ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`)
 			res, err := stmt.ExecContext(ctx, v.ID, v.PackageID, v.ScanID, v.HostID,
 				v.VulnerabilityID, v.Severity, v.Title, v.Description,
 				v.PkgName, v.PkgPath, v.InstalledVer, v.FixedVersion,
-				v.CVSSScore, v.CVSSVector, v.PrimaryURL, v.Container, "")
+				v.CVSSScore, v.CVSSVector, v.PrimaryURL, v.Container, "", v.FindingSource)
 			if err != nil {
 				continue
 			}

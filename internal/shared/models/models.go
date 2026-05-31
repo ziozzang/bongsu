@@ -137,6 +137,7 @@ type Vulnerability struct {
 	PrimaryURL      string     `json:"primary_url,omitempty"`
 	Container       string     `json:"container,omitempty"`
 	LayerID         string     `json:"layer_id,omitempty"`
+	FindingSource   string     `json:"finding_source,omitempty"`
 	HostOwner       string     `json:"host_owner,omitempty"`
 	HostTeam        string     `json:"host_team,omitempty"`
 	HostEnvironment string     `json:"host_environment,omitempty"`

@@ -145,6 +145,7 @@ export interface Vuln {
   cvss_score: number;
   cvss_vector: string;
   primary_url: string;
+  finding_source?: string;
   host_id: string;
   host_owner?: string;
   host_team?: string;

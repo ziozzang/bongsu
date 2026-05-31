@@ -508,6 +508,7 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		`{table: "packages", column: "asset_type"}`,
 		`{table: "packages", column: "purl"}`,
 		`{table: "vulnerabilities", column: "pkg_path"}`,
+		`{table: "vulnerabilities", column: "finding_source"}`,
 		`{table: "cve_database", column: "category"}`,
 		`{table: "container_assets"}`,
 		`{table: "scan_requests", column: "claimed_by_host_id"}`,
@@ -515,6 +516,7 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		`{table: "vulnerability_triage"}`,
 		`{index: "idx_scan_requests_pending_security_db_host"}`,
 		`{index: "idx_vulnerabilities_package_scan_vuln"}`,
+		`{index: "idx_vulnerabilities_finding_source"}`,
 		"db.columnExists",
 		"db.indexExists",
 		"db.tableExists",
@@ -522,6 +524,54 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("legacy schema completeness check missing %q: %s", want, fn)
 		}
+	}
+}
+
+func TestVulnerabilityFindingSourceMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/016_vulnerability_finding_source.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"ADD COLUMN IF NOT EXISTS finding_source TEXT NOT NULL DEFAULT 'scanner'",
+		"idx_vulnerabilities_finding_source",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("finding source migration missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) RemoveStaleRematchedVulnerabilities")
+	if start < 0 {
+		t.Fatal("RemoveStaleRematchedVulnerabilities not found")
+	}
+	end := strings.Index(body[start:], "func cveEnrichmentFixedVersionSQL")
+	if end < 0 {
+		t.Fatal("RemoveStaleRematchedVulnerabilities end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"DELETE FROM vulnerabilities v",
+		"v.finding_source = 'cve-db'",
+		"NOT EXISTS",
+		"cve_database c",
+		"jsonb_array_elements",
+		"COALESCE(ap->>'name', '') != ''",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("stale rematch cleanup missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "finding_source != 'scanner'") {
+		t.Fatalf("cleanup must target explicit cve-db provenance only: %s", fn)
 	}
 }
 

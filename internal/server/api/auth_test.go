@@ -852,6 +852,8 @@ func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 	fn = body[start : start+end]
 	for _, want := range []string{
 		`s.auditSystem("security_db.recalculation"`,
+		"RemoveStaleRematchedVulnerabilities",
+		`"stale_rematch_removed"`,
 		"s.queueSecurityDBRescans(reason, status)",
 	} {
 		if !strings.Contains(fn, want) {
@@ -1710,6 +1712,7 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 		PkgName:         "openssl",
 		InstalledVer:    "1.0.0",
 		FixedVersion:    "1.0.1",
+		FindingSource:   "cve-db",
 		Title:           "csv title",
 		CreatedAt:       time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
 	}})
@@ -1722,6 +1725,9 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 	}
 	if !strings.Contains(out, "triage_expires_at") || !strings.Contains(out, "2026-06-30T00:00:00Z") {
 		t.Fatalf("missing triage expiry: %s", out)
+	}
+	if !strings.Contains(out, "finding_source") || !strings.Contains(out, "cve-db") {
+		t.Fatalf("missing finding source: %s", out)
 	}
 	if !strings.Contains(out, "CVE-2026-0001") || !strings.Contains(out, "accepted_risk") || !strings.Contains(out, "platform") {
 		t.Fatalf("missing csv values: %s", out)
