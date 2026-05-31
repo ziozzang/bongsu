@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,9 @@ func main() {
 	port := envInt("BONGSU_PORT", 8080)
 	dbDSN := envOr("BONGSU_DB_DSN", "postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable")
 	autoMigrate := envBool("BONGSU_AUTO_MIGRATE", true)
+	if err := validateServerSecrets(); err != nil {
+		log.Fatalf("invalid server secret configuration: %v", err)
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -156,4 +160,70 @@ func envBool(key string, def bool) bool {
 		return def
 	}
 	return b
+}
+
+func validateServerSecrets() error {
+	if envBool("BONGSU_ALLOW_WEAK_SECRETS", false) {
+		return nil
+	}
+	type secret struct {
+		name  string
+		value string
+	}
+	secrets := []secret{
+		{name: "BONGSU_API_KEY", value: os.Getenv("BONGSU_API_KEY")},
+		{name: "BONGSU_AGENT_API_KEY", value: os.Getenv("BONGSU_AGENT_API_KEY")},
+		{name: "BONGSU_INSTALL_TOKEN", value: os.Getenv("BONGSU_INSTALL_TOKEN")},
+	}
+	for _, s := range secrets {
+		if s.value == "" {
+			continue
+		}
+		if weakSecretValue(s.value) {
+			return fmt.Errorf("%s is empty, too short, or still uses a placeholder value", s.name)
+		}
+	}
+	apiKey := strings.TrimSpace(os.Getenv("BONGSU_API_KEY"))
+	agentKey := strings.TrimSpace(os.Getenv("BONGSU_AGENT_API_KEY"))
+	if apiKey != "" && agentKey != "" && subtleSecretEqual(apiKey, agentKey) {
+		return fmt.Errorf("BONGSU_AGENT_API_KEY must be distinct from BONGSU_API_KEY")
+	}
+	return nil
+}
+
+func weakSecretValue(v string) bool {
+	v = strings.TrimSpace(v)
+	if len(v) < 16 {
+		return true
+	}
+	lower := strings.ToLower(v)
+	weakParts := []string{
+		"change-me",
+		"changeme",
+		"your-",
+		"example",
+		"password",
+		"secret-key",
+		"secret-token",
+		"admin-key",
+		"agent-key",
+		"install-token",
+	}
+	for _, part := range weakParts {
+		if strings.Contains(lower, part) {
+			return true
+		}
+	}
+	return false
+}
+
+func subtleSecretEqual(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var diff byte
+	for i := range a {
+		diff |= a[i] ^ b[i]
+	}
+	return diff == 0
 }
