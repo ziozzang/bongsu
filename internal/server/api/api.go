@@ -1484,19 +1484,73 @@ FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
 curl_download() {
     local url="$1"
     local output="$2"
+    local headers
+    headers="$(mktemp)"
+    trap 'rm -f "$headers"' RETURN
     if [ -n "$INSTALL_TOKEN" ]; then
         local curl_config
         curl_config="$(mktemp)"
         chmod 600 "$curl_config"
         printf 'header = "X-Install-Token: %%s"\n' "$INSTALL_TOKEN" > "$curl_config"
-        if curl -fsSL --config "$curl_config" "$url" -o "$output"; then
+        if curl -fsSL --config "$curl_config" -D "$headers" "$url" -o "$output"; then
             rm -f "$curl_config"
+            if ! verify_download_sha256 "$headers" "$output"; then
+                rm -f "$headers"
+                trap - RETURN
+                return 1
+            fi
+            rm -f "$headers"
+            trap - RETURN
             return 0
         fi
         rm -f "$curl_config"
+        rm -f "$headers"
+        trap - RETURN
         return 1
     fi
-    curl -fsSL "$url" -o "$output"
+    if curl -fsSL -D "$headers" "$url" -o "$output"; then
+        if ! verify_download_sha256 "$headers" "$output"; then
+            rm -f "$headers"
+            trap - RETURN
+            return 1
+        fi
+        rm -f "$headers"
+        trap - RETURN
+        return 0
+    fi
+    rm -f "$headers"
+    trap - RETURN
+    return 1
+}
+
+file_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        echo "ERROR: sha256sum or shasum is required to verify downloaded binaries" >&2
+        return 1
+    fi
+}
+
+verify_download_sha256() {
+    local headers="$1"
+    local output="$2"
+    local expected
+    expected="$(awk 'tolower($1)=="x-bongsu-sha256:" {print $2}' "$headers" | tail -1 | tr -d '\r')"
+    if [ -z "$expected" ]; then
+        echo "ERROR: missing X-Bongsu-SHA256 header for $output" >&2
+        rm -f "$output"
+        return 1
+    fi
+    local actual
+    actual="$(file_sha256 "$output")"
+    if [ "$actual" != "$expected" ]; then
+        echo "ERROR: checksum mismatch for $output" >&2
+        rm -f "$output"
+        return 1
+    fi
 }
 
 echo "=== Bongsu Agent Installer ==="
@@ -1656,10 +1710,21 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "agent binary not readable", http.StatusInternalServerError)
 		return
 	}
+	digest, err := fileSHA256Hex(f)
+	if err != nil {
+		s.audit(r, "installer.download", "binary", "bongsu-agent", "error", map[string]any{
+			"reason": "agent binary checksum failed",
+			"path":   agentPath,
+			"error":  err.Error(),
+		})
+		http.Error(w, "agent binary checksum failed", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", "attachment; filename=bongsu-agent")
+	w.Header().Set("X-Bongsu-SHA256", digest)
 	if _, err := io.Copy(w, f); err != nil {
 		log.Printf("agent binary download failed: %v", err)
 		s.audit(r, "installer.download", "binary", "bongsu-agent", "error", map[string]any{
@@ -1670,7 +1735,8 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "installer.download", "binary", "bongsu-agent", "ok", map[string]any{
-		"bytes": info.Size(),
+		"bytes":  info.Size(),
+		"sha256": digest,
 	})
 }
 
@@ -1703,10 +1769,21 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "trivy binary not readable", http.StatusInternalServerError)
 		return
 	}
+	digest, err := fileSHA256Hex(f)
+	if err != nil {
+		s.audit(r, "installer.download", "binary", "trivy", "error", map[string]any{
+			"reason": "trivy binary checksum failed",
+			"path":   trivyPath,
+			"error":  err.Error(),
+		})
+		http.Error(w, "trivy binary checksum failed", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", "attachment; filename=trivy")
+	w.Header().Set("X-Bongsu-SHA256", digest)
 	if _, err := io.Copy(w, f); err != nil {
 		log.Printf("trivy binary download failed: %v", err)
 		s.audit(r, "installer.download", "binary", "trivy", "error", map[string]any{
@@ -1717,8 +1794,23 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "installer.download", "binary", "trivy", "ok", map[string]any{
-		"bytes": info.Size(),
+		"bytes":  info.Size(),
+		"sha256": digest,
 	})
+}
+
+func fileSHA256Hex(f *os.File) (string, error) {
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func (s *Server) handlePackageVulns(w http.ResponseWriter, r *http.Request) {

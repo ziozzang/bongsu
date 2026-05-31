@@ -18,19 +18,73 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 curl_download() {
     local url="$1"
     local output="$2"
+    local headers
+    headers="$(mktemp)"
+    trap 'rm -f "$headers"' RETURN
     if [ -n "$INSTALL_TOKEN" ]; then
         local curl_config
         curl_config="$(mktemp)"
         chmod 600 "$curl_config"
         printf 'header = "X-Install-Token: %s"\n' "$INSTALL_TOKEN" > "$curl_config"
-        if curl -fsSL --config "$curl_config" "$url" -o "$output"; then
+        if curl -fsSL --config "$curl_config" -D "$headers" "$url" -o "$output"; then
             rm -f "$curl_config"
+            if ! verify_download_sha256 "$headers" "$output"; then
+                rm -f "$headers"
+                trap - RETURN
+                return 1
+            fi
+            rm -f "$headers"
+            trap - RETURN
             return 0
         fi
         rm -f "$curl_config"
+        rm -f "$headers"
+        trap - RETURN
         return 1
     fi
-    curl -fsSL "$url" -o "$output"
+    if curl -fsSL -D "$headers" "$url" -o "$output"; then
+        if ! verify_download_sha256 "$headers" "$output"; then
+            rm -f "$headers"
+            trap - RETURN
+            return 1
+        fi
+        rm -f "$headers"
+        trap - RETURN
+        return 0
+    fi
+    rm -f "$headers"
+    trap - RETURN
+    return 1
+}
+
+file_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{print $1}'
+    else
+        echo "ERROR: sha256sum or shasum is required to verify downloaded binaries" >&2
+        return 1
+    fi
+}
+
+verify_download_sha256() {
+    local headers="$1"
+    local output="$2"
+    local expected
+    expected="$(awk 'tolower($1)=="x-bongsu-sha256:" {print $2}' "$headers" | tail -1 | tr -d '\r')"
+    if [ -z "$expected" ]; then
+        echo "ERROR: missing X-Bongsu-SHA256 header for $output" >&2
+        rm -f "$output"
+        return 1
+    fi
+    local actual
+    actual="$(file_sha256 "$output")"
+    if [ "$actual" != "$expected" ]; then
+        echo "ERROR: checksum mismatch for $output" >&2
+        rm -f "$output"
+        return 1
+    fi
 }
 
 if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -570,6 +571,55 @@ func TestInstallScriptHardensAgentCredentialFile(t *testing.T) {
 	}
 }
 
+func TestInstallerDownloadsVerifyBinaryChecksums(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`curl -fsSL --config "$curl_config" -D "$headers" "$url" -o "$output"`,
+		`curl -fsSL -D "$headers" "$url" -o "$output"`,
+		`verify_download_sha256 "$headers" "$output"`,
+		`tolower($1)=="x-bongsu-sha256:"`,
+		`sha256sum "$1"`,
+		`shasum -a 256 "$1"`,
+		`missing X-Bongsu-SHA256 header for $output`,
+		`checksum mismatch for $output`,
+		`rm -f "$output"`,
+		`w.Header().Set("X-Bongsu-SHA256", digest)`,
+		`"sha256": digest`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("installer checksum verification missing %q", want)
+		}
+	}
+
+	tmp, err := os.CreateTemp(t.TempDir(), "sha256-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tmp.Close()
+	if _, err := tmp.WriteString("bongsu"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := fileSHA256Hex(tmp)
+	if err != nil {
+		t.Fatalf("fileSHA256Hex: %v", err)
+	}
+	want := "75ca98a595553036263404b3659d462bcbe4e49e9bc148158cd90e935d3a08cb"
+	if got != want {
+		t.Fatalf("sha256 = %q, want %q", got, want)
+	}
+	pos, err := tmp.Seek(0, io.SeekCurrent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pos != 0 {
+		t.Fatalf("file position = %d, want reset to 0", pos)
+	}
+}
+
 func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
 	got := shellQuote(`agent'key"$HOME`)
 	want := `'agent'"'"'key"$HOME'`
@@ -854,7 +904,11 @@ func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`printf 'header = "X-Install-Token: %s"\n' "$INSTALL_TOKEN" > "$curl_config"`,
-		`curl -fsSL --config "$curl_config" "$url" -o "$output"`,
+		`curl -fsSL --config "$curl_config" -D "$headers" "$url" -o "$output"`,
+		`verify_download_sha256 "$headers" "$output"`,
+		`tolower($1)=="x-bongsu-sha256:"`,
+		`missing X-Bongsu-SHA256 header for $output`,
+		`checksum mismatch for $output`,
 		`curl_download "${SERVER_URL}/api/downloads/bongsu-agent" "$WORK_DIR/bin/bongsu-agent"`,
 		`curl_download "${SERVER_URL}/api/downloads/trivy" "$WORK_DIR/bin/trivy"`,
 	} {
