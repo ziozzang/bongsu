@@ -182,6 +182,7 @@ spec:
 | `BONGSU_WEBHOOK_URL` | empty | Optional outbound webhook URL for scan/security DB events |
 | `BONGSU_WEBHOOK_SECRET` | empty | Optional HMAC-SHA256 signing secret for webhooks |
 | `BONGSU_WEBHOOK_MIN_SEVERITY` | `HIGH` | Minimum scan severity that triggers `scan.completed` webhook |
+| `BONGSU_WEBHOOK_INVENTORY_STATUSES` | `empty` | Comma-separated inventory states that trigger `scan.completed` webhook (`healthy`,`stale`,`empty`,`none`) |
 | `BONGSU_SLA_CRITICAL_DAYS` | `7` | Remediation SLA days for critical findings |
 | `BONGSU_SLA_HIGH_DAYS` | `30` | Remediation SLA days for high findings |
 | `BONGSU_SLA_MEDIUM_DAYS` | `90` | Remediation SLA days for medium findings |

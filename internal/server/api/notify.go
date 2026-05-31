@@ -15,10 +15,11 @@ import (
 )
 
 type webhookNotifier struct {
-	url         string
-	secret      string
-	minSeverity string
-	client      *http.Client
+	url               string
+	secret            string
+	minSeverity       string
+	inventoryStatuses map[string]bool
+	client            *http.Client
 }
 
 type webhookPayload struct {
@@ -33,10 +34,11 @@ func newWebhookNotifierFromEnv() *webhookNotifier {
 		return nil
 	}
 	return &webhookNotifier{
-		url:         url,
-		secret:      os.Getenv("BONGSU_WEBHOOK_SECRET"),
-		minSeverity: strings.ToUpper(strings.TrimSpace(os.Getenv("BONGSU_WEBHOOK_MIN_SEVERITY"))),
-		client:      &http.Client{Timeout: 10 * time.Second},
+		url:               url,
+		secret:            os.Getenv("BONGSU_WEBHOOK_SECRET"),
+		minSeverity:       strings.ToUpper(strings.TrimSpace(os.Getenv("BONGSU_WEBHOOK_MIN_SEVERITY"))),
+		inventoryStatuses: parseInventoryStatuses(os.Getenv("BONGSU_WEBHOOK_INVENTORY_STATUSES")),
+		client:            &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -99,6 +101,34 @@ func (n *webhookNotifier) ShouldSendSeverity(counts map[string]int) bool {
 		}
 	}
 	return false
+}
+
+func (n *webhookNotifier) ShouldSendScan(counts map[string]int, inventoryStatus string) bool {
+	if !n.Enabled() {
+		return false
+	}
+	if n.ShouldSendSeverity(counts) {
+		return true
+	}
+	if n.inventoryStatuses == nil {
+		n.inventoryStatuses = parseInventoryStatuses("")
+	}
+	return n.inventoryStatuses[strings.ToLower(strings.TrimSpace(inventoryStatus))]
+}
+
+func parseInventoryStatuses(v string) map[string]bool {
+	if strings.TrimSpace(v) == "" {
+		v = "empty"
+	}
+	out := map[string]bool{}
+	for _, part := range strings.Split(v, ",") {
+		part = strings.ToLower(strings.TrimSpace(part))
+		switch part {
+		case "healthy", "stale", "empty", "none":
+			out[part] = true
+		}
+	}
+	return out
 }
 
 func severityRank(severity string) int {

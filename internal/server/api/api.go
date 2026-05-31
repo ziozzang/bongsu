@@ -499,29 +499,35 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("scan vuln counts: %v", err)
 		sevCounts = map[string]int{}
 	}
+	inventoryStatus := "healthy"
+	if len(report.Packages) == 0 {
+		inventoryStatus = "empty"
+	}
 	s.audit(r, "agent.report", "scan", report.ScanID, "ok", map[string]any{
-		"host_id":         report.Host.ID,
-		"hostname":        report.Host.Hostname,
-		"packages":        len(report.Packages),
-		"vulnerabilities": vulnTotal,
-		"containers":      len(report.Containers),
-		"users":           len(report.Users),
-		"processes":       len(report.Processes),
-		"ports":           len(report.Ports),
+		"host_id":          report.Host.ID,
+		"hostname":         report.Host.Hostname,
+		"packages":         len(report.Packages),
+		"vulnerabilities":  vulnTotal,
+		"containers":       len(report.Containers),
+		"inventory_status": inventoryStatus,
+		"users":            len(report.Users),
+		"processes":        len(report.Processes),
+		"ports":            len(report.Ports),
 	})
-	if s.notifier.ShouldSendSeverity(sevCounts) {
+	if s.notifier.ShouldSendScan(sevCounts, inventoryStatus) {
 		s.notifier.Send("scan.completed", map[string]any{
-			"scan_id":         report.ScanID,
-			"host_id":         report.Host.ID,
-			"hostname":        report.Host.Hostname,
-			"ip_address":      report.Host.IPAddress,
-			"os_name":         report.Host.OSName,
-			"os_version":      report.Host.OSVersion,
-			"scan_type":       report.ScanType,
-			"packages":        len(report.Packages),
-			"containers":      len(report.Containers),
-			"vulnerabilities": vulnTotal,
-			"severity_counts": sevCounts,
+			"scan_id":          report.ScanID,
+			"host_id":          report.Host.ID,
+			"hostname":         report.Host.Hostname,
+			"ip_address":       report.Host.IPAddress,
+			"os_name":          report.Host.OSName,
+			"os_version":       report.Host.OSVersion,
+			"scan_type":        report.ScanType,
+			"inventory_status": inventoryStatus,
+			"packages":         len(report.Packages),
+			"containers":       len(report.Containers),
+			"vulnerabilities":  vulnTotal,
+			"severity_counts":  sevCounts,
 		})
 	}
 

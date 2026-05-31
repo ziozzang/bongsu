@@ -67,3 +67,27 @@ func TestWebhookSeverityThreshold(t *testing.T) {
 		t.Fatal("severity rank should be case-insensitive")
 	}
 }
+
+func TestWebhookScanInventoryThreshold(t *testing.T) {
+	n := &webhookNotifier{url: "http://example.invalid", minSeverity: "CRITICAL", inventoryStatuses: parseInventoryStatuses("empty,none")}
+	if !n.ShouldSendScan(map[string]int{"LOW": 1}, "empty") {
+		t.Fatal("empty inventory should trigger scan webhook")
+	}
+	if n.ShouldSendScan(map[string]int{"LOW": 1}, "healthy") {
+		t.Fatal("healthy inventory below severity threshold should not trigger scan webhook")
+	}
+	if !n.ShouldSendScan(map[string]int{"CRITICAL": 1}, "healthy") {
+		t.Fatal("critical finding should trigger scan webhook")
+	}
+}
+
+func TestParseInventoryStatusesDefault(t *testing.T) {
+	got := parseInventoryStatuses("")
+	if !got["empty"] || got["healthy"] {
+		t.Fatalf("default inventory statuses = %#v", got)
+	}
+	got = parseInventoryStatuses("empty, stale, invalid")
+	if !got["empty"] || !got["stale"] || got["invalid"] {
+		t.Fatalf("parsed inventory statuses = %#v", got)
+	}
+}

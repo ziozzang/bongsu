@@ -133,7 +133,7 @@ Filtered vulnerability views can be exported through `/api/vulnerabilities/expor
 
 ## Webhook Notifications
 
-Operators can configure `BONGSU_WEBHOOK_URL` to receive outbound JSON webhooks for `scan.completed` and `security_db.updated`. `scan.completed` includes host identity, package/container counts, vulnerability totals, and severity counts; `BONGSU_WEBHOOK_MIN_SEVERITY` controls the minimum severity that triggers scan notifications. `BONGSU_WEBHOOK_SECRET` signs payloads with `X-Bongsu-Signature-256: sha256=<hex hmac>` for receiver verification.
+Operators can configure `BONGSU_WEBHOOK_URL` to receive outbound JSON webhooks for `scan.completed` and `security_db.updated`. `scan.completed` includes host identity, inventory status, package/container counts, vulnerability totals, and severity counts; `BONGSU_WEBHOOK_MIN_SEVERITY` controls the minimum severity that triggers scan notifications, and `BONGSU_WEBHOOK_INVENTORY_STATUSES` triggers notifications for selected SBOM health states such as `empty`. `BONGSU_WEBHOOK_SECRET` signs payloads with `X-Bongsu-Signature-256: sha256=<hex hmac>` for receiver verification.
 
 ## Test Expectations
 
