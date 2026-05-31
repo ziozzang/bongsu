@@ -86,24 +86,44 @@ type Package struct {
 }
 
 type Vulnerability struct {
-	ID              string    `json:"id"`
-	PackageID       string    `json:"package_id"`
-	ScanID          string    `json:"scan_id"`
-	HostID          string    `json:"host_id"`
-	VulnerabilityID string    `json:"vulnerability_id"`
-	Severity        string    `json:"severity"`
-	Title           string    `json:"title,omitempty"`
-	Description     string    `json:"description,omitempty"`
-	PkgName         string    `json:"pkg_name"`
-	PkgPath         string    `json:"pkg_path,omitempty"`
-	InstalledVer    string    `json:"installed_version"`
-	FixedVersion    string    `json:"fixed_version,omitempty"`
-	CVSSScore       float64   `json:"cvss_score,omitempty"`
-	CVSSVector      string    `json:"cvss_vector,omitempty"`
-	PrimaryURL      string    `json:"primary_url,omitempty"`
-	Container       string    `json:"container,omitempty"`
-	LayerID         string    `json:"layer_id,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              string     `json:"id"`
+	PackageID       string     `json:"package_id"`
+	ScanID          string     `json:"scan_id"`
+	HostID          string     `json:"host_id"`
+	VulnerabilityID string     `json:"vulnerability_id"`
+	Severity        string     `json:"severity"`
+	Title           string     `json:"title,omitempty"`
+	Description     string     `json:"description,omitempty"`
+	PkgName         string     `json:"pkg_name"`
+	PkgPath         string     `json:"pkg_path,omitempty"`
+	InstalledVer    string     `json:"installed_version"`
+	FixedVersion    string     `json:"fixed_version,omitempty"`
+	CVSSScore       float64    `json:"cvss_score,omitempty"`
+	CVSSVector      string     `json:"cvss_vector,omitempty"`
+	PrimaryURL      string     `json:"primary_url,omitempty"`
+	Container       string     `json:"container,omitempty"`
+	LayerID         string     `json:"layer_id,omitempty"`
+	TriageStatus    string     `json:"triage_status"`
+	TriageReason    string     `json:"triage_reason,omitempty"`
+	TriageComment   string     `json:"triage_comment,omitempty"`
+	TriageExpiresAt *time.Time `json:"triage_expires_at,omitempty"`
+	TriageUpdatedBy string     `json:"triage_updated_by,omitempty"`
+	TriageUpdatedAt *time.Time `json:"triage_updated_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+}
+
+type VulnerabilityTriage struct {
+	ID              string     `json:"id"`
+	VulnerabilityID string     `json:"vulnerability_id"`
+	HostID          string     `json:"host_id,omitempty"`
+	PkgName         string     `json:"pkg_name,omitempty"`
+	Status          string     `json:"status"`
+	Reason          string     `json:"reason,omitempty"`
+	Comment         string     `json:"comment,omitempty"`
+	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
+	UpdatedBy       string     `json:"updated_by,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 type UserAccount struct {

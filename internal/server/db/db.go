@@ -464,11 +464,25 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,now())`
 
 const vulnCols = `id, package_id, scan_id, host_id, vulnerability_id, severity, title, description, pkg_name, installed_version, fixed_version, cvss_score, cvss_vector, primary_url, pkg_path, layer_id, container, created_at`
 
+const vulnTriageJoin = ` LEFT JOIN LATERAL (
+	SELECT status, reason, comment, expires_at, updated_by, updated_at
+	FROM vulnerability_triage
+	WHERE vulnerability_id = v.vulnerability_id
+	  AND (host_id = '' OR host_id = v.host_id)
+	  AND (pkg_name = '' OR pkg_name = v.pkg_name)
+	  AND (expires_at IS NULL OR expires_at > now())
+	ORDER BY (host_id != '') DESC, (pkg_name != '') DESC, updated_at DESC
+	LIMIT 1
+) vt ON true`
+
+const vulnTriageCols = `, COALESCE(vt.status, 'open'), COALESCE(vt.reason, ''), COALESCE(vt.comment, ''), vt.expires_at, COALESCE(vt.updated_by, ''), vt.updated_at`
+
 func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnerability) error {
 	return scanner.Scan(&v.ID, &v.PackageID, &v.ScanID, &v.HostID,
 		&v.VulnerabilityID, &v.Severity, &v.Title, &v.Description,
 		&v.PkgName, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
-		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container, &v.CreatedAt)
+		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
+		&v.CreatedAt, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
 }
 
 func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerability) error {
@@ -924,6 +938,32 @@ ON CONFLICT (subject_id, resource_type, resource_id, permission) DO NOTHING`,
 	return err
 }
 
+func (db *DB) UpsertVulnerabilityTriage(ctx context.Context, t *models.VulnerabilityTriage) error {
+	if t.ID == "" {
+		t.ID = uuid.New().String()
+	}
+	if t.VulnerabilityID == "" {
+		return fmt.Errorf("vulnerability_id is required")
+	}
+	if t.Status == "" {
+		t.Status = "open"
+	}
+	err := db.QueryRowContext(ctx, `INSERT INTO vulnerability_triage
+(id, vulnerability_id, host_id, pkg_name, status, reason, comment, expires_at, updated_by, created_at, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now(),now())
+ON CONFLICT (vulnerability_id, host_id, pkg_name) DO UPDATE SET
+	status=EXCLUDED.status,
+	reason=EXCLUDED.reason,
+	comment=EXCLUDED.comment,
+	expires_at=EXCLUDED.expires_at,
+	updated_by=EXCLUDED.updated_by,
+	updated_at=now()
+RETURNING id, created_at, updated_at`,
+		t.ID, t.VulnerabilityID, t.HostID, t.PkgName, t.Status, t.Reason, t.Comment, t.ExpiresAt, t.UpdatedBy,
+	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
+	return err
+}
+
 func (db *DB) ListHosts(ctx context.Context) ([]models.Host, error) {
 	q := `SELECT id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, last_seen, created_at FROM hosts ORDER BY hostname`
 	rows, err := db.QueryContext(ctx, q)
@@ -963,6 +1003,7 @@ type VulnFilter struct {
 	HostID       string
 	HostIDs      []string
 	Severity     string
+	TriageStatus string
 	PkgName      string
 	Container    string
 	MinCVSS      float64
@@ -983,6 +1024,7 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 		baseQ += ` JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id`
 	}
 
+	baseQ += vulnTriageJoin
 	baseQ += ` WHERE 1=1`
 
 	if f.HostID != "" {
@@ -997,6 +1039,11 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	if f.Severity != "" {
 		baseQ += fmt.Sprintf(" AND v.severity=$%d", argN)
 		args = append(args, f.Severity)
+		argN++
+	}
+	if f.TriageStatus != "" {
+		baseQ += fmt.Sprintf(" AND COALESCE(vt.status, 'open')=$%d", argN)
+		args = append(args, f.TriageStatus)
 		argN++
 	}
 	if f.PkgName != "" {
@@ -1051,7 +1098,7 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	}
 
 	sortExpr := vulnSortExpr(f.SortBy, f.SortDesc)
-	dataQ := fmt.Sprintf(`SELECT v.%s `, vulnCols) + baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", sortExpr, argN, argN+1)
+	dataQ := fmt.Sprintf(`SELECT v.%s%s `, vulnCols, vulnTriageCols) + baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", sortExpr, argN, argN+1)
 	args = append(args, limit, offset)
 
 	rows, err := db.QueryContext(ctx, dataQ, args...)
@@ -1277,7 +1324,7 @@ type CveSearchFilter struct {
 }
 
 func (db *DB) SearchCVEs(ctx context.Context, f CveSearchFilter, limit, offset int) ([]models.Vulnerability, int, error) {
-	baseQ := `FROM vulnerabilities v JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id WHERE 1=1`
+	baseQ := `FROM vulnerabilities v JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE 1=1`
 	args := []any{}
 	argN := 1
 
@@ -1315,7 +1362,7 @@ func (db *DB) SearchCVEs(ctx context.Context, f CveSearchFilter, limit, offset i
 	}
 
 	sortExpr := vulnSortExpr(f.SortBy, f.SortDesc)
-	dataQ := fmt.Sprintf(`SELECT v.%s `, vulnCols) + baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", sortExpr, argN, argN+1)
+	dataQ := fmt.Sprintf(`SELECT v.%s%s `, vulnCols, vulnTriageCols) + baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", sortExpr, argN, argN+1)
 	args = append(args, limit, offset)
 
 	rows, err := db.QueryContext(ctx, dataQ, args...)
@@ -1478,14 +1525,14 @@ func vulnSortExpr(col string, desc bool) string {
 }
 
 func (db *DB) GetVulnsByPackageID(ctx context.Context, packageID string) ([]models.Vulnerability, error) {
-	q := `SELECT ` + vulnCols + ` FROM vulnerabilities WHERE package_id=$1 AND NOT (fixed_version IS NOT NULL AND fixed_version != '' AND installed_version IS NOT NULL AND installed_version != '' AND regexp_replace(regexp_replace(installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND regexp_replace(regexp_replace(fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND fixed_version !~ '^[0-9a-f]{40}$'
-			AND array_remove(string_to_array(regexp_replace(regexp_replace(installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[] >= array_remove(string_to_array(regexp_replace(regexp_replace(fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]) AND vulnerability_id NOT LIKE 'CGA-%' AND fixed_version !~ '^[0-9a-f]{40}$'
+	q := `SELECT v.` + vulnCols + vulnTriageCols + ` FROM vulnerabilities v` + vulnTriageJoin + ` WHERE v.package_id=$1 AND NOT (v.fixed_version IS NOT NULL AND v.fixed_version != '' AND v.installed_version IS NOT NULL AND v.installed_version != '' AND regexp_replace(regexp_replace(v.installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND regexp_replace(regexp_replace(v.fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND v.fixed_version !~ '^[0-9a-f]{40}$'
+			AND array_remove(string_to_array(regexp_replace(regexp_replace(v.installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[] >= array_remove(string_to_array(regexp_replace(regexp_replace(v.fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]) AND v.vulnerability_id NOT LIKE 'CGA-%' AND v.fixed_version !~ '^[0-9a-f]{40}$'
 			AND NOT EXISTS (
 				SELECT 1 FROM cve_database c
-				WHERE c.vulnerability_id = vulnerabilities.vulnerability_id
+				WHERE c.vulnerability_id = v.vulnerability_id
 				AND c.affected_products->0->>'ecosystem' IS NOT NULL
-				AND EXISTS (SELECT 1 FROM packages p WHERE p.id = vulnerabilities.package_id AND p.pkg_type IN ('python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget'))
-				AND c.affected_products->0->>'ecosystem' != CASE (SELECT pkg_type FROM packages WHERE id = vulnerabilities.package_id)
+				AND EXISTS (SELECT 1 FROM packages p WHERE p.id = v.package_id AND p.pkg_type IN ('python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget'))
+				AND c.affected_products->0->>'ecosystem' != CASE (SELECT pkg_type FROM packages WHERE id = v.package_id)
 					WHEN 'python-pkg' THEN 'PyPI' WHEN 'pip' THEN 'PyPI'
 					WHEN 'node-pkg' THEN 'npm' WHEN 'npm' THEN 'npm'
 					WHEN 'gomod' THEN 'Go' WHEN 'go' THEN 'Go' WHEN 'gobinary' THEN 'Go'
@@ -1495,7 +1542,7 @@ func (db *DB) GetVulnsByPackageID(ctx context.Context, packageID string) ([]mode
 					WHEN 'composer' THEN 'Packagist'
 					WHEN 'nuget' THEN 'NuGet'
 				END
-			) ORDER BY cvss_score DESC`
+			) ORDER BY v.cvss_score DESC`
 	rows, err := db.QueryContext(ctx, q, packageID)
 	if err != nil {
 		return nil, err

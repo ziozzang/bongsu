@@ -79,7 +79,11 @@ Runtime RBAC supports viewer API keys mapped to external subjects through `BONGS
 
 ## Audit Trail
 
-Administration and agent events are written to append-only `audit_logs` rows. The current audit surface includes agent report submissions, force-scan request lifecycle events, scan deletion, Trivy DB upload/update, security DB import/export/update, CVE DB import/export/rematch/CVSS recalculation, RBAC subject/policy changes, and periodic security DB change hooks. Admins can query `/api/admin/audit-logs` with `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `status`, `limit`, and `offset`.
+Administration and agent events are written to append-only `audit_logs` rows. The current audit surface includes agent report submissions, force-scan request lifecycle events, scan deletion, Trivy DB upload/update, security DB import/export/update, CVE DB import/export/rematch/CVSS recalculation, vulnerability triage changes, RBAC subject/policy changes, and periodic security DB change hooks. Admins can query `/api/admin/audit-logs` with `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `status`, `limit`, and `offset`.
+
+## Vulnerability Triage
+
+Triage decisions are stored separately from scan-result rows in `vulnerability_triage`, so they survive rescans and security DB updates. A decision can target one CVE globally, one CVE on a host, or one CVE/package pair on a host. Current statuses are `open`, `in_progress`, `accepted_risk`, `false_positive`, `fixed`, and `ignored`; expired decisions stop applying automatically. Triage changes are audited through `vulnerability.triage`.
 
 ## Test Expectations
 

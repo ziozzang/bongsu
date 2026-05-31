@@ -106,6 +106,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/hosts/{id}/vuln-counts", s.handleHostVulnCounts)
 	s.mux.HandleFunc("GET /api/vulnerabilities", s.handleListVulnerabilities)
 	s.mux.HandleFunc("GET /api/vulnerabilities/filters", s.handleVulnFilters)
+	s.mux.HandleFunc("POST /api/vulnerabilities/triage", s.handleUpsertVulnerabilityTriage)
 	s.mux.HandleFunc("GET /api/cve-search", s.handleCveSearch)
 	s.mux.HandleFunc("GET /api/vuln-summary", s.handleVulnSummary)
 	s.mux.HandleFunc("GET /api/packages", s.handleSearchPackages)
@@ -634,6 +635,7 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 		HostID:       hostID,
 		HostIDs:      scope.HostIDs,
 		Severity:     severity,
+		TriageStatus: r.URL.Query().Get("triage_status"),
 		PkgName:      pkgName,
 		Container:    container,
 		MinCVSS:      minCVSS,
@@ -669,6 +671,46 @@ func (s *Server) handleVulnFilters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, opts)
+}
+
+func (s *Server) handleUpsertVulnerabilityTriage(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body models.VulnerabilityTriage
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.VulnerabilityID == "" {
+		http.Error(w, "vulnerability_id is required", http.StatusBadRequest)
+		return
+	}
+	switch body.Status {
+	case "", "open", "in_progress", "accepted_risk", "false_positive", "fixed", "ignored":
+	default:
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+	if body.Status == "" {
+		body.Status = "open"
+	}
+	if body.UpdatedBy == "" {
+		body.UpdatedBy = s.actorID(r)
+	}
+	if err := s.db.UpsertVulnerabilityTriage(r.Context(), &body); err != nil {
+		log.Printf("upsert vulnerability triage: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	s.audit(r, "vulnerability.triage", "vulnerability", body.VulnerabilityID, "ok", map[string]any{
+		"host_id":  body.HostID,
+		"pkg_name": body.PkgName,
+		"status":   body.Status,
+		"reason":   body.Reason,
+	})
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (s *Server) handleCveSearch(w http.ResponseWriter, r *http.Request) {

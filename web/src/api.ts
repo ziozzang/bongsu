@@ -86,6 +86,12 @@ export interface Vuln {
   primary_url: string;
   host_id: string;
   container: string;
+  triage_status: string;
+  triage_reason: string;
+  triage_comment: string;
+  triage_expires_at?: string | null;
+  triage_updated_by: string;
+  triage_updated_at?: string | null;
 }
 
 export interface Pkg {
@@ -168,7 +174,7 @@ export const api = {
   hostPackages: (id: string, limit: number, offset: number) =>
     request<{ items: Pkg[]; total: number }>(`/hosts/${id}/packages`, { limit: String(limit), offset: String(offset) }),
   hostVulnCounts: (id: string) => request<Record<string, number>>(`/hosts/${id}/vuln-counts`),
-  vulnerabilities: (params: { host_id?: string; severity?: string; min_cvss?: string; pkg_name?: string; container?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
+  vulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; min_cvss?: string; pkg_name?: string; container?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Vuln[]; total: number }>('/vulnerabilities', params),
   vulnFilters: () => request<{ host_ids: string[]; containers: string[] }>('/vulnerabilities/filters'),
   cveSearch: (params: { q?: string; pkg_name?: string; severity?: string; min_cvss?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
@@ -181,6 +187,8 @@ export const api = {
     request<{ items: Pkg[]; total: number }>('/packages', params),
   packageFilters: () => request<FilterOptions>('/packages/filters'),
   packageVulns: (id: string) => request<Vuln[]>(`/packages/${id}/vulnerabilities`),
+  triageVulnerability: (body: { vulnerability_id: string; host_id?: string; pkg_name?: string; status: string; reason?: string; comment?: string; expires_at?: string | null }) =>
+    requestJSON<{ id: string; status: string }>('/vulnerabilities/triage', body),
   scans: (params: { host_id?: string; limit?: string; offset?: string }) =>
     request<{ items: Scan[]; total: number }>('/scans', params),
   createScanRequest: (body: { host_id?: string; requested_by?: string; scan_type?: string; packages_only?: boolean; reason?: string }) =>
