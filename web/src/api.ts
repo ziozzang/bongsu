@@ -273,6 +273,7 @@ export interface ScanRequest {
   scan_type: string;
   packages_only: boolean;
   reason?: string;
+  security_db_revision?: string;
   status: string;
   error_message?: string;
   claimed_by_host_id?: string;

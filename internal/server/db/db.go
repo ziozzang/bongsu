@@ -162,6 +162,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "cve_database", column: "category"},
 		{table: "container_assets"},
 		{table: "scan_requests", column: "claimed_by_host_id"},
+		{table: "scan_requests", column: "security_db_revision"},
 		{table: "audit_logs"},
 		{table: "vulnerability_triage"},
 		{index: "idx_scan_requests_pending_security_db_host"},
@@ -1187,9 +1188,9 @@ func (db *DB) CreateScanRequest(ctx context.Context, req *models.ScanRequest) er
 	if req.Status == "" {
 		req.Status = "pending"
 	}
-	_, err := db.ExecContext(ctx, `INSERT INTO scan_requests (id, host_id, requested_by, scan_type, packages_only, reason, status, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,now())`,
-		req.ID, req.HostID, req.RequestedBy, req.ScanType, req.PackagesOnly, req.Reason, req.Status)
+	_, err := db.ExecContext(ctx, `INSERT INTO scan_requests (id, host_id, requested_by, scan_type, packages_only, reason, security_db_revision, status, created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())`,
+		req.ID, req.HostID, req.RequestedBy, req.ScanType, req.PackagesOnly, req.Reason, req.SecurityDBRevision, req.Status)
 	return err
 }
 
@@ -1199,7 +1200,7 @@ type SecurityDBRescanQueueResult struct {
 	AlreadyPending int
 }
 
-func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason string, lastSeenAfter time.Time) (*SecurityDBRescanQueueResult, error) {
+func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason, securityDBRevision string, lastSeenAfter time.Time) (*SecurityDBRescanQueueResult, error) {
 	q := `SELECT id FROM hosts`
 	args := []any{}
 	if !lastSeenAfter.IsZero() {
@@ -1227,11 +1228,11 @@ func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason st
 			return result, err
 		}
 		result.Eligible++
-		res, err := tx.ExecContext(ctx, queueSecurityDBRescanInsertSQL(), uuid.New().String(), hostID, requestedBy, reason)
-		if err != nil {
+		var inserted bool
+		if err := tx.QueryRowContext(ctx, queueSecurityDBRescanInsertSQL(), uuid.New().String(), hostID, requestedBy, reason, securityDBRevision).Scan(&inserted); err != nil {
 			return result, err
 		}
-		if n, _ := res.RowsAffected(); n > 0 {
+		if inserted {
 			result.Queued++
 		} else {
 			result.AlreadyPending++
@@ -1245,13 +1246,15 @@ func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason st
 
 func queueSecurityDBRescanInsertSQL() string {
 	return `
-INSERT INTO scan_requests (id, host_id, requested_by, scan_type, packages_only, reason, status, created_at)
-SELECT $1,$2,$3,'security-db-update',true,$4,'pending',now()
-WHERE NOT EXISTS (
-	SELECT 1 FROM scan_requests
-	WHERE host_id=$2 AND scan_type='security-db-update' AND status='pending'
-)
-ON CONFLICT (host_id) WHERE host_id <> '' AND scan_type='security-db-update' AND status='pending' DO NOTHING`
+INSERT INTO scan_requests (id, host_id, requested_by, scan_type, packages_only, reason, security_db_revision, status, created_at)
+VALUES ($1,$2,$3,'security-db-update',true,$4,$5,'pending',now())
+ON CONFLICT (host_id) WHERE host_id <> '' AND scan_type='security-db-update' AND status='pending'
+DO UPDATE SET
+	requested_by=EXCLUDED.requested_by,
+	reason=EXCLUDED.reason,
+	security_db_revision=EXCLUDED.security_db_revision,
+	error_message=''
+RETURNING (xmax = 0) AS inserted`
 }
 
 func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []string, status string, limit, offset int) ([]models.ScanRequest, int, error) {
@@ -1276,7 +1279,7 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	if err := db.QueryRowContext(ctx, "SELECT count(*) "+baseQ, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	q := `SELECT id, host_id, requested_by, scan_type, packages_only, reason, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at ` + baseQ + fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", n, n+1)
+	q := `SELECT id, host_id, requested_by, scan_type, packages_only, reason, security_db_revision, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at ` + baseQ + fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", n, n+1)
 	args = append(args, limit, offset)
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -1286,7 +1289,7 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	var out []models.ScanRequest
 	for rows.Next() {
 		var r models.ScanRequest
-		if err := rows.Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.SecurityDBRevision, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, r)
@@ -1390,9 +1393,9 @@ WHERE id = (
 	FOR UPDATE SKIP LOCKED
 	LIMIT 1
 )
-RETURNING id, host_id, requested_by, scan_type, packages_only, reason, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at`
+RETURNING id, host_id, requested_by, scan_type, packages_only, reason, security_db_revision, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at`
 	var r models.ScanRequest
-	err = tx.QueryRowContext(ctx, q, hostID).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt)
+	err = tx.QueryRowContext(ctx, q, hostID).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.SecurityDBRevision, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, int(requeuedCount), tx.Commit()
 	}
@@ -3674,6 +3677,26 @@ ORDER BY source`, cveSourceMatchablePredicateSQL("affected_products", "ecosystem
 		stats = append(stats, s)
 	}
 	return stats, nil
+}
+
+func (db *DB) GetSecurityDBRevision(ctx context.Context) (string, error) {
+	stats, err := db.GetCveSourceStats(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(stats) == 0 {
+		return "empty", nil
+	}
+	h := sha256.New()
+	for _, s := range stats {
+		lastUpdate := ""
+		if s.LastUpdate != nil {
+			lastUpdate = s.LastUpdate.UTC().Format(time.RFC3339Nano)
+		}
+		fmt.Fprintf(h, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
+			s.Source, s.Count, s.Matchable, s.WithEcosystem, s.WithFixed, s.WithRanges, s.WithCVSS, lastUpdate)
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16], nil
 }
 
 type RematchResult struct {

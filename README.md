@@ -52,6 +52,7 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 - One-liner 에이전트 설치
 - Force scan 요청과 RBAC 데이터 모델 기반
 - 보안 DB import/update 후 백그라운드 CVSS 재계산 및 rematch
+- 보안 DB 업데이트로 생성된 자동 리스캔 요청의 DB revision 추적
 - Agent last_seen 기반 online/stale/offline 상태 표시
 - 운영 데이터 retention dry-run/prune 관리
 - 장애로 고착된 force scan 요청 자동/수동 재큐잉

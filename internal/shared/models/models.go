@@ -45,18 +45,19 @@ type Scan struct {
 }
 
 type ScanRequest struct {
-	ID              string     `json:"id"`
-	HostID          string     `json:"host_id,omitempty"`
-	RequestedBy     string     `json:"requested_by,omitempty"`
-	ScanType        string     `json:"scan_type"`
-	PackagesOnly    bool       `json:"packages_only"`
-	Reason          string     `json:"reason,omitempty"`
-	Status          string     `json:"status"`
-	ErrorMessage    string     `json:"error_message,omitempty"`
-	ClaimedByHostID string     `json:"claimed_by_host_id,omitempty"`
-	ClaimedAt       *time.Time `json:"claimed_at,omitempty"`
-	CompletedAt     *time.Time `json:"completed_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID                 string     `json:"id"`
+	HostID             string     `json:"host_id,omitempty"`
+	RequestedBy        string     `json:"requested_by,omitempty"`
+	ScanType           string     `json:"scan_type"`
+	PackagesOnly       bool       `json:"packages_only"`
+	Reason             string     `json:"reason,omitempty"`
+	SecurityDBRevision string     `json:"security_db_revision,omitempty"`
+	Status             string     `json:"status"`
+	ErrorMessage       string     `json:"error_message,omitempty"`
+	ClaimedByHostID    string     `json:"claimed_by_host_id,omitempty"`
+	ClaimedAt          *time.Time `json:"claimed_at,omitempty"`
+	CompletedAt        *time.Time `json:"completed_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 type AuditLog struct {

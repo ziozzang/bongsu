@@ -282,11 +282,14 @@ func TestPackageIdentitySQLExcludesVersion(t *testing.T) {
 func TestQueueSecurityDBRescanInsertSQLUsesAtomicDedupe(t *testing.T) {
 	got := queueSecurityDBRescanInsertSQL()
 	for _, want := range []string{
+		"security_db_revision",
 		"ON CONFLICT (host_id)",
 		"host_id <> ''",
 		"scan_type='security-db-update'",
 		"status='pending'",
-		"DO NOTHING",
+		"DO UPDATE SET",
+		"security_db_revision=EXCLUDED.security_db_revision",
+		"RETURNING (xmax = 0) AS inserted",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("rescan insert SQL missing %q: %s", want, got)
@@ -314,6 +317,7 @@ func TestQueueSecurityDBRescansReportsEligibleQueuedAndSkipped(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"SecurityDBRescanQueueResult",
+		"securityDBRevision string",
 		"result.Eligible++",
 		"result.Queued++",
 		"result.AlreadyPending++",
@@ -341,6 +345,22 @@ func TestAutoRescanPendingUniqueMigrationAllowsClaimedFollowUp(t *testing.T) {
 	}
 	if strings.Contains(body, "status IN ('pending', 'claimed')") || strings.Contains(body, "status IN ('pending','claimed')") {
 		t.Fatalf("pending auto-rescan uniqueness must not include claimed requests: %s", body)
+	}
+}
+
+func TestScanRequestSecurityDBRevisionMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/017_scan_request_security_db_revision.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"ADD COLUMN IF NOT EXISTS security_db_revision TEXT NOT NULL DEFAULT ''",
+		"idx_scan_requests_security_db_revision",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("scan request security DB revision migration missing %q: %s", want, body)
+		}
 	}
 }
 
@@ -512,6 +532,7 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		`{table: "cve_database", column: "category"}`,
 		`{table: "container_assets"}`,
 		`{table: "scan_requests", column: "claimed_by_host_id"}`,
+		`{table: "scan_requests", column: "security_db_revision"}`,
 		`{table: "audit_logs"}`,
 		`{table: "vulnerability_triage"}`,
 		`{index: "idx_scan_requests_pending_security_db_host"}`,

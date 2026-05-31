@@ -2156,6 +2156,7 @@ func normalizeScanRequestCreate(req *models.ScanRequest) error {
 	}
 	req.Status = "pending"
 	req.ErrorMessage = ""
+	req.SecurityDBRevision = strings.TrimSpace(req.SecurityDBRevision)
 	req.ClaimedByHostID = ""
 	req.ClaimedAt = nil
 	req.CompletedAt = nil
@@ -2869,7 +2870,20 @@ func (s *Server) queueSecurityDBRescans(reason, recalculationStatus string) {
 		if lookbackHours > 0 {
 			lastSeenAfter = time.Now().Add(-time.Duration(lookbackHours) * time.Hour)
 		}
-		result, err := s.db.QueueSecurityDBRescans(ctx, "system", reason, lastSeenAfter)
+		revision, err := s.db.GetSecurityDBRevision(ctx)
+		if err != nil {
+			log.Printf("security-db auto rescan revision failed (%s): %v", reason, err)
+			s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "error", map[string]any{
+				"reason":               reason,
+				"recalculation_status": recalculationStatus,
+				"last_seen_after":      lastSeenAfter,
+				"last_seen_hours":      lookbackHours,
+				"error":                err.Error(),
+				"stage":                "security_db_revision",
+			})
+			return
+		}
+		result, err := s.db.QueueSecurityDBRescans(ctx, "system", reason, revision, lastSeenAfter)
 		if err != nil {
 			log.Printf("security-db auto rescan queue failed (%s): %v", reason, err)
 			s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "error", map[string]any{
@@ -2877,11 +2891,12 @@ func (s *Server) queueSecurityDBRescans(reason, recalculationStatus string) {
 				"recalculation_status": recalculationStatus,
 				"last_seen_after":      lastSeenAfter,
 				"last_seen_hours":      lookbackHours,
+				"security_db_revision": revision,
 				"error":                err.Error(),
 			})
 			return
 		}
-		log.Printf("security-db auto rescan eligible=%d queued=%d already_pending=%d (%s)", result.Eligible, result.Queued, result.AlreadyPending, reason)
+		log.Printf("security-db auto rescan eligible=%d queued=%d already_pending=%d revision=%s (%s)", result.Eligible, result.Queued, result.AlreadyPending, revision, reason)
 		s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "ok", map[string]any{
 			"reason":               reason,
 			"recalculation_status": recalculationStatus,
@@ -2890,6 +2905,7 @@ func (s *Server) queueSecurityDBRescans(reason, recalculationStatus string) {
 			"already_pending":      result.AlreadyPending,
 			"last_seen_after":      lastSeenAfter,
 			"last_seen_hours":      lookbackHours,
+			"security_db_revision": revision,
 		})
 	}()
 }

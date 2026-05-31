@@ -2070,7 +2070,7 @@ function ScansView() {
         {requestsLoading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
           <table>
             <thead>
-              <tr><th>Requested</th><th>Host</th><th>Claimed By</th><th>Type</th><th>Status</th><th>Mode</th><th>Reason</th><th>Claimed</th><th>Completed</th><th></th></tr>
+              <tr><th>Requested</th><th>Host</th><th>Claimed By</th><th>Type</th><th>Status</th><th>Mode</th><th>DB Rev</th><th>Reason</th><th>Claimed</th><th>Completed</th><th></th></tr>
             </thead>
             <tbody>
               {requests.map(req => (
@@ -2081,13 +2081,14 @@ function ScansView() {
                   <td>{req.scan_type}</td>
                   <td style={{ color: statusColor(req.status), fontWeight: 600 }}>{req.status}</td>
                   <td>{req.packages_only ? 'packages' : 'full'}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{req.security_db_revision || '-'}</td>
                   <td className="path-cell">{req.reason || req.error_message || '-'}{(req.reason || req.error_message) && <span className="path-tip">{req.reason || req.error_message}</span>}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{req.claimed_at ? new Date(req.claimed_at).toLocaleString() : '-'}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{req.completed_at ? new Date(req.completed_at).toLocaleString() : '-'}</td>
                   <td>{['pending', 'claimed'].includes(req.status) && <button className="delete-btn" onClick={() => cancelRequest(req.id)}>Cancel</button>}</td>
                 </tr>
               ))}
-              {requests.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scan requests</td></tr>}
+              {requests.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scan requests</td></tr>}
             </tbody>
           </table>
         )}

@@ -927,6 +927,8 @@ func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
 		`"queued":`,
 		`"already_pending":`,
 		`"recalculation_status":`,
+		`"security_db_revision":`,
+		"GetSecurityDBRevision",
 		"result.Eligible",
 		"result.Queued",
 		"result.AlreadyPending",
