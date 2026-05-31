@@ -297,6 +297,33 @@ func TestQueueSecurityDBRescanInsertSQLUsesAtomicDedupe(t *testing.T) {
 	}
 }
 
+func TestQueueSecurityDBRescansReportsEligibleQueuedAndSkipped(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) QueueSecurityDBRescans")
+	if start < 0 {
+		t.Fatal("QueueSecurityDBRescans not found")
+	}
+	end := strings.Index(body[start:], "func queueSecurityDBRescanInsertSQL")
+	if end < 0 {
+		t.Fatal("QueueSecurityDBRescans end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"SecurityDBRescanQueueResult",
+		"result.Eligible++",
+		"result.Queued++",
+		"result.AlreadyPending++",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("auto-rescan queue accounting missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestAutoRescanPendingUniqueMigrationAllowsClaimedFollowUp(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/015_pending_auto_rescan_unique.sql")
 	if err != nil {

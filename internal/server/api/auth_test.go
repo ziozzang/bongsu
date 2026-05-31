@@ -738,6 +738,35 @@ func TestHandleReportNormalizesScannerInput(t *testing.T) {
 	}
 }
 
+func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) queueSecurityDBRescans")
+	if start < 0 {
+		t.Fatal("queueSecurityDBRescans not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleCveDbImport")
+	if end < 0 {
+		t.Fatal("queueSecurityDBRescans end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`"eligible":`,
+		`"queued":`,
+		`"already_pending":`,
+		"result.Eligible",
+		"result.Queued",
+		"result.AlreadyPending",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("auto-rescan audit accounting missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestHealthOnlyShowsSecuritySyncOutputToAdmins(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {

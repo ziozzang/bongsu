@@ -1191,7 +1191,13 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,now())`,
 	return err
 }
 
-func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason string, lastSeenAfter time.Time) (int, error) {
+type SecurityDBRescanQueueResult struct {
+	Eligible       int
+	Queued         int
+	AlreadyPending int
+}
+
+func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason string, lastSeenAfter time.Time) (*SecurityDBRescanQueueResult, error) {
 	q := `SELECT id FROM hosts`
 	args := []any{}
 	if !lastSeenAfter.IsZero() {
@@ -1202,34 +1208,37 @@ func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason st
 
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer rows.Close()
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer tx.Rollback()
 
-	queued := 0
+	result := &SecurityDBRescanQueueResult{}
 	for rows.Next() {
 		var hostID string
 		if err := rows.Scan(&hostID); err != nil {
-			return queued, err
+			return result, err
 		}
+		result.Eligible++
 		res, err := tx.ExecContext(ctx, queueSecurityDBRescanInsertSQL(), uuid.New().String(), hostID, requestedBy, reason)
 		if err != nil {
-			return queued, err
+			return result, err
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
-			queued++
+			result.Queued++
+		} else {
+			result.AlreadyPending++
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return queued, err
+		return result, err
 	}
-	return queued, tx.Commit()
+	return result, tx.Commit()
 }
 
 func queueSecurityDBRescanInsertSQL() string {

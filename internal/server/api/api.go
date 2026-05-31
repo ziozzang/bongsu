@@ -2684,7 +2684,7 @@ func (s *Server) queueSecurityDBRescans(reason string) {
 		if lookbackHours > 0 {
 			lastSeenAfter = time.Now().Add(-time.Duration(lookbackHours) * time.Hour)
 		}
-		queued, err := s.db.QueueSecurityDBRescans(ctx, "system", reason, lastSeenAfter)
+		result, err := s.db.QueueSecurityDBRescans(ctx, "system", reason, lastSeenAfter)
 		if err != nil {
 			log.Printf("security-db auto rescan queue failed (%s): %v", reason, err)
 			s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "error", map[string]any{
@@ -2695,10 +2695,12 @@ func (s *Server) queueSecurityDBRescans(reason string) {
 			})
 			return
 		}
-		log.Printf("security-db auto rescan queued %d host scans (%s)", queued, reason)
+		log.Printf("security-db auto rescan eligible=%d queued=%d already_pending=%d (%s)", result.Eligible, result.Queued, result.AlreadyPending, reason)
 		s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "ok", map[string]any{
 			"reason":          reason,
-			"queued":          queued,
+			"eligible":        result.Eligible,
+			"queued":          result.Queued,
+			"already_pending": result.AlreadyPending,
 			"last_seen_after": lastSeenAfter,
 			"last_seen_hours": lookbackHours,
 		})
