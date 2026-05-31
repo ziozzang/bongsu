@@ -117,6 +117,16 @@ func TestCompatibleSecurityCandidateUsesRangeFixedVersion(t *testing.T) {
 	}
 }
 
+func TestCompatibleSecurityCandidateRejectsAmbiguousMultiFixedWithoutRanges(t *testing.T) {
+	affected := `[{"name":"foo","ecosystem":"npm","fixed":["1.2.9","2.0.1"]}]`
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "1.3.0", "code-library", "", affected); ok {
+		t.Fatal("multi-fixed candidate without affected ranges should not match across ambiguous release branches")
+	}
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "2.0.0", "code-library", "", affected); ok {
+		t.Fatal("multi-fixed candidate without affected ranges should not match newer branch versions")
+	}
+}
+
 func TestVersionInRangeHandlesMultipleIntervals(t *testing.T) {
 	events := []affectedRangeEvent{
 		{Introduced: "0"},
@@ -555,11 +565,15 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 		"COALESCE(ap->>'name', '') != ''",
 		"NULLIF(ap->>'ecosystem', '')",
 		"jsonb_typeof(ap->'fixed') = 'array'",
+		"jsonb_array_length(ap->'fixed') = 1",
 		"jsonb_path_exists(ap, '$.ranges[*].events[*].fixed ? (@ != \"\")')",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("source quality predicate missing %q: %s", want, got)
 		}
+	}
+	if strings.Contains(got, "jsonb_array_length(ap->'fixed') > 0") {
+		t.Fatalf("source quality must not treat ambiguous multi-fixed entries as safely matchable: %s", got)
 	}
 	if strings.Contains(got, "jsonb_array_length(ap->'ranges') > 0") {
 		t.Fatalf("source quality must not treat range metadata without fixed events as matchable: %s", got)

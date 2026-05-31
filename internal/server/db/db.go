@@ -566,16 +566,18 @@ func versionIsAffected(installed string, p affectedProduct) bool {
 		}
 		return false
 	}
-	for _, fixed := range p.Fixed {
-		if less, ok := versionLess(installed, fixed); ok && less {
-			return true
-		}
+	fixed := uniqueFixedVersions(p.Fixed)
+	if len(fixed) != 1 {
+		return false
+	}
+	if less, ok := versionLess(installed, fixed[0]); ok && less {
+		return true
 	}
 	return false
 }
 
 func fixedVersions(p affectedProduct) []string {
-	out := append([]string{}, p.Fixed...)
+	out := uniqueFixedVersions(p.Fixed)
 	seen := map[string]bool{}
 	for _, fixed := range out {
 		seen[fixed] = true
@@ -589,6 +591,20 @@ func fixedVersions(p affectedProduct) []string {
 			out = append(out, fixed)
 			seen[fixed] = true
 		}
+	}
+	return out
+}
+
+func uniqueFixedVersions(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, fixed := range in {
+		fixed = strings.TrimSpace(fixed)
+		if fixed == "" || seen[fixed] {
+			continue
+		}
+		out = append(out, fixed)
+		seen[fixed] = true
 	}
 	return out
 }
@@ -3931,7 +3947,7 @@ const (
 )
 
 func cveSourceFixedPredicateSQL() string {
-	return `(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
+	return `(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') = 1 AND COALESCE(ap->'fixed'->>0, '') != '')
 		OR jsonb_path_exists(ap, '$.ranges[*].events[*].fixed ? (@ != "")')`
 }
 
