@@ -2436,13 +2436,19 @@ func (s *Server) handleRetentionPrune(w http.ResponseWriter, r *http.Request) {
 		status = "pruned"
 	}
 	s.audit(r, "retention.prune", "retention", "operational_data", status, map[string]any{
-		"dry_run":       result.DryRun,
-		"scan_days":     result.ScanDays,
-		"request_days":  result.RequestDays,
-		"audit_days":    result.AuditDays,
-		"scans":         result.Scans,
-		"scan_requests": result.Requests,
-		"audit_logs":    result.AuditLogs,
+		"dry_run":         result.DryRun,
+		"scan_days":       result.ScanDays,
+		"request_days":    result.RequestDays,
+		"audit_days":      result.AuditDays,
+		"scans":           result.Scans,
+		"packages":        result.Packages,
+		"vulnerabilities": result.Vulns,
+		"containers":      result.Containers,
+		"users":           result.Users,
+		"processes":       result.Processes,
+		"ports":           result.Ports,
+		"scan_requests":   result.Requests,
+		"audit_logs":      result.AuditLogs,
 	})
 	writeJSON(w, http.StatusOK, result)
 }

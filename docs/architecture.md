@@ -118,7 +118,7 @@ Administration and agent events are written to append-only `audit_logs` rows. Th
 
 ## Retention
 
-Admins can dry-run or execute `/api/admin/retention/prune` from the dashboard to remove old operational history. The prune action deletes scans older than `BONGSU_RETENTION_SCAN_DAYS` while preserving each host's latest completed or degraded scan, removes completed/failed/cancelled scan requests older than `BONGSU_RETENTION_SCAN_REQUEST_DAYS`, and removes audit events older than `BONGSU_RETENTION_AUDIT_DAYS`. Triage decisions and the current host inventory are not pruned by this action.
+Admins can dry-run or execute `/api/admin/retention/prune` from the dashboard to remove old operational history. The prune action deletes scans older than `BONGSU_RETENTION_SCAN_DAYS` while preserving each host's latest completed or degraded scan, removes completed/failed/cancelled scan requests older than `BONGSU_RETENTION_SCAN_REQUEST_DAYS`, and removes audit events older than `BONGSU_RETENTION_AUDIT_DAYS`. Retention responses and audit metadata include deleted scan, package, vulnerability, container, user, process, port, scan-request, and audit-log counts so operators can review the full blast radius. Triage decisions and the current host inventory are not pruned by this action.
 
 ## Vulnerability Triage
 

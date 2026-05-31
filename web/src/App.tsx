@@ -329,8 +329,9 @@ function DashboardView() {
     setRetentionMsg('');
     try {
       const r = await api.pruneRetention({ dry_run: dryRun });
-      const affected = r.scans + r.scan_requests + r.audit_logs;
-      setRetentionMsg(`${dryRun ? 'Dry run' : 'Pruned'}: ${affected.toLocaleString()} records (${r.scans} scans, ${r.scan_requests} requests, ${r.audit_logs} audit logs)`);
+      const inventoryRows = r.packages + r.vulnerabilities + r.containers + r.users + r.processes + r.ports;
+      const affected = r.scans + inventoryRows + r.scan_requests + r.audit_logs;
+      setRetentionMsg(`${dryRun ? 'Dry run' : 'Pruned'}: ${affected.toLocaleString()} records (${r.scans} scans, ${inventoryRows} inventory rows, ${r.scan_requests} requests, ${r.audit_logs} audit logs)`);
     } catch {
       setRetentionMsg('Retention prune failed or requires admin API key');
     }
