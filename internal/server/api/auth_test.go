@@ -167,6 +167,44 @@ func TestViewerKeys(t *testing.T) {
 	}
 }
 
+func TestCorsRequiresExplicitAllowedOrigin(t *testing.T) {
+	s := &Server{corsOrigins: parseAllowedOrigins("https://console.example.com")}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Origin", "https://console.example.com")
+	rr := httptest.NewRecorder()
+	s.corsMiddleware(next).ServeHTTP(rr, req)
+	if rr.Code != http.StatusAccepted {
+		t.Fatalf("allowed CORS status = %d", rr.Code)
+	}
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "https://console.example.com" {
+		t.Fatalf("allowed origin header = %q", got)
+	}
+
+	req = httptest.NewRequest("OPTIONS", "/", nil)
+	req.Header.Set("Origin", "https://evil.example.com")
+	rr = httptest.NewRecorder()
+	s.corsMiddleware(next).ServeHTTP(rr, req)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("disallowed preflight status = %d, want %d", rr.Code, http.StatusForbidden)
+	}
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("disallowed origin must not be reflected, got %q", got)
+	}
+}
+
+func TestCorsWildcardIsExplicit(t *testing.T) {
+	if !allowsAllOrigins("https://console.example.com, *") {
+		t.Fatal("wildcard CORS should require explicit *")
+	}
+	if allowsAllOrigins("") {
+		t.Fatal("empty CORS config must not allow all origins")
+	}
+}
+
 func TestAuditActorAndClientIP(t *testing.T) {
 	s := &Server{
 		apiKey:     "admin-key",

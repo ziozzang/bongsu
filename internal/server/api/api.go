@@ -41,6 +41,8 @@ type Server struct {
 	installToken string
 	viewerKeys   map[string]string
 	webAuth      bool
+	corsOrigins  map[string]bool
+	corsAllowAll bool
 	mux          *http.ServeMux
 	matcher      *cvematch.Matcher
 	dbMgr        *trivydb.Manager
@@ -72,6 +74,8 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		installToken: os.Getenv("BONGSU_INSTALL_TOKEN"),
 		viewerKeys:   parseViewerKeys(os.Getenv("BONGSU_VIEWER_API_KEYS")),
 		webAuth:      os.Getenv("BONGSU_WEB_AUTH") != "false",
+		corsOrigins:  parseAllowedOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
+		corsAllowAll: allowsAllOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
 		mux:          http.NewServeMux(),
 		matcher:      matcher,
 		dbMgr:        dbMgr,
@@ -83,6 +87,26 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	}
 	s.routes()
 	return s
+}
+
+func parseAllowedOrigins(raw string) map[string]bool {
+	out := map[string]bool{}
+	for _, origin := range cleanCSV(strings.Split(raw, ",")) {
+		if origin == "*" {
+			continue
+		}
+		out[origin] = true
+	}
+	return out
+}
+
+func allowsAllOrigins(raw string) bool {
+	for _, origin := range cleanCSV(strings.Split(raw, ",")) {
+		if origin == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 func parseViewerKeys(raw string) map[string]string {
@@ -3302,10 +3326,19 @@ func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key, X-Install-Token")
-		w.Header().Set("Access-Control-Max-Age", "86400")
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
+		if origin != "" {
+			if s.corsAllowAll || s.corsOrigins[origin] {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key, X-Install-Token")
+				w.Header().Set("Access-Control-Max-Age", "86400")
+			} else if r.Method == "OPTIONS" {
+				http.Error(w, "cors origin not allowed", http.StatusForbidden)
+				return
+			}
+		}
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
 			return

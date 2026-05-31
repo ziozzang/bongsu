@@ -167,6 +167,7 @@ spec:
 | `BONGSU_AGENT_API_KEY` | `BONGSU_API_KEY` | Agent-only report upload and force-scan polling key |
 | `BONGSU_INSTALL_TOKEN` | *required for installer* | Token required for `/api/install.sh`; binary downloads accept this token or an admin API key header |
 | `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC |
+| `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
 | `BONGSU_PORT` | `8080` | Server listen port |
 | `BONGSU_DB_DSN` | `postgres://bongsu:...` | PostgreSQL connection string |
 | `BONGSU_AUTO_MIGRATE` | `true` | Run checksum-tracked DB migrations on startup |
