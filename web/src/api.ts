@@ -315,6 +315,9 @@ export interface HealthStatus {
     status: string;
     last_error: string;
     interval: string;
+    last_sync?: string;
+    last_attempt?: string;
+    next_sync?: string;
   };
 }
 

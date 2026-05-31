@@ -18,6 +18,8 @@ type Manager struct {
 	mu          sync.RWMutex
 	running     bool
 	lastSync    time.Time
+	lastAttempt time.Time
+	nextSync    time.Time
 	lastStatus  string
 	lastError   string
 	lastOutput  string
@@ -48,6 +50,7 @@ func (m *Manager) Start(ctx context.Context) {
 	log.Printf("security-db periodic sync enabled (interval: %s)", m.interval)
 	ticker := time.NewTicker(m.interval)
 	defer ticker.Stop()
+	m.setNextSync(time.Now().Add(m.interval))
 	for {
 		select {
 		case <-ctx.Done():
@@ -56,8 +59,15 @@ func (m *Manager) Start(ctx context.Context) {
 			if err := m.UpdateNowWithReason(ctx, "security-db periodic sync"); err != nil {
 				log.Printf("security-db sync failed: %v", err)
 			}
+			m.setNextSync(time.Now().Add(m.interval))
 		}
 	}
+}
+
+func (m *Manager) setNextSync(next time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nextSync = next
 }
 
 func (m *Manager) SetUpdateHook(hook func(string)) {
@@ -99,6 +109,7 @@ func (m *Manager) UpdateNowWithReason(ctx context.Context, reason string) error 
 		return err
 	}
 	m.running = true
+	m.lastAttempt = time.Now()
 	m.lastStatus = "running"
 	m.lastError = ""
 	m.lastOutput = ""
@@ -156,13 +167,15 @@ func (m *Manager) Status() map[string]any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return map[string]any{
-		"configured":  m.command != "",
-		"running":     m.running,
-		"last_sync":   m.lastSync,
-		"status":      m.lastStatus,
-		"last_error":  m.lastError,
-		"last_output": m.lastOutput,
-		"interval":    m.interval.String(),
+		"configured":   m.command != "",
+		"running":      m.running,
+		"last_sync":    m.lastSync,
+		"last_attempt": m.lastAttempt,
+		"next_sync":    m.nextSync,
+		"status":       m.lastStatus,
+		"last_error":   m.lastError,
+		"last_output":  m.lastOutput,
+		"interval":     m.interval.String(),
 	}
 }
 
@@ -170,11 +183,13 @@ func (m *Manager) PublicStatus() map[string]any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return map[string]any{
-		"configured": m.command != "",
-		"running":    m.running,
-		"last_sync":  m.lastSync,
-		"status":     m.lastStatus,
-		"interval":   m.interval.String(),
+		"configured":   m.command != "",
+		"running":      m.running,
+		"last_sync":    m.lastSync,
+		"last_attempt": m.lastAttempt,
+		"next_sync":    m.nextSync,
+		"status":       m.lastStatus,
+		"interval":     m.interval.String(),
 	}
 }
 

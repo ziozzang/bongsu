@@ -2927,6 +2927,15 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 	} else {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 0)
 	}
+	if s.secMgr != nil {
+		status := s.secMgr.Status()
+		writePromGauge(&b, "bongsu_security_db_sync_configured", nil, boolMetric(status["configured"]))
+		writePromGauge(&b, "bongsu_security_db_sync_running", nil, boolMetric(status["running"]))
+		writePromGauge(&b, "bongsu_security_db_sync_last_error", nil, boolMetric(strings.TrimSpace(fmt.Sprint(status["last_error"])) != ""))
+		writePromGauge(&b, "bongsu_security_db_sync_last_attempt_timestamp_seconds", nil, metricTimestamp(status["last_attempt"]))
+		writePromGauge(&b, "bongsu_security_db_sync_last_success_timestamp_seconds", nil, metricTimestamp(status["last_sync"]))
+		writePromGauge(&b, "bongsu_security_db_sync_next_timestamp_seconds", nil, metricTimestamp(status["next_sync"]))
+	}
 	if s.db != nil {
 		if hosts, err := s.db.ListHosts(ctx); err == nil {
 			agentStatusCounts := map[string]int{}
@@ -3099,6 +3108,13 @@ func metricNumber(v any) float64 {
 	default:
 		return 0
 	}
+}
+
+func metricTimestamp(v any) float64 {
+	if t, ok := v.(time.Time); ok && !t.IsZero() {
+		return float64(t.Unix())
+	}
+	return 0
 }
 
 func writePromGauge(b *strings.Builder, name string, labels map[string]string, value float64) {

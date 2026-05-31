@@ -33,6 +33,12 @@ func TestUpdateNowCallsHookAfterSuccessfulSync(t *testing.T) {
 	if status["last_output"] != "sync-ok" {
 		t.Fatalf("last output = %#v", status["last_output"])
 	}
+	if ts, ok := status["last_attempt"].(time.Time); !ok || ts.IsZero() {
+		t.Fatalf("last attempt should be recorded after successful sync: %#v", status["last_attempt"])
+	}
+	if ts, ok := status["last_sync"].(time.Time); !ok || ts.IsZero() {
+		t.Fatalf("last sync should be recorded after successful sync: %#v", status["last_sync"])
+	}
 }
 
 func TestUpdateNowDoesNotCallHookAfterFailedSync(t *testing.T) {
@@ -73,12 +79,18 @@ func TestUpdateNowDoesNotCallHookAfterFailedSync(t *testing.T) {
 	if got, _ := status["last_error"].(string); !strings.Contains(got, "sync-failed") {
 		t.Fatalf("last error should include command output, got %q", got)
 	}
+	if ts, ok := status["last_attempt"].(time.Time); !ok || ts.IsZero() {
+		t.Fatalf("last attempt should be recorded after failed sync: %#v", status["last_attempt"])
+	}
 	publicStatus := m.PublicStatus()
 	if _, ok := publicStatus["last_output"]; ok {
 		t.Fatalf("public status must not expose command output: %#v", publicStatus)
 	}
 	if _, ok := publicStatus["last_error"]; ok {
 		t.Fatalf("public status must not expose command errors: %#v", publicStatus)
+	}
+	if _, ok := publicStatus["last_attempt"].(time.Time); !ok {
+		t.Fatalf("public status should expose last attempt timestamp: %#v", publicStatus)
 	}
 }
 
@@ -143,6 +155,33 @@ func TestStartSkipsStartupSyncWhenDisabled(t *testing.T) {
 	}
 	if status := m.Status(); status["status"] != "never" {
 		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestStartExposesNextPeriodicSync(t *testing.T) {
+	m := NewManager("printf periodic-ok", time.Hour)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		m.Start(ctx)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		status := m.Status()
+		if next, ok := status["next_sync"].(time.Time); ok && !next.IsZero() {
+			cancel()
+			<-done
+			return
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			<-done
+			t.Fatalf("next periodic sync was not recorded: %#v", status)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

@@ -408,6 +408,12 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
     : cveDbStatus === 'syncing' || cveDbStatus === 'unknown'
       ? 'var(--medium)'
       : 'var(--low)';
+  const securitySyncNext = health?.security_db?.next_sync && !health.security_db.next_sync.startsWith('0001-')
+    ? new Date(health.security_db.next_sync).toLocaleString()
+    : '';
+  const securitySyncLast = health?.security_db?.last_attempt && !health.security_db.last_attempt.startsWith('0001-')
+    ? new Date(health.security_db.last_attempt).toLocaleString()
+    : '';
   const cveFreshnessColor = staleCveSourceCount > 0 || health?.security_db_freshness?.stale ? 'var(--critical)' : 'var(--low)';
   const cveMatchableColor = cveMatchablePercent < 50 && cveTotalRecords > 0
     ? 'var(--critical)'
@@ -859,6 +865,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
           <div className="value" style={{ color: cveDbStatusColor }}>{cveDbStatus}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             {health?.security_db_revision ? `rev ${health.security_db_revision}` : `${cveSources.length || 0} sources tracked`}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: cveDbStatusColor }} />
+          <div className="label">Security Sync</div>
+          <div className="value" style={{ color: cveDbStatusColor }}>{health?.security_db?.status || '-'}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {securitySyncNext ? `next ${securitySyncNext}` : securitySyncLast ? `last ${securitySyncLast}` : `interval ${health?.security_db?.interval || '-'}`}
           </div>
         </div>
         <div className="stat-card">

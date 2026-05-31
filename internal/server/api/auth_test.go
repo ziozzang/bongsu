@@ -1845,6 +1845,13 @@ func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
 		"bongsu_security_recalculation_last_cvss_updated",
 		"bongsu_security_recalculation_last_findings_enriched",
 		"bongsu_security_recalculation_last_rematch_new_vulns",
+		"bongsu_security_db_sync_configured",
+		"bongsu_security_db_sync_running",
+		"bongsu_security_db_sync_last_error",
+		"bongsu_security_db_sync_last_attempt_timestamp_seconds",
+		"bongsu_security_db_sync_last_success_timestamp_seconds",
+		"bongsu_security_db_sync_next_timestamp_seconds",
+		"metricTimestamp",
 		"metricNumber",
 	} {
 		if !strings.Contains(fn, want) {
@@ -1889,6 +1896,9 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"Last Recalculation",
 		"lastRecalcColor",
 		"lastRecalcTitle",
+		"Security Sync",
+		"securitySyncNext",
+		"securitySyncLast",
 		"health?.security_db_revision",
 		"health?.security_db_revision_error",
 		"health?.security_db_freshness",
@@ -2073,7 +2083,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy"} {
+	for _, want := range []string{"matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
