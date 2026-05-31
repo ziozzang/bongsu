@@ -947,6 +947,8 @@ func TestHostAgentTokenBindingPersistence(t *testing.T) {
 	for _, want := range []string{
 		"ErrAgentHostTokenMismatch",
 		"UpsertHostWithAgentToken",
+		"agent_token_hash <> '' AS agent_token_set",
+		"&h.AgentTokenSet",
 		"agent_token_hash=CASE WHEN hosts.agent_token_hash=''",
 		"WHERE $12='' OR hosts.agent_token_hash='' OR hosts.agent_token_hash=$12",
 		"VerifyOrBindHostAgentToken",

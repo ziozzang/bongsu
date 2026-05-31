@@ -125,6 +125,7 @@ export interface Host {
   cpu_cores: number;
   memory_mb: number;
   agent_version: string;
+  agent_token_set?: boolean;
   owner?: string;
   team?: string;
   environment?: string;

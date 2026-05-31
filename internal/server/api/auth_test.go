@@ -2443,6 +2443,41 @@ func TestResetHostAgentTokenRequiresAdminAndAudits(t *testing.T) {
 	}
 }
 
+func TestDashboardShowsAgentTokenBindingState(t *testing.T) {
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	modelOut, err := os.ReadFile("../../shared/models/models.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBody := string(appOut)
+	apiBody := string(apiOut)
+	modelBody := string(modelOut)
+	for _, want := range []string{
+		"agent_token_set",
+		"pending bind",
+		"token hash is never exposed",
+		"Current binding:",
+		"setHost({ ...host, agent_token_set: false })",
+	} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("dashboard agent token state missing %q", want)
+		}
+	}
+	if !strings.Contains(apiBody, "agent_token_set?: boolean") {
+		t.Fatal("web Host type must expose agent_token_set boolean")
+	}
+	if !strings.Contains(modelBody, "AgentTokenSet bool") || !strings.Contains(modelBody, `json:"agent_token_set,omitempty"`) {
+		t.Fatal("server Host model must expose agent_token_set boolean")
+	}
+}
+
 func TestHostInventoryStatus(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	recent := now.Add(-1 * time.Hour)

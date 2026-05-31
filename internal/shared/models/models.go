@@ -6,26 +6,27 @@ import (
 )
 
 type Host struct {
-	ID           string    `json:"id"`
-	Hostname     string    `json:"hostname"`
-	IPAddress    string    `json:"ip_address"`
-	OSName       string    `json:"os_name"`
-	OSVersion    string    `json:"os_version"`
-	Kernel       string    `json:"kernel"`
-	Arch         string    `json:"arch"`
-	CPUModel     string    `json:"cpu_model"`
-	CPUCores     int       `json:"cpu_cores"`
-	MemoryMB     int64     `json:"memory_mb"`
-	AgentVersion string    `json:"agent_version"`
-	Owner        string    `json:"owner,omitempty"`
-	Team         string    `json:"team,omitempty"`
-	Environment  string    `json:"environment,omitempty"`
-	Criticality  string    `json:"criticality,omitempty"`
-	Tags         string    `json:"tags,omitempty"`
-	LastSeen     time.Time `json:"last_seen"`
-	AgentStatus  string    `json:"agent_status,omitempty"`
-	LastSeenAgeS int64     `json:"last_seen_age_seconds,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID            string    `json:"id"`
+	Hostname      string    `json:"hostname"`
+	IPAddress     string    `json:"ip_address"`
+	OSName        string    `json:"os_name"`
+	OSVersion     string    `json:"os_version"`
+	Kernel        string    `json:"kernel"`
+	Arch          string    `json:"arch"`
+	CPUModel      string    `json:"cpu_model"`
+	CPUCores      int       `json:"cpu_cores"`
+	MemoryMB      int64     `json:"memory_mb"`
+	AgentVersion  string    `json:"agent_version"`
+	AgentTokenSet bool      `json:"agent_token_set,omitempty"`
+	Owner         string    `json:"owner,omitempty"`
+	Team          string    `json:"team,omitempty"`
+	Environment   string    `json:"environment,omitempty"`
+	Criticality   string    `json:"criticality,omitempty"`
+	Tags          string    `json:"tags,omitempty"`
+	LastSeen      time.Time `json:"last_seen"`
+	AgentStatus   string    `json:"agent_status,omitempty"`
+	LastSeenAgeS  int64     `json:"last_seen_age_seconds,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 type Scan struct {

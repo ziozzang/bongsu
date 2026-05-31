@@ -2381,12 +2381,12 @@ GROUP BY status`, days)
 	return out, rows.Err()
 }
 
-const hostCols = `id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, owner, team, environment, criticality, tags::text, last_seen, created_at`
+const hostCols = `id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, agent_token_hash <> '' AS agent_token_set, owner, team, environment, criticality, tags::text, last_seen, created_at`
 
 func scanHost(scanner interface{ Scan(...interface{}) error }, h *models.Host) error {
 	return scanner.Scan(&h.ID, &h.Hostname, &h.IPAddress, &h.OSName, &h.OSVersion,
 		&h.Kernel, &h.Arch, &h.CPUModel, &h.CPUCores, &h.MemoryMB, &h.AgentVersion,
-		&h.Owner, &h.Team, &h.Environment, &h.Criticality, &h.Tags, &h.LastSeen, &h.CreatedAt)
+		&h.AgentTokenSet, &h.Owner, &h.Team, &h.Environment, &h.Criticality, &h.Tags, &h.LastSeen, &h.CreatedAt)
 }
 
 func (db *DB) ListHosts(ctx context.Context) ([]models.Host, error) {

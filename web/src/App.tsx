@@ -1059,6 +1059,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
             <tr>
               <th>Hostname</th>
               <th>Agent</th>
+              <th>Trust</th>
               <th>OS</th>
               <th>Owner</th>
               <th>Env</th>
@@ -1082,6 +1083,11 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
                   <td>
                     <span className="badge" style={{ color: agentStatusColor(h.agent_status), background: 'var(--bg-raised)' }}>{h.agent_status || 'unknown'}</span>
                     <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{formatAge(h.last_seen_age_seconds)}</div>
+                  </td>
+                  <td>
+                    <span className="badge" style={{ color: h.agent_token_set ? 'var(--low)' : 'var(--medium)' }}>
+                      {h.agent_token_set ? 'bound' : 'pending'}
+                    </span>
                   </td>
                   <td>{h.os_name} {h.os_version}</td>
                   <td>{h.owner || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
@@ -1181,6 +1187,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
     setAgentTokenMsg('Resetting...');
     try {
       await api.resetHostAgentToken(host.id);
+      setHost({ ...host, agent_token_set: false });
       setAgentTokenMsg('Agent token reset');
     } catch {
       setAgentTokenMsg('Reset failed');
@@ -1232,6 +1239,12 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
           <div style={{ fontSize: '0.875rem', color: agentStatusColor(host.agent_status), fontWeight: 700, textTransform: 'uppercase' }}>{host.agent_status || 'unknown'}</div>
           <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{formatAge(host.last_seen_age_seconds)} since check-in</div>
         </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: host.agent_token_set ? 'var(--low)' : 'var(--medium)' }} />
+          <div className="label">Agent Trust</div>
+          <div style={{ fontSize: '0.875rem', color: host.agent_token_set ? 'var(--low)' : 'var(--medium)', fontWeight: 700, textTransform: 'uppercase' }}>{host.agent_token_set ? 'bound' : 'pending bind'}</div>
+          <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>token hash is never exposed</div>
+        </div>
         <div className="stat-card"><div className="label">OS</div><div style={{ fontSize: '0.875rem' }}>{host.os_name} {host.os_version}</div></div>
         <div className="stat-card"><div className="label">Kernel</div><div className="mono" style={{ fontSize: '0.875rem' }}>{host.kernel}</div></div>
         <div className="stat-card"><div className="label">CPU</div><div style={{ fontSize: '0.875rem' }}>{host.cpu_cores} cores</div></div>
@@ -1275,6 +1288,9 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
         </div>
         <div className="filters">
           <button onClick={resetAgentToken}>Reset Agent Token</button>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            Current binding: {host.agent_token_set ? 'bound to this host' : 'waiting for next valid agent token'}
+          </span>
           {agentTokenMsg && <span style={{ color: agentTokenMsg.includes('failed') ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>{agentTokenMsg}</span>}
         </div>
       </div>
