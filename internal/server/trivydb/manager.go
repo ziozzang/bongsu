@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -143,7 +144,14 @@ func (m *Manager) downloadArgs() []string {
 
 func (m *Manager) LoadFromFile(path string) error {
 	dbDir := filepath.Join(m.cacheDir, "db")
-	os.MkdirAll(dbDir, 0755)
+	if err := os.MkdirAll(m.cacheDir, 0755); err != nil {
+		return fmt.Errorf("create cache dir: %w", err)
+	}
+	staging, err := os.MkdirTemp(m.cacheDir, ".bongsu-trivy-db-*")
+	if err != nil {
+		return fmt.Errorf("create staging dir: %w", err)
+	}
+	defer os.RemoveAll(staging)
 
 	f, err := os.Open(path)
 	if err != nil {
@@ -166,15 +174,19 @@ func (m *Manager) LoadFromFile(path string) error {
 		if err != nil {
 			return fmt.Errorf("tar read: %w", err)
 		}
-		if !isSafePath(m.cacheDir, hdr.Name) {
+		if !isSafePath(staging, hdr.Name) {
 			return fmt.Errorf("unsafe path in archive: %s", hdr.Name)
 		}
-		target := filepath.Join(m.cacheDir, hdr.Name)
+		target := filepath.Join(staging, hdr.Name)
 		if hdr.Typeflag == tar.TypeDir {
-			os.MkdirAll(target, 0755)
+			if err := os.MkdirAll(target, 0755); err != nil {
+				return fmt.Errorf("create %s: %w", target, err)
+			}
 			continue
 		}
-		os.MkdirAll(filepath.Dir(target), 0755)
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			return fmt.Errorf("create %s: %w", filepath.Dir(target), err)
+		}
 		out, err := os.Create(target)
 		if err != nil {
 			out.Close()
@@ -185,6 +197,27 @@ func (m *Manager) LoadFromFile(path string) error {
 			return fmt.Errorf("write %s: %w", target, err)
 		}
 		out.Close()
+	}
+	stagedDB := filepath.Join(staging, "db")
+	if info, err := os.Stat(filepath.Join(stagedDB, "trivy.db")); err != nil || info.Size() == 0 {
+		return fmt.Errorf("archive missing db/trivy.db")
+	}
+	backup := filepath.Join(m.cacheDir, fmt.Sprintf(".bongsu-trivy-db-backup-%d", time.Now().UnixNano()))
+	hadExisting := false
+	if _, err := os.Stat(dbDir); err == nil {
+		hadExisting = true
+		if err := os.Rename(dbDir, backup); err != nil {
+			return fmt.Errorf("backup existing db: %w", err)
+		}
+	}
+	if err := os.Rename(stagedDB, dbDir); err != nil {
+		if hadExisting {
+			_ = os.Rename(backup, dbDir)
+		}
+		return fmt.Errorf("activate staged db: %w", err)
+	}
+	if hadExisting {
+		_ = os.RemoveAll(backup)
 	}
 
 	m.mu.Lock()
@@ -256,6 +289,9 @@ func (m *Manager) ArchiveBytes() ([]byte, error) {
 }
 
 func isSafePath(base, name string) bool {
+	if filepath.IsAbs(name) {
+		return false
+	}
 	cleaned := filepath.Join(base, name)
 	abs, err := filepath.Abs(cleaned)
 	if err != nil {
@@ -265,5 +301,9 @@ func isSafePath(base, name string) bool {
 	if err != nil {
 		return false
 	}
-	return len(abs) >= len(baseAbs) && abs[:len(baseAbs)] == baseAbs
+	rel, err := filepath.Rel(baseAbs, abs)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
