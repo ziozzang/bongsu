@@ -428,6 +428,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
+	ingestErrors := []string{}
 
 	for i := range report.Containers {
 		if report.Containers[i].ID == "" {
@@ -438,6 +439,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.db.InsertContainers(ctx, report.Containers); err != nil {
 		log.Printf("insert containers: %v", err)
+		ingestErrors = append(ingestErrors, "containers: "+err.Error())
 	}
 
 	for i := range report.Packages {
@@ -455,6 +457,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.db.InsertPackages(ctx, report.Packages); err != nil {
 		log.Printf("insert packages: %v", err)
+		ingestErrors = append(ingestErrors, "packages: "+err.Error())
 	}
 
 	insertedVulns := 0
@@ -469,6 +472,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		}
 		if result, err := s.db.InsertVulnerabilities(ctx, report.Vulns); err != nil {
 			log.Printf("insert vulns: %v", err)
+			ingestErrors = append(ingestErrors, "vulnerabilities: "+err.Error())
 		} else if result != nil {
 			insertedVulns += result.Inserted
 			skippedVulns += result.Skipped
@@ -481,6 +485,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		vulns, err := s.matcher.Match(ctx, report.Packages, report.Host)
 		if err != nil {
 			log.Printf("Server-side CVE matching failed: %v", err)
+			ingestErrors = append(ingestErrors, "server_match: "+err.Error())
 		} else {
 			log.Printf("Matched %d vulnerabilities for scan %s", len(vulns), report.ScanID)
 			for i := range vulns {
@@ -492,6 +497,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 			}
 			if result, err := s.db.InsertVulnerabilities(ctx, vulns); err != nil {
 				log.Printf("insert matched vulns: %v", err)
+				ingestErrors = append(ingestErrors, "matched_vulnerabilities: "+err.Error())
 			} else if result != nil {
 				insertedVulns += result.Inserted
 				skippedVulns += result.Skipped
@@ -511,6 +517,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.db.InsertUserAccounts(ctx, report.Users); err != nil {
 		log.Printf("insert users: %v", err)
+		ingestErrors = append(ingestErrors, "users: "+err.Error())
 	}
 
 	for i := range report.Processes {
@@ -522,6 +529,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.db.InsertProcessSnapshots(ctx, report.Processes); err != nil {
 		log.Printf("insert processes: %v", err)
+		ingestErrors = append(ingestErrors, "processes: "+err.Error())
 	}
 
 	for i := range report.Ports {
@@ -533,11 +541,13 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.db.InsertPorts(ctx, report.Ports); err != nil {
 		log.Printf("insert ports: %v", err)
+		ingestErrors = append(ingestErrors, "ports: "+err.Error())
 	}
 
-	scanStatus := reportScanStatus(skippedVulns)
+	scanStatus := reportScanStatus(skippedVulns, len(ingestErrors))
 	if err := s.db.CompleteScan(ctx, report.ScanID, scanStatus); err != nil {
 		log.Printf("complete scan: %v", err)
+		ingestErrors = append(ingestErrors, "complete_scan: "+err.Error())
 	}
 	sevCounts, vulnTotal, err := s.db.GetVulnCountsByScan(ctx, report.ScanID)
 	if err != nil {
@@ -545,7 +555,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		sevCounts = map[string]int{}
 	}
 	inventoryStatus := reportInventoryStatus(len(report.Packages), scanStatus)
-	s.audit(r, "agent.report", "scan", report.ScanID, reportAuditStatus(skippedVulns), map[string]any{
+	s.audit(r, "agent.report", "scan", report.ScanID, reportAuditStatus(skippedVulns, len(ingestErrors)), map[string]any{
 		"host_id":          report.Host.ID,
 		"hostname":         report.Host.Hostname,
 		"packages":         len(report.Packages),
@@ -558,9 +568,10 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"processes":        len(report.Processes),
 		"ports":            len(report.Ports),
 		"scan_status":      scanStatus,
+		"ingest_errors":    ingestErrors,
 	})
 	if s.notifier.ShouldSendScan(sevCounts, inventoryStatus) {
-		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts))
+		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, ingestErrors))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
@@ -569,15 +580,15 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func reportAuditStatus(skippedVulns int) string {
-	if skippedVulns > 0 {
+func reportAuditStatus(skippedVulns, ingestErrorCount int) string {
+	if skippedVulns > 0 || ingestErrorCount > 0 {
 		return "degraded"
 	}
 	return "ok"
 }
 
-func reportScanStatus(skippedVulns int) string {
-	if skippedVulns > 0 {
+func reportScanStatus(skippedVulns, ingestErrorCount int) string {
+	if skippedVulns > 0 || ingestErrorCount > 0 {
 		return "degraded"
 	}
 	return "completed"
@@ -593,7 +604,7 @@ func reportInventoryStatus(packageCount int, scanStatus string) string {
 	return "healthy"
 }
 
-func reportWebhookPayload(report *models.ScanReport, scanStatus, inventoryStatus string, insertedVulns, skippedVulns, vulnTotal int, sevCounts map[string]int) map[string]any {
+func reportWebhookPayload(report *models.ScanReport, scanStatus, inventoryStatus string, insertedVulns, skippedVulns, vulnTotal int, sevCounts map[string]int, ingestErrors []string) map[string]any {
 	return map[string]any{
 		"scan_id":          report.ScanID,
 		"scan_status":      scanStatus,
@@ -609,6 +620,7 @@ func reportWebhookPayload(report *models.ScanReport, scanStatus, inventoryStatus
 		"vulnerabilities":  vulnTotal,
 		"vulns_inserted":   insertedVulns,
 		"vulns_skipped":    skippedVulns,
+		"ingest_errors":    ingestErrors,
 		"severity_counts":  sevCounts,
 	}
 }

@@ -43,7 +43,7 @@ The merge strategy is:
 Scanner package ecosystems are kept distro-specific for OS advisories. For example, Trivy `ubuntu` packages are stored as `Ubuntu` rather than collapsed into `Debian`, so Ubuntu advisories can match without weakening Debian/Ubuntu separation.
 Version comparisons treat pre-release markers such as `alpha`, `beta`, and `rc` as lower than the corresponding final release so release candidates are not incorrectly considered fixed.
 Scanner-imported vulnerabilities are bound back to packages by scanner target and package name, with name-only fallback only when the package name is unique in the scan. This avoids linking same-named packages from different ecosystems or manifests to the wrong package row.
-Vulnerability inserts drop dangling scanner rows that have no package, scan, host, or vulnerability identity instead of letting one malformed row discard the whole batch. Report audit metadata records inserted and skipped vulnerability counts; scans with skipped vulnerability rows are stored and audited with `degraded` status so operators can filter for scanner output quality issues while still using the scan as the latest inventory.
+Vulnerability inserts drop dangling scanner rows that have no package, scan, host, or vulnerability identity instead of letting one malformed row discard the whole batch. Report audit metadata records inserted and skipped vulnerability counts plus table-level ingest errors. Scans with skipped vulnerability rows or partial inventory persistence failures are stored, audited, and webhooked with `degraded` status so operators can filter for scanner output quality issues while still using the scan as the latest inventory.
 
 ## Connected Update Flow
 
@@ -138,7 +138,7 @@ Filtered vulnerability views can be exported through `/api/vulnerabilities/expor
 
 ## Webhook Notifications
 
-Operators can configure `BONGSU_WEBHOOK_URL` to receive outbound JSON webhooks for `scan.completed` and `security_db.updated`. `scan.completed` includes host identity, scan status, inventory status, package/container counts, inserted/skipped vulnerability row counts, vulnerability totals, and severity counts; `BONGSU_WEBHOOK_MIN_SEVERITY` controls the minimum severity that triggers scan notifications, and `BONGSU_WEBHOOK_INVENTORY_STATUSES` triggers notifications for selected SBOM health states such as `empty` or `degraded`. `BONGSU_WEBHOOK_SECRET` signs payloads with `X-Bongsu-Signature-256: sha256=<hex hmac>` for receiver verification.
+Operators can configure `BONGSU_WEBHOOK_URL` to receive outbound JSON webhooks for `scan.completed` and `security_db.updated`. `scan.completed` includes host identity, scan status, inventory status, package/container counts, inserted/skipped vulnerability row counts, ingest errors, vulnerability totals, and severity counts; `BONGSU_WEBHOOK_MIN_SEVERITY` controls the minimum severity that triggers scan notifications, and `BONGSU_WEBHOOK_INVENTORY_STATUSES` triggers notifications for selected SBOM health states such as `empty` or `degraded`. `BONGSU_WEBHOOK_SECRET` signs payloads with `X-Bongsu-Signature-256: sha256=<hex hmac>` for receiver verification.
 
 ## Test Expectations
 

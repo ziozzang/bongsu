@@ -362,16 +362,22 @@ func TestHostInventoryStatus(t *testing.T) {
 }
 
 func TestReportAuditStatus(t *testing.T) {
-	if got := reportAuditStatus(0); got != "ok" {
+	if got := reportAuditStatus(0, 0); got != "ok" {
 		t.Fatalf("status = %q, want ok", got)
 	}
-	if got := reportAuditStatus(2); got != "degraded" {
+	if got := reportAuditStatus(2, 0); got != "degraded" {
 		t.Fatalf("status = %q, want degraded", got)
 	}
-	if got := reportScanStatus(0); got != "completed" {
+	if got := reportAuditStatus(0, 1); got != "degraded" {
+		t.Fatalf("status = %q, want degraded", got)
+	}
+	if got := reportScanStatus(0, 0); got != "completed" {
 		t.Fatalf("scan status = %q, want completed", got)
 	}
-	if got := reportScanStatus(2); got != "degraded" {
+	if got := reportScanStatus(2, 0); got != "degraded" {
+		t.Fatalf("scan status = %q, want degraded", got)
+	}
+	if got := reportScanStatus(0, 1); got != "degraded" {
 		t.Fatalf("scan status = %q, want degraded", got)
 	}
 	if got := reportInventoryStatus(0, "degraded"); got != "empty" {
@@ -399,7 +405,7 @@ func TestReportWebhookPayloadIncludesQualitySignals(t *testing.T) {
 		Packages:   []models.Package{{ID: "pkg-1"}},
 		Containers: []models.ContainerAsset{{ID: "ctr-1"}},
 	}
-	payload := reportWebhookPayload(report, "degraded", "degraded", 3, 2, 5, map[string]int{"HIGH": 1})
+	payload := reportWebhookPayload(report, "degraded", "degraded", 3, 2, 5, map[string]int{"HIGH": 1}, []string{"packages: failed"})
 	tests := map[string]any{
 		"scan_status":      "degraded",
 		"inventory_status": "degraded",
@@ -416,6 +422,9 @@ func TestReportWebhookPayloadIncludesQualitySignals(t *testing.T) {
 	}
 	if counts, ok := payload["severity_counts"].(map[string]int); !ok || counts["HIGH"] != 1 {
 		t.Fatalf("severity_counts = %#v", payload["severity_counts"])
+	}
+	if errs, ok := payload["ingest_errors"].([]string); !ok || len(errs) != 1 {
+		t.Fatalf("ingest_errors = %#v", payload["ingest_errors"])
 	}
 }
 
