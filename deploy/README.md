@@ -160,6 +160,7 @@ spec:
 | `BONGSU_API_KEY` | *required* | API key for authentication |
 | `BONGSU_AGENT_API_KEY` | `BONGSU_API_KEY` | Agent-only report upload and force-scan polling key |
 | `BONGSU_INSTALL_TOKEN` | empty | Optional token required for `/api/install.sh` and binary downloads |
+| `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC |
 | `BONGSU_PORT` | `8080` | Server listen port |
 | `BONGSU_DB_DSN` | `postgres://bongsu:...` | PostgreSQL connection string |
 | `BONGSU_AUTO_MIGRATE` | `true` | Run DB migrations on startup |
@@ -198,11 +199,29 @@ spec:
 | `POST` | `/api/admin/security-db/import` | Import exported security DB bundle |
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
+| `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |
+| `POST` | `/api/admin/rbac/policies` | Create RBAC policy |
 | `POST` | `/api/scan-requests` | Request force scan for host/all |
 | `GET` | `/api/scan-requests` | List force scan requests |
 | `POST` | `/api/agent/scan-requests/claim` | Agent claims a pending force scan |
 | `POST` | `/api/agent/scan-requests/{id}/complete` | Agent completes/fails a force scan |
 | `GET` | `/api/health` | Health check |
+
+## RBAC Quick Start
+
+```bash
+# Map a viewer API key to subject "alice"
+echo 'BONGSU_VIEWER_API_KEYS=viewer-secret:alice' >> deploy/.env
+
+# Create subject and grant read access to one host
+curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
+  -d '{"subject_type":"user","external_id":"alice","display_name":"Alice"}' \
+  http://localhost:8080/api/admin/rbac/subjects
+
+curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
+  -d '{"subject_external_id":"alice","resource_type":"host","resource_id":"HOST_ID","permission":"read"}' \
+  http://localhost:8080/api/admin/rbac/policies
+```
 
 ## Troubleshooting
 

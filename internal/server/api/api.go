@@ -33,6 +33,7 @@ type Server struct {
 	apiKey       string
 	agentKey     string
 	installToken string
+	viewerKeys   map[string]string
 	webAuth      bool
 	mux          *http.ServeMux
 	matcher      *cvematch.Matcher
@@ -57,6 +58,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		apiKey:       apiKey,
 		agentKey:     agentKey,
 		installToken: os.Getenv("BONGSU_INSTALL_TOKEN"),
+		viewerKeys:   parseViewerKeys(os.Getenv("BONGSU_VIEWER_API_KEYS")),
 		webAuth:      os.Getenv("BONGSU_WEB_AUTH") != "false",
 		mux:          http.NewServeMux(),
 		matcher:      matcher,
@@ -65,6 +67,22 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	}
 	s.routes()
 	return s
+}
+
+func parseViewerKeys(raw string) map[string]string {
+	out := map[string]string{}
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		parts := strings.SplitN(item, ":", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			continue
+		}
+		out[parts[0]] = parts[1]
+	}
+	return out
 }
 
 func (s *Server) Handler() http.Handler {
@@ -113,6 +131,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/admin/cve-db/recalc-cvss", s.handleCveDbRecalcCVSS)
 	s.mux.HandleFunc("GET /api/admin/cve-db/export", s.handleCveDbExport)
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
+	s.mux.HandleFunc("POST /api/admin/rbac/subjects", s.handleUpsertAccessSubject)
+	s.mux.HandleFunc("POST /api/admin/rbac/policies", s.handleUpsertAccessPolicy)
 	s.mux.HandleFunc("GET /api/cve-db/stats", s.handleCveDbStats)
 	s.mux.HandleFunc("GET /api/cve-db/search", s.handleCveDbSearch)
 	s.serveDashboard()
@@ -159,7 +179,7 @@ func (s *Server) authenticateWeb(r *http.Request) bool {
 	if !s.webAuth {
 		return true
 	}
-	return s.matchKey(r.Header.Get("X-API-Key"), s.apiKey)
+	return s.authenticateAdmin(r) || s.viewerSubject(r) != ""
 }
 
 func (s *Server) authenticateAdmin(r *http.Request) bool {
@@ -180,6 +200,35 @@ func (s *Server) authenticateInstall(r *http.Request) bool {
 		token = r.URL.Query().Get("token")
 	}
 	return s.matchKey(token, s.installToken) || s.authenticateAdmin(r)
+}
+
+func (s *Server) viewerSubject(r *http.Request) string {
+	key := r.Header.Get("X-API-Key")
+	if key == "" {
+		return ""
+	}
+	return s.viewerKeys[key]
+}
+
+func (s *Server) accessScope(r *http.Request) db.AccessScope {
+	if s.authenticateAdmin(r) || !s.webAuth {
+		return db.AccessScope{All: true}
+	}
+	subject := s.viewerSubject(r)
+	if subject == "" {
+		return db.AccessScope{}
+	}
+	scope, err := s.db.GetAccessScope(r.Context(), subject)
+	if err != nil {
+		log.Printf("rbac scope %s: %v", subject, err)
+		return db.AccessScope{}
+	}
+	return scope
+}
+
+func (s *Server) canReadHost(r *http.Request, hostID string) bool {
+	scope := s.accessScope(r)
+	return scope.CanReadHost(hostID)
 }
 
 func (s *Server) matchKey(got, want string) bool {
@@ -345,6 +394,7 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	scope := s.accessScope(r)
 	hosts, err := s.db.ListHosts(ctx)
 	if err != nil {
 		log.Printf("list hosts: %v", err)
@@ -363,12 +413,16 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		VulnCounts map[string]int `json:"vuln_counts"`
 	}
 
-	result := make([]hostWithVulns, len(hosts))
-	for i, h := range hosts {
-		result[i] = hostWithVulns{Host: h, VulnCounts: vulnCounts[h.ID]}
-		if result[i].VulnCounts == nil {
-			result[i].VulnCounts = map[string]int{}
+	result := make([]hostWithVulns, 0, len(hosts))
+	for _, h := range hosts {
+		if !scope.CanReadHost(h.ID) {
+			continue
 		}
+		item := hostWithVulns{Host: h, VulnCounts: vulnCounts[h.ID]}
+		if item.VulnCounts == nil {
+			item.VulnCounts = map[string]int{}
+		}
+		result = append(result, item)
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -379,6 +433,10 @@ func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hostID := r.PathValue("id")
+	if !s.canReadHost(r, hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	ctx := r.Context()
 
 	host, err := s.db.GetHost(ctx, hostID)
@@ -395,6 +453,10 @@ func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hostID := r.PathValue("id")
+	if !s.canReadHost(r, hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	ctx := r.Context()
 
 	limit := intParam(r, "limit", 100)
@@ -419,6 +481,10 @@ func (s *Server) handleHostVulnCounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	hostID := r.PathValue("id")
+	if !s.canReadHost(r, hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	ctx := r.Context()
 
 	counts, err := s.db.GetHostVulnCounts(ctx, hostID)
@@ -438,6 +504,15 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 	ctx := r.Context()
 
 	hostID := r.URL.Query().Get("host_id")
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []models.Vulnerability{}, "total": 0})
+		return
+	}
+	if hostID != "" && !scope.CanReadHost(hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	severity := r.URL.Query().Get("severity")
 	pkgName := r.URL.Query().Get("pkg_name")
 	container := r.URL.Query().Get("container")
@@ -449,6 +524,7 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 
 	vulns, total, err := s.db.ListVulnerabilities(ctx, db.VulnFilter{
 		HostID:       hostID,
+		HostIDs:      scope.HostIDs,
 		Severity:     severity,
 		PkgName:      pkgName,
 		Container:    container,
@@ -493,6 +569,11 @@ func (s *Server) handleCveSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []models.Vulnerability{}, "total": 0})
+		return
+	}
 
 	query := r.URL.Query().Get("q")
 	pkgName := r.URL.Query().Get("pkg_name")
@@ -507,6 +588,7 @@ func (s *Server) handleCveSearch(w http.ResponseWriter, r *http.Request) {
 		Query:    query,
 		PkgName:  pkgName,
 		Severity: severity,
+		HostIDs:  scope.HostIDs,
 		MinCVSS:  minCVSS,
 		SortBy:   sortBy,
 		SortDesc: sortOrder != "asc",
@@ -545,13 +627,20 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	scope := s.accessScope(r)
 
 	hosts, _ := s.db.ListHosts(ctx)
 	vulnCounts, _ := s.db.GetVulnCountsByHost(ctx)
 
 	totalVulns := 0
 	sevCounts := map[string]int{}
-	for _, vc := range vulnCounts {
+	visibleHosts := 0
+	for _, h := range hosts {
+		if !scope.CanReadHost(h.ID) {
+			continue
+		}
+		visibleHosts++
+		vc := vulnCounts[h.ID]
 		for sev, cnt := range vc {
 			totalVulns += cnt
 			sevCounts[sev] += cnt
@@ -559,7 +648,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"total_hosts":           len(hosts),
+		"total_hosts":           visibleHosts,
 		"total_vulnerabilities": totalVulns,
 		"severity_counts":       sevCounts,
 	})
@@ -757,6 +846,15 @@ func (s *Server) handlePackageVulns(w http.ResponseWriter, r *http.Request) {
 	}
 	pkgID := r.PathValue("id")
 	ctx := r.Context()
+	hostID, err := s.db.GetPackageHostID(ctx, pkgID)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if !s.canReadHost(r, hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 
 	vulns, err := s.db.GetVulnsByPackageID(ctx, pkgID)
 	if err != nil {
@@ -776,9 +874,20 @@ func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []models.Package{}, "total": 0})
+		return
+	}
+	hostID := r.URL.Query().Get("host_id")
+	if hostID != "" && !scope.CanReadHost(hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 
 	f := db.PackageFilter{
-		HostID:     r.URL.Query().Get("host_id"),
+		HostID:     hostID,
+		HostIDs:    scope.HostIDs,
 		Container:  r.URL.Query().Get("container"),
 		PkgType:    r.URL.Query().Get("pkg_type"),
 		Source:     r.URL.Query().Get("source"),
@@ -826,10 +935,19 @@ func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	hostID := r.URL.Query().Get("host_id")
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []models.Scan{}, "total": 0})
+		return
+	}
+	if hostID != "" && !scope.CanReadHost(hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	limit := intParam(r, "limit", 50)
 	offset := intParam(r, "offset", 0)
 
-	scans, total, err := s.db.ListScans(ctx, hostID, limit, offset)
+	scans, total, err := s.db.ListScans(ctx, hostID, scope.HostIDs, limit, offset)
 	if err != nil {
 		log.Printf("list scans: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
@@ -1474,6 +1592,67 @@ func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sources": sources})
+}
+
+func (s *Server) handleUpsertAccessSubject(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		ID          string `json:"id"`
+		SubjectType string `json:"subject_type"`
+		ExternalID  string `json:"external_id"`
+		DisplayName string `json:"display_name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.SubjectType == "" {
+		body.SubjectType = "user"
+	}
+	if body.ExternalID == "" {
+		http.Error(w, "external_id is required", http.StatusBadRequest)
+		return
+	}
+	if err := s.db.UpsertAccessSubject(r.Context(), body.ID, body.SubjectType, body.ExternalID, body.DisplayName); err != nil {
+		log.Printf("upsert access subject: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		ID                string `json:"id"`
+		SubjectExternalID string `json:"subject_external_id"`
+		ResourceType      string `json:"resource_type"`
+		ResourceID        string `json:"resource_id"`
+		Permission        string `json:"permission"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.SubjectExternalID == "" || body.ResourceType == "" {
+		http.Error(w, "subject_external_id and resource_type are required", http.StatusBadRequest)
+		return
+	}
+	if body.Permission == "" {
+		body.Permission = "read"
+	}
+	if err := s.db.UpsertAccessPolicy(r.Context(), body.ID, body.SubjectExternalID, body.ResourceType, body.ResourceID, body.Permission); err != nil {
+		log.Printf("upsert access policy: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {

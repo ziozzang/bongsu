@@ -13,8 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
@@ -592,7 +591,7 @@ func (db *DB) InsertPorts(ctx context.Context, ports []models.PortInfo) error {
 	return tx.Commit()
 }
 
-func (db *DB) ListScans(ctx context.Context, hostID string, limit, offset int) ([]models.Scan, int, error) {
+func (db *DB) ListScans(ctx context.Context, hostID string, hostIDs []string, limit, offset int) ([]models.Scan, int, error) {
 	countQ := `SELECT count(*) FROM scans WHERE 1=1`
 	dataQ := `SELECT id, host_id, scan_type, status, started_at, finished_at, created_at FROM scans WHERE 1=1`
 	args := []any{}
@@ -602,6 +601,11 @@ func (db *DB) ListScans(ctx context.Context, hostID string, limit, offset int) (
 		countQ += fmt.Sprintf(" AND host_id=$%d", n)
 		dataQ += fmt.Sprintf(" AND host_id=$%d", n)
 		args = append(args, hostID)
+		n++
+	} else if len(hostIDs) > 0 {
+		countQ += fmt.Sprintf(" AND host_id = ANY($%d)", n)
+		dataQ += fmt.Sprintf(" AND host_id = ANY($%d)", n)
+		args = append(args, pqStringArray(hostIDs))
 		n++
 	}
 
@@ -722,6 +726,86 @@ WHERE id=$1 AND status IN ('pending','claimed')`, id, status, message)
 	return err
 }
 
+type AccessScope struct {
+	All     bool
+	HostIDs []string
+}
+
+func (s AccessScope) CanReadHost(hostID string) bool {
+	if s.All {
+		return true
+	}
+	for _, id := range s.HostIDs {
+		if id == hostID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s AccessScope) Empty() bool {
+	return !s.All && len(s.HostIDs) == 0
+}
+
+func pqStringArray(v []string) any {
+	return pq.Array(v)
+}
+
+func (db *DB) GetAccessScope(ctx context.Context, externalID string) (AccessScope, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT p.resource_type, p.resource_id
+FROM access_subjects s
+JOIN access_policies p ON p.subject_id = s.id
+WHERE s.external_id=$1 AND p.permission IN ('read','admin')`, externalID)
+	if err != nil {
+		return AccessScope{}, err
+	}
+	defer rows.Close()
+	scope := AccessScope{}
+	for rows.Next() {
+		var rt, rid string
+		if err := rows.Scan(&rt, &rid); err != nil {
+			return AccessScope{}, err
+		}
+		switch rt {
+		case "all":
+			scope.All = true
+		case "host":
+			if rid != "" && rid != "*" {
+				scope.HostIDs = append(scope.HostIDs, rid)
+			}
+		}
+	}
+	return scope, rows.Err()
+}
+
+func (db *DB) UpsertAccessSubject(ctx context.Context, id, subjectType, externalID, displayName string) error {
+	if id == "" {
+		id = uuid.New().String()
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO access_subjects (id, subject_type, external_id, display_name, created_at, updated_at)
+VALUES ($1,$2,$3,$4,now(),now())
+ON CONFLICT (subject_type, external_id) DO UPDATE SET display_name=EXCLUDED.display_name, updated_at=now()`,
+		id, subjectType, externalID, displayName)
+	return err
+}
+
+func (db *DB) UpsertAccessPolicy(ctx context.Context, id, subjectExternalID, resourceType, resourceID, permission string) error {
+	if id == "" {
+		id = uuid.New().String()
+	}
+	if resourceID == "" {
+		resourceID = "*"
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO access_policies (id, subject_id, resource_type, resource_id, permission, created_at)
+SELECT $1, s.id, $3, $4, $5, now()
+FROM access_subjects s
+WHERE s.external_id=$2
+ON CONFLICT (subject_id, resource_type, resource_id, permission) DO NOTHING`,
+		id, subjectExternalID, resourceType, resourceID, permission)
+	return err
+}
+
 func (db *DB) ListHosts(ctx context.Context) ([]models.Host, error) {
 	q := `SELECT id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, last_seen, created_at FROM hosts ORDER BY hostname`
 	rows, err := db.QueryContext(ctx, q)
@@ -759,6 +843,7 @@ const latestScansSub = `(SELECT DISTINCT ON (host_id) id FROM scans WHERE status
 
 type VulnFilter struct {
 	HostID       string
+	HostIDs      []string
 	Severity     string
 	PkgName      string
 	Container    string
@@ -785,6 +870,10 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	if f.HostID != "" {
 		baseQ += fmt.Sprintf(" AND v.host_id=$%d", argN)
 		args = append(args, f.HostID)
+		argN++
+	} else if len(f.HostIDs) > 0 {
+		baseQ += fmt.Sprintf(" AND v.host_id = ANY($%d)", argN)
+		args = append(args, pqStringArray(f.HostIDs))
 		argN++
 	}
 	if f.Severity != "" {
@@ -935,6 +1024,7 @@ func (db *DB) GetLatestPackages(ctx context.Context, hostID string, limit, offse
 
 type PackageFilter struct {
 	HostID     string
+	HostIDs    []string
 	Container  string
 	PkgType    string
 	Source     string
@@ -960,6 +1050,10 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 	if f.HostID != "" {
 		baseQ += fmt.Sprintf(" AND p.host_id=$%d", n)
 		args = append(args, f.HostID)
+		n++
+	} else if len(f.HostIDs) > 0 {
+		baseQ += fmt.Sprintf(" AND p.host_id = ANY($%d)", n)
+		args = append(args, pqStringArray(f.HostIDs))
 		n++
 	}
 	if f.Container != "" {
@@ -1014,6 +1108,12 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 	return pkgs, total, nil
 }
 
+func (db *DB) GetPackageHostID(ctx context.Context, packageID string) (string, error) {
+	var hostID string
+	err := db.QueryRowContext(ctx, `SELECT host_id FROM packages WHERE id=$1`, packageID).Scan(&hostID)
+	return hostID, err
+}
+
 type FilterOptions struct {
 	HostIDs    []string `json:"host_ids"`
 	Containers []string `json:"containers"`
@@ -1052,6 +1152,7 @@ type CveSearchFilter struct {
 	Query    string
 	PkgName  string
 	Severity string
+	HostIDs  []string
 	MinCVSS  float64
 	SortBy   string
 	SortDesc bool
@@ -1075,6 +1176,11 @@ func (db *DB) SearchCVEs(ctx context.Context, f CveSearchFilter, limit, offset i
 	if f.Severity != "" {
 		baseQ += fmt.Sprintf(" AND v.severity=$%d", argN)
 		args = append(args, f.Severity)
+		argN++
+	}
+	if len(f.HostIDs) > 0 {
+		baseQ += fmt.Sprintf(" AND v.host_id = ANY($%d)", argN)
+		args = append(args, pqStringArray(f.HostIDs))
 		argN++
 	}
 	if f.MinCVSS > 0 {

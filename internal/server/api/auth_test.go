@@ -55,3 +55,26 @@ func TestWebAuthCanBeDisabledWithoutOpeningAdmin(t *testing.T) {
 		t.Fatal("web auth disabled must not open agent API")
 	}
 }
+
+func TestViewerKeys(t *testing.T) {
+	keys := parseViewerKeys("viewer-key:alice, team-key:devops, malformed")
+	if keys["viewer-key"] != "alice" {
+		t.Fatalf("viewer-key subject = %q", keys["viewer-key"])
+	}
+	if keys["team-key"] != "devops" {
+		t.Fatalf("team-key subject = %q", keys["team-key"])
+	}
+
+	s := &Server{apiKey: "admin-key", viewerKeys: keys, webAuth: true}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-API-Key", "viewer-key")
+	if !s.authenticateWeb(req) {
+		t.Fatal("viewer key should authenticate web")
+	}
+	if s.authenticateAdmin(req) {
+		t.Fatal("viewer key must not authenticate admin")
+	}
+	if got := s.viewerSubject(req); got != "alice" {
+		t.Fatalf("viewer subject = %q", got)
+	}
+}

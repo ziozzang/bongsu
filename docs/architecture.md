@@ -15,7 +15,7 @@ Bongsu means "봉수대": a watchtower network that sends signals from the edge 
 
 - Server: Go static binary, PostgreSQL, Vite dashboard, Docker Compose deployment.
 - Agent: Go static binary. It collects host metadata, users, processes, listening ports, host packages, and running Docker container packages.
-- Auth: admin/web APIs use `BONGSU_API_KEY`; agent report and force-scan polling use `BONGSU_AGENT_API_KEY`; installer and binary downloads can be protected by `BONGSU_INSTALL_TOKEN`.
+- Auth: admin APIs use `BONGSU_API_KEY`; agent report and force-scan polling use `BONGSU_AGENT_API_KEY`; installer and binary downloads can be protected by `BONGSU_INSTALL_TOKEN`; viewer keys from `BONGSU_VIEWER_API_KEYS` are scoped through RBAC policies.
 - Matching: packages-only mode sends packages to the server, then the server runs Trivy SBOM matching with the local Trivy DB.
 - Security DB: JSONL import/export for `cve_database`, Trivy DB upload/update, source sync command hook via `BONGSU_SECURITY_DB_SYNC_CMD`.
 - Airgap: server can import CVE JSONL and Trivy DB archives. The one-line installer downloads the agent and Trivy binaries from the management server.
@@ -74,7 +74,7 @@ RBAC tables are present:
 - `access_subjects`: future users and groups from company identity systems.
 - `access_policies`: permissions on `host`, `container`, `image`, `asset_group`, or `all`.
 
-Current runtime auth still uses a shared API key. Production RBAC requires user identity, policy CRUD, middleware authorization, and query scoping.
+Runtime RBAC supports viewer API keys mapped to external subjects through `BONGSU_VIEWER_API_KEYS=key:subject`. Admins create `access_subjects` and `access_policies`; viewer queries are scoped to allowed hosts across host, package, vulnerability, scan, and stats views. Future SSO integration should replace static viewer keys with identity-provider subjects.
 
 ## Test Expectations
 
