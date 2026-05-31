@@ -26,6 +26,7 @@ type Manager struct {
 	cacheDir   string
 	dbRepo     string
 	interval   time.Duration
+	opMu       sync.Mutex
 	mu         sync.RWMutex
 	ready      bool
 	lastUpdate time.Time
@@ -80,18 +81,11 @@ func (m *Manager) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := m.download(ctx); err != nil {
-				m.recordError("failed", err)
+			onUpdate, err := m.updateFromDownload(ctx)
+			if err != nil {
 				log.Printf("trivy-db periodic update failed: %v", err)
 				continue
 			}
-			m.mu.Lock()
-			m.ready = true
-			m.lastUpdate = time.Now()
-			m.lastStatus = "ok"
-			m.lastError = ""
-			onUpdate := m.onUpdate
-			m.mu.Unlock()
 			log.Printf("trivy-db updated")
 			if onUpdate != nil {
 				onUpdate("trivy-db periodic update")
@@ -134,18 +128,28 @@ func (m *Manager) PublicStatus() map[string]any {
 }
 
 func (m *Manager) UpdateNow(ctx context.Context) error {
+	if _, err := m.updateFromDownload(ctx); err != nil {
+		return err
+	}
+	log.Printf("trivy-db updated (on-demand)")
+	return nil
+}
+
+func (m *Manager) updateFromDownload(ctx context.Context) (func(string), error) {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
 	if err := m.download(ctx); err != nil {
 		m.recordError("failed", err)
-		return err
+		return nil, err
 	}
 	m.mu.Lock()
 	m.ready = true
 	m.lastUpdate = time.Now()
 	m.lastStatus = "ok"
 	m.lastError = ""
+	onUpdate := m.onUpdate
 	m.mu.Unlock()
-	log.Printf("trivy-db updated (on-demand)")
-	return nil
+	return onUpdate, nil
 }
 
 func (m *Manager) checkExisting() bool {
@@ -181,6 +185,9 @@ func (m *Manager) downloadArgs() []string {
 }
 
 func (m *Manager) LoadFromFile(path string) error {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+
 	dbDir := filepath.Join(m.cacheDir, "db")
 	_, stagedDB, cleanup, err := m.stageArchive(path)
 	if err != nil {

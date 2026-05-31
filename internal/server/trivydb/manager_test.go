@@ -64,6 +64,36 @@ func TestDownloadArgsIncludeConfiguredDBRepository(t *testing.T) {
 	}
 }
 
+func TestCacheMutationsAreSerialized(t *testing.T) {
+	out, err := os.ReadFile("manager.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"opMu       sync.Mutex",
+		"func (m *Manager) updateFromDownload",
+		"m.opMu.Lock()",
+		"defer m.opMu.Unlock()",
+		"func (m *Manager) LoadFromFile",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("trivy DB manager cache mutation serialization missing %q", want)
+		}
+	}
+	updateStart := strings.Index(body, "func (m *Manager) updateFromDownload")
+	loadStart := strings.Index(body, "func (m *Manager) LoadFromFile")
+	validateStart := strings.Index(body, "func (m *Manager) ValidateArchive")
+	if updateStart < 0 || loadStart < 0 || validateStart < 0 {
+		t.Fatal("expected manager methods not found")
+	}
+	updateFn := body[updateStart:loadStart]
+	loadFn := body[loadStart:validateStart]
+	if !strings.Contains(updateFn, "m.opMu.Lock()") || !strings.Contains(loadFn, "m.opMu.Lock()") {
+		t.Fatal("download and load operations must both take opMu")
+	}
+}
+
 func TestStatusTracksFailuresWithoutExposingErrorsPublicly(t *testing.T) {
 	m := NewManager(filepath.Join(t.TempDir(), "missing-trivy"), t.TempDir(), "", 0)
 	if err := m.UpdateNow(context.Background()); err == nil {
