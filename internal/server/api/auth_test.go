@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ziozzang/bongsu/internal/server/db"
+	"github.com/ziozzang/bongsu/internal/server/trivydb"
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
@@ -103,6 +105,46 @@ func TestMaxAgentReportBytes(t *testing.T) {
 		t.Setenv("BONGSU_AGENT_REPORT_MAX_BYTES", value)
 		if got := maxAgentReportBytes(); got != 512<<20 {
 			t.Fatalf("maxAgentReportBytes(%q) = %d, want %d", value, got, 512<<20)
+		}
+	}
+}
+
+func TestTrivyDBLoadErrorHTTPMapping(t *testing.T) {
+	invalid := fmt.Errorf("%w: missing db", trivydb.ErrInvalidArchive)
+	if got := trivyDBLoadErrorStatus(invalid); got != http.StatusBadRequest {
+		t.Fatalf("invalid archive status = %d, want %d", got, http.StatusBadRequest)
+	}
+	if got := trivyDBLoadErrorMessage(invalid); got != "invalid trivy db archive" {
+		t.Fatalf("invalid archive message = %q", got)
+	}
+	if got := trivyDBLoadErrorStatus(errors.New("disk full")); got != http.StatusInternalServerError {
+		t.Fatalf("internal load status = %d, want %d", got, http.StatusInternalServerError)
+	}
+}
+
+func TestTrivyDBUploadAuditsLoadFailures(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleTrivyDBUpload")
+	if start < 0 {
+		t.Fatal("handleTrivyDBUpload not found")
+	}
+	end := strings.Index(body[start:], "func trivyDBLoadErrorStatus")
+	if end < 0 {
+		t.Fatal("trivyDBLoadErrorStatus not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"trivyDBLoadErrorStatus(err)",
+		"trivyDBLoadErrorMessage(err)",
+		`"trivy_db.upload"`,
+		`"error"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("trivy upload failure handling missing %q: %s", want, fn)
 		}
 	}
 }

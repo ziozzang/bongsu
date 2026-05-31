@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -180,6 +181,18 @@ func TestLoadFromFileCreateErrorDoesNotCloseNilFile(t *testing.T) {
 	body := string(out)
 	if strings.Contains(body, "if err != nil {\n\t\t\tout.Close()") {
 		t.Fatal("os.Create error path must not close a nil file handle")
+	}
+}
+
+func TestInvalidArchiveErrorsAreClassified(t *testing.T) {
+	cache := t.TempDir()
+	archive := filepath.Join(t.TempDir(), "invalid-trivy.tar.gz")
+	if err := os.WriteFile(archive, []byte("not gzip"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager("trivy", cache, "", 0)
+	if err := m.ValidateArchive(archive); !errors.Is(err, ErrInvalidArchive) {
+		t.Fatalf("invalid archive error = %v, want ErrInvalidArchive", err)
 	}
 }
 

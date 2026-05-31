@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,6 +15,8 @@ import (
 	"sync"
 	"time"
 )
+
+var ErrInvalidArchive = errors.New("invalid trivy db archive")
 
 type Manager struct {
 	trivyPath  string
@@ -202,7 +205,7 @@ func (m *Manager) stageArchive(path string) (string, string, func(), error) {
 	gz, err := gzip.NewReader(f)
 	if err != nil {
 		cleanup()
-		return "", "", nil, fmt.Errorf("gzip reader: %w", err)
+		return "", "", nil, fmt.Errorf("%w: gzip reader: %v", ErrInvalidArchive, err)
 	}
 	defer gz.Close()
 	tr := tar.NewReader(gz)
@@ -213,11 +216,11 @@ func (m *Manager) stageArchive(path string) (string, string, func(), error) {
 		}
 		if err != nil {
 			cleanup()
-			return "", "", nil, fmt.Errorf("tar read: %w", err)
+			return "", "", nil, fmt.Errorf("%w: tar read: %v", ErrInvalidArchive, err)
 		}
 		if !isSafePath(staging, hdr.Name) {
 			cleanup()
-			return "", "", nil, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
+			return "", "", nil, fmt.Errorf("%w: unsafe path in archive: %s", ErrInvalidArchive, hdr.Name)
 		}
 		target := filepath.Join(staging, hdr.Name)
 		switch hdr.Typeflag {
@@ -230,7 +233,7 @@ func (m *Manager) stageArchive(path string) (string, string, func(), error) {
 		case tar.TypeReg, tar.TypeRegA:
 		default:
 			cleanup()
-			return "", "", nil, fmt.Errorf("unsupported archive entry type %c for %s", hdr.Typeflag, hdr.Name)
+			return "", "", nil, fmt.Errorf("%w: unsupported archive entry type %c for %s", ErrInvalidArchive, hdr.Typeflag, hdr.Name)
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			cleanup()
@@ -251,7 +254,7 @@ func (m *Manager) stageArchive(path string) (string, string, func(), error) {
 	stagedDB := filepath.Join(staging, "db")
 	if info, err := os.Stat(filepath.Join(stagedDB, "trivy.db")); err != nil || info.Size() == 0 {
 		cleanup()
-		return "", "", nil, fmt.Errorf("archive missing db/trivy.db")
+		return "", "", nil, fmt.Errorf("%w: archive missing db/trivy.db", ErrInvalidArchive)
 	}
 	return staging, stagedDB, cleanup, nil
 }

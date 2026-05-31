@@ -2072,13 +2072,32 @@ func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
 
 	if err := s.dbMgr.LoadFromFile(tmpFile.Name()); err != nil {
 		log.Printf("load trivy-db: %v", err)
-		http.Error(w, "failed to load db", http.StatusInternalServerError)
+		status := trivyDBLoadErrorStatus(err)
+		s.audit(r, "trivy_db.upload", "security_db", "trivy", "error", map[string]any{
+			"status": status,
+			"error":  err.Error(),
+		})
+		http.Error(w, trivyDBLoadErrorMessage(err), status)
 		return
 	}
 
 	s.audit(r, "trivy_db.upload", "security_db", "trivy", "ok", nil)
 	s.SecurityDatabaseUpdated("trivy-db upload")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "trivy-db loaded"})
+}
+
+func trivyDBLoadErrorStatus(err error) int {
+	if errors.Is(err, trivydb.ErrInvalidArchive) {
+		return http.StatusBadRequest
+	}
+	return http.StatusInternalServerError
+}
+
+func trivyDBLoadErrorMessage(err error) string {
+	if trivyDBLoadErrorStatus(err) == http.StatusBadRequest {
+		return "invalid trivy db archive"
+	}
+	return "failed to load db"
 }
 
 func (s *Server) handleTrivyDBUpdate(w http.ResponseWriter, r *http.Request) {
