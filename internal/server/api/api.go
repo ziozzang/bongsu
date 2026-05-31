@@ -3688,6 +3688,7 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	var err error
 	opts := rematchOptionsFromEnv()
 	if r.Body != nil {
 		var body struct {
@@ -3711,7 +3712,11 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 			opts.CandidateLimit = body.CandidateLimit
 		}
 	}
-	opts = normalizeRematchOptions(opts)
+	opts, err = normalizeRematchOptions(opts)
+	if err != nil {
+		http.Error(w, "invalid source", http.StatusBadRequest)
+		return
+	}
 	result, err := s.db.RematchCVEs(r.Context(), opts)
 	if err != nil {
 		log.Printf("cve-db rematch: %v", err)
@@ -3745,15 +3750,24 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 }
 
 func rematchOptionsFromEnv() db.RematchOptions {
-	return normalizeRematchOptions(db.RematchOptions{
+	opts, err := normalizeRematchOptions(db.RematchOptions{
 		Sources:                   splitCSV(os.Getenv("BONGSU_CVE_MATCH_SOURCES")),
 		MinSourceMatchablePercent: envFloat("BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT", 0),
 		CandidateLimit:            envInt("BONGSU_CVE_MATCH_CANDIDATE_LIMIT", db.DefaultRematchCandidateLimit),
 	})
+	if err != nil {
+		log.Printf("invalid BONGSU_CVE_MATCH_SOURCES ignored: %v", err)
+		opts.Sources = nil
+	}
+	return opts
 }
 
-func normalizeRematchOptions(opts db.RematchOptions) db.RematchOptions {
-	opts.Sources = cleanCSV(opts.Sources)
+func normalizeRematchOptions(opts db.RematchOptions) (db.RematchOptions, error) {
+	var err error
+	opts.Sources, err = normalizeCveSources(opts.Sources)
+	if err != nil {
+		return opts, err
+	}
 	opts.ScanID = strings.TrimSpace(opts.ScanID)
 	if opts.MinSourceMatchablePercent < 0 {
 		opts.MinSourceMatchablePercent = 0
@@ -3767,8 +3781,26 @@ func normalizeRematchOptions(opts db.RematchOptions) db.RematchOptions {
 	if opts.CandidateLimit > db.MaxRematchCandidateLimit {
 		opts.CandidateLimit = db.MaxRematchCandidateLimit
 	}
-	return opts
+	return opts, nil
 }
+
+func normalizeCveSources(sources []string) ([]string, error) {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, raw := range sources {
+		source, err := normalizeCveSource(raw, "")
+		if err != nil {
+			return nil, err
+		}
+		if source == "" || seen[source] {
+			continue
+		}
+		seen[source] = true
+		out = append(out, source)
+	}
+	return out, nil
+}
+
 func (s *Server) handleCveDbRecalcCVSS(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -3795,7 +3827,11 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	source := r.URL.Query().Get("source")
+	source, err := normalizeCveSource(r.URL.Query().Get("source"), "")
+	if err != nil {
+		http.Error(w, "invalid source", http.StatusBadRequest)
+		return
+	}
 	revisionMeta := s.securityDBRevisionMeta(r.Context())
 
 	cveFile, count, _, err := s.writeCveJSONLTemp(r.Context(), source)
@@ -3839,6 +3875,10 @@ func (s *Server) securityDBRevisionMeta(ctx context.Context) map[string]any {
 }
 
 func (s *Server) writeCveJSONLTemp(ctx context.Context, source string) (string, int, string, error) {
+	source, err := normalizeCveSource(source, "")
+	if err != nil {
+		return "", 0, "", err
+	}
 	tmp, err := os.CreateTemp("", "bongsu-cve-database-*.jsonl")
 	if err != nil {
 		return "", 0, "", err
@@ -4252,7 +4292,11 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 
 	query := r.URL.Query().Get("q")
 	severity := r.URL.Query().Get("severity")
-	source := r.URL.Query().Get("source")
+	source, err := normalizeCveSource(r.URL.Query().Get("source"), "")
+	if err != nil {
+		http.Error(w, "invalid source", http.StatusBadRequest)
+		return
+	}
 	minCVSS := floatParam(r, "min_cvss", 0.1)
 	sortBy := r.URL.Query().Get("sort_by")
 	sortOrder := r.URL.Query().Get("sort_order")

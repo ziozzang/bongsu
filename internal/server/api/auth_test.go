@@ -665,7 +665,7 @@ func TestApplyAgentStatus(t *testing.T) {
 }
 
 func TestRematchOptionsFromEnv(t *testing.T) {
-	t.Setenv("BONGSU_CVE_MATCH_SOURCES", "osv, nvd,osv, ")
+	t.Setenv("BONGSU_CVE_MATCH_SOURCES", "OSV, nvd,osv, ")
 	t.Setenv("BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT", "175.5")
 	t.Setenv("BONGSU_CVE_MATCH_CANDIDATE_LIMIT", "123")
 
@@ -680,16 +680,25 @@ func TestRematchOptionsFromEnv(t *testing.T) {
 		t.Fatalf("candidate limit = %d, want 123", opts.CandidateLimit)
 	}
 
-	opts = normalizeRematchOptions(db.RematchOptions{ScanID: " scan-1 ", CandidateLimit: -1})
+	opts, err := normalizeRematchOptions(db.RematchOptions{ScanID: " scan-1 ", CandidateLimit: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if opts.ScanID != "scan-1" {
 		t.Fatalf("scan id = %q, want trimmed scan-1", opts.ScanID)
 	}
 	if opts.CandidateLimit != 50000 {
 		t.Fatalf("default candidate limit = %d, want 50000", opts.CandidateLimit)
 	}
-	opts = normalizeRematchOptions(db.RematchOptions{CandidateLimit: 2000000})
+	opts, err = normalizeRematchOptions(db.RematchOptions{CandidateLimit: 2000000})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if opts.CandidateLimit != 1000000 {
 		t.Fatalf("max candidate limit = %d, want 1000000", opts.CandidateLimit)
+	}
+	if _, err := normalizeRematchOptions(db.RematchOptions{Sources: []string{"nvd feed"}}); !errors.Is(err, errInvalidCveSource) {
+		t.Fatalf("invalid rematch source err = %v", err)
 	}
 }
 
@@ -2848,6 +2857,8 @@ func TestCveDbExportStagesCompleteJSONLBeforeResponse(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
+		`normalizeCveSource(r.URL.Query().Get("source"), "")`,
+		`http.Error(w, "invalid source", http.StatusBadRequest)`,
 		"s.writeCveJSONLTemp(r.Context(), source)",
 		"http.Error(w, \"export failed\", http.StatusInternalServerError)",
 		"os.Open(cveFile)",
@@ -2880,6 +2891,7 @@ func TestWriteCveJSONLTempSupportsSourceFilterAndRowErrors(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"source string",
+		`normalizeCveSource(source, "")`,
 		"WHERE source=$1",
 		"db.ScanCveEntry(rows, &e)",
 		"encoder.Encode(e)",
@@ -2888,6 +2900,32 @@ func TestWriteCveJSONLTempSupportsSourceFilterAndRowErrors(t *testing.T) {
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("writeCveJSONLTemp robustness missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleCveDbSearch")
+	if start < 0 {
+		t.Fatal("handleCveDbSearch not found")
+	}
+	end := strings.Index(body[start:], "func writeJSON")
+	if end < 0 {
+		t.Fatal("writeJSON not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`normalizeCveSource(r.URL.Query().Get("source"), "")`,
+		`http.Error(w, "invalid source", http.StatusBadRequest)`,
+		"s.db.SearchCveDatabase(ctx, query, severity, source",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("CVE search source normalization missing %q: %s", want, fn)
 		}
 	}
 }
