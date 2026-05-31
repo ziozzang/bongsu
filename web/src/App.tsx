@@ -2171,6 +2171,13 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
       setRequestMsg('Set a status, type, or DB revision filter before bulk requeue');
       return;
     }
+    const filterLabel = [
+      requestStatus ? `status=${requestStatus}` : 'status=failed/cancelled',
+      requestType ? `type=${requestType}` : '',
+      requestRevision.trim() ? `DB rev=${requestRevision.trim()}` : '',
+    ].filter(Boolean).join(', ');
+    const totalLabel = requestStatus ? `${requestTotal} matching requests` : 'all failed/cancelled requests matching these filters';
+    if (!confirm(`Requeue ${totalLabel} (${filterLabel})?`)) return;
     try {
       const r = await api.requeueFilteredScanRequests({
         status: requestStatus || undefined,
@@ -2184,6 +2191,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
       setRequestMsg('Bulk requeue failed');
     }
   };
+  const canBulkRequeue = (!requestStatus || ['failed', 'cancelled'].includes(requestStatus)) && Boolean(requestStatus || requestType || requestRevision.trim());
 
   return (
     <>
@@ -2193,7 +2201,14 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
           <h2>{requestTotal} scan requests</h2>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button className="update-btn" onClick={requeueStale}>Requeue Stale</button>
-            <button className="update-btn" onClick={requeueFiltered} title="Requeue failed or cancelled requests matching the current filters">Requeue Filtered</button>
+            <button
+              className="update-btn"
+              onClick={requeueFiltered}
+              disabled={!canBulkRequeue}
+              title="Requeue failed or cancelled requests matching the current filters"
+            >
+              Requeue Filtered
+            </button>
             <select value={requestStatus} onChange={(e) => setRequestStatus(e.target.value)}>
               <option value="">All Status</option>
               <option value="pending">Pending</option>
