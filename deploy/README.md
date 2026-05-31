@@ -194,6 +194,7 @@ spec:
 |--------|------|-------------|
 | `POST` | `/api/report` | Agent scan report submission |
 | `GET` | `/api/hosts` | List hosts |
+| `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON |
 | `GET` | `/api/vulnerabilities` | List CVEs (supports `sort_by`, `severity`, pagination) |
 | `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope |
 | `GET` | `/api/packages` | List packages (supports `sort_by`, `q`, filters, pagination) |

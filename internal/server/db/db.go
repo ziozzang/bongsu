@@ -1187,6 +1187,26 @@ func (db *DB) GetLatestPackages(ctx context.Context, hostID string, limit, offse
 	return pkgs, total, nil
 }
 
+func (db *DB) GetLatestPackagesForSBOM(ctx context.Context, hostID string) ([]models.Package, error) {
+	q := fmt.Sprintf(`SELECT %s%s FROM packages p JOIN %s ls ON p.scan_id = ls.id%s WHERE p.host_id=$1 ORDER BY p.asset_type, p.container, p.name, p.version`,
+		pkgCols, pkgVulnSelect, latestScansSub, pkgVulnJoin)
+	rows, err := db.QueryContext(ctx, q, hostID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pkgs []models.Package
+	for rows.Next() {
+		var p models.Package
+		if err := scanPkg(rows, &p); err != nil {
+			return nil, err
+		}
+		pkgs = append(pkgs, p)
+	}
+	return pkgs, rows.Err()
+}
+
 type PackageFilter struct {
 	HostID     string
 	HostIDs    []string

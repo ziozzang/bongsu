@@ -451,6 +451,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
   const [pkgs, setPkgs] = useState<Pkg[]>([]);
   const [totalPkgs, setTotalPkgs] = useState(0);
   const [pkgPage, setPkgPage] = useState(0);
+  const [exportMsg, setExportMsg] = useState('');
   const limit = 50;
 
   useEffect(() => {
@@ -469,7 +470,26 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
   return (
     <>
       <button className="back-btn" onClick={onBack}>&larr; Back</button>
-      <h1 style={{ marginBottom: '1rem' }}>{host.hostname}</h1>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', marginBottom: '1rem' }}>
+        <h1 style={{ marginBottom: 0 }}>{host.hostname}</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          {exportMsg && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{exportMsg}</span>}
+          <button
+            className="filter-btn"
+            onClick={async () => {
+              setExportMsg('Exporting...');
+              try {
+                await api.exportHostSBOM(host.id, host.hostname);
+                setExportMsg('Exported');
+              } catch {
+                setExportMsg('Export failed');
+              }
+            }}
+          >
+            Export SBOM
+          </button>
+        </div>
+      </div>
 
       <div className="stats-grid" style={{ marginBottom: '2rem' }}>
         <div className="stat-card"><div className="label">OS</div><div style={{ fontSize: '0.875rem' }}>{host.os_name} {host.os_version}</div></div>

@@ -55,6 +55,27 @@ async function requestJSON<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function download(path: string, filename: string): Promise<void> {
+  const headers: Record<string, string> = {};
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  const res = await fetch(API_BASE + path, { headers });
+  if (res.status === 401) {
+    clearApiKey();
+    if (onUnauthorized) onUnauthorized();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export interface Host {
   id: string;
   hostname: string;
@@ -173,6 +194,7 @@ export const api = {
   host: (id: string) => request<Host>(`/hosts/${id}`),
   hostPackages: (id: string, limit: number, offset: number) =>
     request<{ items: Pkg[]; total: number }>(`/hosts/${id}/packages`, { limit: String(limit), offset: String(offset) }),
+  exportHostSBOM: (id: string, hostname: string) => download(`/hosts/${id}/sbom`, `${hostname || id}-cyclonedx.json`),
   hostVulnCounts: (id: string) => request<Record<string, number>>(`/hosts/${id}/vuln-counts`),
   vulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; min_cvss?: string; pkg_name?: string; container?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Vuln[]; total: number }>('/vulnerabilities', params),

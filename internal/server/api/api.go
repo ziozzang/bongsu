@@ -103,6 +103,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/hosts", s.handleListHosts)
 	s.mux.HandleFunc("GET /api/hosts/{id}", s.handleGetHost)
 	s.mux.HandleFunc("GET /api/hosts/{id}/packages", s.handleHostPackages)
+	s.mux.HandleFunc("GET /api/hosts/{id}/sbom", s.handleHostSBOM)
 	s.mux.HandleFunc("GET /api/hosts/{id}/vuln-counts", s.handleHostVulnCounts)
 	s.mux.HandleFunc("GET /api/vulnerabilities", s.handleListVulnerabilities)
 	s.mux.HandleFunc("GET /api/vulnerabilities/filters", s.handleVulnFilters)
@@ -581,6 +582,57 @@ func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": pkgs,
 		"total": total,
+	})
+}
+
+func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	hostID := r.PathValue("id")
+	if !s.canReadHost(r, hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	ctx := r.Context()
+
+	host, err := s.db.GetHost(ctx, hostID)
+	if err != nil {
+		http.Error(w, "host not found", http.StatusNotFound)
+		return
+	}
+	pkgs, err := s.db.GetLatestPackagesForSBOM(ctx, hostID)
+	if err != nil {
+		log.Printf("host sbom packages: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	if len(pkgs) == 0 {
+		http.Error(w, "no packages available for host", http.StatusNotFound)
+		return
+	}
+	data, err := cvematch.GenerateCycloneDX(pkgs, *host)
+	if err != nil {
+		log.Printf("generate host sbom: %v", err)
+		http.Error(w, "sbom generation failed", http.StatusInternalServerError)
+		return
+	}
+	filename := sanitizeFilename(host.Hostname)
+	if filename == "" {
+		filename = sanitizeFilename(host.ID)
+	}
+	w.Header().Set("Content-Type", "application/vnd.cyclonedx+json")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-cyclonedx.json"`, filename))
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(data); err != nil {
+		log.Printf("write host sbom: %v", err)
+		return
+	}
+	s.audit(r, "sbom.export", "host", hostID, "ok", map[string]any{
+		"hostname": host.Hostname,
+		"packages": len(pkgs),
+		"format":   "CycloneDX 1.5",
 	})
 }
 
@@ -1995,6 +2047,19 @@ func envBool(key string, def bool) bool {
 		return def
 	}
 	return b
+}
+
+func sanitizeFilename(s string) string {
+	s = strings.TrimSpace(s)
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteByte('-')
+	}
+	return strings.Trim(b.String(), "-.")
 }
 
 func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
