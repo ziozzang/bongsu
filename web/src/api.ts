@@ -116,6 +116,7 @@ export interface Host {
   agent_status?: string;
   last_seen_age_seconds?: number;
   vuln_counts?: Record<string, number>;
+  active_vuln_counts?: Record<string, number>;
   latest_inventory?: {
     latest_scan_id?: string;
     latest_scan_status?: string;

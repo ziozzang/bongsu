@@ -663,6 +663,11 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		log.Printf("vuln counts: %v", err)
 		vulnCounts = map[string]map[string]int{}
 	}
+	activeVulnCounts, err := s.db.GetCurrentActionableVulnCountsByHost(ctx, scopeHostFilter(scope, scope.HostIDs))
+	if err != nil {
+		log.Printf("active vuln counts: %v", err)
+		activeVulnCounts = map[string]map[string]int{}
+	}
 	inventory, err := s.db.GetHostInventorySummaries(ctx)
 	if err != nil {
 		log.Printf("host inventory summaries: %v", err)
@@ -671,8 +676,9 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 
 	type hostWithVulns struct {
 		models.Host
-		VulnCounts      map[string]int          `json:"vuln_counts"`
-		LatestInventory db.HostInventorySummary `json:"latest_inventory"`
+		VulnCounts       map[string]int          `json:"vuln_counts"`
+		ActiveVulnCounts map[string]int          `json:"active_vuln_counts"`
+		LatestInventory  db.HostInventorySummary `json:"latest_inventory"`
 	}
 
 	now := time.Now()
@@ -685,12 +691,15 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		if statusFilter != "" && h.AgentStatus != statusFilter {
 			continue
 		}
-		item := hostWithVulns{Host: h, VulnCounts: vulnCounts[h.ID], LatestInventory: inventory[h.ID]}
+		item := hostWithVulns{Host: h, VulnCounts: vulnCounts[h.ID], ActiveVulnCounts: activeVulnCounts[h.ID], LatestInventory: inventory[h.ID]}
 		if inventoryStatusFilter != "" && hostInventoryStatus(item.LatestInventory, now, inventoryStaleAfter) != inventoryStatusFilter {
 			continue
 		}
 		if item.VulnCounts == nil {
 			item.VulnCounts = map[string]int{}
+		}
+		if item.ActiveVulnCounts == nil {
+			item.ActiveVulnCounts = map[string]int{}
 		}
 		result = append(result, item)
 	}

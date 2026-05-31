@@ -688,60 +688,63 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
               <th>Criticality</th>
               <th>IP</th>
               <th>Latest SBOM</th>
-              <th>Critical</th>
-              <th>High</th>
-              <th>Medium</th>
-              <th>Low</th>
+              <th>Active Critical</th>
+              <th>Active High</th>
+              <th>Active Medium</th>
+              <th>Active Low</th>
               <th>Last Seen</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {hosts.map(h => (
-              <tr key={h.id}>
-                <td><span className="host-link" title={`IP: ${h.ip_address}`} onClick={() => onSelectHost(h.id)}>{h.hostname}</span></td>
-                <td>
-                  <span className="badge" style={{ color: agentStatusColor(h.agent_status), background: 'var(--bg-raised)' }}>{h.agent_status || 'unknown'}</span>
-                  <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{formatAge(h.last_seen_age_seconds)}</div>
-                </td>
-                <td>{h.os_name} {h.os_version}</td>
-                <td>{h.owner || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
-                <td>{h.environment || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
-                <td>{h.criticality || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
-                <td className="mono">{h.ip_address}</td>
-                <td className="mono" style={{ fontSize: '0.75rem' }}>
-                  {h.latest_inventory?.latest_scan_id ? (
-                    <>
-                      {h.latest_inventory.latest_package_count || 0} pkgs / {h.latest_inventory.latest_vulnerability_count || 0} vulns / {h.latest_inventory.latest_container_count || 0} ctrs
-                      {h.latest_inventory.latest_scan_status === 'degraded' && <span className="badge" style={{ color: 'var(--medium)', marginLeft: 6 }}>degraded</span>}
-                      <div style={{ color: 'var(--text-muted)' }}>{h.latest_inventory.latest_scan_at ? new Date(h.latest_inventory.latest_scan_at).toLocaleString() : '-'}</div>
-                    </>
-                  ) : <span style={{ color: 'var(--text-muted)' }}>No completed or degraded scan</span>}
-                </td>
-                <td style={{ color: sevColor('CRITICAL'), fontWeight: 600 }}>{h.vuln_counts?.CRITICAL || 0}</td>
-                <td style={{ color: sevColor('HIGH'), fontWeight: 600 }}>{h.vuln_counts?.HIGH || 0}</td>
-                <td style={{ color: sevColor('MEDIUM'), fontWeight: 600 }}>{h.vuln_counts?.MEDIUM || 0}</td>
-                <td style={{ color: sevColor('LOW'), fontWeight: 600 }}>{h.vuln_counts?.LOW || 0}</td>
-                <td className="mono">{new Date(h.last_seen).toLocaleString()}</td>
-                <td>
-                  <button
-                    className="delete-btn"
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      setScanMsg('');
-                      try {
-                        await api.createScanRequest({ host_id: h.id, scan_type: 'manual', packages_only: true, reason: `dashboard force scan: ${h.hostname}` });
-                        setScanMsg(`Force scan requested for ${h.hostname}`);
-                      } catch {
-                        setScanMsg(`Force scan request failed for ${h.hostname}`);
-                      }
-                    }}
-                  >
-                    Scan
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {hosts.map(h => {
+              const counts = h.active_vuln_counts || h.vuln_counts || {};
+              return (
+                <tr key={h.id}>
+                  <td><span className="host-link" title={`IP: ${h.ip_address}`} onClick={() => onSelectHost(h.id)}>{h.hostname}</span></td>
+                  <td>
+                    <span className="badge" style={{ color: agentStatusColor(h.agent_status), background: 'var(--bg-raised)' }}>{h.agent_status || 'unknown'}</span>
+                    <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{formatAge(h.last_seen_age_seconds)}</div>
+                  </td>
+                  <td>{h.os_name} {h.os_version}</td>
+                  <td>{h.owner || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                  <td>{h.environment || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                  <td>{h.criticality || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                  <td className="mono">{h.ip_address}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>
+                    {h.latest_inventory?.latest_scan_id ? (
+                      <>
+                        {h.latest_inventory.latest_package_count || 0} pkgs / {h.latest_inventory.latest_vulnerability_count || 0} vulns / {h.latest_inventory.latest_container_count || 0} ctrs
+                        {h.latest_inventory.latest_scan_status === 'degraded' && <span className="badge" style={{ color: 'var(--medium)', marginLeft: 6 }}>degraded</span>}
+                        <div style={{ color: 'var(--text-muted)' }}>{h.latest_inventory.latest_scan_at ? new Date(h.latest_inventory.latest_scan_at).toLocaleString() : '-'}</div>
+                      </>
+                    ) : <span style={{ color: 'var(--text-muted)' }}>No completed or degraded scan</span>}
+                  </td>
+                  <td style={{ color: sevColor('CRITICAL'), fontWeight: 600 }}>{counts.CRITICAL || 0}</td>
+                  <td style={{ color: sevColor('HIGH'), fontWeight: 600 }}>{counts.HIGH || 0}</td>
+                  <td style={{ color: sevColor('MEDIUM'), fontWeight: 600 }}>{counts.MEDIUM || 0}</td>
+                  <td style={{ color: sevColor('LOW'), fontWeight: 600 }}>{counts.LOW || 0}</td>
+                  <td className="mono">{new Date(h.last_seen).toLocaleString()}</td>
+                  <td>
+                    <button
+                      className="delete-btn"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        setScanMsg('');
+                        try {
+                          await api.createScanRequest({ host_id: h.id, scan_type: 'manual', packages_only: true, reason: `dashboard force scan: ${h.hostname}` });
+                          setScanMsg(`Force scan requested for ${h.hostname}`);
+                        } catch {
+                          setScanMsg(`Force scan request failed for ${h.hostname}`);
+                        }
+                      }}
+                    >
+                      Scan
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
             {hosts.length === 0 && <tr><td colSpan={14} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
           </tbody>
         </table>
