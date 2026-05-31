@@ -2346,7 +2346,7 @@ func (db *DB) SearchCVEs(ctx context.Context, f CveSearchFilter, limit, offset i
 }
 
 func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
-	fixedExpr := cveFixedVersionSQL("c")
+	fixedExpr := cveEnrichmentFixedVersionSQL("c", "v")
 	// Step 1: exact vulnerability_id match — fill severity + fixed_version + title/description
 	q1 := fmt.Sprintf(`
 	UPDATE vulnerabilities v
@@ -2367,7 +2367,7 @@ func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
 	n1, _ := r1.RowsAffected()
 
 	// Step 2: CVE number extraction match (DEBIAN-CVE-*, ALPINE-CVE-*, etc.)
-	fixedExpr = cveFixedVersionSQL("")
+	fixedExpr = cveSafeFixedVersionSQL("")
 	q2 := fmt.Sprintf(`
 	WITH v_cves AS (
 		SELECT id as vid, SUBSTRING(vulnerability_id FROM 'CVE-\d+-\d+') as cve
@@ -2403,6 +2403,49 @@ func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
 	return int(n1) + int(n2), nil
 }
 
+func cveEnrichmentFixedVersionSQL(cveAlias, vulnAlias string) string {
+	return fmt.Sprintf(`COALESCE(
+		%s,
+		%s
+	)`, cveContextualFixedVersionSQL(cveAlias, vulnAlias), cveSafeFixedVersionSQL(cveAlias))
+}
+
+func cveContextualFixedVersionSQL(cveAlias, vulnAlias string) string {
+	cvePrefix := ""
+	if cveAlias != "" {
+		cvePrefix = cveAlias + "."
+	}
+	return fmt.Sprintf(`(
+		SELECT COALESCE(
+			NULLIF(ap->'fixed'->>0, ''),
+			NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
+		)
+		FROM packages p
+		JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(%saffected_products) = 'array' THEN %saffected_products ELSE '[]'::jsonb END) ap ON true
+		WHERE p.id = %s.package_id
+		  AND lower(ap->>'name') = lower(COALESCE(NULLIF(p.name, ''), NULLIF(%s.pkg_name, '')))
+		  AND %s = %s
+		  AND (
+			(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
+			OR jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') IS NOT NULL
+		  )
+		LIMIT 1
+	)`, cvePrefix, cvePrefix, vulnAlias, vulnAlias, affectedProductEcosystemSQL(cveAlias, "ap"), packageEcosystemSQL("p"))
+}
+
+func cveSafeFixedVersionSQL(alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	return fmt.Sprintf(`CASE
+		WHEN jsonb_typeof(%saffected_products) = 'array'
+		  AND jsonb_array_length(%saffected_products) = 1
+		THEN %s
+		ELSE NULL
+	END`, prefix, prefix, cveFixedVersionSQL(alias))
+}
+
 func cveFixedVersionSQL(alias string) string {
 	prefix := ""
 	if alias != "" {
@@ -2412,6 +2455,40 @@ func cveFixedVersionSQL(alias string) string {
 		NULLIF(%saffected_products->0->'fixed'->>0, ''),
 		NULLIF(jsonb_path_query_first(%saffected_products, '$[*].ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
 	)`, prefix, prefix)
+}
+
+func affectedProductEcosystemSQL(cveAlias, affectedAlias string) string {
+	cvePrefix := ""
+	if cveAlias != "" {
+		cvePrefix = cveAlias + "."
+	}
+	raw := fmt.Sprintf("lower(COALESCE(NULLIF(%s->>'ecosystem', ''), NULLIF(%secosystem, '')))", affectedAlias, cvePrefix)
+	return normalizeEcosystemSQL(raw)
+}
+
+func packageEcosystemSQL(alias string) string {
+	raw := fmt.Sprintf("lower(COALESCE(NULLIF(%s.ecosystem, ''), NULLIF(%s.pkg_type, '')))", alias, alias)
+	return normalizeEcosystemSQL(raw)
+}
+
+func normalizeEcosystemSQL(raw string) string {
+	return fmt.Sprintf(`CASE
+		WHEN %s IN ('python', 'python-pkg', 'pip', 'poetry', 'pypi') THEN 'pypi'
+		WHEN %s IN ('node', 'node-pkg', 'javascript', 'npm', 'yarn', 'pnpm') THEN 'npm'
+		WHEN %s IN ('golang', 'gomod', 'gobinary', 'go') THEN 'go'
+		WHEN %s IN ('ruby', 'gem', 'rubygems') THEN 'rubygems'
+		WHEN %s IN ('rust', 'cargo', 'rustbinary', 'crates.io') THEN 'crates.io'
+		WHEN %s IN ('jar', 'maven') THEN 'maven'
+		WHEN %s IN ('composer', 'packagist') THEN 'packagist'
+		WHEN %s IN ('nuget') THEN 'nuget'
+		WHEN %s LIKE 'debian:%%' OR %s IN ('debian', 'deb') THEN 'debian'
+		WHEN %s LIKE 'ubuntu:%%' OR %s = 'ubuntu' THEN 'ubuntu'
+		WHEN %s IN ('alpine', 'apk') THEN 'alpine'
+		WHEN %s IN ('redhat', 'red hat', 'red hat enterprise linux', 'centos', 'rocky', 'almalinux', 'alma', 'amazon', 'amazon linux', 'rpm', 'rhel') THEN 'rhel'
+		WHEN %s IN ('suse') THEN 'suse'
+		WHEN %s IN ('wolfi', 'chainguard') THEN 'wolfi'
+		ELSE %s
+	END`, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw)
 }
 
 func (db *DB) GetFilterOptions(ctx context.Context) (*FilterOptions, error) {

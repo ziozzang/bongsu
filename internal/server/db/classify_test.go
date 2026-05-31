@@ -312,6 +312,22 @@ func TestCveFixedVersionSQLIncludesTopLevelAndRangeEvents(t *testing.T) {
 	}
 }
 
+func TestCveEnrichmentFixedVersionSQLIsPackageAware(t *testing.T) {
+	got := cveEnrichmentFixedVersionSQL("c", "v")
+	for _, want := range []string{
+		"FROM packages p",
+		"p.id = v.package_id",
+		"lower(ap->>'name')",
+		"p.ecosystem",
+		"c.ecosystem",
+		"jsonb_array_length(c.affected_products) = 1",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("enrichment fixed SQL missing %q: %s", want, got)
+		}
+	}
+}
+
 func TestInsertableVulnerabilitiesDropsDanglingRows(t *testing.T) {
 	valid := models.Vulnerability{
 		ID:              "vuln-1",
