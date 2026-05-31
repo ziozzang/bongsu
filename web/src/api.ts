@@ -42,6 +42,19 @@ async function request<T>(path: string, params?: Record<string, string>, method?
   return res.json();
 }
 
+async function requestJSON<T>(path: string, body: unknown): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  const res = await fetch(API_BASE + path, { method: 'POST', headers, body: JSON.stringify(body) });
+  if (res.status === 401) {
+    clearApiKey();
+    if (onUnauthorized) onUnauthorized();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
 export interface Host {
   id: string;
   hostname: string;
@@ -170,6 +183,8 @@ export const api = {
   packageVulns: (id: string) => request<Vuln[]>(`/packages/${id}/vulnerabilities`),
   scans: (params: { host_id?: string; limit?: string; offset?: string }) =>
     request<{ items: Scan[]; total: number }>('/scans', params),
+  createScanRequest: (body: { host_id?: string; requested_by?: string; scan_type?: string; packages_only?: boolean; reason?: string }) =>
+    requestJSON<{ id: string; status: string }>('/scan-requests', body),
   stats: () => request<Stats>('/stats'),
   rawHealth: () => request<HealthStatus>('/health'),
   deleteScan: (id: string) => request<{status: string}>(`/scans/${id}`, undefined, 'DELETE'),

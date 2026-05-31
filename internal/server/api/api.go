@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -80,6 +82,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/scans", s.handleListScans)
 	s.mux.HandleFunc("GET /api/scan-requests", s.handleListScanRequests)
 	s.mux.HandleFunc("POST /api/scan-requests", s.handleCreateScanRequest)
+	s.mux.HandleFunc("POST /api/agent/scan-requests/claim", s.handleClaimScanRequest)
+	s.mux.HandleFunc("POST /api/agent/scan-requests/{id}/complete", s.handleCompleteScanRequest)
 	s.mux.HandleFunc("GET /api/install.sh", s.handleInstallScript)
 	s.mux.HandleFunc("GET /api/downloads/bongsu-agent", s.handleAgentDownload)
 	s.mux.HandleFunc("GET /api/downloads/trivy", s.handleTrivyDownload)
@@ -542,6 +546,7 @@ API_KEY="%s"
 WORK_DIR="${BONGSU_WORK_DIR:-/opt/bongsu}"
 INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
+FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
 
 echo "=== Bongsu Agent Installer ==="
 echo "Server:  $SERVER"
@@ -604,6 +609,28 @@ TIMER
     systemctl daemon-reload
     systemctl enable --now bongsu-agent.timer
     echo "Systemd timer installed: bongsu-agent.timer"
+    if [ "$FORCE_SCAN_DAEMON" = "true" ]; then
+        cat > /etc/systemd/system/bongsu-agent-daemon.service <<SERVICE
+[Unit]
+Description=Bongsu force scan polling agent
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$WORK_DIR/bin/bongsu-agent --config $WORK_DIR/config.yaml --daemon --poll-interval 60s
+Restart=always
+RestartSec=10
+Nice=10
+IOSchedulingClass=best-effort
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+        systemctl daemon-reload
+        systemctl enable --now bongsu-agent-daemon.service
+        echo "Systemd daemon installed: bongsu-agent-daemon.service"
+    fi
 else
     CRON_CMD="$AGENT_CMD >> $WORK_DIR/agent.log 2>&1"
     (crontab -l 2>/dev/null | grep -v bongsu-agent; echo "$CRON_SCHEDULE $CRON_CMD") | crontab -
@@ -796,13 +823,60 @@ func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request)
 	if req.ScanType == "" {
 		req.ScanType = "manual"
 	}
-	req.PackagesOnly = true
 	if err := s.db.CreateScanRequest(r.Context(), &req); err != nil {
 		log.Printf("create scan request: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, req)
+}
+
+func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticate(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	hostID := r.URL.Query().Get("host_id")
+	if hostID == "" {
+		http.Error(w, "host_id is required", http.StatusBadRequest)
+		return
+	}
+	req, err := s.db.ClaimScanRequest(r.Context(), hostID)
+	if err != nil {
+		log.Printf("claim scan request: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	if req == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"request": nil})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"request": req})
+}
+
+func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticate(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := r.PathValue("id")
+	var body struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if body.Status == "" {
+		body.Status = "completed"
+	}
+	if err := s.db.CompleteScanRequest(r.Context(), id, body.Status, body.Message); err != nil {
+		log.Printf("complete scan request: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": body.Status})
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -925,7 +999,37 @@ func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error(), "security_db": s.secMgr.Status()})
 		return
 	}
+	s.recalculateSecurityFindings("security-db update")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "security_db": s.secMgr.Status()})
+}
+
+func (s *Server) recalculateSecurityFindings(reason string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+		defer cancel()
+		log.Printf("security recalculation started (%s)", reason)
+		if n, err := s.db.CalcCvssScores(ctx); err != nil {
+			log.Printf("security recalculation cvss failed: %v", err)
+		} else if n > 0 {
+			log.Printf("security recalculation updated CVSS for %d CVE records", n)
+		}
+		if n, err := s.db.EnrichVulnerabilities(ctx); err != nil {
+			log.Printf("security recalculation enrich failed: %v", err)
+		} else if n > 0 {
+			log.Printf("security recalculation enriched %d findings", n)
+		}
+		if r, err := s.db.RematchCVEs(ctx); err != nil {
+			log.Printf("security recalculation rematch failed: %v", err)
+		} else {
+			log.Printf("security recalculation rematched candidates=%d new=%d skipped=%d", r.Matched, r.NewVulns, r.Skipped)
+		}
+		if n, err := s.db.NormalizeVulnSeverity(ctx); err != nil {
+			log.Printf("security recalculation severity normalization failed: %v", err)
+		} else if n > 0 {
+			log.Printf("security recalculation normalized %d findings", n)
+		}
+		log.Printf("security recalculation finished (%s)", reason)
+	}()
 }
 
 func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
@@ -986,6 +1090,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 		"imported": count,
 		"total":    len(entries),
 	})
+	s.recalculateSecurityFindings("cve-db import")
 }
 
 func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {

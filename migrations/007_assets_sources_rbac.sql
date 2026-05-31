@@ -81,10 +81,13 @@ CREATE TABLE IF NOT EXISTS scan_requests (
     packages_only BOOLEAN NOT NULL DEFAULT true,
     reason TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'claimed', 'completed', 'failed', 'cancelled')),
+    error_message TEXT NOT NULL DEFAULT '',
     claimed_at TIMESTAMPTZ,
     completed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE scan_requests ADD COLUMN IF NOT EXISTS error_message TEXT NOT NULL DEFAULT '';
 
 CREATE INDEX IF NOT EXISTS idx_security_sources_status ON security_sources(last_status);
 CREATE INDEX IF NOT EXISTS idx_container_assets_scan_id ON container_assets(scan_id);

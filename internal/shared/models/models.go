@@ -36,6 +36,7 @@ type ScanRequest struct {
 	PackagesOnly bool       `json:"packages_only"`
 	Reason       string     `json:"reason,omitempty"`
 	Status       string     `json:"status"`
+	ErrorMessage string     `json:"error_message,omitempty"`
 	ClaimedAt    *time.Time `json:"claimed_at,omitempty"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`

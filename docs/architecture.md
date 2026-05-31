@@ -34,7 +34,8 @@ The merge strategy is:
 1. Normalize source records into `cve_database`.
 2. Keep source provenance in `source`, `category`, `ecosystem`, `raw_data`, and timestamps.
 3. Prefer stronger CVSS scores/vectors and fixed-version data when enriching scan findings.
-4. Match by ecosystem-aware identity first. Name-only rematch is a fallback and must be tightened before production use.
+4. Match by ecosystem-aware identity first. Name-only candidates are discarded unless `affected_products` contains the same package name, compatible ecosystem/category, fixed-version data, and an affected range that contains the installed version.
+5. CVSS vectors are recalculated after import for supported CVSS v2, v3.x, and v4.0 formats.
 
 ## Connected Update Flow
 
@@ -63,7 +64,7 @@ The server stores force scan requests in `scan_requests`. The intended lifecycle
 - `claimed`: an agent picked up the request.
 - `completed` or `failed`: the agent submitted a result or reported failure.
 
-Current implementation exposes request creation/listing. A daemon/polling mode for agents should claim and complete requests before this is considered production-complete.
+Current implementation exposes request creation/listing plus agent claim/complete endpoints. Agents can run with `--daemon --poll-interval 60s` to claim pending requests, execute a scan, upload the report, and mark the request completed or failed.
 
 ## RBAC Model
 

@@ -180,6 +180,14 @@ input, select {
   color: var(--text);
 }
 
+.view-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
 .product-intro {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);

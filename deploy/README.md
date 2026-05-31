@@ -196,6 +196,8 @@ spec:
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
 | `POST` | `/api/scan-requests` | Request force scan for host/all |
 | `GET` | `/api/scan-requests` | List force scan requests |
+| `POST` | `/api/agent/scan-requests/claim` | Agent claims a pending force scan |
+| `POST` | `/api/agent/scan-requests/{id}/complete` | Agent completes/fails a force scan |
 | `GET` | `/api/health` | Health check |
 
 ## Troubleshooting

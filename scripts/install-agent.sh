@@ -10,6 +10,7 @@ WORK_DIR="${BONGSU_WORK_DIR:-/opt/bongsu}"
 PACKAGES_ONLY="${BONGSU_PACKAGES_ONLY:-true}"
 CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
 INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
+FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -21,6 +22,7 @@ if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "  BONGSU_PACKAGES_ONLY  Server-side CVE matching (default: true)"
     echo "  BONGSU_CRON           Cron schedule (default: '0 3 * * *')"
     echo "  BONGSU_INSTALL_MODE   cron or systemd (default: cron)"
+    echo "  BONGSU_FORCE_SCAN_DAEMON  Install force scan daemon in systemd mode (default: true)"
     exit 1
 fi
 
@@ -130,6 +132,28 @@ TIMER
     systemctl daemon-reload
     systemctl enable --now bongsu-agent.timer
     echo "Systemd timer installed: bongsu-agent.timer"
+    if [ "$FORCE_SCAN_DAEMON" = "true" ]; then
+        cat > /etc/systemd/system/bongsu-agent-daemon.service << SERVICE
+[Unit]
+Description=Bongsu force scan polling agent
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=$WORK_DIR/bin/bongsu-agent --config $WORK_DIR/config.yaml --daemon --poll-interval 60s
+Restart=always
+RestartSec=10
+Nice=10
+IOSchedulingClass=best-effort
+
+[Install]
+WantedBy=multi-user.target
+SERVICE
+        systemctl daemon-reload
+        systemctl enable --now bongsu-agent-daemon.service
+        echo "Systemd daemon installed: bongsu-agent-daemon.service"
+    fi
 else
     CRON_ENTRY="$CRON_SCHEDULE $AGENT_CMD >> $WORK_DIR/agent.log 2>&1"
     EXISTING_CRON=$(crontab -l 2>/dev/null | grep -v "bongsu-agent" || true)

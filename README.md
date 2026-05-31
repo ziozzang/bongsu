@@ -42,6 +42,7 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 - Docker / air-gapped 배포 지원
 - One-liner 에이전트 설치
 - Force scan 요청과 RBAC 데이터 모델 기반
+- 보안 DB import/update 후 백그라운드 CVSS 재계산 및 rematch
 - 인증 없는 모드 (`BONGSU_WEB_AUTH=false`)
 
 ## 운영 흐름
@@ -69,6 +70,12 @@ curl -fsSL http://server:8080/api/install.sh | sudo bash
 ```
 
 설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다.
+
+Force scan 요청을 즉시 받아 처리하는 상주 모드는 다음처럼 실행할 수 있습니다.
+
+```bash
+/opt/bongsu/bin/bongsu-agent --config /opt/bongsu/config.yaml --daemon --poll-interval 60s
+```
 
 ## 상세 문서
 

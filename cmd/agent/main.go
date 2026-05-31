@@ -22,6 +22,8 @@ func main() {
 	workDir := flag.String("work-dir", "/opt/bongsu", "Working directory")
 	scanType := flag.String("type", "daily", "Scan type: daily or manual")
 	packagesOnly := flag.Bool("packages-only", false, "Collect packages only (server-side CVE matching)")
+	daemon := flag.Bool("daemon", false, "Poll server for force scan requests")
+	pollInterval := flag.Duration("poll-interval", 60*time.Second, "Force scan polling interval")
 	configFile := flag.String("config", "", "Config file path (YAML)")
 	flag.Parse()
 
@@ -49,6 +51,13 @@ func main() {
 	}
 	if *serverURL == "" || *apiKey == "" {
 		log.Fatal("server URL and API key are required (use -server, -api-key, or config file)")
+	}
+
+	if *daemon {
+		if err := runDaemon(*serverURL, *apiKey, *workDir, *pollInterval); err != nil {
+			log.Fatalf("daemon failed: %v", err)
+		}
+		return
 	}
 
 	if err := run(*serverURL, *apiKey, *workDir, *scanType, *packagesOnly); err != nil {
@@ -104,6 +113,36 @@ func parseKV(line string) (string, string, bool) {
 		}
 	}
 	return "", "", false
+}
+
+func runDaemon(serverURL, apiKey, workDir string, pollInterval time.Duration) error {
+	log.Println("=== Bongsu Agent Daemon Starting ===")
+	host, err := system.CollectHostInfo()
+	if err != nil {
+		return fmt.Errorf("system info: %w", err)
+	}
+	rep := reporter.New(serverURL, apiKey)
+	for {
+		req, err := rep.ClaimScanRequest(host.ID)
+		if err != nil {
+			log.Printf("claim scan request failed: %v", err)
+			time.Sleep(pollInterval)
+			continue
+		}
+		if req == nil {
+			time.Sleep(pollInterval)
+			continue
+		}
+		log.Printf("claimed scan request %s type=%s packages_only=%v", req.ID, req.ScanType, req.PackagesOnly)
+		if err := run(serverURL, apiKey, workDir, req.ScanType, req.PackagesOnly); err != nil {
+			log.Printf("scan request %s failed: %v", req.ID, err)
+			_ = rep.CompleteScanRequest(req.ID, "failed", err.Error())
+			continue
+		}
+		if err := rep.CompleteScanRequest(req.ID, "completed", ""); err != nil {
+			log.Printf("complete scan request %s failed: %v", req.ID, err)
+		}
+	}
 }
 
 func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {

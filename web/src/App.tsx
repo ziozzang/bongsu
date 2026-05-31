@@ -365,6 +365,7 @@ function DashboardView() {
 function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scanMsg, setScanMsg] = useState('');
   useEffect(() => { api.hosts().then(h => { setHosts(h || []); setLoading(false); }).catch(() => setLoading(false)); }, []);
 
   if (loading) return <div>Loading...</div>;
@@ -373,7 +374,24 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
 
   return (
     <>
-      <h1 style={{ marginBottom: '1.5rem' }}>Hosts</h1>
+      <div className="view-title-row">
+        <h1 style={{ marginBottom: 0 }}>Hosts</h1>
+        <button
+          className="update-btn"
+          onClick={async () => {
+            setScanMsg('');
+            try {
+              await api.createScanRequest({ scan_type: 'manual', packages_only: true, reason: 'dashboard all-host force scan' });
+              setScanMsg('Force scan requested for all polling agents');
+            } catch {
+              setScanMsg('Force scan request failed');
+            }
+          }}
+        >
+          Force Scan All
+        </button>
+      </div>
+      {scanMsg && <div style={{ marginBottom: '0.75rem', color: scanMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{scanMsg}</div>}
       <div className="card">
         <table>
           <thead>
@@ -386,6 +404,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
               <th>Medium</th>
               <th>Low</th>
               <th>Last Seen</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -399,9 +418,26 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
                 <td style={{ color: sevColor('MEDIUM'), fontWeight: 600 }}>{h.vuln_counts?.MEDIUM || 0}</td>
                 <td style={{ color: sevColor('LOW'), fontWeight: 600 }}>{h.vuln_counts?.LOW || 0}</td>
                 <td className="mono">{new Date(h.last_seen).toLocaleString()}</td>
+                <td>
+                  <button
+                    className="delete-btn"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      setScanMsg('');
+                      try {
+                        await api.createScanRequest({ host_id: h.id, scan_type: 'manual', packages_only: true, reason: `dashboard force scan: ${h.hostname}` });
+                        setScanMsg(`Force scan requested for ${h.hostname}`);
+                      } catch {
+                        setScanMsg(`Force scan request failed for ${h.hostname}`);
+                      }
+                    }}
+                  >
+                    Scan
+                  </button>
+                </td>
               </tr>
             ))}
-            {hosts.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
+            {hosts.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
           </tbody>
         </table>
       </div>

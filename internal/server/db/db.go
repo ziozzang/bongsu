@@ -8,6 +8,7 @@ import (
 	"log"
 	"math"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -137,6 +138,229 @@ func ClassifySecuritySource(source, affectedProducts string) (string, string) {
 	default:
 		return "custom", ""
 	}
+}
+
+type affectedProduct struct {
+	Name      string   `json:"name"`
+	Ecosystem string   `json:"ecosystem"`
+	Fixed     []string `json:"fixed"`
+	Ranges    []struct {
+		Type   string `json:"type"`
+		Events []struct {
+			Introduced   string `json:"introduced"`
+			Fixed        string `json:"fixed"`
+			LastAffected string `json:"last_affected"`
+			Limit        string `json:"limit"`
+		} `json:"events"`
+	} `json:"ranges"`
+}
+
+func packageCategory(pkgType, ecosystem string) string {
+	eco := strings.ToLower(ecosystem)
+	pt := strings.ToLower(pkgType)
+	switch eco {
+	case "debian", "ubuntu", "alpine", "red hat", "rhel", "suse", "almalinux", "amazon linux", "wolfi", "chainguard":
+		return "os-package"
+	case "pypi", "npm", "go", "maven", "crates.io", "nuget", "rubygems", "packagist", "hex", "pub":
+		return "code-library"
+	}
+	switch pt {
+	case "debian", "ubuntu", "deb", "alpine", "apk", "redhat", "centos", "rocky", "alma", "amazon", "rpm", "suse", "wolfi":
+		return "os-package"
+	case "python-pkg", "pip", "poetry", "node-pkg", "npm", "yarn", "pnpm", "gomod", "go", "gobinary", "golang", "jar", "maven", "cargo", "rustbinary", "composer", "gem", "nuget":
+		return "code-library"
+	default:
+		return ""
+	}
+}
+
+func normalizeEcosystem(eco string) string {
+	eco = strings.ToLower(strings.TrimSpace(eco))
+	switch eco {
+	case "python", "python-pkg", "pip":
+		return "pypi"
+	case "node", "node-pkg", "javascript":
+		return "npm"
+	case "golang", "gomod":
+		return "go"
+	case "ruby", "gem":
+		return "rubygems"
+	case "rust", "cargo":
+		return "crates.io"
+	case "debian:10", "debian:11", "debian:12", "debian:13":
+		return "debian"
+	case "ubuntu:18.04", "ubuntu:20.04", "ubuntu:22.04", "ubuntu:24.04":
+		return "ubuntu"
+	case "redhat", "red hat enterprise linux", "centos", "rocky", "almalinux", "alma", "amazon":
+		return "rhel"
+	default:
+		if strings.HasPrefix(eco, "debian:") {
+			return "debian"
+		}
+		if strings.HasPrefix(eco, "ubuntu:") {
+			return "ubuntu"
+		}
+		return eco
+	}
+}
+
+func compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installedVersion, cveCategory, cveEco, affectedProducts string) (affectedProduct, bool) {
+	var products []affectedProduct
+	if affectedProducts == "" || json.Unmarshal([]byte(affectedProducts), &products) != nil {
+		return affectedProduct{}, false
+	}
+	pkgCat := packageCategory(pkgType, pkgEco)
+	pkgNormEco := normalizeEcosystem(pkgEco)
+	cveNormEco := normalizeEcosystem(cveEco)
+	for _, p := range products {
+		if !strings.EqualFold(p.Name, pkgName) {
+			continue
+		}
+		affectedEco := normalizeEcosystem(p.Ecosystem)
+		effectiveEco := affectedEco
+		if effectiveEco == "" {
+			effectiveEco = cveNormEco
+		}
+		if effectiveEco == "" {
+			continue
+		}
+		if len(p.Fixed) == 0 {
+			continue
+		}
+		if !versionIsAffected(installedVersion, p) {
+			continue
+		}
+		affectedCat := packageCategory("", effectiveEco)
+		effectiveCat := cveCategory
+		if effectiveCat == "" || effectiveCat == "general-cve" {
+			effectiveCat = affectedCat
+		}
+		if pkgCat == "" || effectiveCat == "" || pkgCat != effectiveCat {
+			continue
+		}
+		if pkgNormEco == "" || effectiveEco == "" || pkgNormEco != effectiveEco {
+			continue
+		}
+		return p, true
+	}
+	return affectedProduct{}, false
+}
+
+func versionIsAffected(installed string, p affectedProduct) bool {
+	if installed == "" {
+		return false
+	}
+	if len(p.Ranges) > 0 {
+		for _, r := range p.Ranges {
+			if versionInRange(installed, r.Events) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, fixed := range p.Fixed {
+		if less, ok := versionLess(installed, fixed); ok && less {
+			return true
+		}
+	}
+	return false
+}
+
+func versionInRange(installed string, events []struct {
+	Introduced   string `json:"introduced"`
+	Fixed        string `json:"fixed"`
+	LastAffected string `json:"last_affected"`
+	Limit        string `json:"limit"`
+}) bool {
+	active := false
+	for _, ev := range events {
+		if ev.Introduced != "" {
+			if ev.Introduced == "0" {
+				active = true
+			} else if cmp, ok := compareVersions(installed, ev.Introduced); ok {
+				active = cmp >= 0
+			} else {
+				return false
+			}
+		}
+		if active && ev.Fixed != "" {
+			if less, ok := versionLess(installed, ev.Fixed); ok {
+				active = less
+			} else {
+				return false
+			}
+		}
+		if active && ev.LastAffected != "" {
+			if cmp, ok := compareVersions(installed, ev.LastAffected); ok {
+				active = cmp <= 0
+			} else {
+				return false
+			}
+		}
+		if active && ev.Limit != "" {
+			if less, ok := versionLess(installed, ev.Limit); ok {
+				active = less
+			} else {
+				return false
+			}
+		}
+	}
+	return active
+}
+
+func versionLess(a, b string) (bool, bool) {
+	cmp, ok := compareVersions(a, b)
+	return cmp < 0, ok
+}
+
+func compareVersions(a, b string) (int, bool) {
+	as := versionSegments(a)
+	bs := versionSegments(b)
+	if len(as) == 0 || len(bs) == 0 {
+		return 0, false
+	}
+	n := len(as)
+	if len(bs) > n {
+		n = len(bs)
+	}
+	for i := 0; i < n; i++ {
+		av, bv := 0, 0
+		if i < len(as) {
+			av = as[i]
+		}
+		if i < len(bs) {
+			bv = bs[i]
+		}
+		if av < bv {
+			return -1, true
+		}
+		if av > bv {
+			return 1, true
+		}
+	}
+	return 0, true
+}
+
+func versionSegments(v string) []int {
+	v = strings.TrimSpace(v)
+	if i := strings.Index(v, ":"); i >= 0 {
+		v = v[i+1:]
+	}
+	parts := strings.FieldsFunc(v, func(r rune) bool {
+		return r < '0' || r > '9'
+	})
+	out := make([]int, 0, len(parts))
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil
+		}
+		out = append(out, n)
+	}
+	return out
 }
 
 const pkgCols = `p.id, p.scan_id, p.host_id, p.asset_type, p.asset_id, p.source, p.container, p.container_id, p.image_name, p.image_id, p.name, p.version, p.arch, p.pkg_type, p.ecosystem, p.purl, p.src_name, p.file_path, p.layer_id, p.target, p.created_at`
@@ -442,7 +666,7 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID, status string, limit
 	if err := db.QueryRowContext(ctx, "SELECT count(*) "+baseQ, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	q := `SELECT id, host_id, requested_by, scan_type, packages_only, reason, status, claimed_at, completed_at, created_at ` + baseQ + fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", n, n+1)
+	q := `SELECT id, host_id, requested_by, scan_type, packages_only, reason, status, error_message, claimed_at, completed_at, created_at ` + baseQ + fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", n, n+1)
 	args = append(args, limit, offset)
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -452,12 +676,50 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID, status string, limit
 	var out []models.ScanRequest
 	for rows.Next() {
 		var r models.ScanRequest
-		if err := rows.Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ErrorMessage, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, r)
 	}
 	return out, total, nil
+}
+
+func (db *DB) ClaimScanRequest(ctx context.Context, hostID string) (*models.ScanRequest, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	q := `UPDATE scan_requests
+SET status='claimed', claimed_at=now(), error_message=''
+WHERE id = (
+	SELECT id FROM scan_requests
+	WHERE status='pending' AND (host_id='' OR host_id=$1)
+	ORDER BY created_at ASC
+	FOR UPDATE SKIP LOCKED
+	LIMIT 1
+)
+RETURNING id, host_id, requested_by, scan_type, packages_only, reason, status, error_message, claimed_at, completed_at, created_at`
+	var r models.ScanRequest
+	err = tx.QueryRowContext(ctx, q, hostID).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ErrorMessage, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, tx.Commit()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, tx.Commit()
+}
+
+func (db *DB) CompleteScanRequest(ctx context.Context, id, status, message string) error {
+	if status != "completed" && status != "failed" && status != "cancelled" {
+		return fmt.Errorf("invalid scan request status: %s", status)
+	}
+	_, err := db.ExecContext(ctx, `UPDATE scan_requests
+SET status=$2, error_message=$3, completed_at=now()
+WHERE id=$1 AND status IN ('pending','claimed')`, id, status, message)
+	return err
 }
 
 func (db *DB) ListHosts(ctx context.Context) ([]models.Host, error) {
@@ -1066,7 +1328,7 @@ ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 		}
 		// Auto-calculate CVSS score from vector if missing
 		if e.CVSSScore == 0 && e.CVSSVector != "" {
-			e.CVSSScore = calcCVSS3BaseScore(e.CVSSVector)
+			e.CVSSScore = calcCvssScore(e.CVSSVector)
 		}
 		// Auto-normalize severity from score
 		if e.CVSSScore > 0 && (e.Severity == "" || e.Severity == "MODERATE") {
@@ -1171,7 +1433,11 @@ func calcCvssScore(vector string) float64 {
 		return 0
 	}
 	prefix := ""
-	if idx := strings.Index(vector, "/"); idx > 0 {
+	if strings.HasPrefix(vector, "CVSS:") {
+		idx := strings.Index(vector, "/")
+		if idx <= 0 {
+			return 0
+		}
 		prefix = vector[:idx+1]
 		vector = vector[idx+1:]
 	}
@@ -1190,7 +1456,48 @@ func calcCvssScore(vector string) float64 {
 	if strings.HasPrefix(prefix, "CVSS:3") {
 		return calcCvss3x(kv)
 	}
+	if strings.HasPrefix(prefix, "CVSS:2") || kv["Au"] != "" {
+		return calcCvss2(kv)
+	}
 	return 0
+}
+
+func calcCvss2(kv map[string]string) float64 {
+	av := map[string]float64{"L": 0.395, "A": 0.646, "N": 1.0}
+	ac := map[string]float64{"H": 0.35, "M": 0.61, "L": 0.71}
+	au := map[string]float64{"M": 0.45, "S": 0.56, "N": 0.704}
+	cia := map[string]float64{"N": 0.0, "P": 0.275, "C": 0.66}
+	avVal, ok := av[kv["AV"]]
+	if !ok {
+		return 0
+	}
+	acVal, ok := ac[kv["AC"]]
+	if !ok {
+		return 0
+	}
+	auVal, ok := au[kv["Au"]]
+	if !ok {
+		return 0
+	}
+	cVal, ok := cia[kv["C"]]
+	if !ok {
+		return 0
+	}
+	iVal, ok := cia[kv["I"]]
+	if !ok {
+		return 0
+	}
+	aVal, ok := cia[kv["A"]]
+	if !ok {
+		return 0
+	}
+	impact := 10.41 * (1 - (1-cVal)*(1-iVal)*(1-aVal))
+	exploit := 20 * avVal * acVal * auVal
+	if impact == 0 {
+		return 0
+	}
+	fImpact := 1.176
+	return roundup1(((0.6 * impact) + (0.4 * exploit) - 1.5) * fImpact)
 }
 
 func calcCvss3x(kv map[string]string) float64 {
@@ -1520,8 +1827,9 @@ type RematchResult struct {
 func (db *DB) RematchCVEs(ctx context.Context) (*RematchResult, error) {
 	query := fmt.Sprintf(`
 		SELECT p.id, p.name, p.version, p.host_id, p.scan_id, p.container, p.file_path,
+		       p.pkg_type, p.ecosystem,
 		       c.vulnerability_id, c.severity, c.cvss_score, c.cvss_vector,
-		       c.title, c.description, c.refs
+		       c.title, c.description, c.refs, c.category, c.ecosystem, c.affected_products
 		FROM packages p
 		JOIN (%s) ls ON p.scan_id = ls.id
 		JOIN cve_database c ON c.affected_products @> jsonb_build_array(jsonb_build_object('name', p.name))
@@ -1536,7 +1844,9 @@ func (db *DB) RematchCVEs(ctx context.Context) (*RematchResult, error) {
 
 	type match struct {
 		pkgID, pkgName, version, hostID, scanID, container, filePath string
+		pkgType, pkgEco                                              string
 		vulnID, severity, title, description, refs                   string
+		category, cveEco, affectedProducts                           string
 		cvssScore                                                    float64
 		cvssVector                                                   string
 	}
@@ -1545,9 +1855,9 @@ func (db *DB) RematchCVEs(ctx context.Context) (*RematchResult, error) {
 	for rows.Next() {
 		var m match
 		if err := rows.Scan(&m.pkgID, &m.pkgName, &m.version, &m.hostID, &m.scanID,
-			&m.container, &m.filePath,
+			&m.container, &m.filePath, &m.pkgType, &m.pkgEco,
 			&m.vulnID, &m.severity, &m.cvssScore, &m.cvssVector,
-			&m.title, &m.description, &m.refs); err != nil {
+			&m.title, &m.description, &m.refs, &m.category, &m.cveEco, &m.affectedProducts); err != nil {
 			continue
 		}
 		matches = append(matches, m)
@@ -1557,6 +1867,11 @@ func (db *DB) RematchCVEs(ctx context.Context) (*RematchResult, error) {
 	var newVulns []models.Vulnerability
 
 	for _, m := range matches {
+		affected, ok := compatibleSecurityCandidate(m.pkgName, m.pkgType, m.pkgEco, m.version, m.category, m.cveEco, m.affectedProducts)
+		if !ok {
+			result.Skipped++
+			continue
+		}
 		var exists bool
 		if err := db.QueryRowContext(ctx,
 			"SELECT EXISTS(SELECT 1 FROM vulnerabilities WHERE package_id=$1 AND vulnerability_id=$2 AND scan_id=$3)",
@@ -1593,7 +1908,7 @@ func (db *DB) RematchCVEs(ctx context.Context) (*RematchResult, error) {
 			ID: uuid.New().String(), PackageID: m.pkgID, ScanID: m.scanID, HostID: m.hostID,
 			VulnerabilityID: m.vulnID, Severity: sev, Title: truncate(m.title, 500),
 			Description: truncate(m.description, 2000), PkgName: m.pkgName, PkgPath: m.filePath,
-			InstalledVer: m.version, CVSSScore: m.cvssScore, CVSSVector: m.cvssVector,
+			InstalledVer: m.version, FixedVersion: affected.Fixed[0], CVSSScore: m.cvssScore, CVSSVector: m.cvssVector,
 			PrimaryURL: primaryURL, Container: m.container,
 		}
 		newVulns = append(newVulns, v)
@@ -1782,16 +2097,9 @@ func (db *DB) RecalcCVSSFromVectors(ctx context.Context) (int, error) {
 
 	count := 0
 	for _, e := range entries {
-		score := calcCVSS3BaseScore(e.vector)
+		score := calcCvssScore(e.vector)
 		if score > 0 {
-			sev := "LOW"
-			if score >= 9.0 {
-				sev = "CRITICAL"
-			} else if score >= 7.0 {
-				sev = "HIGH"
-			} else if score >= 4.0 {
-				sev = "MEDIUM"
-			}
+			sev := severityFromScore(score)
 			if _, err := db.ExecContext(ctx, `UPDATE cve_database SET cvss_score=$1, severity=$2 WHERE id=$3`, score, sev, e.id); err == nil {
 				count++
 			}
