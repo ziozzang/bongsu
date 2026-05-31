@@ -106,6 +106,30 @@ func TestMaxAgentReportBytes(t *testing.T) {
 	}
 }
 
+func TestPaginationParamsAreBounded(t *testing.T) {
+	t.Setenv("BONGSU_API_MAX_PAGE_LIMIT", "500")
+	t.Setenv("BONGSU_API_MAX_PAGE_OFFSET", "10000")
+
+	req := httptest.NewRequest("GET", "/?limit=999999&offset=999999999", nil)
+	if got := limitParam(req, 100); got != 500 {
+		t.Fatalf("limitParam capped = %d, want 500", got)
+	}
+	if got := offsetParam(req); got != 10000 {
+		t.Fatalf("offsetParam capped = %d, want 10000", got)
+	}
+
+	req = httptest.NewRequest("GET", "/?limit=-1&offset=-10&min_cvss=-3", nil)
+	if got := limitParam(req, 100); got != 100 {
+		t.Fatalf("negative limit = %d, want default 100", got)
+	}
+	if got := offsetParam(req); got != 0 {
+		t.Fatalf("negative offset = %d, want 0", got)
+	}
+	if got := floatParam(req, "min_cvss", 0.1); got != 0.1 {
+		t.Fatalf("negative float = %.1f, want default 0.1", got)
+	}
+}
+
 func TestWebAuthCanBeDisabledWithoutOpeningAdmin(t *testing.T) {
 	s := &Server{apiKey: "admin-key", agentKey: "agent-key", webAuth: false}
 	req := httptest.NewRequest("GET", "/", nil)

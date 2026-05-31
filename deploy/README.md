@@ -181,6 +181,8 @@ spec:
 | `BONGSU_CVE_MATCH_SOURCES` | empty | Optional comma-separated CVE source allowlist for automatic rematch |
 | `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT` | `0` | Skip CVE sources below this matchable-record percentage during automatic rematch; matchable records require name, ecosystem, and fixed-version data |
 | `BONGSU_AGENT_REPORT_MAX_BYTES` | `536870912` | Maximum accepted agent report body size |
+| `BONGSU_API_MAX_PAGE_LIMIT` | `1000` | Maximum `limit` accepted by paginated API endpoints |
+| `BONGSU_API_MAX_PAGE_OFFSET` | `1000000` | Maximum `offset` accepted by paginated API endpoints |
 | `BONGSU_VULN_EXPORT_MAX_ROWS` | `100000` | Maximum vulnerability rows per report export |
 | `BONGSU_WEBHOOK_URL` | empty | Optional outbound webhook URL for scan/security DB events |
 | `BONGSU_WEBHOOK_SECRET` | empty | Optional HMAC-SHA256 signing secret for webhooks |

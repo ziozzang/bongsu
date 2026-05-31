@@ -803,8 +803,8 @@ func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
-	limit := intParam(r, "limit", 100)
-	offset := intParam(r, "offset", 0)
+	limit := limitParam(r, 100)
+	offset := offsetParam(r)
 
 	pkgs, total, err := s.db.GetLatestPackages(ctx, hostID, limit, offset)
 	if err != nil {
@@ -927,8 +927,8 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	limit := intParam(r, "limit", 100)
-	offset := intParam(r, "offset", 0)
+	limit := limitParam(r, 100)
+	offset := offsetParam(r)
 
 	vulns, total, err := s.db.ListVulnerabilities(ctx, filter, limit, offset)
 	if err != nil {
@@ -1164,8 +1164,8 @@ func (s *Server) handleCveSearch(w http.ResponseWriter, r *http.Request) {
 	pkgName := r.URL.Query().Get("pkg_name")
 	severity := r.URL.Query().Get("severity")
 	minCVSS := floatParam(r, "min_cvss", 0.1)
-	limit := intParam(r, "limit", 50)
-	offset := intParam(r, "offset", 0)
+	limit := limitParam(r, 50)
+	offset := offsetParam(r)
 	sortBy := r.URL.Query().Get("sort_by")
 	sortOrder := r.URL.Query().Get("sort_order")
 
@@ -1593,8 +1593,8 @@ func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 		NameSearch: r.URL.Query().Get("q"),
 		SortBy:     r.URL.Query().Get("sort_by"),
 		SortDesc:   r.URL.Query().Get("sort_order") == "desc",
-		Limit:      intParam(r, "limit", 100),
-		Offset:     intParam(r, "offset", 0),
+		Limit:      limitParam(r, 100),
+		Offset:     offsetParam(r),
 	}
 
 	pkgs, total, err := s.db.SearchPackages(ctx, f)
@@ -1636,8 +1636,8 @@ func (s *Server) handleSearchContainers(w http.ResponseWriter, r *http.Request) 
 		NameSearch: r.URL.Query().Get("q"),
 		SortBy:     r.URL.Query().Get("sort_by"),
 		SortDesc:   r.URL.Query().Get("sort_order") == "desc",
-		Limit:      intParam(r, "limit", 100),
-		Offset:     intParam(r, "offset", 0),
+		Limit:      limitParam(r, 100),
+		Offset:     offsetParam(r),
 	}
 
 	containers, total, err := s.db.SearchContainers(ctx, f)
@@ -1691,8 +1691,8 @@ func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	limit := intParam(r, "limit", 50)
-	offset := intParam(r, "offset", 0)
+	limit := limitParam(r, 50)
+	offset := offsetParam(r)
 
 	scans, total, err := s.db.ListScans(ctx, hostID, scope.HostIDs, limit, offset)
 	if err != nil {
@@ -1727,8 +1727,8 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 		hostID,
 		scope.HostIDs,
 		r.URL.Query().Get("status"),
-		intParam(r, "limit", 50),
-		intParam(r, "offset", 0),
+		limitParam(r, 50),
+		offsetParam(r),
 	)
 	if err != nil {
 		log.Printf("list scan requests: %v", err)
@@ -3070,7 +3070,7 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		ResourceID:   r.URL.Query().Get("resource_id"),
 		Status:       r.URL.Query().Get("status"),
 	}
-	items, total, err := s.db.ListAuditLogs(r.Context(), filter, intParam(r, "limit", 100), intParam(r, "offset", 0))
+	items, total, err := s.db.ListAuditLogs(r.Context(), filter, limitParam(r, 100), offsetParam(r))
 	if err != nil {
 		log.Printf("list audit logs: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
@@ -3105,8 +3105,8 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 	minCVSS := floatParam(r, "min_cvss", 0.1)
 	sortBy := r.URL.Query().Get("sort_by")
 	sortOrder := r.URL.Query().Get("sort_order")
-	limit := intParam(r, "limit", 50)
-	offset := intParam(r, "offset", 0)
+	limit := limitParam(r, 50)
+	offset := offsetParam(r)
 
 	entries, total, err := s.db.SearchCveDatabase(ctx, query, severity, source, minCVSS, sortBy, sortOrder, limit, offset)
 	if err != nil {
@@ -3136,6 +3136,36 @@ func intParam(r *http.Request, key string, def int) int {
 	if err != nil {
 		return def
 	}
+	if n < 0 {
+		return def
+	}
+	return n
+}
+
+func limitParam(r *http.Request, def int) int {
+	n := intParam(r, "limit", def)
+	if n <= 0 {
+		n = def
+	}
+	maxLimit := envInt("BONGSU_API_MAX_PAGE_LIMIT", 1000)
+	if maxLimit <= 0 {
+		maxLimit = 1000
+	}
+	if n > maxLimit {
+		return maxLimit
+	}
+	return n
+}
+
+func offsetParam(r *http.Request) int {
+	n := intParam(r, "offset", 0)
+	maxOffset := envInt("BONGSU_API_MAX_PAGE_OFFSET", 1000000)
+	if maxOffset <= 0 {
+		maxOffset = 1000000
+	}
+	if n > maxOffset {
+		return maxOffset
+	}
 	return n
 }
 
@@ -3146,6 +3176,9 @@ func floatParam(r *http.Request, key string, def float64) float64 {
 	}
 	n, err := strconv.ParseFloat(v, 64)
 	if err != nil {
+		return def
+	}
+	if n < 0 {
 		return def
 	}
 	return n
