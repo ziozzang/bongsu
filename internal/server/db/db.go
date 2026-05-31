@@ -152,6 +152,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 	checks := []struct {
 		table  string
 		column string
+		index  string
 	}{
 		{table: "hosts"},
 		{table: "packages", column: "asset_type"},
@@ -162,13 +163,18 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "scan_requests", column: "claimed_by_host_id"},
 		{table: "audit_logs"},
 		{table: "vulnerability_triage"},
+		{index: "idx_scan_requests_active_security_db_host"},
+		{index: "idx_vulnerabilities_package_scan_vuln"},
 	}
 	for _, check := range checks {
 		var ok bool
 		var err error
-		if check.column == "" {
+		switch {
+		case check.index != "":
+			ok, err = db.indexExists(ctx, check.index)
+		case check.column == "":
 			ok, err = db.tableExists(ctx, check.table)
-		} else {
+		default:
 			ok, err = db.columnExists(ctx, check.table, check.column)
 		}
 		if err != nil || !ok {
@@ -196,6 +202,15 @@ func (db *DB) columnExists(ctx context.Context, table, column string) (bool, err
 	)`, table, column).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check column %s.%s: %w", table, column, err)
+	}
+	return exists, nil
+}
+
+func (db *DB) indexExists(ctx context.Context, index string) (bool, error) {
+	var exists bool
+	err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, "public."+index).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check index %s: %w", index, err)
 	}
 	return exists, nil
 }

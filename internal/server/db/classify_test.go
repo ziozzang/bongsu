@@ -409,11 +409,40 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		`{table: "scan_requests", column: "claimed_by_host_id"}`,
 		`{table: "audit_logs"}`,
 		`{table: "vulnerability_triage"}`,
+		`{index: "idx_scan_requests_active_security_db_host"}`,
+		`{index: "idx_vulnerabilities_package_scan_vuln"}`,
 		"db.columnExists",
+		"db.indexExists",
 		"db.tableExists",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("legacy schema completeness check missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestIndexExistsUsesPostgresRegclass(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) indexExists")
+	if start < 0 {
+		t.Fatal("indexExists not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) appliedMigrations")
+	if end < 0 {
+		t.Fatal("indexExists end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"to_regclass($1) IS NOT NULL",
+		`"public."+index`,
+		"check index %s",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("indexExists missing %q: %s", want, fn)
 		}
 	}
 }
