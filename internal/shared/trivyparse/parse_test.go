@@ -52,3 +52,40 @@ func TestUbuntuPackagesKeepUbuntuEcosystem(t *testing.T) {
 		t.Fatalf("purl = %q", pkgs[0].PURL)
 	}
 }
+
+func TestVulnerabilitiesBindToPackageTarget(t *testing.T) {
+	data := []byte(`{
+	  "Results": [
+	    {
+	      "Target": "package-lock.json",
+	      "Type": "npm",
+	      "Packages": [{"Name": "debug", "Version": "4.3.0"}],
+	      "Vulnerabilities": [{"VulnerabilityID": "CVE-2026-0001", "PkgName": "debug", "InstalledVersion": "4.3.0"}]
+	    },
+	    {
+	      "Target": "requirements.txt",
+	      "Type": "python-pkg",
+	      "Packages": [{"Name": "debug", "Version": "1.0.0"}],
+	      "Vulnerabilities": [{"VulnerabilityID": "CVE-2026-0002", "PkgName": "debug", "InstalledVersion": "1.0.0"}]
+	    }
+	  ]
+	}`)
+
+	pkgs, vulns, err := ExtractPackagesAndVulns(data, "trivy-host", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) != 2 || len(vulns) != 2 {
+		t.Fatalf("packages=%d vulns=%d, want 2 each", len(pkgs), len(vulns))
+	}
+	idsByTarget := map[string]string{}
+	for _, p := range pkgs {
+		idsByTarget[p.Target] = p.ID
+	}
+	if vulns[0].PackageID != idsByTarget["package-lock.json"] {
+		t.Fatalf("npm vuln package_id = %q, want %q", vulns[0].PackageID, idsByTarget["package-lock.json"])
+	}
+	if vulns[1].PackageID != idsByTarget["requirements.txt"] {
+		t.Fatalf("python vuln package_id = %q, want %q", vulns[1].PackageID, idsByTarget["requirements.txt"])
+	}
+}

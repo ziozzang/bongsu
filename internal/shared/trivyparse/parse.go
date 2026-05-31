@@ -66,6 +66,8 @@ func ExtractPackagesAndVulns(data []byte, source, container string) ([]models.Pa
 	var pkgs []models.Package
 	var vulns []models.Vulnerability
 	pkgMap := map[string]string{}
+	nameCounts := map[string]int{}
+	nameIDs := map[string]string{}
 
 	for _, r := range result.Results {
 		for _, p := range r.Packages {
@@ -85,7 +87,9 @@ func ExtractPackagesAndVulns(data []byte, source, container string) ([]models.Pa
 				LayerID:   p.Layer.DiffID,
 				Target:    r.Target,
 			})
-			pkgMap[p.Name] = pkgID
+			pkgMap[trivyPackageKey(r.Target, p.Name)] = pkgID
+			nameCounts[p.Name]++
+			nameIDs[p.Name] = pkgID
 		}
 
 		for _, v := range r.Vulnerabilities {
@@ -107,8 +111,12 @@ func ExtractPackagesAndVulns(data []byte, source, container string) ([]models.Pa
 			} else if cvssScore > 0 {
 				sev = "LOW"
 			}
+			packageID := pkgMap[trivyPackageKey(r.Target, v.PkgName)]
+			if packageID == "" && nameCounts[v.PkgName] == 1 {
+				packageID = nameIDs[v.PkgName]
+			}
 			vulns = append(vulns, models.Vulnerability{
-				PackageID:       pkgMap[v.PkgName],
+				PackageID:       packageID,
 				VulnerabilityID: v.VulnerabilityID,
 				Severity:        sev,
 				Title:           v.Title,
@@ -126,6 +134,10 @@ func ExtractPackagesAndVulns(data []byte, source, container string) ([]models.Pa
 		}
 	}
 	return pkgs, vulns, nil
+}
+
+func trivyPackageKey(target, name string) string {
+	return target + "\x00" + name
 }
 
 func ecosystemForType(pkgType string) string {

@@ -79,8 +79,13 @@ func (m *Matcher) Match(ctx context.Context, pkgs []models.Package, host models.
 		filePath  string
 	}
 	pkgMap := map[string]pkgInfo{}
+	nameCounts := map[string]int{}
+	nameInfo := map[string]pkgInfo{}
 	for _, p := range pkgs {
-		pkgMap[p.Name] = pkgInfo{id: p.ID, container: p.Container, filePath: p.FilePath}
+		info := pkgInfo{id: p.ID, container: p.Container, filePath: p.FilePath}
+		pkgMap[matchPackageKey(p.Target, p.Name)] = info
+		nameCounts[p.Name]++
+		nameInfo[p.Name] = info
 	}
 
 	var vulns []models.Vulnerability
@@ -94,7 +99,10 @@ func (m *Matcher) Match(ctx context.Context, pkgs []models.Package, host models.
 					cvssVector = c.V3Vector
 				}
 			}
-			pi := pkgMap[v.PkgName]
+			pi := pkgMap[matchPackageKey(r.Target, v.PkgName)]
+			if pi.id == "" && nameCounts[v.PkgName] == 1 {
+				pi = nameInfo[v.PkgName]
+			}
 			vulns = append(vulns, models.Vulnerability{
 				PackageID:       pi.id,
 				VulnerabilityID: v.VulnerabilityID,
@@ -114,6 +122,10 @@ func (m *Matcher) Match(ctx context.Context, pkgs []models.Package, host models.
 		}
 	}
 	return vulns, nil
+}
+
+func matchPackageKey(target, name string) string {
+	return target + "\x00" + name
 }
 
 func (m *Matcher) acquire(ctx context.Context) error {
