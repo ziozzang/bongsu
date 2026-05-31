@@ -136,3 +136,35 @@ func TestGenerateSPDXIncludesPackagePURLAndRelationships(t *testing.T) {
 		t.Fatalf("relationships = %d", len(relationships))
 	}
 }
+
+func TestSPDXPackageVerificationCodeIgnoresRowIDs(t *testing.T) {
+	base := models.Package{
+		ID:        "pkg-row-1",
+		HostID:    "host-row-1",
+		AssetType: "container",
+		AssetID:   "container-1",
+		Source:    "trivy",
+		Container: "api",
+		ImageName: "example/api:1.0",
+		Name:      "openssl",
+		Version:   "3.0.13",
+		Arch:      "amd64",
+		PkgType:   "deb",
+		Ecosystem: "Ubuntu",
+		FilePath:  "/usr/lib",
+	}
+	next := base
+	next.ID = "pkg-row-2"
+	next.HostID = "host-row-2"
+
+	got := spdxPackageVerificationCode(spdxPackageIdentity(base)...)
+	want := spdxPackageVerificationCode(spdxPackageIdentity(next)...)
+	if got != want {
+		t.Fatalf("verification code changed with row IDs: got %s want %s", got, want)
+	}
+	next.Version = "3.0.14"
+	changed := spdxPackageVerificationCode(spdxPackageIdentity(next)...)
+	if changed == got {
+		t.Fatal("verification code should change when package version changes")
+	}
+}

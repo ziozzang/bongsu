@@ -317,7 +317,7 @@ func spdxPackageVerificationCode(parts ...string) string {
 
 func spdxPackageIdentity(pkg models.Package) []string {
 	return []string{
-		pkg.ID, pkg.HostID, pkg.AssetType, pkg.AssetID, pkg.Source,
+		pkg.AssetType, pkg.AssetID, pkg.Source,
 		pkg.Container, pkg.ContainerID, pkg.ImageName, pkg.ImageID,
 		pkg.Name, pkg.Version, pkg.Arch, pkg.PkgType, pkg.Ecosystem,
 		pkg.PURL, pkg.SrcName, pkg.FilePath, pkg.Target,
