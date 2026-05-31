@@ -1142,6 +1142,8 @@ func TestTriageHandlerValidatesScopeBeforeUpsert(t *testing.T) {
 		`http.Error(w, "host_id is required when pkg_name is set", http.StatusBadRequest)`,
 		`s.db.GetHost(r.Context(), body.HostID)`,
 		`http.Error(w, "host not found", http.StatusNotFound)`,
+		`triageStatusRequiresReason(body.Status) && body.Reason == ""`,
+		`http.Error(w, "reason is required for "+body.Status, http.StatusBadRequest)`,
 		`s.db.UpsertVulnerabilityTriage`,
 	} {
 		if !strings.Contains(fn, want) {
@@ -1152,6 +1154,19 @@ func TestTriageHandlerValidatesScopeBeforeUpsert(t *testing.T) {
 	upsertIdx := strings.Index(fn, "s.db.UpsertVulnerabilityTriage")
 	if hostLookupIdx < 0 || upsertIdx < 0 || upsertIdx < hostLookupIdx {
 		t.Fatalf("triage handler must validate host before upsert: %s", fn)
+	}
+}
+
+func TestTriageSuppressingStatusesRequireReason(t *testing.T) {
+	for _, status := range []string{"accepted_risk", "false_positive", "fixed", "ignored"} {
+		if !triageStatusRequiresReason(status) {
+			t.Fatalf("%s should require an audit reason", status)
+		}
+	}
+	for _, status := range []string{"", "open", "in_progress"} {
+		if triageStatusRequiresReason(status) {
+			t.Fatalf("%s should not require an audit reason", status)
+		}
 	}
 }
 

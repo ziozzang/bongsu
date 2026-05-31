@@ -1244,6 +1244,10 @@ func (s *Server) handleUpsertVulnerabilityTriage(w http.ResponseWriter, r *http.
 	if body.Status == "" {
 		body.Status = "open"
 	}
+	if triageStatusRequiresReason(body.Status) && body.Reason == "" {
+		http.Error(w, "reason is required for "+body.Status, http.StatusBadRequest)
+		return
+	}
 	if body.UpdatedBy == "" {
 		body.UpdatedBy = s.actorID(r)
 	}
@@ -1270,6 +1274,15 @@ func normalizeVulnerabilityTriage(t *models.VulnerabilityTriage) {
 	t.Reason = strings.TrimSpace(t.Reason)
 	t.Comment = strings.TrimSpace(t.Comment)
 	t.UpdatedBy = strings.TrimSpace(t.UpdatedBy)
+}
+
+func triageStatusRequiresReason(status string) bool {
+	switch status {
+	case "accepted_risk", "false_positive", "fixed", "ignored":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) handleCveSearch(w http.ResponseWriter, r *http.Request) {

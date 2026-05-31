@@ -3,6 +3,11 @@ const API_BASE = '/api';
 let apiKey = localStorage.getItem('bongsu_api_key') || '';
 let onUnauthorized: (() => void) | null = null;
 
+async function responseError(res: Response): Promise<Error> {
+  const text = (await res.text()).trim();
+  return new Error(text || `HTTP ${res.status}`);
+}
+
 export function setApiKey(key: string) {
   apiKey = key;
   localStorage.setItem('bongsu_api_key', key);
@@ -38,7 +43,7 @@ async function request<T>(path: string, params?: Record<string, string>, method?
     if (onUnauthorized) onUnauthorized();
     throw new Error('Unauthorized');
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw await responseError(res);
   return res.json();
 }
 
@@ -51,7 +56,7 @@ async function requestJSON<T>(path: string, body: unknown): Promise<T> {
     if (onUnauthorized) onUnauthorized();
     throw new Error('Unauthorized');
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw await responseError(res);
   return res.json();
 }
 
@@ -64,7 +69,7 @@ async function requestEmpty<T>(path: string, method: string): Promise<T> {
     if (onUnauthorized) onUnauthorized();
     throw new Error('Unauthorized');
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw await responseError(res);
   return res.json();
 }
 
@@ -83,7 +88,7 @@ async function download(path: string, filename: string, params?: Record<string, 
     if (onUnauthorized) onUnauthorized();
     throw new Error('Unauthorized');
   }
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (!res.ok) throw await responseError(res);
   const blob = await res.blob();
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement('a');

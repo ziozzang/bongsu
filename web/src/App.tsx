@@ -1209,8 +1209,8 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         expires_at: triageExpiresAt ? `${triageExpiresAt}T00:00:00Z` : null,
       });
       setTriageMsg('Saved');
-    } catch {
-      setTriageMsg('Save failed');
+    } catch (err) {
+      setTriageMsg(err instanceof Error ? err.message : 'Save failed');
     }
   };
 

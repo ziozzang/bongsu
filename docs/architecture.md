@@ -124,7 +124,7 @@ Admins can dry-run or execute `/api/admin/retention/prune` from the dashboard to
 
 ## Vulnerability Triage
 
-Triage decisions are stored separately from scan-result rows in `vulnerability_triage`, so they survive rescans and security DB updates. A decision can target one CVE globally, one CVE on a host, or one CVE/package pair on a host; package-scoped decisions require a host so exceptions cannot accidentally become global package-name rules. Current statuses are `open`, `in_progress`, `accepted_risk`, `false_positive`, `fixed`, and `ignored`; expired decisions stop applying automatically. The dashboard exposes an expiry date for time-bound exceptions, exports include `triage_expires_at`, and triage changes are audited through `vulnerability.triage`.
+Triage decisions are stored separately from scan-result rows in `vulnerability_triage`, so they survive rescans and security DB updates. A decision can target one CVE globally, one CVE on a host, or one CVE/package pair on a host; package-scoped decisions require a host so exceptions cannot accidentally become global package-name rules. Current statuses are `open`, `in_progress`, `accepted_risk`, `false_positive`, `fixed`, and `ignored`; `accepted_risk`, `false_positive`, `fixed`, and `ignored` require a reason before they can be saved because they can suppress remediation queues. Expired decisions stop applying automatically. The dashboard exposes an expiry date for time-bound exceptions, exports include `triage_expires_at`, and triage changes are audited through `vulnerability.triage`.
 
 ## Remediation SLA
 
