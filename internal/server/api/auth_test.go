@@ -558,6 +558,64 @@ func TestScanRequestErrorHTTPMapping(t *testing.T) {
 	}
 }
 
+func TestNormalizeScanRequestCreateForcesPendingState(t *testing.T) {
+	claimedAt := time.Now()
+	completedAt := time.Now()
+	req := models.ScanRequest{
+		HostID:          " host-1 ",
+		RequestedBy:     " operator ",
+		ScanType:        " manual ",
+		Reason:          " dashboard force scan ",
+		Status:          "claimed",
+		ErrorMessage:    "old error",
+		ClaimedByHostID: "other-host",
+		ClaimedAt:       &claimedAt,
+		CompletedAt:     &completedAt,
+	}
+	if err := normalizeScanRequestCreate(&req); err != nil {
+		t.Fatalf("normalize scan request: %v", err)
+	}
+	if req.HostID != "host-1" || req.RequestedBy != "operator" || req.ScanType != "manual" || req.Reason != "dashboard force scan" {
+		t.Fatalf("scan request fields were not normalized: %#v", req)
+	}
+	if req.Status != "pending" || req.ErrorMessage != "" || req.ClaimedByHostID != "" || req.ClaimedAt != nil || req.CompletedAt != nil {
+		t.Fatalf("new scan request must start unclaimed pending, got %#v", req)
+	}
+}
+
+func TestNormalizeScanRequestCreateRejectsUnknownType(t *testing.T) {
+	req := models.ScanRequest{ScanType: "completed"}
+	if err := normalizeScanRequestCreate(&req); err == nil {
+		t.Fatal("unknown scan_type should be rejected")
+	}
+}
+
+func TestCreateScanRequestValidatesTargetHost(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleCreateScanRequest")
+	if start < 0 {
+		t.Fatal("handleCreateScanRequest not found")
+	}
+	end := strings.Index(body[start:], "func normalizeScanRequestCreate")
+	if end < 0 {
+		t.Fatal("normalizeScanRequestCreate not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"normalizeScanRequestCreate(&req)",
+		`s.db.GetHost(r.Context(), req.HostID)`,
+		`http.Error(w, "host not found", http.StatusNotFound)`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("create scan request host validation missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestAgentScanRequestCompletionRequiresClaimedHost(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {

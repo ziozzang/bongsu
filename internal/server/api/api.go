@@ -1824,11 +1824,15 @@ func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
-	if req.RequestedBy == "" {
-		req.RequestedBy = "api"
+	if err := normalizeScanRequestCreate(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
-	if req.ScanType == "" {
-		req.ScanType = "manual"
+	if req.HostID != "" {
+		if _, err := s.db.GetHost(r.Context(), req.HostID); err != nil {
+			http.Error(w, "host not found", http.StatusNotFound)
+			return
+		}
 	}
 	if err := s.db.CreateScanRequest(r.Context(), &req); err != nil {
 		log.Printf("create scan request: %v", err)
@@ -1842,6 +1846,30 @@ func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request)
 		"reason":        req.Reason,
 	})
 	writeJSON(w, http.StatusAccepted, req)
+}
+
+func normalizeScanRequestCreate(req *models.ScanRequest) error {
+	req.HostID = strings.TrimSpace(req.HostID)
+	req.RequestedBy = strings.TrimSpace(req.RequestedBy)
+	req.ScanType = strings.TrimSpace(req.ScanType)
+	req.Reason = strings.TrimSpace(req.Reason)
+	if req.RequestedBy == "" {
+		req.RequestedBy = "api"
+	}
+	if req.ScanType == "" {
+		req.ScanType = "manual"
+	}
+	switch req.ScanType {
+	case "manual", "daily", "security-db-update":
+	default:
+		return fmt.Errorf("invalid scan_type")
+	}
+	req.Status = "pending"
+	req.ErrorMessage = ""
+	req.ClaimedByHostID = ""
+	req.ClaimedAt = nil
+	req.CompletedAt = nil
+	return nil
 }
 
 func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) {
