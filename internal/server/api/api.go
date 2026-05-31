@@ -70,6 +70,9 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		secMgr:       secMgr,
 		notifier:     newWebhookNotifierFromEnv(),
 	}
+	if s.notifier != nil {
+		s.notifier.onResult = s.auditWebhookResult
+	}
 	s.routes()
 	return s
 }
@@ -310,6 +313,31 @@ func (s *Server) auditSystem(action, resourceType, resourceID, status string, me
 	if err := s.db.RecordAuditLog(ctx, entry); err != nil {
 		log.Printf("audit log failed action=%s resource=%s/%s: %v", action, resourceType, resourceID, err)
 	}
+}
+
+func (s *Server) auditWebhookResult(event string, data map[string]any, status string, httpStatus int, errMsg string) {
+	resourceType := "webhook"
+	resourceID := event
+	if id, ok := data["scan_id"].(string); ok && id != "" {
+		resourceType = "scan"
+		resourceID = id
+	} else if event == "security_db.updated" {
+		resourceType = "security_db"
+		resourceID = "aggregate"
+	}
+	meta := map[string]any{
+		"event":       event,
+		"http_status": httpStatus,
+	}
+	if errMsg != "" {
+		meta["error"] = errMsg
+	}
+	for _, key := range []string{"host_id", "hostname", "inventory_status", "reason"} {
+		if v, ok := data[key]; ok {
+			meta[key] = v
+		}
+	}
+	s.auditSystem("webhook.send", resourceType, resourceID, status, meta)
 }
 
 func (s *Server) actorType(r *http.Request) string {

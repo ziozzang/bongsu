@@ -20,6 +20,7 @@ type webhookNotifier struct {
 	minSeverity       string
 	inventoryStatuses map[string]bool
 	client            *http.Client
+	onResult          func(event string, data map[string]any, status string, httpStatus int, errMsg string)
 }
 
 type webhookPayload struct {
@@ -51,6 +52,11 @@ func (n *webhookNotifier) Send(event string, data map[string]any) {
 		return
 	}
 	go func() {
+		report := func(status string, httpStatus int, errMsg string) {
+			if n.onResult != nil {
+				n.onResult(event, data, status, httpStatus, errMsg)
+			}
+		}
 		payload := webhookPayload{
 			Event:     event,
 			Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -59,6 +65,7 @@ func (n *webhookNotifier) Send(event string, data map[string]any) {
 		body, err := json.Marshal(payload)
 		if err != nil {
 			log.Printf("webhook marshal %s: %v", event, err)
+			report("failed", 0, err.Error())
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -66,6 +73,7 @@ func (n *webhookNotifier) Send(event string, data map[string]any) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.url, bytes.NewReader(body))
 		if err != nil {
 			log.Printf("webhook request %s: %v", event, err)
+			report("failed", 0, err.Error())
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
@@ -76,15 +84,23 @@ func (n *webhookNotifier) Send(event string, data map[string]any) {
 			mac.Write(body)
 			req.Header.Set("X-Bongsu-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 		}
-		resp, err := n.client.Do(req)
+		client := n.client
+		if client == nil {
+			client = http.DefaultClient
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("webhook send %s: %v", event, err)
+			report("failed", 0, err.Error())
 			return
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			log.Printf("webhook send %s returned HTTP %d", event, resp.StatusCode)
+			report("failed", resp.StatusCode, "")
+			return
 		}
+		report("ok", resp.StatusCode, "")
 	}()
 }
 

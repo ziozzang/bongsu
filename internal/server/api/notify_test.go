@@ -15,6 +15,7 @@ import (
 
 func TestWebhookNotifierSendsSignedPayload(t *testing.T) {
 	received := make(chan webhookPayload, 1)
+	results := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -39,6 +40,9 @@ func TestWebhookNotifierSendsSignedPayload(t *testing.T) {
 		url:    server.URL,
 		secret: "secret",
 		client: server.Client(),
+		onResult: func(event string, data map[string]any, status string, httpStatus int, errMsg string) {
+			results <- status
+		},
 	}
 	n.Send("scan.completed", map[string]any{"scan_id": "scan-1"})
 
@@ -49,6 +53,45 @@ func TestWebhookNotifierSendsSignedPayload(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("webhook was not received")
+	}
+	select {
+	case status := <-results:
+		if status != "ok" {
+			t.Fatalf("result status = %q", status)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook result was not reported")
+	}
+}
+
+func TestWebhookNotifierReportsHTTPFailure(t *testing.T) {
+	results := make(chan struct {
+		status     string
+		httpStatus int
+	}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer server.Close()
+
+	n := &webhookNotifier{
+		url:    server.URL,
+		client: server.Client(),
+		onResult: func(event string, data map[string]any, status string, httpStatus int, errMsg string) {
+			results <- struct {
+				status     string
+				httpStatus int
+			}{status: status, httpStatus: httpStatus}
+		},
+	}
+	n.Send("scan.completed", map[string]any{"scan_id": "scan-1"})
+	select {
+	case result := <-results:
+		if result.status != "failed" || result.httpStatus != http.StatusBadGateway {
+			t.Fatalf("result = %#v", result)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook failure result was not reported")
 	}
 }
 

@@ -45,6 +45,7 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 - healthy/stale/empty/none 기준의 호스트 SBOM 상태 필터
 - 대시보드에서 SBOM 수집 상태별 호스트 수 요약
 - 빈 SBOM 등 inventory 상태 기반 scan.completed webhook 알림
+- webhook 전송 성공/실패 audit log 기록
 - 패키지별 CVE 상세 정보 (air-gapped 환경 지원)
 - Docker / air-gapped 배포 지원
 - One-liner 에이전트 설치
