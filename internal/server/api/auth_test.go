@@ -901,6 +901,26 @@ func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
 	}
 }
 
+func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
+	out, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"setHealth(h)",
+		"health?.trivy_db?.status",
+		"health?.trivy_db?.last_error",
+		"health?.security_db?.last_error",
+		"Trivy DB:",
+		"Security sources:",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dashboard DB health display missing %q", want)
+		}
+	}
+}
+
 func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/install-agent.sh")
 	if err != nil {

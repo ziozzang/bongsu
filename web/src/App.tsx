@@ -233,7 +233,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
 
 function DashboardView() {
   const [stats, setStats] = useState<Stats | null>(null);
-  const [dbStatus, setDbStatus] = useState<{ready: boolean; lastUpdate: string | null} | null>(null);
+  const [health, setHealth] = useState<HealthStatus | null>(null);
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
   const [cveSources, setCveSources] = useState<CveSourceStat[]>([]);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
@@ -252,7 +252,7 @@ function DashboardView() {
   useEffect(() => { api.stats().then(setStats).catch(() => {}); }, []);
   useEffect(() => {
     api.rawHealth().then(h => {
-      setDbStatus({ ready: h.trivy_db_ready, lastUpdate: h.trivy_db_last_update || null });
+      setHealth(h);
       setSecurityDbConfigured(!!h.security_db?.configured);
     }).catch(() => {});
   }, [updating]);
@@ -471,12 +471,17 @@ function DashboardView() {
       </div>
       <div className="db-status-bar" style={{ marginTop: '1.5rem' }}>
         <h3>Vulnerability Database</h3>
-        <span className={`status-dot ${dbStatus?.ready ? 'ready' : 'not-ready'}`}>
-          {dbStatus?.ready ? 'Ready' : 'Not loaded'}
+        <span className={`status-dot ${health?.trivy_db_ready ? 'ready' : 'not-ready'}`}>
+          Trivy: {health?.trivy_db?.status || (health?.trivy_db_ready ? 'ok' : 'not loaded')}
         </span>
-        {dbStatus?.lastUpdate && (
+        {health?.security_db && (
+          <span className={`status-dot ${health.security_db.status === 'ok' ? 'ready' : 'not-ready'}`}>
+            Sources: {health.security_db.configured ? health.security_db.status : 'not configured'}
+          </span>
+        )}
+        {(health?.trivy_db_last_update || health?.trivy_db?.last_update) && (
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-            Updated: {new Date(dbStatus.lastUpdate).toLocaleString()}
+            Trivy updated: {new Date(health.trivy_db_last_update || health.trivy_db?.last_update || '').toLocaleString()}
           </span>
         )}
         <button
@@ -517,6 +522,8 @@ function DashboardView() {
           {rematching ? 'Matching...' : 'Rematch CVEs'}
         </button>
       </div>
+      {health?.trivy_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Trivy DB: {health.trivy_db.last_error}</div>}
+      {health?.security_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security sources: {health.security_db.last_error}</div>}
       {updateMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: updateMsg.includes('fail') ? 'var(--critical)' : 'var(--low)' }}>{updateMsg}</div>}
       {rematchMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: rematchMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{rematchMsg}</div>}
       <div className="db-status-bar" style={{ marginTop: '1rem' }}>
