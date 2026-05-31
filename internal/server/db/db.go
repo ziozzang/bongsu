@@ -31,6 +31,7 @@ var ErrInvalidScanRequestStatus = errors.New("invalid scan request status")
 var ErrScanRequestNotFound = errors.New("scan request not found")
 var ErrScanRequestNotActive = errors.New("scan request is not pending or claimed")
 var ErrScanRequestClaimMismatch = errors.New("scan request was not claimed by this host")
+var ErrScanRequestNotRetryable = errors.New("scan request is not failed or cancelled")
 
 type RetentionPruneResult struct {
 	DryRun      bool `json:"dry_run"`
@@ -1510,6 +1511,43 @@ WHERE id=$1 AND status IN ('pending','claimed')`, id, status, message)
 		return ErrScanRequestNotFound
 	}
 	return ErrScanRequestNotActive
+}
+
+func (db *DB) RequeueScanRequest(ctx context.Context, id, message string) error {
+	if message == "" {
+		message = "requeued by admin"
+	}
+	res, err := db.ExecContext(ctx, `UPDATE scan_requests
+SET status='pending', error_message=$2, claimed_at=NULL, claimed_by_host_id='', completed_at=NULL
+WHERE id=$1
+  AND status IN ('failed','cancelled')
+  AND NOT EXISTS (
+	SELECT 1 FROM scan_requests pending
+	WHERE pending.id <> scan_requests.id
+	  AND pending.host_id=scan_requests.host_id
+	  AND pending.host_id <> ''
+	  AND pending.scan_type='security-db-update'
+	  AND pending.status='pending'
+	  AND scan_requests.scan_type='security-db-update'
+  )`, id, message)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+	var exists bool
+	if err := db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM scan_requests WHERE id=$1)`, id).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return ErrScanRequestNotFound
+	}
+	return ErrScanRequestNotRetryable
 }
 
 func (db *DB) CompleteClaimedScanRequest(ctx context.Context, id, hostID, status, message string) error {

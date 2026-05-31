@@ -1575,6 +1575,7 @@ func TestScanRequestErrorHTTPMapping(t *testing.T) {
 		{db.ErrScanRequestNotFound, 404, "scan request not found"},
 		{db.ErrScanRequestNotActive, 409, "scan request is not pending or claimed"},
 		{db.ErrScanRequestClaimMismatch, 403, "scan request was not claimed by this host"},
+		{db.ErrScanRequestNotRetryable, 409, "scan request is not failed or cancelled"},
 	}
 	for _, tt := range tests {
 		if got := scanRequestErrorStatus(tt.err); got != tt.status {
@@ -1582,6 +1583,26 @@ func TestScanRequestErrorHTTPMapping(t *testing.T) {
 		}
 		if got := scanRequestErrorMessage(tt.err); got != tt.message {
 			t.Fatalf("scanRequestErrorMessage(%v) = %q, want %q", tt.err, got, tt.message)
+		}
+	}
+}
+
+func TestRequeueScanRequestAPIRequiresAdminAndAudits(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`"POST /api/scan-requests/{id}/requeue"`,
+		"func (s *Server) handleRequeueScanRequest",
+		"s.authenticateAdmin(r)",
+		"s.db.RequeueScanRequest",
+		`"scan_request.requeue"`,
+		"scanRequestAuditMeta(req, body.Message, \"\")",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("scan request requeue API missing %q", want)
 		}
 	}
 }
@@ -1764,6 +1785,8 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"stats.security_db_rescan_request_counts?.claimed",
 		"stats.security_db_rescan_request_counts?.failed",
 		"scan_type: 'security-db-update'",
+		"api.requeueScanRequest",
+		"Requeue</button>",
 		"Current DB Rescan Pending",
 		"Current DB Rescan Claimed",
 		"Current DB Rescan Failed",

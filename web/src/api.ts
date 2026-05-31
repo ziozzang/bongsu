@@ -394,6 +394,8 @@ export const api = {
   createScanRequest: (body: { host_id?: string; requested_by?: string; scan_type?: string; packages_only?: boolean; reason?: string }) =>
     requestJSON<{ id: string; status: string }>('/scan-requests', body),
   cancelScanRequest: (id: string) => request<{status: string}>(`/scan-requests/${id}/cancel`, undefined, 'POST'),
+  requeueScanRequest: (id: string, body?: { message?: string }) =>
+    requestJSON<{status: string}>(`/scan-requests/${id}/requeue`, body || {}),
   requeueStaleScanRequests: (body?: { timeout_minutes?: number }) =>
     requestJSON<{ status: string; requeued: number; timeout_minutes: number }>('/scan-requests/requeue-stale', body || {}),
   stats: () => request<Stats>('/stats'),

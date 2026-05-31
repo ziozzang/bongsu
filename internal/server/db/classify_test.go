@@ -839,12 +839,42 @@ func TestDeleteScanErrorsAreDistinct(t *testing.T) {
 }
 
 func TestScanRequestErrorsAreDistinct(t *testing.T) {
-	errs := []error{ErrInvalidScanRequestStatus, ErrScanRequestNotFound, ErrScanRequestNotActive, ErrScanRequestClaimMismatch}
+	errs := []error{ErrInvalidScanRequestStatus, ErrScanRequestNotFound, ErrScanRequestNotActive, ErrScanRequestClaimMismatch, ErrScanRequestNotRetryable}
 	for i := range errs {
 		for j := i + 1; j < len(errs); j++ {
 			if errs[i] == errs[j] {
 				t.Fatal("scan request completion errors must be distinct")
 			}
+		}
+	}
+}
+
+func TestRequeueScanRequestOnlyRetriesTerminalRequests(t *testing.T) {
+	dbFile, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(dbFile)
+	start := strings.Index(body, "func (db *DB) RequeueScanRequest")
+	if start < 0 {
+		t.Fatal("RequeueScanRequest not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) CompleteClaimedScanRequest")
+	if end < 0 {
+		t.Fatal("RequeueScanRequest end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"status IN ('failed','cancelled')",
+		"SET status='pending'",
+		"claimed_at=NULL",
+		"claimed_by_host_id=''",
+		"completed_at=NULL",
+		"ErrScanRequestNotRetryable",
+		"pending.scan_type='security-db-update'",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("scan request requeue handling missing %q: %s", want, fn)
 		}
 	}
 }

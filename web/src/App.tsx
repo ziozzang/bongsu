@@ -2151,6 +2151,16 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
       setRequestMsg('Requeue failed');
     }
   };
+  const requeueRequest = async (req: ScanRequest) => {
+    setRequestMsg('');
+    try {
+      await api.requeueScanRequest(req.id, { message: `dashboard retry: ${req.scan_type}` });
+      setRequestMsg('Scan request requeued');
+      loadRequests(requestStatus, requestType, requestRevision);
+    } catch {
+      setRequestMsg('Requeue failed');
+    }
+  };
 
   return (
     <>
@@ -2204,7 +2214,10 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
                   <td className="path-cell">{req.reason || req.error_message || '-'}{(req.reason || req.error_message) && <span className="path-tip">{req.reason || req.error_message}</span>}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{req.claimed_at ? new Date(req.claimed_at).toLocaleString() : '-'}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{req.completed_at ? new Date(req.completed_at).toLocaleString() : '-'}</td>
-                  <td>{['pending', 'claimed'].includes(req.status) && <button className="delete-btn" onClick={() => cancelRequest(req.id)}>Cancel</button>}</td>
+                  <td>
+                    {['pending', 'claimed'].includes(req.status) && <button className="delete-btn" onClick={() => cancelRequest(req.id)}>Cancel</button>}
+                    {['failed', 'cancelled'].includes(req.status) && <button className="update-btn" onClick={() => requeueRequest(req)}>Requeue</button>}
+                  </td>
                 </tr>
               ))}
               {requests.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scan requests</td></tr>}

@@ -164,6 +164,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/scan-requests", s.handleListScanRequests)
 	s.mux.HandleFunc("POST /api/scan-requests", s.handleCreateScanRequest)
 	s.mux.HandleFunc("POST /api/scan-requests/{id}/cancel", s.handleCancelScanRequest)
+	s.mux.HandleFunc("POST /api/scan-requests/{id}/requeue", s.handleRequeueScanRequest)
 	s.mux.HandleFunc("POST /api/scan-requests/requeue-stale", s.handleRequeueStaleScanRequests)
 	s.mux.HandleFunc("POST /api/agent/scan-requests/claim", s.handleClaimScanRequest)
 	s.mux.HandleFunc("POST /api/agent/scan-requests/{id}/complete", s.handleCompleteScanRequest)
@@ -2099,6 +2100,39 @@ func (s *Server) handleCancelScanRequest(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
+func (s *Server) handleRequeueScanRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Message string `json:"message"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+	}
+	body.Message = strings.TrimSpace(body.Message)
+	if body.Message == "" {
+		body.Message = "requeued by admin"
+	}
+	if err := s.db.RequeueScanRequest(r.Context(), id, body.Message); err != nil {
+		log.Printf("requeue scan request: %v", err)
+		http.Error(w, scanRequestErrorMessage(err), scanRequestErrorStatus(err))
+		return
+	}
+	req, _ := s.db.GetScanRequest(r.Context(), id)
+	s.audit(r, "scan_request.requeue", "scan_request", id, "ok", scanRequestAuditMeta(req, body.Message, ""))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "pending"})
+}
+
 func (s *Server) handleRequeueStaleScanRequests(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -2298,6 +2332,8 @@ func scanRequestErrorStatus(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, db.ErrScanRequestClaimMismatch):
 		return http.StatusForbidden
+	case errors.Is(err, db.ErrScanRequestNotRetryable):
+		return http.StatusConflict
 	default:
 		return http.StatusInternalServerError
 	}
@@ -2313,6 +2349,8 @@ func scanRequestErrorMessage(err error) string {
 		return "scan request is not pending or claimed"
 	case errors.Is(err, db.ErrScanRequestClaimMismatch):
 		return "scan request was not claimed by this host"
+	case errors.Is(err, db.ErrScanRequestNotRetryable):
+		return "scan request is not failed or cancelled"
 	default:
 		return "db error"
 	}
