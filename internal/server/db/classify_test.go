@@ -333,7 +333,7 @@ func TestRunMigrationsRecordsAppliedFiles(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		`db.tableExists(ctx, "hosts")`,
+		"db.legacySchemaComplete(ctx)",
 		"CREATE TABLE IF NOT EXISTS schema_migrations",
 		"db.appliedMigrations(ctx)",
 		"len(applied) == 0 && legacyInitialized",
@@ -381,6 +381,40 @@ func TestMigrationBaselineRecordsLegacyDatabasesWithoutRerun(t *testing.T) {
 	}
 	if strings.Contains(fn, "tx.ExecContext(ctx, string(data))") {
 		t.Fatal("baselineMigrations must not execute migration SQL")
+	}
+}
+
+func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) legacySchemaComplete")
+	if start < 0 {
+		t.Fatal("legacySchemaComplete not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) tableExists")
+	if end < 0 {
+		t.Fatal("tableExists not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`{table: "hosts"}`,
+		`{table: "packages", column: "asset_type"}`,
+		`{table: "packages", column: "purl"}`,
+		`{table: "vulnerabilities", column: "pkg_path"}`,
+		`{table: "cve_database", column: "category"}`,
+		`{table: "container_assets"}`,
+		`{table: "scan_requests", column: "claimed_by_host_id"}`,
+		`{table: "audit_logs"}`,
+		`{table: "vulnerability_triage"}`,
+		"db.columnExists",
+		"db.tableExists",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("legacy schema completeness check missing %q: %s", want, fn)
+		}
 	}
 }
 

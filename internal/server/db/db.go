@@ -68,7 +68,7 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("read migrations dir: %w", err)
 	}
-	legacyInitialized, err := db.tableExists(ctx, "hosts")
+	legacyInitialized, err := db.legacySchemaComplete(ctx)
 	if err != nil {
 		return err
 	}
@@ -148,11 +148,54 @@ func (db *DB) baselineMigrations(ctx context.Context, files []os.DirEntry) error
 	return tx.Commit()
 }
 
+func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
+	checks := []struct {
+		table  string
+		column string
+	}{
+		{table: "hosts"},
+		{table: "packages", column: "asset_type"},
+		{table: "packages", column: "purl"},
+		{table: "vulnerabilities", column: "pkg_path"},
+		{table: "cve_database", column: "category"},
+		{table: "container_assets"},
+		{table: "scan_requests", column: "claimed_by_host_id"},
+		{table: "audit_logs"},
+		{table: "vulnerability_triage"},
+	}
+	for _, check := range checks {
+		var ok bool
+		var err error
+		if check.column == "" {
+			ok, err = db.tableExists(ctx, check.table)
+		} else {
+			ok, err = db.columnExists(ctx, check.table, check.column)
+		}
+		if err != nil || !ok {
+			return ok, err
+		}
+	}
+	return true, nil
+}
+
 func (db *DB) tableExists(ctx context.Context, table string) (bool, error) {
 	var exists bool
 	err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, "public."+table).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check table %s: %w", table, err)
+	}
+	return exists, nil
+}
+
+func (db *DB) columnExists(ctx context.Context, table, column string) (bool, error) {
+	var exists bool
+	err := db.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1
+		FROM information_schema.columns
+		WHERE table_schema='public' AND table_name=$1 AND column_name=$2
+	)`, table, column).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check column %s.%s: %w", table, column, err)
 	}
 	return exists, nil
 }
