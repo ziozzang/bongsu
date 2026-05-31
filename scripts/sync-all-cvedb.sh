@@ -19,9 +19,33 @@ if [ -z "${API_KEY}" ]; then
 fi
 
 IMPORT_URL="${SERVER_URL}/api/admin/cve-db/import"
-IMPORT_CMD="curl -s -X POST -H 'X-API-Key: ${API_KEY}'"
 
 TOTAL_IMPORTED=0
+
+import_cve_file() {
+    local file="$1"
+    local source="$2"
+    local result
+
+    if ! result=$(curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
+        -F "file=@${file}" -F "source=${source}" "${IMPORT_URL}"); then
+        echo "ERROR: ${source} import request failed" >&2
+        return 1
+    fi
+
+    echo "${result}" | python3 -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception as exc:
+    print(f"invalid import response: {exc}", file=sys.stderr)
+    sys.exit(2)
+if data.get("status") != "ok":
+    print(f"import response was not ok: {data}", file=sys.stderr)
+    sys.exit(3)
+print(int(data.get("imported", 0)))
+'
+}
 
 echo "=========================================="
 echo " Bongsu CVE Database Sync"
@@ -37,10 +61,8 @@ OSV_FILE="${TMPDIR}/osv-all.jsonl"
 
 if [ -s "${OSV_FILE}" ]; then
     echo "  Importing OSV data ($(wc -l < "${OSV_FILE}") entries, $(du -h "${OSV_FILE}" | cut -f1))..."
-    RESULT=$(curl -s -X POST -H "X-API-Key: ${API_KEY}" \
-        -F "file=@${OSV_FILE}" -F "source=osv" "${IMPORT_URL}")
-    echo "  Result: ${RESULT}"
-    IMPORTED=$(echo "${RESULT}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('imported',0))" 2>/dev/null || echo "0")
+    IMPORTED=$(import_cve_file "${OSV_FILE}" "osv")
+    echo "  Imported/updated: ${IMPORTED}"
     TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
 else
     echo "  SKIP: no OSV data"
@@ -57,10 +79,8 @@ for YEAR in $(seq $((CURRENT_YEAR - 3)) ${CURRENT_YEAR}); do
 
     if [ -s "${NVD_FILE}" ]; then
         echo "    Importing ($(wc -l < "${NVD_FILE}") entries)..."
-        RESULT=$(curl -s -X POST -H "X-API-Key: ${API_KEY}" \
-            -F "file=@${NVD_FILE}" -F "source=nvd" "${IMPORT_URL}")
-        echo "    Result: ${RESULT}"
-        IMPORTED=$(echo "${RESULT}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('imported',0))" 2>/dev/null || echo "0")
+        IMPORTED=$(import_cve_file "${NVD_FILE}" "nvd")
+        echo "    Imported/updated: ${IMPORTED}"
         TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
     fi
 done
@@ -74,10 +94,8 @@ if command -v trivy &>/dev/null || [ -x /opt/bongsu/bin/trivy ]; then
 
     if [ -s "${TRIVY_FILE}" ]; then
         echo "  Importing Trivy CVEs ($(wc -l < "${TRIVY_FILE}") entries)..."
-        RESULT=$(curl -s -X POST -H "X-API-Key: ${API_KEY}" \
-            -F "file=@${TRIVY_FILE}" -F "source=trivy" "${IMPORT_URL}")
-        echo "  Result: ${RESULT}"
-        IMPORTED=$(echo "${RESULT}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('imported',0))" 2>/dev/null || echo "0")
+        IMPORTED=$(import_cve_file "${TRIVY_FILE}" "trivy")
+        echo "  Imported/updated: ${IMPORTED}"
         TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
     fi
 else
@@ -92,7 +110,7 @@ echo " Total imported/updated: ${TOTAL_IMPORTED}"
 echo ""
 
 # Show DB stats
-STATS=$(curl -s -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/cve-db/stats")
+STATS=$(curl -fsS -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/cve-db/stats")
 echo " Current DB stats:"
 echo "${STATS}" | python3 -c "
 import sys, json

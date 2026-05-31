@@ -741,6 +741,35 @@ func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
 	}
 }
 
+func TestSecurityDBSyncScriptFailsOnImportErrors(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"import_cve_file()",
+		"curl -fsS -X POST",
+		`data.get("status") != "ok"`,
+		"invalid import response",
+		"ERROR: ${source} import request failed",
+		"STATS=$(curl -fsS",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-all-cvedb must fail closed on import errors, missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`|| echo "0"`,
+		"curl -s -X POST",
+		"IMPORT_CMD=",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("sync-all-cvedb must not hide import failures with %q", forbidden)
+		}
+	}
+}
+
 func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 	for _, path := range []string{
 		"../../../deploy/docker-compose.yml",
