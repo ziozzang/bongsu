@@ -367,6 +367,8 @@ export const api = {
   host: (id: string) => request<Host>(`/hosts/${id}`),
   updateHostMetadata: (id: string, body: { owner?: string; team?: string; environment?: string; criticality?: string; tags?: string }) =>
     requestJSON<Host>(`/hosts/${id}/metadata`, body),
+  resetHostAgentToken: (id: string) =>
+    requestEmpty<{ status: string }>(`/hosts/${id}/agent-token/reset`, 'POST'),
   hostPackages: (id: string, limit: number, offset: number) =>
     request<{ items: Pkg[]; total: number }>(`/hosts/${id}/packages`, { limit: String(limit), offset: String(offset) }),
   exportHostSBOM: (id: string, hostname: string, format = 'cyclonedx') =>

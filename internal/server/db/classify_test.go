@@ -824,6 +824,8 @@ func TestHostAgentTokenBindingPersistence(t *testing.T) {
 		"WHERE $12='' OR hosts.agent_token_hash='' OR hosts.agent_token_hash=$12",
 		"VerifyOrBindHostAgentToken",
 		"agent_token_hash=CASE WHEN agent_token_hash=''",
+		"ResetHostAgentToken",
+		"UPDATE hosts SET agent_token_hash=''",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("host agent token binding missing %q", want)

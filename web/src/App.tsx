@@ -877,6 +877,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
   const [exportMsg, setExportMsg] = useState('');
   const [metadata, setMetadata] = useState({ owner: '', team: '', environment: '', criticality: '', tags: '{}' });
   const [metadataMsg, setMetadataMsg] = useState('');
+  const [agentTokenMsg, setAgentTokenMsg] = useState('');
   const limit = 50;
 
   useEffect(() => {
@@ -910,6 +911,17 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
       setMetadataMsg('Saved');
     } catch {
       setMetadataMsg('Save failed');
+    }
+  };
+
+  const resetAgentToken = async () => {
+    if (!confirm(`Reset agent token binding for ${host.hostname}? The next valid agent check-in will bind a new token.`)) return;
+    setAgentTokenMsg('Resetting...');
+    try {
+      await api.resetHostAgentToken(host.id);
+      setAgentTokenMsg('Agent token reset');
+    } catch {
+      setAgentTokenMsg('Reset failed');
     }
   };
 
@@ -992,6 +1004,16 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
           <input type="text" placeholder='Tags JSON, e.g. {"service":"api"}' value={metadata.tags} onChange={(e) => setMetadata({ ...metadata, tags: e.target.value })} style={{ minWidth: 260 }} />
           <button className="filter-btn" onClick={saveMetadata}>Save</button>
           {metadataMsg && <span style={{ color: metadataMsg.includes('failed') ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>{metadataMsg}</span>}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 1rem' }}>
+          <h2>Agent Trust</h2>
+        </div>
+        <div className="filters">
+          <button onClick={resetAgentToken}>Reset Agent Token</button>
+          {agentTokenMsg && <span style={{ color: agentTokenMsg.includes('failed') ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>{agentTokenMsg}</span>}
         </div>
       </div>
 

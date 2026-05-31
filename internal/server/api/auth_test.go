@@ -1838,6 +1838,26 @@ func TestHostMetadataUpdateAuditsOnlyAfterHostReload(t *testing.T) {
 	}
 }
 
+func TestResetHostAgentTokenRequiresAdminAndAudits(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`"POST /api/hosts/{id}/agent-token/reset"`,
+		"func (s *Server) handleResetHostAgentToken",
+		"s.authenticateAdmin(r)",
+		"s.db.ResetHostAgentToken",
+		`"host.agent_token.reset"`,
+		`"host_id": hostID`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("host agent token reset handling missing %q", want)
+		}
+	}
+}
+
 func TestHostInventoryStatus(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	recent := now.Add(-1 * time.Hour)

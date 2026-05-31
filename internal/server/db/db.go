@@ -308,6 +308,21 @@ WHERE id=$1 AND (agent_token_hash='' OR agent_token_hash=$2)`, hostID, tokenHash
 	return nil
 }
 
+func (db *DB) ResetHostAgentToken(ctx context.Context, hostID string) error {
+	res, err := db.ExecContext(ctx, `UPDATE hosts SET agent_token_hash='', updated_at=now() WHERE id=$1`, hostID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (db *DB) CreateScan(ctx context.Context, s *models.Scan) error {
 	q := `INSERT INTO scans (id, host_id, scan_type, status, started_at, created_at) VALUES ($1, $2, $3, $4, $5, now())`
 	_, err := db.ExecContext(ctx, q, s.ID, s.HostID, s.ScanType, s.Status, s.StartedAt)

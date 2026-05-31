@@ -151,6 +151,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/hosts", s.handleListHosts)
 	s.mux.HandleFunc("GET /api/hosts/{id}", s.handleGetHost)
 	s.mux.HandleFunc("POST /api/hosts/{id}/metadata", s.handleUpdateHostMetadata)
+	s.mux.HandleFunc("POST /api/hosts/{id}/agent-token/reset", s.handleResetHostAgentToken)
 	s.mux.HandleFunc("GET /api/hosts/{id}/packages", s.handleHostPackages)
 	s.mux.HandleFunc("GET /api/hosts/{id}/sbom", s.handleHostSBOM)
 	s.mux.HandleFunc("GET /api/hosts/{id}/vuln-counts", s.handleHostVulnCounts)
@@ -979,6 +980,31 @@ func (s *Server) handleUpdateHostMetadata(w http.ResponseWriter, r *http.Request
 		"criticality": body.Criticality,
 	})
 	writeJSON(w, http.StatusOK, host)
+}
+
+func (s *Server) handleResetHostAgentToken(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	hostID := r.PathValue("id")
+	if hostID == "" {
+		http.Error(w, "host id is required", http.StatusBadRequest)
+		return
+	}
+	if _, err := s.db.GetHost(r.Context(), hostID); err != nil {
+		http.Error(w, "host not found", http.StatusNotFound)
+		return
+	}
+	if err := s.db.ResetHostAgentToken(r.Context(), hostID); err != nil {
+		log.Printf("reset host agent token: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	s.audit(r, "host.agent_token.reset", "host", hostID, "ok", map[string]any{
+		"host_id": hostID,
+	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
