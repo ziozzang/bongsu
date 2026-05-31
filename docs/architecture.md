@@ -44,7 +44,8 @@ The merge strategy is:
    `scripts/sync-all-cvedb.sh http://localhost:8080 $BONGSU_API_KEY`
 2. The server runs the command every `BONGSU_SECURITY_DB_INTERVAL_HOURS`, default 6.
 3. Scripts download OSV, NVD, and Trivy-derived metadata, then import JSONL through `/api/admin/cve-db/import`.
-4. Operators export `/api/admin/security-db/export` for air-gapped transfer. The bundle contains a manifest, CVE JSONL, source stats, and optionally the current Trivy DB archive.
+4. Each successful DB change starts background CVSS recalculation, vulnerability enrichment, CVE rematching, and automatic package-only rescan requests for hosts seen within `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` (default 720).
+5. Operators export `/api/admin/security-db/export` for air-gapped transfer. The bundle contains a manifest, CVE JSONL, source stats, and optionally the current Trivy DB archive.
 
 ## Air-Gapped Flow
 
@@ -55,7 +56,7 @@ The merge strategy is:
 5. Import Trivy DB through `/api/admin/trivy-db`.
 6. Import CVE JSONL through `/api/admin/cve-db/import`.
 
-The implemented bundle is a versioned `tar.gz` archive containing `manifest.json`, `cve-database.jsonl`, checksums, source stats, and optional `trivy-db.tar.gz`. Importing the bundle loads CVE records in batches, loads Trivy DB when present, and triggers background CVSS/enrichment/rematch recalculation.
+The implemented bundle is a versioned `tar.gz` archive containing `manifest.json`, `cve-database.jsonl`, checksums, source stats, and optional `trivy-db.tar.gz`. Importing the bundle loads CVE records in batches, loads Trivy DB when present, and triggers background CVSS/enrichment/rematch recalculation plus automatic package-only rescans.
 
 ## Force Scan Model
 
@@ -65,7 +66,7 @@ The server stores force scan requests in `scan_requests`. The intended lifecycle
 - `claimed`: an agent picked up the request.
 - `completed` or `failed`: the agent submitted a result or reported failure.
 
-Current implementation exposes request creation/listing plus agent claim/complete endpoints. Agents can run with `--daemon --poll-interval 60s` to claim pending requests, execute a scan, upload the report, and mark the request completed or failed.
+Current implementation exposes request creation/listing plus agent claim/complete endpoints. Agents can run with `--daemon --poll-interval 60s` to claim pending requests, execute a scan, upload the report, and mark the request completed or failed. Security DB updates enqueue `security-db-update` scan requests automatically, deduplicated against existing pending or claimed work per host.
 
 ## RBAC Model
 

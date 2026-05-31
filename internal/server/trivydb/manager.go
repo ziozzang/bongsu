@@ -22,6 +22,7 @@ type Manager struct {
 	mu         sync.RWMutex
 	ready      bool
 	lastUpdate time.Time
+	onUpdate   func(string)
 }
 
 func NewManager(trivyPath, cacheDir, dbRepo string, interval time.Duration) *Manager {
@@ -31,6 +32,12 @@ func NewManager(trivyPath, cacheDir, dbRepo string, interval time.Duration) *Man
 		dbRepo:    dbRepo,
 		interval:  interval,
 	}
+}
+
+func (m *Manager) SetUpdateHook(fn func(string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onUpdate = fn
 }
 
 func (m *Manager) Start(ctx context.Context) {
@@ -66,9 +73,14 @@ func (m *Manager) Start(ctx context.Context) {
 				continue
 			}
 			m.mu.Lock()
+			m.ready = true
 			m.lastUpdate = time.Now()
+			onUpdate := m.onUpdate
 			m.mu.Unlock()
 			log.Printf("trivy-db updated")
+			if onUpdate != nil {
+				onUpdate("trivy-db periodic update")
+			}
 		}
 	}
 }

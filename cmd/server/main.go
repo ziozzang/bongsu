@@ -54,11 +54,7 @@ func main() {
 
 		dbMgr = trivydb.NewManager(trivyPath, cacheDir, dbRepo, interval)
 		matcher = cvematch.NewMatcher(trivyPath, cacheDir, dbRepo)
-
-		bgCtx, bgCancel := context.WithCancel(context.Background())
-		defer bgCancel()
-		go dbMgr.Start(bgCtx)
-		log.Printf("Trivy DB manager started (repo: %s, interval: %s)", dbRepo, interval)
+		log.Printf("Trivy DB manager configured (repo: %s, interval: %s)", dbRepo, interval)
 	} else {
 		log.Printf("Trivy not found at %s, server-side CVE matching disabled", trivyPath)
 	}
@@ -73,6 +69,13 @@ func main() {
 	}
 
 	server := api.New(database, matcher, dbMgr, secMgr)
+	if dbMgr != nil {
+		dbMgr.SetUpdateHook(server.SecurityDatabaseUpdated)
+		bgCtx, bgCancel := context.WithCancel(context.Background())
+		defer bgCancel()
+		go dbMgr.Start(bgCtx)
+		log.Println("Trivy DB manager started")
+	}
 	if n, err := database.CalcCvssScores(ctx); err == nil && n > 0 {
 		log.Printf("Calculated CVSS scores for %d entries", n)
 	} else if err != nil {

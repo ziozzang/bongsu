@@ -652,6 +652,53 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,now())`,
 	return err
 }
 
+func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason string, lastSeenAfter time.Time) (int, error) {
+	q := `SELECT id FROM hosts`
+	args := []any{}
+	if !lastSeenAfter.IsZero() {
+		q += ` WHERE last_seen >= $1`
+		args = append(args, lastSeenAfter)
+	}
+	q += ` ORDER BY hostname`
+
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	queued := 0
+	for rows.Next() {
+		var hostID string
+		if err := rows.Scan(&hostID); err != nil {
+			return queued, err
+		}
+		res, err := tx.ExecContext(ctx, `
+INSERT INTO scan_requests (id, host_id, requested_by, scan_type, packages_only, reason, status, created_at)
+SELECT $1,$2,$3,'security-db-update',true,$4,'pending',now()
+WHERE NOT EXISTS (
+	SELECT 1 FROM scan_requests
+	WHERE host_id=$2 AND status IN ('pending','claimed')
+)`, uuid.New().String(), hostID, requestedBy, reason)
+		if err != nil {
+			return queued, err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			queued++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return queued, err
+	}
+	return queued, tx.Commit()
+}
+
 func (db *DB) ListScanRequests(ctx context.Context, hostID, status string, limit, offset int) ([]models.ScanRequest, int, error) {
 	baseQ := `FROM scan_requests WHERE 1=1`
 	args := []any{}

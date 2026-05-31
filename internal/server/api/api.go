@@ -1131,6 +1131,7 @@ func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.SecurityDatabaseUpdated("trivy-db upload")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "trivy-db loaded"})
 }
 
@@ -1150,6 +1151,7 @@ func (s *Server) handleTrivyDBUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.SecurityDatabaseUpdated("trivy-db update")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":         "ok",
 		"message":        "trivy-db updated",
@@ -1172,7 +1174,7 @@ func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error(), "security_db": s.secMgr.Status()})
 		return
 	}
-	s.recalculateSecurityFindings("security-db update")
+	s.SecurityDatabaseUpdated("security-db update")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "security_db": s.secMgr.Status()})
 }
 
@@ -1322,8 +1324,13 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		}
 		trivyLoaded = true
 	}
-	s.recalculateSecurityFindings("security-db bundle import")
+	s.SecurityDatabaseUpdated("security-db bundle import")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "imported": imported, "trivy_db_loaded": trivyLoaded})
+}
+
+func (s *Server) SecurityDatabaseUpdated(reason string) {
+	s.recalculateSecurityFindings(reason)
+	s.queueSecurityDBRescans(reason)
 }
 
 func (s *Server) recalculateSecurityFindings(reason string) {
@@ -1352,6 +1359,28 @@ func (s *Server) recalculateSecurityFindings(reason string) {
 			log.Printf("security recalculation normalized %d findings", n)
 		}
 		log.Printf("security recalculation finished (%s)", reason)
+	}()
+}
+
+func (s *Server) queueSecurityDBRescans(reason string) {
+	if !envBool("BONGSU_AUTO_RESCAN_ON_DB_UPDATE", true) {
+		log.Printf("security-db auto rescan disabled (%s)", reason)
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		lookbackHours := envInt("BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS", 720)
+		var lastSeenAfter time.Time
+		if lookbackHours > 0 {
+			lastSeenAfter = time.Now().Add(-time.Duration(lookbackHours) * time.Hour)
+		}
+		queued, err := s.db.QueueSecurityDBRescans(ctx, "system", reason, lastSeenAfter)
+		if err != nil {
+			log.Printf("security-db auto rescan queue failed (%s): %v", reason, err)
+			return
+		}
+		log.Printf("security-db auto rescan queued %d host scans (%s)", queued, reason)
 	}()
 }
 
@@ -1396,7 +1425,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 		"imported": count,
 		"total":    count,
 	})
-	s.recalculateSecurityFindings("cve-db import")
+	s.SecurityDatabaseUpdated("cve-db import")
 }
 
 func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string) (int, error) {
@@ -1725,6 +1754,30 @@ func floatParam(r *http.Request, key string, def float64) float64 {
 		return def
 	}
 	return n
+}
+
+func envInt(key string, def int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func envBool(key string, def bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return def
+	}
+	return b
 }
 
 func (s *Server) recoverMiddleware(next http.Handler) http.Handler {

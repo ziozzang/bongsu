@@ -99,7 +99,11 @@ docker compose restart server
 BONGSU_TRIVY_DB_INTERVAL_HOURS=6
 BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:8080 your-api-key
 BONGSU_SECURITY_DB_INTERVAL_HOURS=6
+BONGSU_AUTO_RESCAN_ON_DB_UPDATE=true
+BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS=720
 ```
+
+After a Trivy DB upload/update, CVE JSONL import, security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Agents running in daemon mode pick those requests up through the normal force-scan polling path.
 
 ### Air-Gapped Environment
 
@@ -170,6 +174,8 @@ spec:
 | `BONGSU_TRIVY_DB_INTERVAL_HOURS` | `0` | DB update interval (`0`=disabled, `6`=connected) |
 | `BONGSU_SECURITY_DB_SYNC_CMD` | empty | Command for OSV/NVD/Trivy source sync |
 | `BONGSU_SECURITY_DB_INTERVAL_HOURS` | `6` | Security source sync interval |
+| `BONGSU_AUTO_RESCAN_ON_DB_UPDATE` | `true` | Queue background rescans after security DB changes |
+| `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` | `720` | Only auto-rescan hosts seen within this many hours (`0`=all hosts) |
 | `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login) |
 
 ### Agent
