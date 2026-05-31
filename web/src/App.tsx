@@ -2433,6 +2433,7 @@ function RBACView() {
             <input type="text" placeholder={resourceType === 'asset_group' ? 'team:platform or tag:service=api' : 'resource_id or *'} value={resourceID} onChange={(e) => setResourceID(e.target.value)} />
             <select value={permission} onChange={(e) => setPermission(e.target.value)}>
               <option value="read">Read</option>
+              <option value="export">Export</option>
               <option value="write">Write</option>
               <option value="admin">Admin</option>
             </select>

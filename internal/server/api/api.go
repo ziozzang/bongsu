@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -290,6 +291,26 @@ func (s *Server) accessScope(r *http.Request) db.AccessScope {
 	return scope
 }
 
+func (s *Server) authenticateExport(r *http.Request) bool {
+	return s.authenticateAdmin(r) || s.viewerSubject(r) != ""
+}
+
+func (s *Server) exportScope(r *http.Request) db.AccessScope {
+	if s.authenticateAdmin(r) {
+		return db.AccessScope{All: true}
+	}
+	subject := s.viewerSubject(r)
+	if subject == "" {
+		return db.AccessScope{}
+	}
+	scope, err := s.db.GetExportScope(r.Context(), subject)
+	if err != nil {
+		log.Printf("rbac export scope %s: %v", subject, err)
+		return db.AccessScope{}
+	}
+	return scope
+}
+
 func (s *Server) canReadHost(r *http.Request, hostID string) bool {
 	scope := s.accessScope(r)
 	return scope.CanReadHost(hostID)
@@ -334,6 +355,14 @@ func (s *Server) audit(r *http.Request, action, resourceType, resourceID, status
 	if err := s.db.RecordAuditLog(ctx, entry); err != nil {
 		log.Printf("audit log failed action=%s resource=%s/%s: %v", action, resourceType, resourceID, err)
 	}
+}
+
+func cloneMetadata(in map[string]any) map[string]any {
+	out := map[string]any{}
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Server) auditSystem(action, resourceType, resourceID, status string, metadata map[string]any) {
@@ -935,12 +964,13 @@ func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticateWeb(r) {
+	if !s.authenticateExport(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	hostID := r.PathValue("id")
-	if !s.canReadHost(r, hostID) {
+	if !s.exportScope(r).CanReadHost(hostID) {
+		s.audit(r, "sbom.export", "host", hostID, "forbidden", map[string]any{"reason": "missing export permission"})
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -954,10 +984,12 @@ func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 	pkgs, err := s.db.GetLatestPackagesForSBOM(ctx, hostID)
 	if err != nil {
 		log.Printf("host sbom packages: %v", err)
+		s.audit(r, "sbom.export", "host", hostID, "error", map[string]any{"error": "package lookup failed"})
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
 	if len(pkgs) == 0 {
+		s.audit(r, "sbom.export", "host", hostID, "error", map[string]any{"error": "no packages available"})
 		http.Error(w, "no packages available for host", http.StatusNotFound)
 		return
 	}
@@ -985,6 +1017,7 @@ func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		log.Printf("generate host sbom: %v", err)
+		s.audit(r, "sbom.export", "host", hostID, "error", map[string]any{"format": auditFormat, "scan_id": scanID, "error": "generation failed"})
 		http.Error(w, "sbom generation failed", http.StatusInternalServerError)
 		return
 	}
@@ -992,19 +1025,24 @@ func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 	if filename == "" {
 		filename = sanitizeFilename(host.ID)
 	}
+	auditMeta := map[string]any{
+		"hostname": host.Hostname,
+		"scan_id":  scanID,
+		"packages": len(pkgs),
+		"format":   auditFormat,
+	}
+	s.audit(r, "sbom.export", "host", hostID, "started", auditMeta)
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s"`, filename, suffix))
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(data); err != nil {
 		log.Printf("write host sbom: %v", err)
+		errMeta := cloneMetadata(auditMeta)
+		errMeta["error"] = "response write failed"
+		s.audit(r, "sbom.export", "host", hostID, "error", errMeta)
 		return
 	}
-	s.audit(r, "sbom.export", "host", hostID, "ok", map[string]any{
-		"hostname": host.Hostname,
-		"scan_id":  scanID,
-		"packages": len(pkgs),
-		"format":   auditFormat,
-	})
+	s.audit(r, "sbom.export", "host", hostID, "ok", auditMeta)
 }
 
 func latestPackageScanID(pkgs []models.Package) string {
@@ -1074,12 +1112,15 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) vulnFilterFromRequest(r *http.Request) (db.VulnFilter, bool, bool, error) {
+	return s.vulnFilterFromRequestWithScope(r, s.accessScope(r))
+}
+
+func (s *Server) vulnFilterFromRequestWithScope(r *http.Request, scope db.AccessScope) (db.VulnFilter, bool, bool, error) {
 	hostID := r.URL.Query().Get("host_id")
 	findingSource, err := findingSourceFilterParam(r)
 	if err != nil {
 		return db.VulnFilter{}, false, false, err
 	}
-	scope := s.accessScope(r)
 	if scope.Empty() {
 		return db.VulnFilter{}, false, true, nil
 	}
@@ -1123,16 +1164,23 @@ func findingSourceFilterParam(r *http.Request) (string, error) {
 }
 
 func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticateWeb(r) {
+	if !s.authenticateExport(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	filter, forbidden, empty, err := s.vulnFilterFromRequest(r)
+	exportScope := s.exportScope(r)
+	if exportScope.Empty() {
+		s.audit(r, "vulnerability.export", "vulnerability", "filtered", "forbidden", map[string]any{"reason": "missing export permission"})
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	filter, forbidden, empty, err := s.vulnFilterFromRequestWithScope(r, exportScope)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if forbidden {
+		s.audit(r, "vulnerability.export", "vulnerability", "filtered", "forbidden", map[string]any{"reason": "missing export permission"})
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -1149,29 +1197,55 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 		vulns, total, err = s.db.ListVulnerabilities(r.Context(), filter, maxRows, 0)
 		if err != nil {
 			log.Printf("export vulnerabilities: %v", err)
+			s.audit(r, "vulnerability.export", "vulnerability", "filtered", "error", map[string]any{"error": "db lookup failed", "max_rows": maxRows})
 			http.Error(w, "db error", http.StatusInternalServerError)
 			return
 		}
 	}
 	format := strings.ToLower(r.URL.Query().Get("format"))
-	if format == "json" {
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", `attachment; filename="bongsu-vulnerabilities.json"`)
-		writeJSON(w, http.StatusOK, map[string]any{"items": vulns, "total": total, "exported": len(vulns)})
-	} else {
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", `attachment; filename="bongsu-vulnerabilities.csv"`)
-		if err := writeVulnerabilityCSV(w, vulns); err != nil {
-			log.Printf("write vulnerability export csv: %v", err)
-			return
-		}
-	}
-	s.audit(r, "vulnerability.export", "vulnerability", "filtered", "ok", map[string]any{
+	auditMeta := map[string]any{
 		"format":   exportFormatLabel(format),
 		"exported": len(vulns),
 		"total":    total,
 		"max_rows": maxRows,
-	})
+	}
+	var body bytes.Buffer
+	if format == "json" {
+		if err := json.NewEncoder(&body).Encode(map[string]any{"items": vulns, "total": total, "exported": len(vulns)}); err != nil {
+			log.Printf("encode vulnerability export json: %v", err)
+			errMeta := cloneMetadata(auditMeta)
+			errMeta["error"] = "json encode failed"
+			s.audit(r, "vulnerability.export", "vulnerability", "filtered", "error", errMeta)
+			http.Error(w, "export failed", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		if err := writeVulnerabilityCSV(&body, vulns); err != nil {
+			log.Printf("write vulnerability export csv: %v", err)
+			errMeta := cloneMetadata(auditMeta)
+			errMeta["error"] = "csv encode failed"
+			s.audit(r, "vulnerability.export", "vulnerability", "filtered", "error", errMeta)
+			http.Error(w, "export failed", http.StatusInternalServerError)
+			return
+		}
+	}
+	s.audit(r, "vulnerability.export", "vulnerability", "filtered", "started", auditMeta)
+	if format == "json" {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", `attachment; filename="bongsu-vulnerabilities.json"`)
+	} else {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="bongsu-vulnerabilities.csv"`)
+	}
+	w.WriteHeader(http.StatusOK)
+	if _, err := w.Write(body.Bytes()); err != nil {
+		log.Printf("write vulnerability export response: %v", err)
+		errMeta := cloneMetadata(auditMeta)
+		errMeta["error"] = "response write failed"
+		s.audit(r, "vulnerability.export", "vulnerability", "filtered", "error", errMeta)
+		return
+	}
+	s.audit(r, "vulnerability.export", "vulnerability", "filtered", "ok", auditMeta)
 }
 
 func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
@@ -3938,7 +4012,7 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 		body.Permission = "read"
 	}
 	switch body.Permission {
-	case "read", "write", "admin":
+	case "read", "write", "admin", "export":
 	default:
 		http.Error(w, "invalid permission", http.StatusBadRequest)
 		return

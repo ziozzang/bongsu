@@ -537,6 +537,13 @@ func TestWebAuthCanBeDisabledWithoutOpeningAdmin(t *testing.T) {
 	if s.authenticateAgent(req) {
 		t.Fatal("web auth disabled must not open agent API")
 	}
+	if s.authenticateExport(req) {
+		t.Fatal("web auth disabled must not open export APIs")
+	}
+	req.Header.Set("X-API-Key", "admin-key")
+	if !s.authenticateExport(req) {
+		t.Fatal("admin key should authenticate export APIs")
+	}
 }
 
 func TestViewerKeys(t *testing.T) {
@@ -1402,17 +1409,84 @@ func TestHostSBOMAuditIncludesLatestScanID(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
+		"authenticateExport",
+		"exportScope",
 		"scanID := latestPackageScanID(pkgs)",
 		`"scan_id":`,
 		"scanID",
+		`s.audit(r, "sbom.export", "host", hostID, "started"`,
+		`w.WriteHeader(http.StatusOK)`,
+		`s.audit(r, "sbom.export", "host", hostID, "ok"`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("SBOM audit scan identity missing %q: %s", want, fn)
 		}
 	}
+	if strings.Index(fn, `"started"`) > strings.Index(fn, `w.WriteHeader(http.StatusOK)`) {
+		t.Fatalf("SBOM export must audit start before writing response: %s", fn)
+	}
 	pkgs := []models.Package{{ScanID: ""}, {ScanID: " scan-1 "}}
 	if got := latestPackageScanID(pkgs); got != "scan-1" {
 		t.Fatalf("latestPackageScanID = %q, want scan-1", got)
+	}
+}
+
+func TestVulnerabilityExportRequiresExportScopeAndAuditsBeforeWrite(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleExportVulnerabilities")
+	if start < 0 {
+		t.Fatal("handleExportVulnerabilities not found")
+	}
+	end := strings.Index(body[start:], "func writeVulnerabilityCSV")
+	if end < 0 {
+		t.Fatal("handleExportVulnerabilities end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"authenticateExport",
+		"exportScope := s.exportScope(r)",
+		"exportScope.Empty()",
+		"vulnFilterFromRequestWithScope(r, exportScope)",
+		`s.audit(r, "vulnerability.export", "vulnerability", "filtered", "forbidden"`,
+		`s.audit(r, "vulnerability.export", "vulnerability", "filtered", "started"`,
+		`w.WriteHeader(http.StatusOK)`,
+		`s.audit(r, "vulnerability.export", "vulnerability", "filtered", "ok"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("vulnerability export hardening missing %q: %s", want, fn)
+		}
+	}
+	if strings.Index(fn, `"started"`) > strings.Index(fn, `w.WriteHeader(http.StatusOK)`) {
+		t.Fatalf("vulnerability export must audit start before writing response: %s", fn)
+	}
+}
+
+func TestRBACPolicyAPIAllowsExportPermission(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleUpsertAccessPolicy")
+	if start < 0 {
+		t.Fatal("handleUpsertAccessPolicy not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleCveDbStats")
+	if end < 0 {
+		t.Fatal("handleUpsertAccessPolicy end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`case "read", "write", "admin", "export":`,
+		`"permission":    body.Permission`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("RBAC policy API export support missing %q: %s", want, fn)
+		}
 	}
 }
 

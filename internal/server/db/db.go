@@ -1848,18 +1848,29 @@ func envPositiveInt(key string, def int) int {
 }
 
 func (db *DB) GetAccessScope(ctx context.Context, subjectRef string) (AccessScope, error) {
+	return db.getAccessScopeForPermissions(ctx, subjectRef, []string{"read", "admin"})
+}
+
+func (db *DB) GetExportScope(ctx context.Context, subjectRef string) (AccessScope, error) {
+	return db.getAccessScopeForPermissions(ctx, subjectRef, []string{"export", "admin"})
+}
+
+func (db *DB) getAccessScopeForPermissions(ctx context.Context, subjectRef string, permissions []string) (AccessScope, error) {
 	subjectType, externalID := parseAccessSubjectRef(subjectRef)
-	args := []any{externalID}
+	if len(permissions) == 0 {
+		return AccessScope{}, nil
+	}
+	args := []any{externalID, pqStringArray(permissions)}
 	typeFilter := ""
 	if subjectType != "" {
-		typeFilter = " AND s.subject_type=$2"
+		typeFilter = " AND s.subject_type=$3"
 		args = append(args, subjectType)
 	}
 	rows, err := db.QueryContext(ctx, `
 SELECT p.resource_type, p.resource_id
 FROM access_subjects s
 JOIN access_policies p ON p.subject_id = s.id
-WHERE s.external_id=$1`+typeFilter+` AND p.permission IN ('read','admin')`, args...)
+WHERE s.external_id=$1`+typeFilter+` AND p.permission = ANY($2)`, args...)
 	if err != nil {
 		return AccessScope{}, err
 	}

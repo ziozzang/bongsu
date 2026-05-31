@@ -293,6 +293,11 @@ curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json"
   -d '{"subject_external_id":"user:alice","resource_type":"host","resource_id":"HOST_ID","permission":"read"}' \
   http://localhost:8080/api/admin/rbac/policies
 
+# Grant export permission separately for SBOM/vulnerability report downloads
+curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
+  -d '{"subject_external_id":"user:alice","resource_type":"host","resource_id":"HOST_ID","permission":"export"}' \
+  http://localhost:8080/api/admin/rbac/policies
+
 # Container and image policies resolve through the latest container inventory
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
   -d '{"subject_external_id":"user:alice","resource_type":"image","resource_id":"registry.local/app/api:2026.06","permission":"read"}' \

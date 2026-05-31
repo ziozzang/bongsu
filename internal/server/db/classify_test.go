@@ -341,6 +341,43 @@ func TestListAccessPoliciesSupportsTypedSubjectFilter(t *testing.T) {
 	}
 }
 
+func TestAccessScopesSeparateReadAndExportPermissions(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"func (db *DB) GetAccessScope",
+		`[]string{"read", "admin"}`,
+		"func (db *DB) GetExportScope",
+		`[]string{"export", "admin"}`,
+		"getAccessScopeForPermissions",
+		"p.permission = ANY($2)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("access/export scope split missing %q", want)
+		}
+	}
+}
+
+func TestAccessPolicyExportPermissionMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/018_access_policy_export_permission.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DROP CONSTRAINT IF EXISTS access_policies_permission_check",
+		"ADD CONSTRAINT access_policies_permission_check",
+		"'export'",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("export permission migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestVulnSummaryGroupExprAllowlist(t *testing.T) {
 	if got := vulnSummaryGroupExpr("team"); got != "COALESCE(NULLIF(h.team, ''), '(unassigned)')" {
 		t.Fatalf("team group expr = %q", got)
