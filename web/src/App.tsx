@@ -1830,6 +1830,16 @@ function ScansView() {
       setRequestMsg('Cancel failed');
     }
   };
+  const requeueStale = async () => {
+    setRequestMsg('');
+    try {
+      const r = await api.requeueStaleScanRequests();
+      setRequestMsg(`Requeued ${r.requeued} stale claimed requests`);
+      loadRequests(requestStatus);
+    } catch {
+      setRequestMsg('Requeue failed');
+    }
+  };
 
   return (
     <>
@@ -1837,14 +1847,17 @@ function ScansView() {
       <div className="card" style={{ marginBottom: '1rem' }}>
         <div className="card-header">
           <h2>{requestTotal} scan requests</h2>
-          <select value={requestStatus} onChange={(e) => setRequestStatus(e.target.value)}>
-            <option value="">All Status</option>
-            <option value="pending">Pending</option>
-            <option value="claimed">Claimed</option>
-            <option value="completed">Completed</option>
-            <option value="failed">Failed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button className="update-btn" onClick={requeueStale}>Requeue Stale</button>
+            <select value={requestStatus} onChange={(e) => setRequestStatus(e.target.value)}>
+              <option value="">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="claimed">Claimed</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
         </div>
         {requestMsg && <div style={{ padding: '0.75rem 1rem 0', color: requestMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{requestMsg}</div>}
         {requestsLoading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (

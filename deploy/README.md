@@ -189,6 +189,7 @@ spec:
 | `BONGSU_RETENTION_SCAN_DAYS` | `180` | Default scan history retention for admin prune action |
 | `BONGSU_RETENTION_SCAN_REQUEST_DAYS` | `90` | Default completed/failed/cancelled scan request retention |
 | `BONGSU_RETENTION_AUDIT_DAYS` | `365` | Default audit log retention for admin prune action |
+| `BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES` | `60` | Requeue claimed force-scan requests after this age |
 | `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login) |
 
 ### Agent
@@ -235,6 +236,7 @@ spec:
 | `POST` | `/api/scan-requests` | Request force scan for host/all |
 | `GET` | `/api/scan-requests` | List force scan requests with host-scoped RBAC |
 | `POST` | `/api/scan-requests/{id}/cancel` | Cancel pending or claimed force scan request |
+| `POST` | `/api/scan-requests/requeue-stale` | Requeue claimed force-scan requests older than timeout |
 | `POST` | `/api/agent/scan-requests/claim` | Agent claims a pending force scan |
 | `POST` | `/api/agent/scan-requests/{id}/complete` | Agent completes/fails a force scan |
 | `GET` | `/api/health` | Health check |

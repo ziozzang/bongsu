@@ -858,12 +858,45 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	return out, total, nil
 }
 
-func (db *DB) ClaimScanRequest(ctx context.Context, hostID string) (*models.ScanRequest, error) {
+func (db *DB) RequeueStaleScanRequests(ctx context.Context, timeout time.Duration) (int, error) {
+	if timeout <= 0 {
+		timeout = time.Hour
+	}
+	cutoff := time.Now().Add(-timeout)
+	res, err := db.ExecContext(ctx, `UPDATE scan_requests
+SET status='pending', claimed_at=NULL, error_message='requeued after claim timeout'
+WHERE status='claimed' AND claimed_at < $1`, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+func (db *DB) ClaimScanRequest(ctx context.Context, hostID string, timeout time.Duration) (*models.ScanRequest, int, error) {
+	if timeout <= 0 {
+		timeout = time.Hour
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer tx.Rollback()
+
+	cutoff := time.Now().Add(-timeout)
+	requeued, err := tx.ExecContext(ctx, `UPDATE scan_requests
+SET status='pending', claimed_at=NULL, error_message='requeued after claim timeout'
+WHERE status='claimed' AND claimed_at < $1`, cutoff)
+	if err != nil {
+		return nil, 0, err
+	}
+	requeuedCount, err := requeued.RowsAffected()
+	if err != nil {
+		return nil, 0, err
+	}
 
 	q := `UPDATE scan_requests
 SET status='claimed', claimed_at=now(), error_message=''
@@ -878,12 +911,12 @@ RETURNING id, host_id, requested_by, scan_type, packages_only, reason, status, e
 	var r models.ScanRequest
 	err = tx.QueryRowContext(ctx, q, hostID).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ErrorMessage, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt)
 	if err == sql.ErrNoRows {
-		return nil, tx.Commit()
+		return nil, int(requeuedCount), tx.Commit()
 	}
 	if err != nil {
-		return nil, err
+		return nil, int(requeuedCount), err
 	}
-	return &r, tx.Commit()
+	return &r, int(requeuedCount), tx.Commit()
 }
 
 func (db *DB) CompleteScanRequest(ctx context.Context, id, status, message string) error {

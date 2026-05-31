@@ -124,6 +124,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/scan-requests", s.handleListScanRequests)
 	s.mux.HandleFunc("POST /api/scan-requests", s.handleCreateScanRequest)
 	s.mux.HandleFunc("POST /api/scan-requests/{id}/cancel", s.handleCancelScanRequest)
+	s.mux.HandleFunc("POST /api/scan-requests/requeue-stale", s.handleRequeueStaleScanRequests)
 	s.mux.HandleFunc("POST /api/agent/scan-requests/claim", s.handleClaimScanRequest)
 	s.mux.HandleFunc("POST /api/agent/scan-requests/{id}/complete", s.handleCompleteScanRequest)
 	s.mux.HandleFunc("GET /api/install.sh", s.handleInstallScript)
@@ -1500,6 +1501,39 @@ func (s *Server) handleCancelScanRequest(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
+func (s *Server) handleRequeueStaleScanRequests(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		TimeoutMinutes int `json:"timeout_minutes"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+			http.Error(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+	}
+	if body.TimeoutMinutes <= 0 {
+		body.TimeoutMinutes = envInt("BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES", 60)
+	}
+	if body.TimeoutMinutes <= 0 {
+		body.TimeoutMinutes = 60
+	}
+	count, err := s.db.RequeueStaleScanRequests(r.Context(), time.Duration(body.TimeoutMinutes)*time.Minute)
+	if err != nil {
+		log.Printf("requeue stale scan requests: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	s.audit(r, "scan_request.requeue_stale", "scan_request", "stale_claims", "ok", map[string]any{
+		"timeout_minutes": body.TimeoutMinutes,
+		"requeued":        count,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "requeued": count, "timeout_minutes": body.TimeoutMinutes})
+}
+
 func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -1540,11 +1574,22 @@ func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "host_id is required", http.StatusBadRequest)
 		return
 	}
-	req, err := s.db.ClaimScanRequest(r.Context(), hostID)
+	timeoutMinutes := envInt("BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES", 60)
+	if timeoutMinutes <= 0 {
+		timeoutMinutes = 60
+	}
+	req, requeued, err := s.db.ClaimScanRequest(r.Context(), hostID, time.Duration(timeoutMinutes)*time.Minute)
 	if err != nil {
 		log.Printf("claim scan request: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
+	}
+	if requeued > 0 {
+		s.audit(r, "scan_request.requeue_stale", "scan_request", "stale_claims", "ok", map[string]any{
+			"timeout_minutes": timeoutMinutes,
+			"requeued":        requeued,
+			"trigger":         "agent_claim",
+		})
 	}
 	if req == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"request": nil})
