@@ -176,11 +176,8 @@ func validateServerSecrets() error {
 		{name: "BONGSU_INSTALL_TOKEN", value: os.Getenv("BONGSU_INSTALL_TOKEN")},
 	}
 	for _, s := range secrets {
-		if s.value == "" {
-			continue
-		}
 		if weakSecretValue(s.value) {
-			return fmt.Errorf("%s is empty, too short, or still uses a placeholder value", s.name)
+			return fmt.Errorf("%s is missing, too short, or still uses a placeholder value", s.name)
 		}
 	}
 	apiKey := strings.TrimSpace(os.Getenv("BONGSU_API_KEY"))

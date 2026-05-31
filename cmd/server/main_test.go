@@ -2,6 +2,14 @@ package main
 
 import "testing"
 
+func TestValidateServerSecretsRejectsMissingRequiredSecrets(t *testing.T) {
+	t.Setenv("BONGSU_ALLOW_WEAK_SECRETS", "false")
+
+	if err := validateServerSecrets(); err == nil {
+		t.Fatal("missing server secrets should be rejected")
+	}
+}
+
 func TestValidateServerSecretsRejectsWeakPlaceholders(t *testing.T) {
 	t.Setenv("BONGSU_API_KEY", "change-me-to-a-strong-random-string")
 	t.Setenv("BONGSU_AGENT_API_KEY", "agent-key-0123456789")
