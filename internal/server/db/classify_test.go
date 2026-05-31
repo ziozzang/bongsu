@@ -388,6 +388,33 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 	}
 }
 
+func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) RematchCVEs")
+	if start < 0 {
+		t.Fatal("RematchCVEs not found")
+	}
+	end := strings.Index(body[start:], "func rematchVulnerabilityKey")
+	if end < 0 {
+		t.Fatal("RematchCVEs end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"opts.ScanID",
+		"AND p.scan_id =",
+		"scanJoin = \"\"",
+		"JOIN (%s) ls ON p.scan_id = ls.id",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("scan-scoped rematch missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestLatestScansIncludesDegradedInventory(t *testing.T) {
 	if !strings.Contains(latestScansSub, "status IN ('completed','degraded')") {
 		t.Fatalf("latest scans must include degraded scans: %s", latestScansSub)

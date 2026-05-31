@@ -3621,6 +3621,7 @@ type RematchResult struct {
 type RematchOptions struct {
 	Sources                   []string
 	MinSourceMatchablePercent float64
+	ScanID                    string
 }
 
 func cveSourceFixedPredicateSQL() string {
@@ -3649,6 +3650,12 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		args = append(args, opts.MinSourceMatchablePercent)
 		filters += fmt.Sprintf(" AND (100.0 * sq.matchable / NULLIF(sq.total, 0)) >= $%d", len(args))
 	}
+	scanJoin := fmt.Sprintf("JOIN (%s) ls ON p.scan_id = ls.id", latestScansSub)
+	if opts.ScanID != "" {
+		args = append(args, opts.ScanID)
+		filters += fmt.Sprintf(" AND p.scan_id = $%d", len(args))
+		scanJoin = ""
+	}
 
 	affectedProducts := `CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END`
 	query := fmt.Sprintf(`
@@ -3668,12 +3675,12 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		       c.vulnerability_id, c.severity, c.cvss_score, c.cvss_vector,
 		       c.title, c.description, c.refs, c.category, c.ecosystem, c.affected_products
 		FROM packages p
-		JOIN (%s) ls ON p.scan_id = ls.id
+		%s
 		JOIN cve_database c ON c.affected_products @> jsonb_build_array(jsonb_build_object('name', p.name))
 		JOIN source_quality sq ON sq.source = c.source
 		WHERE 1=1%s
 		LIMIT 50000
-	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), latestScansSub, filters)
+	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), scanJoin, filters)
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {

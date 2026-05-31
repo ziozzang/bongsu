@@ -246,7 +246,7 @@ spec:
 | `GET` | `/api/cve-db/stats` | Source counts and quality counters for matchable/fixed/range/CVSS data |
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL atomically |
-| `POST` | `/api/admin/cve-db/rematch` | Rematch packages, optionally with `sources` and `min_source_matchable_percent` JSON filters |
+| `POST` | `/api/admin/cve-db/rematch` | Rematch packages, optionally with `sources`, `min_source_matchable_percent`, and `scan_id` JSON filters |
 | `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs |
 | `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
 | `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |

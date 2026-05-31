@@ -388,6 +388,11 @@ func TestRematchOptionsFromEnv(t *testing.T) {
 	if opts.MinSourceMatchablePercent != 100 {
 		t.Fatalf("min quality = %.1f", opts.MinSourceMatchablePercent)
 	}
+
+	opts = normalizeRematchOptions(db.RematchOptions{ScanID: " scan-1 "})
+	if opts.ScanID != "scan-1" {
+		t.Fatalf("scan id = %q, want trimmed scan-1", opts.ScanID)
+	}
 }
 
 func TestCoalesceSecurityRecalcReason(t *testing.T) {
@@ -788,6 +793,74 @@ func TestHandleReportNormalizesScannerInput(t *testing.T) {
 	}
 }
 
+func TestHandleReportAppliesScanScopedCveRematch(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleReport")
+	if start < 0 {
+		t.Fatal("handleReport not found")
+	}
+	end := strings.Index(body[start:], "func normalizeScanReport")
+	if end < 0 {
+		t.Fatal("handleReport end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"opts.ScanID = report.ScanID",
+		"s.db.RematchCVEs(ctx, opts)",
+		`"cve_db_rematch: "`,
+		"insertedVulns += result.NewVulns",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("scan-scoped rematch missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) SecurityDatabaseUpdated")
+	if start < 0 {
+		t.Fatal("SecurityDatabaseUpdated not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) recalculateSecurityFindings")
+	if end < 0 {
+		t.Fatal("SecurityDatabaseUpdated end not found")
+	}
+	fn := body[start : start+end]
+	if strings.Contains(fn, "queueSecurityDBRescans") {
+		t.Fatalf("SecurityDatabaseUpdated should not queue rescans before recalculation: %s", fn)
+	}
+
+	start = strings.Index(body, "func (s *Server) runSecurityRecalculation")
+	if start < 0 {
+		t.Fatal("runSecurityRecalculation not found")
+	}
+	end = strings.Index(body[start:], "func coalesceSecurityRecalcReason")
+	if end < 0 {
+		t.Fatal("runSecurityRecalculation end not found")
+	}
+	fn = body[start : start+end]
+	for _, want := range []string{
+		`s.auditSystem("security_db.recalculation"`,
+		"s.queueSecurityDBRescans(reason, status)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("post-recalculation rescan queueing missing %q: %s", want, fn)
+		}
+	}
+	if strings.LastIndex(fn, `s.auditSystem("security_db.recalculation"`) > strings.Index(fn, "s.queueSecurityDBRescans(reason, status)") {
+		t.Fatalf("rescan queueing must happen after recalculation audit: %s", fn)
+	}
+}
+
 func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
@@ -807,6 +880,7 @@ func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
 		`"eligible":`,
 		`"queued":`,
 		`"already_pending":`,
+		`"recalculation_status":`,
 		"result.Eligible",
 		"result.Queued",
 		"result.AlreadyPending",

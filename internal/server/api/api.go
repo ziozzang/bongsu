@@ -539,6 +539,17 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	if len(report.Packages) > 0 {
+		opts := rematchOptionsFromEnv()
+		opts.ScanID = report.ScanID
+		if result, err := s.db.RematchCVEs(ctx, opts); err != nil {
+			log.Printf("scan CVE DB rematch failed: %v", err)
+			ingestErrors = append(ingestErrors, "cve_db_rematch: "+err.Error())
+		} else if result.NewVulns > 0 {
+			log.Printf("CVE DB rematched %d vulnerabilities for scan %s", result.NewVulns, report.ScanID)
+			insertedVulns += result.NewVulns
+		}
+	}
 
 	for i := range report.Users {
 		if report.Users[i].ID == "" {
@@ -2691,7 +2702,6 @@ func (s *Server) SecurityDatabaseUpdated(reason string) {
 		s.notifier.Send("security_db.updated", map[string]any{"reason": reason})
 	}
 	s.recalculateSecurityFindings(reason)
-	s.queueSecurityDBRescans(reason)
 }
 
 func (s *Server) recalculateSecurityFindings(reason string) {
@@ -2775,6 +2785,7 @@ func (s *Server) runSecurityRecalculation(reason string) {
 		meta["errors"] = failures
 	}
 	s.auditSystem("security_db.recalculation", "security_db", "aggregate", status, meta)
+	s.queueSecurityDBRescans(reason, status)
 }
 
 func coalesceSecurityRecalcReason(previous, next string) string {
@@ -2792,10 +2803,13 @@ func coalesceSecurityRecalcReason(previous, next string) string {
 	return previous + "; " + next
 }
 
-func (s *Server) queueSecurityDBRescans(reason string) {
+func (s *Server) queueSecurityDBRescans(reason, recalculationStatus string) {
 	if !envBool("BONGSU_AUTO_RESCAN_ON_DB_UPDATE", true) {
 		log.Printf("security-db auto rescan disabled (%s)", reason)
-		s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "disabled", map[string]any{"reason": reason})
+		s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "disabled", map[string]any{
+			"reason":               reason,
+			"recalculation_status": recalculationStatus,
+		})
 		return
 	}
 	go func() {
@@ -2810,21 +2824,23 @@ func (s *Server) queueSecurityDBRescans(reason string) {
 		if err != nil {
 			log.Printf("security-db auto rescan queue failed (%s): %v", reason, err)
 			s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "error", map[string]any{
-				"reason":          reason,
-				"last_seen_after": lastSeenAfter,
-				"last_seen_hours": lookbackHours,
-				"error":           err.Error(),
+				"reason":               reason,
+				"recalculation_status": recalculationStatus,
+				"last_seen_after":      lastSeenAfter,
+				"last_seen_hours":      lookbackHours,
+				"error":                err.Error(),
 			})
 			return
 		}
 		log.Printf("security-db auto rescan eligible=%d queued=%d already_pending=%d (%s)", result.Eligible, result.Queued, result.AlreadyPending, reason)
 		s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "ok", map[string]any{
-			"reason":          reason,
-			"eligible":        result.Eligible,
-			"queued":          result.Queued,
-			"already_pending": result.AlreadyPending,
-			"last_seen_after": lastSeenAfter,
-			"last_seen_hours": lookbackHours,
+			"reason":               reason,
+			"recalculation_status": recalculationStatus,
+			"eligible":             result.Eligible,
+			"queued":               result.Queued,
+			"already_pending":      result.AlreadyPending,
+			"last_seen_after":      lastSeenAfter,
+			"last_seen_hours":      lookbackHours,
 		})
 	}()
 }
@@ -2981,6 +2997,7 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Sources                   []string `json:"sources"`
 			MinSourceMatchablePercent float64  `json:"min_source_matchable_percent"`
+			ScanID                    string   `json:"scan_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -2992,6 +3009,7 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		if body.MinSourceMatchablePercent > 0 {
 			opts.MinSourceMatchablePercent = body.MinSourceMatchablePercent
 		}
+		opts.ScanID = strings.TrimSpace(body.ScanID)
 	}
 	opts = normalizeRematchOptions(opts)
 	result, err := s.db.RematchCVEs(r.Context(), opts)
@@ -3007,6 +3025,7 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		"skipped":                      result.Skipped,
 		"sources":                      opts.Sources,
 		"min_source_matchable_percent": opts.MinSourceMatchablePercent,
+		"scan_id":                      opts.ScanID,
 	})
 	enriched, _ := s.db.EnrichVulnerabilities(r.Context())
 	log.Printf("Enriched %d vulnerabilities with CVE DB data", enriched)
@@ -3021,6 +3040,7 @@ func rematchOptionsFromEnv() db.RematchOptions {
 
 func normalizeRematchOptions(opts db.RematchOptions) db.RematchOptions {
 	opts.Sources = cleanCSV(opts.Sources)
+	opts.ScanID = strings.TrimSpace(opts.ScanID)
 	if opts.MinSourceMatchablePercent < 0 {
 		opts.MinSourceMatchablePercent = 0
 	}
