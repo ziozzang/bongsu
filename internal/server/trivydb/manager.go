@@ -144,67 +144,12 @@ func (m *Manager) downloadArgs() []string {
 
 func (m *Manager) LoadFromFile(path string) error {
 	dbDir := filepath.Join(m.cacheDir, "db")
-	if err := os.MkdirAll(m.cacheDir, 0755); err != nil {
-		return fmt.Errorf("create cache dir: %w", err)
-	}
-	staging, err := os.MkdirTemp(m.cacheDir, ".bongsu-trivy-db-*")
+	_, stagedDB, cleanup, err := m.stageArchive(path)
 	if err != nil {
-		return fmt.Errorf("create staging dir: %w", err)
+		return err
 	}
-	defer os.RemoveAll(staging)
+	defer cleanup()
 
-	f, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("open archive: %w", err)
-	}
-	defer f.Close()
-
-	gz, err := gzip.NewReader(f)
-	if err != nil {
-		return fmt.Errorf("gzip reader: %w", err)
-	}
-	defer gz.Close()
-
-	tr := tar.NewReader(gz)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("tar read: %w", err)
-		}
-		if !isSafePath(staging, hdr.Name) {
-			return fmt.Errorf("unsafe path in archive: %s", hdr.Name)
-		}
-		target := filepath.Join(staging, hdr.Name)
-		switch hdr.Typeflag {
-		case tar.TypeDir:
-			if err := os.MkdirAll(target, 0755); err != nil {
-				return fmt.Errorf("create %s: %w", target, err)
-			}
-			continue
-		case tar.TypeReg, tar.TypeRegA:
-		default:
-			return fmt.Errorf("unsupported archive entry type %c for %s", hdr.Typeflag, hdr.Name)
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-			return fmt.Errorf("create %s: %w", filepath.Dir(target), err)
-		}
-		out, err := os.Create(target)
-		if err != nil {
-			return fmt.Errorf("create %s: %w", target, err)
-		}
-		if _, err := io.Copy(out, tr); err != nil {
-			out.Close()
-			return fmt.Errorf("write %s: %w", target, err)
-		}
-		out.Close()
-	}
-	stagedDB := filepath.Join(staging, "db")
-	if info, err := os.Stat(filepath.Join(stagedDB, "trivy.db")); err != nil || info.Size() == 0 {
-		return fmt.Errorf("archive missing db/trivy.db")
-	}
 	backup := filepath.Join(m.cacheDir, fmt.Sprintf(".bongsu-trivy-db-backup-%d", time.Now().UnixNano()))
 	hadExisting := false
 	if _, err := os.Stat(dbDir); err == nil {
@@ -229,6 +174,86 @@ func (m *Manager) LoadFromFile(path string) error {
 	m.mu.Unlock()
 	log.Printf("trivy-db loaded from file")
 	return nil
+}
+
+func (m *Manager) ValidateArchive(path string) error {
+	_, _, cleanup, err := m.stageArchive(path)
+	if cleanup != nil {
+		defer cleanup()
+	}
+	return err
+}
+
+func (m *Manager) stageArchive(path string) (string, string, func(), error) {
+	if err := os.MkdirAll(m.cacheDir, 0755); err != nil {
+		return "", "", nil, fmt.Errorf("create cache dir: %w", err)
+	}
+	staging, err := os.MkdirTemp(m.cacheDir, ".bongsu-trivy-db-*")
+	if err != nil {
+		return "", "", nil, fmt.Errorf("create staging dir: %w", err)
+	}
+	cleanup := func() { os.RemoveAll(staging) }
+	f, err := os.Open(path)
+	if err != nil {
+		cleanup()
+		return "", "", nil, fmt.Errorf("open archive: %w", err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		cleanup()
+		return "", "", nil, fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			cleanup()
+			return "", "", nil, fmt.Errorf("tar read: %w", err)
+		}
+		if !isSafePath(staging, hdr.Name) {
+			cleanup()
+			return "", "", nil, fmt.Errorf("unsafe path in archive: %s", hdr.Name)
+		}
+		target := filepath.Join(staging, hdr.Name)
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0755); err != nil {
+				cleanup()
+				return "", "", nil, fmt.Errorf("create %s: %w", target, err)
+			}
+			continue
+		case tar.TypeReg, tar.TypeRegA:
+		default:
+			cleanup()
+			return "", "", nil, fmt.Errorf("unsupported archive entry type %c for %s", hdr.Typeflag, hdr.Name)
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+			cleanup()
+			return "", "", nil, fmt.Errorf("create %s: %w", filepath.Dir(target), err)
+		}
+		out, err := os.Create(target)
+		if err != nil {
+			cleanup()
+			return "", "", nil, fmt.Errorf("create %s: %w", target, err)
+		}
+		if _, err := io.Copy(out, tr); err != nil {
+			out.Close()
+			cleanup()
+			return "", "", nil, fmt.Errorf("write %s: %w", target, err)
+		}
+		out.Close()
+	}
+	stagedDB := filepath.Join(staging, "db")
+	if info, err := os.Stat(filepath.Join(stagedDB, "trivy.db")); err != nil || info.Size() == 0 {
+		cleanup()
+		return "", "", nil, fmt.Errorf("archive missing db/trivy.db")
+	}
+	return staging, stagedDB, cleanup, nil
 }
 
 func (m *Manager) WriteArchive(w io.Writer) error {

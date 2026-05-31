@@ -136,6 +136,24 @@ func TestLoadFromFileReplacesDBAfterStaging(t *testing.T) {
 	}
 }
 
+func TestValidateArchiveDoesNotActivateDB(t *testing.T) {
+	cache := t.TempDir()
+	archive := filepath.Join(t.TempDir(), "valid-trivy.tar.gz")
+	if err := writeTrivyArchive(archive, map[string]string{"db/trivy.db": "validated"}); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager("trivy", cache, "", 0)
+	if err := m.ValidateArchive(archive); err != nil {
+		t.Fatalf("validate archive: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cache, "db", "trivy.db")); !os.IsNotExist(err) {
+		t.Fatalf("validate should not activate db, stat err=%v", err)
+	}
+	if m.IsReady() {
+		t.Fatal("validate should not mark manager ready")
+	}
+}
+
 func TestLoadFromFileRejectsUnsupportedArchiveEntryTypes(t *testing.T) {
 	cache := t.TempDir()
 	archive := filepath.Join(t.TempDir(), "unsafe-trivy.tar.gz")

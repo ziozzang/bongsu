@@ -2299,6 +2299,13 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusServiceUnavailable, "bundle contains trivy db but manager is unavailable", "precondition", nil)
 		return
 	}
+	if trivyArchive != "" {
+		if err := s.dbMgr.ValidateArchive(trivyArchive); err != nil {
+			log.Printf("security-db bundle trivy validation: %v", err)
+			fail(http.StatusBadRequest, "trivy db archive validation failed", "validate_trivy", err)
+			return
+		}
+	}
 	cveReader, err := os.Open(cveFile)
 	if err != nil {
 		fail(http.StatusInternalServerError, "cve archive read failed", "read_cve", err)
@@ -2318,19 +2325,18 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusInternalServerError, "cve import failed", "import_cve", err)
 		return
 	}
+	if err := tx.Commit(); err != nil {
+		fail(http.StatusInternalServerError, "cve import commit failed", "commit_cve", err)
+		return
+	}
 	trivyLoaded := false
 	if trivyArchive != "" {
 		if err := s.dbMgr.LoadFromFile(trivyArchive); err != nil {
 			log.Printf("security-db bundle trivy import: %v", err)
-			tx.Rollback()
-			fail(http.StatusInternalServerError, "trivy db import failed", "import_trivy", err)
+			fail(http.StatusInternalServerError, "trivy db import failed after cve commit", "import_trivy", err)
 			return
 		}
 		trivyLoaded = true
-	}
-	if err := tx.Commit(); err != nil {
-		fail(http.StatusInternalServerError, "cve import commit failed", "commit_cve", err)
-		return
 	}
 	s.audit(r, "security_db.import", "security_db", "bundle", "ok", map[string]any{
 		"imported":        imported,

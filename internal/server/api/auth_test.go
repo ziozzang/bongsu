@@ -382,6 +382,40 @@ func TestSecurityDBBundleImportUsesSingleCveTransaction(t *testing.T) {
 	}
 }
 
+func TestSecurityDBBundleImportValidatesTrivyBeforeCommitAndLoadsAfter(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleSecurityDbImport")
+	if start < 0 {
+		t.Fatal("handleSecurityDbImport not found")
+	}
+	end := strings.Index(body[start:], "type securityDBBundleManifest")
+	if end < 0 {
+		t.Fatal("securityDBBundleManifest not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"s.dbMgr.ValidateArchive(trivyArchive)",
+		`"validate_trivy"`,
+		"tx.Commit()",
+		"s.dbMgr.LoadFromFile(trivyArchive)",
+		`"trivy db import failed after cve commit"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("bundle import trivy ordering missing %q: %s", want, fn)
+		}
+	}
+	if strings.Index(fn, "s.dbMgr.ValidateArchive(trivyArchive)") > strings.Index(fn, "tx.Commit()") {
+		t.Fatal("trivy archive must be validated before committing CVE transaction")
+	}
+	if strings.Index(fn, "s.dbMgr.LoadFromFile(trivyArchive)") < strings.Index(fn, "tx.Commit()") {
+		t.Fatal("trivy cache must not be activated before CVE transaction commit")
+	}
+}
+
 func TestSecurityDBBundleImportAuditsFailures(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
