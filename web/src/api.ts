@@ -243,6 +243,26 @@ export interface AuditLog {
   created_at: string;
 }
 
+export interface AccessSubject {
+  id: string;
+  subject_type: string;
+  external_id: string;
+  display_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AccessPolicy {
+  id: string;
+  subject_id: string;
+  subject_type: string;
+  subject_external_id: string;
+  resource_type: string;
+  resource_id: string;
+  permission: string;
+  created_at: string;
+}
+
 export interface CveDbEntry {
   id: string;
   vulnerability_id: string;
@@ -300,6 +320,13 @@ export const api = {
   deleteScan: (id: string) => request<{status: string}>(`/scans/${id}`, undefined, 'DELETE'),
   auditLogs: (params: { actor_type?: string; actor_id?: string; action?: string; resource_type?: string; resource_id?: string; status?: string; limit?: string; offset?: string }) =>
     request<{ items: AuditLog[]; total: number }>('/admin/audit-logs', params),
+  rbacSubjects: () => request<{ items: AccessSubject[] }>('/admin/rbac/subjects'),
+  rbacPolicies: (params?: { subject_external_id?: string }) =>
+    request<{ items: AccessPolicy[] }>('/admin/rbac/policies', params),
+  upsertRbacSubject: (body: { subject_type?: string; external_id: string; display_name?: string }) =>
+    requestJSON<{ status: string }>('/admin/rbac/subjects', body),
+  upsertRbacPolicy: (body: { subject_external_id: string; resource_type: string; resource_id?: string; permission?: string }) =>
+    requestJSON<{ status: string }>('/admin/rbac/policies', body),
   updateTrivyDB: () => request<{status: string; message: string; trivy_db_ready: boolean; last_update: string}>('/admin/trivy-db/update', undefined, 'POST'),
   updateSecurityDB: () => request<{status: string; security_db: HealthStatus['security_db']}>('/admin/security-db/update', undefined, 'POST'),
   rematchCVEs: () => request<{matched: number; new_vulns: number; skipped: number}>('/admin/cve-db/rematch', undefined, 'POST'),

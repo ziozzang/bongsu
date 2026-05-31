@@ -85,7 +85,7 @@ RBAC tables are present:
 - `access_subjects`: future users and groups from company identity systems.
 - `access_policies`: permissions on `host`, `container`, `image`, `asset_group`, or `all`.
 
-Runtime RBAC supports viewer API keys mapped to external subjects through `BONGSU_VIEWER_API_KEYS=key:subject`. Admins create `access_subjects` and `access_policies`; viewer queries are scoped to allowed hosts across host, package, vulnerability, scan, and stats views. Future SSO integration should replace static viewer keys with identity-provider subjects.
+Runtime RBAC supports viewer API keys mapped to external subjects through `BONGSU_VIEWER_API_KEYS=key:subject`. Admins create and list `access_subjects` and `access_policies` through `/api/admin/rbac/*` or the dashboard RBAC view; viewer queries are scoped to allowed hosts across host, package, vulnerability, scan, and stats views. Policy creation requires a known subject so typos do not silently create ineffective access grants. Future SSO integration should replace static viewer keys with identity-provider subjects.
 
 RBAC resource matching supports:
 

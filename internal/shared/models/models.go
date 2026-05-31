@@ -64,6 +64,26 @@ type AuditLog struct {
 	CreatedAt    time.Time       `json:"created_at"`
 }
 
+type AccessSubject struct {
+	ID          string    `json:"id"`
+	SubjectType string    `json:"subject_type"`
+	ExternalID  string    `json:"external_id"`
+	DisplayName string    `json:"display_name"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+type AccessPolicy struct {
+	ID                string    `json:"id"`
+	SubjectID         string    `json:"subject_id"`
+	SubjectType       string    `json:"subject_type"`
+	SubjectExternalID string    `json:"subject_external_id"`
+	ResourceType      string    `json:"resource_type"`
+	ResourceID        string    `json:"resource_id"`
+	Permission        string    `json:"permission"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
 type Package struct {
 	ID          string    `json:"id"`
 	ScanID      string    `json:"scan_id"`

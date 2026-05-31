@@ -219,7 +219,9 @@ spec:
 | `POST` | `/api/admin/security-db/import` | Import exported security DB bundle |
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
+| `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
 | `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |
+| `GET` | `/api/admin/rbac/policies` | List RBAC policies, optionally filtered by `subject_external_id` |
 | `POST` | `/api/admin/rbac/policies` | Create RBAC policy |
 | `GET` | `/api/admin/audit-logs` | Query audit log events by actor/action/resource/status; also available in Audit Log UI |
 | `POST` | `/api/scan-requests` | Request force scan for host/all |

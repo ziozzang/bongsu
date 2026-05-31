@@ -141,7 +141,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/admin/cve-db/recalc-cvss", s.handleCveDbRecalcCVSS)
 	s.mux.HandleFunc("GET /api/admin/cve-db/export", s.handleCveDbExport)
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
+	s.mux.HandleFunc("GET /api/admin/rbac/subjects", s.handleListAccessSubjects)
 	s.mux.HandleFunc("POST /api/admin/rbac/subjects", s.handleUpsertAccessSubject)
+	s.mux.HandleFunc("GET /api/admin/rbac/policies", s.handleListAccessPolicies)
 	s.mux.HandleFunc("POST /api/admin/rbac/policies", s.handleUpsertAccessPolicy)
 	s.mux.HandleFunc("GET /api/admin/audit-logs", s.handleListAuditLogs)
 	s.mux.HandleFunc("GET /api/cve-db/stats", s.handleCveDbStats)
@@ -2185,6 +2187,12 @@ func (s *Server) handleUpsertAccessSubject(w http.ResponseWriter, r *http.Reques
 	if body.SubjectType == "" {
 		body.SubjectType = "user"
 	}
+	switch body.SubjectType {
+	case "user", "group":
+	default:
+		http.Error(w, "invalid subject_type", http.StatusBadRequest)
+		return
+	}
 	if body.ExternalID == "" {
 		http.Error(w, "external_id is required", http.StatusBadRequest)
 		return
@@ -2199,6 +2207,34 @@ func (s *Server) handleUpsertAccessSubject(w http.ResponseWriter, r *http.Reques
 		"display_name": body.DisplayName,
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleListAccessSubjects(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	items, err := s.db.ListAccessSubjects(r.Context())
+	if err != nil {
+		log.Printf("list access subjects: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (s *Server) handleListAccessPolicies(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	items, err := s.db.ListAccessPolicies(r.Context(), r.URL.Query().Get("subject_external_id"))
+	if err != nil {
+		log.Printf("list access policies: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request) {
@@ -2238,6 +2274,10 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 	}
 	if err := s.db.UpsertAccessPolicy(r.Context(), body.ID, body.SubjectExternalID, body.ResourceType, body.ResourceID, body.Permission); err != nil {
 		log.Printf("upsert access policy: %v", err)
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}

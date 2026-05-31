@@ -1083,6 +1083,51 @@ ON CONFLICT (subject_type, external_id) DO UPDATE SET display_name=EXCLUDED.disp
 	return err
 }
 
+func (db *DB) ListAccessSubjects(ctx context.Context) ([]models.AccessSubject, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, subject_type, external_id, display_name, created_at, updated_at
+FROM access_subjects
+ORDER BY external_id, subject_type`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.AccessSubject{}
+	for rows.Next() {
+		var item models.AccessSubject
+		if err := rows.Scan(&item.ID, &item.SubjectType, &item.ExternalID, &item.DisplayName, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) ListAccessPolicies(ctx context.Context, subjectExternalID string) ([]models.AccessPolicy, error) {
+	q := `SELECT p.id, p.subject_id, s.subject_type, s.external_id, p.resource_type, p.resource_id, p.permission, p.created_at
+FROM access_policies p
+JOIN access_subjects s ON s.id = p.subject_id`
+	args := []any{}
+	if subjectExternalID != "" {
+		q += ` WHERE s.external_id=$1`
+		args = append(args, subjectExternalID)
+	}
+	q += ` ORDER BY s.external_id, p.resource_type, p.resource_id, p.permission`
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []models.AccessPolicy{}
+	for rows.Next() {
+		var item models.AccessPolicy
+		if err := rows.Scan(&item.ID, &item.SubjectID, &item.SubjectType, &item.SubjectExternalID, &item.ResourceType, &item.ResourceID, &item.Permission, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) UpsertAccessPolicy(ctx context.Context, id, subjectExternalID, resourceType, resourceID, permission string) error {
 	if id == "" {
 		id = uuid.New().String()
@@ -1090,12 +1135,18 @@ func (db *DB) UpsertAccessPolicy(ctx context.Context, id, subjectExternalID, res
 	if resourceID == "" {
 		resourceID = "*"
 	}
-	_, err := db.ExecContext(ctx, `INSERT INTO access_policies (id, subject_id, resource_type, resource_id, permission, created_at)
-SELECT $1, s.id, $3, $4, $5, now()
-FROM access_subjects s
-WHERE s.external_id=$2
+	var subjectID string
+	err := db.QueryRowContext(ctx, `SELECT id FROM access_subjects WHERE external_id=$1 ORDER BY subject_type LIMIT 1`, subjectExternalID).Scan(&subjectID)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("access subject %q not found", subjectExternalID)
+	}
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO access_policies (id, subject_id, resource_type, resource_id, permission, created_at)
+VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (subject_id, resource_type, resource_id, permission) DO NOTHING`,
-		id, subjectExternalID, resourceType, resourceID, permission)
+		id, subjectID, resourceType, resourceID, permission)
 	return err
 }
 

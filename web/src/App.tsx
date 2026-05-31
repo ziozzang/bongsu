@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset, type VulnSummaryRow, type AuditLog } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = a.replace(/^v?/, '').split(/[._-]/);
@@ -62,7 +62,7 @@ function parseCvssVector(vector: string) {
   return { version: '3.x', parts, labels, values };
 }
 
-type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'host-detail' | 'cve-search';
+type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search';
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard');
@@ -91,6 +91,7 @@ export default function App() {
         {view === 'containers' && <ContainersView />}
         {view === 'cve-search' && <CveSearchView />}
         {view === 'scans' && <ScansView />}
+        {view === 'rbac' && <RBACView />}
         {view === 'audit' && <AuditLogView />}
         {view === 'vulns' && <VulnsView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'vuln-detail' && <VulnDetailView vuln={selectedVuln} onBack={() => setView('vulns')} />}
@@ -133,6 +134,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
     ['vulns', 'Vulnerabilities', '◆'],
     ['cve-search', 'CVE Search', '◈'],
     ['scans', 'Scan History', '☰'],
+    ['rbac', 'RBAC', '◎'],
     ['audit', 'Audit Log', '◇'],
   ];
   return (
@@ -1785,6 +1787,162 @@ function ScansView() {
           <button disabled={page === 0} onClick={() => load(page - 1)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
           <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1)}>Next</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function RBACView() {
+  const [subjects, setSubjects] = useState<AccessSubject[]>([]);
+  const [policies, setPolicies] = useState<AccessPolicy[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [subjectType, setSubjectType] = useState('user');
+  const [externalID, setExternalID] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [policySubject, setPolicySubject] = useState('');
+  const [resourceType, setResourceType] = useState('host');
+  const [resourceID, setResourceID] = useState('');
+  const [permission, setPermission] = useState('read');
+  const [subjectFilter, setSubjectFilter] = useState('');
+
+  const load = useCallback((filter = '') => {
+    setLoading(true);
+    setMessage('');
+    Promise.all([
+      api.rbacSubjects(),
+      api.rbacPolicies(filter ? { subject_external_id: filter } : undefined),
+    ])
+      .then(([s, p]) => {
+        setSubjects(s.items || []);
+        setPolicies(p.items || []);
+        setLoading(false);
+      })
+      .catch(() => {
+        setMessage('RBAC management requires an admin API key');
+        setLoading(false);
+      });
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const saveSubject = () => {
+    if (!externalID.trim()) {
+      setMessage('external_id is required');
+      return;
+    }
+    api.upsertRbacSubject({ subject_type: subjectType, external_id: externalID.trim(), display_name: displayName.trim() })
+      .then(() => {
+        setMessage('Subject saved');
+        setPolicySubject(externalID.trim());
+        setExternalID('');
+        setDisplayName('');
+        load();
+      })
+      .catch(() => setMessage('Failed to save subject'));
+  };
+
+  const savePolicy = () => {
+    const subject = policySubject.trim();
+    if (!subject || !resourceType) {
+      setMessage('subject and resource type are required');
+      return;
+    }
+    api.upsertRbacPolicy({ subject_external_id: subject, resource_type: resourceType, resource_id: resourceID.trim() || '*', permission })
+      .then(() => {
+        setMessage('Policy saved');
+        setResourceID('');
+        load(subjectFilter);
+      })
+      .catch(() => setMessage('Failed to save policy. Create the subject first.'));
+  };
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>RBAC</h1>
+      <div className="grid-2" style={{ marginBottom: '1rem' }}>
+        <div className="card" style={{ padding: '1rem' }}>
+          <div className="card-header"><h2>Subject</h2></div>
+          <div className="filters">
+            <select value={subjectType} onChange={(e) => setSubjectType(e.target.value)}>
+              <option value="user">User</option>
+              <option value="group">Group</option>
+            </select>
+            <input type="text" placeholder="external_id" value={externalID} onChange={(e) => setExternalID(e.target.value)} />
+            <input type="text" placeholder="Display name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+            <button className="filter-btn" onClick={saveSubject}>Save Subject</button>
+          </div>
+        </div>
+        <div className="card" style={{ padding: '1rem' }}>
+          <div className="card-header"><h2>Policy</h2></div>
+          <div className="filters">
+            <input list="rbac-subjects" type="text" placeholder="subject external_id" value={policySubject} onChange={(e) => setPolicySubject(e.target.value)} />
+            <datalist id="rbac-subjects">{subjects.map(s => <option key={s.id} value={s.external_id} />)}</datalist>
+            <select value={resourceType} onChange={(e) => setResourceType(e.target.value)}>
+              <option value="host">Host</option>
+              <option value="container">Container</option>
+              <option value="image">Image</option>
+              <option value="all">All</option>
+            </select>
+            <input type="text" placeholder="resource_id or *" value={resourceID} onChange={(e) => setResourceID(e.target.value)} />
+            <select value={permission} onChange={(e) => setPermission(e.target.value)}>
+              <option value="read">Read</option>
+              <option value="write">Write</option>
+              <option value="admin">Admin</option>
+            </select>
+            <button className="filter-btn" onClick={savePolicy}>Save Policy</button>
+          </div>
+        </div>
+      </div>
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="filters">
+          <input list="rbac-subjects" type="text" placeholder="Filter policies by subject" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} />
+          <button className="filter-btn" onClick={() => load(subjectFilter)}>Search</button>
+          <button onClick={() => { setSubjectFilter(''); load(''); }}>Clear</button>
+          <span style={{ color: message.startsWith('Failed') || message.includes('requires') || message.includes('required') ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {message || `${subjects.length} subjects / ${policies.length} policies`}
+          </span>
+        </div>
+      </div>
+      <div className="grid-2">
+        <div className="card">
+          <div className="card-header"><h2>Subjects</h2></div>
+          {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+            <table>
+              <thead><tr><th>Type</th><th>External ID</th><th>Name</th><th>Updated</th></tr></thead>
+              <tbody>
+                {subjects.map(s => (
+                  <tr key={s.id}>
+                    <td><span className="badge">{s.subject_type}</span></td>
+                    <td className="mono">{s.external_id}</td>
+                    <td>{s.display_name || '-'}</td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(s.updated_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+                {subjects.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No subjects</td></tr>}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="card">
+          <div className="card-header"><h2>Policies</h2></div>
+          {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+            <table>
+              <thead><tr><th>Subject</th><th>Resource</th><th>Permission</th><th>Created</th></tr></thead>
+              <tbody>
+                {policies.map(p => (
+                  <tr key={p.id}>
+                    <td>{p.subject_type}<div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{p.subject_external_id}</div></td>
+                    <td>{p.resource_type}<div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{p.resource_id || '*'}</div></td>
+                    <td><span className="badge">{p.permission}</span></td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(p.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+                {policies.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No policies</td></tr>}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </>
