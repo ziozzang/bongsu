@@ -2161,6 +2161,29 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
       setRequestMsg('Requeue failed');
     }
   };
+  const requeueFiltered = async () => {
+    setRequestMsg('');
+    if (requestStatus && !['failed', 'cancelled'].includes(requestStatus)) {
+      setRequestMsg('Bulk requeue requires Failed or Cancelled status');
+      return;
+    }
+    if (!requestStatus && !requestType && !requestRevision) {
+      setRequestMsg('Set a status, type, or DB revision filter before bulk requeue');
+      return;
+    }
+    try {
+      const r = await api.requeueFilteredScanRequests({
+        status: requestStatus || undefined,
+        scan_type: requestType || undefined,
+        security_db_revision: requestRevision.trim() || undefined,
+        message: 'dashboard bulk retry',
+      });
+      setRequestMsg(`Requeued ${r.requeued} scan requests`);
+      loadRequests(requestStatus, requestType, requestRevision);
+    } catch {
+      setRequestMsg('Bulk requeue failed');
+    }
+  };
 
   return (
     <>
@@ -2170,6 +2193,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
           <h2>{requestTotal} scan requests</h2>
           <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
             <button className="update-btn" onClick={requeueStale}>Requeue Stale</button>
+            <button className="update-btn" onClick={requeueFiltered} title="Requeue failed or cancelled requests matching the current filters">Requeue Filtered</button>
             <select value={requestStatus} onChange={(e) => setRequestStatus(e.target.value)}>
               <option value="">All Status</option>
               <option value="pending">Pending</option>

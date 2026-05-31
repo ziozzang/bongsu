@@ -1550,6 +1550,55 @@ WHERE id=$1
 	return ErrScanRequestNotRetryable
 }
 
+func (db *DB) RequeueScanRequestsByFilter(ctx context.Context, hostID string, status string, scanType string, securityDBRevision string, message string) (int, error) {
+	if message == "" {
+		message = "bulk requeued by admin"
+	}
+	where := []string{"status IN ('failed','cancelled')"}
+	args := []any{message}
+	n := 2
+	if hostID != "" {
+		where = append(where, fmt.Sprintf("host_id=$%d", n))
+		args = append(args, hostID)
+		n++
+	}
+	if status != "" {
+		where = append(where, fmt.Sprintf("status=$%d", n))
+		args = append(args, status)
+		n++
+	}
+	if scanType != "" {
+		where = append(where, fmt.Sprintf("scan_type=$%d", n))
+		args = append(args, scanType)
+		n++
+	}
+	if securityDBRevision != "" {
+		where = append(where, fmt.Sprintf("security_db_revision=$%d", n))
+		args = append(args, securityDBRevision)
+	}
+	q := `UPDATE scan_requests
+SET status='pending', error_message=$1, claimed_at=NULL, claimed_by_host_id='', completed_at=NULL
+WHERE ` + strings.Join(where, " AND ") + `
+  AND NOT EXISTS (
+	SELECT 1 FROM scan_requests pending
+	WHERE pending.id <> scan_requests.id
+	  AND pending.host_id=scan_requests.host_id
+	  AND pending.host_id <> ''
+	  AND pending.scan_type='security-db-update'
+	  AND pending.status='pending'
+	  AND scan_requests.scan_type='security-db-update'
+  )`
+	res, err := db.ExecContext(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(affected), nil
+}
+
 func (db *DB) CompleteClaimedScanRequest(ctx context.Context, id, hostID, status, message string) error {
 	if hostID == "" {
 		return ErrScanRequestClaimMismatch

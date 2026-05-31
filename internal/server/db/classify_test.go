@@ -879,6 +879,36 @@ func TestRequeueScanRequestOnlyRetriesTerminalRequests(t *testing.T) {
 	}
 }
 
+func TestFilteredRequeueRequiresTerminalRequestsAndFilters(t *testing.T) {
+	dbFile, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(dbFile)
+	start := strings.Index(body, "func (db *DB) RequeueScanRequestsByFilter")
+	if start < 0 {
+		t.Fatal("RequeueScanRequestsByFilter not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) CompleteClaimedScanRequest")
+	if end < 0 {
+		t.Fatal("RequeueScanRequestsByFilter end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"status IN ('failed','cancelled')",
+		"host_id=$%d",
+		"status=$%d",
+		"scan_type=$%d",
+		"security_db_revision=$%d",
+		"SET status='pending'",
+		"pending.scan_type='security-db-update'",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("filtered scan request requeue handling missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestScanRequestClaimOwnershipIsTracked(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/014_scan_request_claim_owner.sql")
 	if err != nil {

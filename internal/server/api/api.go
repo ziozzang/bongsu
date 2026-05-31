@@ -166,6 +166,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/scan-requests/{id}/cancel", s.handleCancelScanRequest)
 	s.mux.HandleFunc("POST /api/scan-requests/{id}/requeue", s.handleRequeueScanRequest)
 	s.mux.HandleFunc("POST /api/scan-requests/requeue-stale", s.handleRequeueStaleScanRequests)
+	s.mux.HandleFunc("POST /api/scan-requests/requeue-filtered", s.handleRequeueFilteredScanRequests)
 	s.mux.HandleFunc("POST /api/agent/scan-requests/claim", s.handleClaimScanRequest)
 	s.mux.HandleFunc("POST /api/agent/scan-requests/{id}/complete", s.handleCompleteScanRequest)
 	s.mux.HandleFunc("GET /api/install.sh", s.handleInstallScript)
@@ -2164,6 +2165,65 @@ func (s *Server) handleRequeueStaleScanRequests(w http.ResponseWriter, r *http.R
 		"requeued":        count,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "requeued": count, "timeout_minutes": body.TimeoutMinutes})
+}
+
+func (s *Server) handleRequeueFilteredScanRequests(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		HostID             string `json:"host_id"`
+		Status             string `json:"status"`
+		ScanType           string `json:"scan_type"`
+		SecurityDBRevision string `json:"security_db_revision"`
+		Message            string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	body.HostID = strings.TrimSpace(body.HostID)
+	body.Status = strings.TrimSpace(body.Status)
+	body.ScanType = strings.TrimSpace(body.ScanType)
+	body.SecurityDBRevision = strings.TrimSpace(body.SecurityDBRevision)
+	body.Message = strings.TrimSpace(body.Message)
+	if body.HostID == "" && body.Status == "" && body.ScanType == "" && body.SecurityDBRevision == "" {
+		http.Error(w, "at least one filter is required", http.StatusBadRequest)
+		return
+	}
+	if body.Status != "" && body.Status != "failed" && body.Status != "cancelled" {
+		http.Error(w, "status must be failed or cancelled", http.StatusBadRequest)
+		return
+	}
+	if body.ScanType != "" && !validScanRequestType(body.ScanType) {
+		http.Error(w, "invalid scan_type", http.StatusBadRequest)
+		return
+	}
+	if body.HostID != "" {
+		if _, err := s.db.GetHost(r.Context(), body.HostID); err != nil {
+			http.Error(w, "host not found", http.StatusNotFound)
+			return
+		}
+	}
+	if body.Message == "" {
+		body.Message = "bulk requeued by admin"
+	}
+	count, err := s.db.RequeueScanRequestsByFilter(r.Context(), body.HostID, body.Status, body.ScanType, body.SecurityDBRevision, body.Message)
+	if err != nil {
+		log.Printf("requeue filtered scan requests: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	s.audit(r, "scan_request.requeue_filtered", "scan_request", "filtered", "ok", map[string]any{
+		"host_id":              body.HostID,
+		"status":               body.Status,
+		"scan_type":            body.ScanType,
+		"security_db_revision": body.SecurityDBRevision,
+		"message":              body.Message,
+		"requeued":             count,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "requeued": count})
 }
 
 func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request) {

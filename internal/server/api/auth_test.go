@@ -1607,6 +1607,27 @@ func TestRequeueScanRequestAPIRequiresAdminAndAudits(t *testing.T) {
 	}
 }
 
+func TestRequeueFilteredScanRequestAPIRequiresSafeFilters(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`"POST /api/scan-requests/requeue-filtered"`,
+		"func (s *Server) handleRequeueFilteredScanRequests",
+		"s.authenticateAdmin(r)",
+		`"at least one filter is required"`,
+		`"status must be failed or cancelled"`,
+		"s.db.RequeueScanRequestsByFilter",
+		`"scan_request.requeue_filtered"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("filtered scan request requeue API missing %q", want)
+		}
+	}
+}
+
 func TestNormalizeScanRequestCreateForcesPendingState(t *testing.T) {
 	claimedAt := time.Now()
 	completedAt := time.Now()
@@ -1786,6 +1807,10 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"stats.security_db_rescan_request_counts?.failed",
 		"scan_type: 'security-db-update'",
 		"api.requeueScanRequest",
+		"api.requeueFilteredScanRequests",
+		"Requeue Filtered",
+		"Bulk requeue requires Failed or Cancelled status",
+		"Set a status, type, or DB revision filter before bulk requeue",
 		"Requeue</button>",
 		"Current DB Rescan Pending",
 		"Current DB Rescan Claimed",
