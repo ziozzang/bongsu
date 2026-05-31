@@ -151,9 +151,11 @@ function parseCvssVector(vector: string) {
 }
 
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search';
+type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string };
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard');
+  const [scanRequestFilters, setScanRequestFilters] = useState<ScanRequestFilters>({});
   const [selectedHostId, setSelectedHostId] = useState('');
   const [selectedVuln, setSelectedVuln] = useState<Vuln | null>(null);
   const [authed, setAuthed] = useState(!!getApiKey());
@@ -168,17 +170,26 @@ export default function App() {
 
   if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
 
+  const navigate = (v: View) => {
+    if (v === 'scans') setScanRequestFilters({});
+    setView(v);
+  };
+  const openScanRequests = (filters: ScanRequestFilters) => {
+    setScanRequestFilters(filters);
+    setView('scans');
+  };
+
   return (
     <div className="layout">
-      <Sidebar view={view} onNavigate={setView} onLogout={noAuthMode ? undefined : () => { clearApiKey(); setAuthed(false); }} />
+      <Sidebar view={view} onNavigate={navigate} onLogout={noAuthMode ? undefined : () => { clearApiKey(); setAuthed(false); }} />
       <div className="main">
-        {view === 'dashboard' && <DashboardView />}
+        {view === 'dashboard' && <DashboardView onOpenScanRequests={openScanRequests} />}
         {view === 'hosts' && <HostsView onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
         {view === 'host-detail' && <HostDetailView hostId={selectedHostId} onBack={() => setView('hosts')} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'packages' && <PackagesView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'containers' && <ContainersView />}
         {view === 'cve-search' && <CveSearchView />}
-        {view === 'scans' && <ScansView />}
+        {view === 'scans' && <ScansView initialRequestFilters={scanRequestFilters} />}
         {view === 'rbac' && <RBACView />}
         {view === 'audit' && <AuditLogView />}
         {view === 'vulns' && <VulnsView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
@@ -243,7 +254,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
   );
 }
 
-function DashboardView() {
+function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: ScanRequestFilters) => void }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
@@ -352,6 +363,11 @@ function DashboardView() {
       setCvssRecalcMsg('CVSS recalculation failed or requires admin API key');
     }
     setCvssRecalcBusy(false);
+  };
+  const openCurrentDBRescans = (status: string) => {
+    const revision = stats?.security_db_revision || health?.security_db_revision || '';
+    if (!revision) return;
+    onOpenScanRequests({ status, scan_type: 'security-db-update', security_db_revision: revision });
   };
 
   const handleRetentionPrune = async (dryRun: boolean) => {
@@ -501,17 +517,44 @@ function DashboardView() {
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
           <div className="label">Current DB Rescan Pending</div>
-          <div className="value" style={{ color: 'var(--medium)' }}>{stats.security_db_rescan_request_counts?.pending || 0}</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => openCurrentDBRescans('pending')}
+            disabled={!(stats?.security_db_revision || health?.security_db_revision)}
+            style={{ color: 'var(--medium)', background: 'transparent', border: 0, padding: 0, cursor: stats?.security_db_revision || health?.security_db_revision ? 'pointer' : 'default' }}
+            title="Open pending security DB rescans for the current revision"
+          >
+            {stats.security_db_rescan_request_counts?.pending || 0}
+          </button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
           <div className="label">Current DB Rescan Claimed</div>
-          <div className="value">{stats.security_db_rescan_request_counts?.claimed || 0}</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => openCurrentDBRescans('claimed')}
+            disabled={!(stats?.security_db_revision || health?.security_db_revision)}
+            style={{ background: 'transparent', border: 0, padding: 0, color: 'var(--text)', cursor: stats?.security_db_revision || health?.security_db_revision ? 'pointer' : 'default' }}
+            title="Open claimed security DB rescans for the current revision"
+          >
+            {stats.security_db_rescan_request_counts?.claimed || 0}
+          </button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--critical)' }} />
           <div className="label">Current DB Rescan Failed</div>
-          <div className="value" style={{ color: 'var(--critical)' }}>{stats.security_db_rescan_request_counts?.failed || 0}</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => openCurrentDBRescans('failed')}
+            disabled={!(stats?.security_db_revision || health?.security_db_revision)}
+            style={{ color: 'var(--critical)', background: 'transparent', border: 0, padding: 0, cursor: stats?.security_db_revision || health?.security_db_revision ? 'pointer' : 'default' }}
+            title="Open failed security DB rescans for the current revision"
+          >
+            {stats.security_db_rescan_request_counts?.failed || 0}
+          </button>
         </div>
       </div>
       <div className="db-status-bar" style={{ marginTop: '1.5rem' }}>
@@ -2040,13 +2083,13 @@ function CveSearchView() {
   );
 }
 
-function ScansView() {
+function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: ScanRequestFilters }) {
   const [scans, setScans] = useState<Scan[]>([]);
   const [requests, setRequests] = useState<ScanRequest[]>([]);
   const [requestTotal, setRequestTotal] = useState(0);
-  const [requestStatus, setRequestStatus] = useState('');
-  const [requestType, setRequestType] = useState('');
-  const [requestRevision, setRequestRevision] = useState('');
+  const [requestStatus, setRequestStatus] = useState(initialRequestFilters.status || '');
+  const [requestType, setRequestType] = useState(initialRequestFilters.scan_type || '');
+  const [requestRevision, setRequestRevision] = useState(initialRequestFilters.security_db_revision || '');
   const [requestMsg, setRequestMsg] = useState('');
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);

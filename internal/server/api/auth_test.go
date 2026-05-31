@@ -1753,9 +1753,17 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 	}
 	body := string(out)
 	for _, want := range []string{
+		"onOpenScanRequests",
+		"openCurrentDBRescans",
+		"setScanRequestFilters(filters)",
+		"initialRequestFilters={scanRequestFilters}",
+		"initialRequestFilters.status || ''",
+		"initialRequestFilters.scan_type || ''",
+		"initialRequestFilters.security_db_revision || ''",
 		"stats.security_db_rescan_request_counts?.pending",
 		"stats.security_db_rescan_request_counts?.claimed",
 		"stats.security_db_rescan_request_counts?.failed",
+		"scan_type: 'security-db-update'",
 		"Current DB Rescan Pending",
 		"Current DB Rescan Claimed",
 		"Current DB Rescan Failed",
