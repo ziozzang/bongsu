@@ -1928,18 +1928,7 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 		baseQ += ` AND (v.fixed_version IS NOT NULL AND v.fixed_version != '')`
 	}
 	if f.HideMismatch {
-		// Language packages should not get OS-specific advisories
-		baseQ += ` AND NOT EXISTS (SELECT 1 FROM packages p WHERE p.id = v.package_id AND p.pkg_type IN ('python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget') AND SUBSTRING(v.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','ALPINE','SUSE','ALSA','CGA','UBUNTU','RHSA'))`
-		// OS packages should only get advisories for their own OS
-		// Debian: allow DEBIAN,DSA,DLA,CVE,GHSA | block ALPINE,SUSE,ALSA,RHSA,UBUNTU
-		baseQ += ` AND NOT (EXISTS (SELECT 1 FROM packages p WHERE p.id = v.package_id AND p.pkg_type = 'debian') AND SUBSTRING(v.vulnerability_id FROM '^[A-Z]+') IN ('ALPINE','SUSE','ALSA','RHSA','UBUNTU'))`
-		// Alpine: allow ALPINE,CVE,GHSA | block DEBIAN,DSA,DLA,SUSE,ALSA,RHSA,UBUNTU
-		baseQ += ` AND NOT (EXISTS (SELECT 1 FROM packages p WHERE p.id = v.package_id AND p.pkg_type IN ('apk','alpine')) AND SUBSTRING(v.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','SUSE','ALSA','RHSA','UBUNTU'))`
-		// Ubuntu: allow UBUNTU,DEBIAN,DSA,DLA,CVE,GHSA | block ALPINE,SUSE,ALSA,RHSA
-		baseQ += ` AND NOT (EXISTS (SELECT 1 FROM packages p WHERE p.id = v.package_id AND p.pkg_type = 'ubuntu') AND SUBSTRING(v.vulnerability_id FROM '^[A-Z]+') IN ('ALPINE','SUSE','ALSA','RHSA'))`
-		// Wolfi: allow CVE,GHSA only | block DEBIAN,DSA,DLA,ALPINE,SUSE,ALSA,RHSA,UBUNTU
-		baseQ += ` AND NOT (EXISTS (SELECT 1 FROM packages p WHERE p.id = v.package_id AND p.pkg_type = 'wolfi') AND SUBSTRING(v.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','ALPINE','SUSE','ALSA','RHSA','UBUNTU'))`
-		baseQ += cvePackageEcosystemMismatchFilter("v")
+		baseQ += defaultVulnMismatchFilterSQL("v")
 	}
 	var total int
 	countArgs := make([]any, len(args))
@@ -2011,6 +2000,42 @@ func (db *DB) GetVulnCountsByHost(ctx context.Context) (map[string]map[string]in
 		result[hostID][sev] = cnt
 	}
 	return result, nil
+}
+
+func (db *DB) GetCurrentActionableVulnCountsByHost(ctx context.Context, hostIDs []string) (map[string]map[string]int, error) {
+	baseQ := `FROM vulnerabilities v JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL()
+	args := []any{}
+	if len(hostIDs) > 0 {
+		baseQ += ` AND v.host_id = ANY($1)`
+		args = append(args, pqStringArray(hostIDs))
+	}
+	rows, err := db.QueryContext(ctx, `SELECT v.host_id, v.severity, count(*) `+baseQ+` GROUP BY v.host_id, v.severity`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := map[string]map[string]int{}
+	for rows.Next() {
+		var hostID, sev string
+		var cnt int
+		if err := rows.Scan(&hostID, &sev, &cnt); err != nil {
+			return nil, err
+		}
+		if result[hostID] == nil {
+			result[hostID] = map[string]int{}
+		}
+		result[hostID][sev] = cnt
+	}
+	return result, rows.Err()
+}
+
+func currentActionableVulnSQL() string {
+	return `COALESCE(vt.status, 'open') IN ('open', 'in_progress')
+		AND NOT (` + fixedVersionSQLCondition("v") + `)
+		AND v.vulnerability_id NOT LIKE 'CGA-%'
+		AND v.fixed_version !~ '^[0-9a-f]{40}$'
+		AND (v.fixed_version IS NOT NULL AND v.fixed_version != '')` + defaultVulnMismatchFilterSQL("v")
 }
 
 type VulnerabilitySummaryRow struct {
@@ -2581,6 +2606,14 @@ func cvePackageEcosystemMismatchFilter(vulnAlias string) string {
 			  )
 		  )
 	)`, vulnAlias, vulnAlias, affectedProducts, affectedProducts, affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("p"), vulnAlias)
+}
+
+func defaultVulnMismatchFilterSQL(vulnAlias string) string {
+	return fmt.Sprintf(` AND NOT EXISTS (SELECT 1 FROM packages p WHERE p.id = %[1]s.package_id AND p.pkg_type IN ('python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget') AND SUBSTRING(%[1]s.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','ALPINE','SUSE','ALSA','CGA','UBUNTU','RHSA'))
+		AND NOT (EXISTS (SELECT 1 FROM packages p WHERE p.id = %[1]s.package_id AND p.pkg_type = 'debian') AND SUBSTRING(%[1]s.vulnerability_id FROM '^[A-Z]+') IN ('ALPINE','SUSE','ALSA','RHSA','UBUNTU'))
+		AND NOT (EXISTS (SELECT 1 FROM packages p WHERE p.id = %[1]s.package_id AND p.pkg_type IN ('apk','alpine')) AND SUBSTRING(%[1]s.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','SUSE','ALSA','RHSA','UBUNTU'))
+		AND NOT (EXISTS (SELECT 1 FROM packages p WHERE p.id = %[1]s.package_id AND p.pkg_type = 'ubuntu') AND SUBSTRING(%[1]s.vulnerability_id FROM '^[A-Z]+') IN ('ALPINE','SUSE','ALSA','RHSA'))
+		AND NOT (EXISTS (SELECT 1 FROM packages p WHERE p.id = %[1]s.package_id AND p.pkg_type = 'wolfi') AND SUBSTRING(%[1]s.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','ALPINE','SUSE','ALSA','RHSA','UBUNTU'))`, vulnAlias) + cvePackageEcosystemMismatchFilter(vulnAlias)
 }
 
 func normalizeEcosystemSQL(raw string) string {

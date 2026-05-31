@@ -199,6 +199,8 @@ export interface Stats {
   total_hosts: number;
   total_vulnerabilities: number;
   severity_counts: Record<string, number>;
+  active_vulnerabilities?: number;
+  active_severity_counts?: Record<string, number>;
   scan_request_counts?: Record<string, number>;
 }
 

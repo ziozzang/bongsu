@@ -1252,6 +1252,22 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			sevCounts[sev] += cnt
 		}
 	}
+	activeVulnCounts, err := s.db.GetCurrentActionableVulnCountsByHost(ctx, scopeHostFilter(scope, visibleHostIDs))
+	if err != nil {
+		log.Printf("active vuln status counts: %v", err)
+		activeVulnCounts = map[string]map[string]int{}
+	}
+	activeTotalVulns := 0
+	activeSevCounts := map[string]int{}
+	for hostID, vc := range activeVulnCounts {
+		if !scope.CanReadHost(hostID) {
+			continue
+		}
+		for sev, cnt := range vc {
+			activeTotalVulns += cnt
+			activeSevCounts[sev] += cnt
+		}
+	}
 	scanRequestCounts, err := s.db.CountScanRequestsByStatus(ctx, visibleHostIDs, scope.All)
 	if err != nil {
 		log.Printf("scan request status counts: %v", err)
@@ -1259,11 +1275,20 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"total_hosts":           visibleHosts,
-		"total_vulnerabilities": totalVulns,
-		"severity_counts":       sevCounts,
-		"scan_request_counts":   scanRequestCounts,
+		"total_hosts":            visibleHosts,
+		"total_vulnerabilities":  totalVulns,
+		"severity_counts":        sevCounts,
+		"active_vulnerabilities": activeTotalVulns,
+		"active_severity_counts": activeSevCounts,
+		"scan_request_counts":    scanRequestCounts,
 	})
+}
+
+func scopeHostFilter(scope db.AccessScope, visibleHostIDs []string) []string {
+	if scope.All {
+		return nil
+	}
+	return visibleHostIDs
 }
 
 func shellQuote(s string) string {

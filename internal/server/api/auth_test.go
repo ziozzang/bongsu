@@ -492,6 +492,23 @@ func TestScanRequestErrorHTTPMapping(t *testing.T) {
 	}
 }
 
+func TestStatsExposeActiveFindingCounts(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"GetCurrentActionableVulnCountsByHost",
+		"active_vulnerabilities",
+		"active_severity_counts",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stats active finding signal missing %q", want)
+		}
+	}
+}
+
 func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{

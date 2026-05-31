@@ -363,29 +363,34 @@ function DashboardView() {
           <div className="value">{stats.total_hosts}</div>
         </div>
         <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--high)' }} />
+          <div className="label">Active Findings</div>
+          <div className="value" style={{ color: 'var(--high)' }}>{(stats.active_vulnerabilities ?? stats.total_vulnerabilities).toLocaleString()}</div>
+        </div>
+        <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--text-secondary)' }} />
-          <div className="label">Total Vulnerabilities</div>
-          <div className="value">{stats.total_vulnerabilities}</div>
+          <div className="label">Raw Vulnerability Rows</div>
+          <div className="value">{stats.total_vulnerabilities.toLocaleString()}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--critical)' }} />
-          <div className="label">Critical</div>
-          <div className="value" style={{ color: 'var(--critical)' }}>{stats.severity_counts.CRITICAL || 0}</div>
+          <div className="label">Active Critical</div>
+          <div className="value" style={{ color: 'var(--critical)' }}>{stats.active_severity_counts?.CRITICAL || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--high)' }} />
-          <div className="label">High</div>
-          <div className="value" style={{ color: 'var(--high)' }}>{stats.severity_counts.HIGH || 0}</div>
+          <div className="label">Active High</div>
+          <div className="value" style={{ color: 'var(--high)' }}>{stats.active_severity_counts?.HIGH || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
-          <div className="label">Medium</div>
-          <div className="value" style={{ color: 'var(--medium)' }}>{stats.severity_counts.MEDIUM || 0}</div>
+          <div className="label">Active Medium</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{stats.active_severity_counts?.MEDIUM || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--low)' }} />
-          <div className="label">Low</div>
-          <div className="value" style={{ color: 'var(--low)' }}>{stats.severity_counts.LOW || 0}</div>
+          <div className="label">Active Low</div>
+          <div className="value" style={{ color: 'var(--low)' }}>{stats.active_severity_counts?.LOW || 0}</div>
         </div>
       </div>
       <div className="stats-grid" style={{ marginTop: '1rem' }}>

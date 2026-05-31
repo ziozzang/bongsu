@@ -465,6 +465,23 @@ func TestFixedVersionSQLConditionDoesNotHidePrereleases(t *testing.T) {
 	}
 }
 
+func TestCurrentActionableVulnSQLUsesRemediationFilters(t *testing.T) {
+	got := currentActionableVulnSQL()
+	for _, want := range []string{
+		"COALESCE(vt.status, 'open') IN ('open', 'in_progress')",
+		"fixed_version",
+		"v.vulnerability_id NOT LIKE 'CGA-%'",
+		"v.fixed_version !~ '^[0-9a-f]{40}$'",
+		"v.fixed_version IS NOT NULL",
+		"SUBSTRING(v.vulnerability_id FROM '^[A-Z]+')",
+		"cve_database c",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("current actionable SQL missing %q: %s", want, got)
+		}
+	}
+}
+
 func TestInsertableVulnerabilitiesDropsDanglingRows(t *testing.T) {
 	valid := models.Vulnerability{
 		ID:              "vuln-1",
