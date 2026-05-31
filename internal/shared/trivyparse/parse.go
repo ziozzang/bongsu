@@ -66,6 +66,8 @@ func ExtractPackagesAndVulns(data []byte, source, container string) ([]models.Pa
 	var pkgs []models.Package
 	var vulns []models.Vulnerability
 	pkgMap := map[string]string{}
+	targetNameCounts := map[string]int{}
+	targetNameIDs := map[string]string{}
 	nameCounts := map[string]int{}
 	nameIDs := map[string]string{}
 
@@ -87,7 +89,10 @@ func ExtractPackagesAndVulns(data []byte, source, container string) ([]models.Pa
 				LayerID:   p.Layer.DiffID,
 				Target:    r.Target,
 			})
-			pkgMap[trivyPackageKey(r.Target, p.Name)] = pkgID
+			pkgMap[trivyPackageKey(r.Target, p.Name, p.Version)] = pkgID
+			targetNameKey := trivyPackageNameKey(r.Target, p.Name)
+			targetNameCounts[targetNameKey]++
+			targetNameIDs[targetNameKey] = pkgID
 			nameCounts[p.Name]++
 			nameIDs[p.Name] = pkgID
 		}
@@ -111,7 +116,10 @@ func ExtractPackagesAndVulns(data []byte, source, container string) ([]models.Pa
 			} else if cvssScore > 0 {
 				sev = "LOW"
 			}
-			packageID := pkgMap[trivyPackageKey(r.Target, v.PkgName)]
+			packageID := pkgMap[trivyPackageKey(r.Target, v.PkgName, v.InstalledVersion)]
+			if packageID == "" && targetNameCounts[trivyPackageNameKey(r.Target, v.PkgName)] == 1 {
+				packageID = targetNameIDs[trivyPackageNameKey(r.Target, v.PkgName)]
+			}
 			if packageID == "" && nameCounts[v.PkgName] == 1 {
 				packageID = nameIDs[v.PkgName]
 			}
@@ -136,7 +144,11 @@ func ExtractPackagesAndVulns(data []byte, source, container string) ([]models.Pa
 	return pkgs, vulns, nil
 }
 
-func trivyPackageKey(target, name string) string {
+func trivyPackageKey(target, name, version string) string {
+	return trivyPackageNameKey(target, name) + "\x00" + version
+}
+
+func trivyPackageNameKey(target, name string) string {
 	return target + "\x00" + name
 }
 

@@ -89,3 +89,38 @@ func TestVulnerabilitiesBindToPackageTarget(t *testing.T) {
 		t.Fatalf("python vuln package_id = %q, want %q", vulns[1].PackageID, idsByTarget["requirements.txt"])
 	}
 }
+
+func TestVulnerabilitiesBindToInstalledPackageVersion(t *testing.T) {
+	data := []byte(`{
+	  "Results": [{
+	    "Target": "package-lock.json",
+	    "Type": "npm",
+	    "Packages": [
+	      {"Name": "debug", "Version": "4.3.0"},
+	      {"Name": "debug", "Version": "4.4.0"}
+	    ],
+	    "Vulnerabilities": [
+	      {"VulnerabilityID": "CVE-2026-0001", "PkgName": "debug", "InstalledVersion": "4.3.0"},
+	      {"VulnerabilityID": "CVE-2026-0002", "PkgName": "debug", "InstalledVersion": "4.4.0"}
+	    ]
+	  }]
+	}`)
+
+	pkgs, vulns, err := ExtractPackagesAndVulns(data, "trivy-host", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) != 2 || len(vulns) != 2 {
+		t.Fatalf("packages=%d vulns=%d, want 2 each", len(pkgs), len(vulns))
+	}
+	idsByVersion := map[string]string{}
+	for _, p := range pkgs {
+		idsByVersion[p.Version] = p.ID
+	}
+	if vulns[0].PackageID != idsByVersion["4.3.0"] {
+		t.Fatalf("4.3.0 vuln package_id = %q, want %q", vulns[0].PackageID, idsByVersion["4.3.0"])
+	}
+	if vulns[1].PackageID != idsByVersion["4.4.0"] {
+		t.Fatalf("4.4.0 vuln package_id = %q, want %q", vulns[1].PackageID, idsByVersion["4.4.0"])
+	}
+}
