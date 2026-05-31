@@ -259,6 +259,7 @@ spec:
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL atomically |
 | `POST` | `/api/admin/cve-db/rematch` | Rematch packages, optionally with `sources`, `min_source_matchable_percent`, and `scan_id` JSON filters |
+| `GET` | `/api/admin/metrics` | Admin-only Prometheus text metrics for DB pool health, security recalculation state, Trivy readiness, and automatic rescan backlog |
 | `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs |
 | `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
 | `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |

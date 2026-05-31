@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -120,6 +121,49 @@ func TestSecurityHeadersMiddlewareSetsBrowserHardeningHeaders(t *testing.T) {
 		if !strings.Contains(permissions, want) {
 			t.Fatalf("Permissions-Policy missing %q: %s", want, permissions)
 		}
+	}
+}
+
+func TestAdminMetricsRequiresAdminAndReportsRuntimeState(t *testing.T) {
+	s := &Server{apiKey: "admin-key"}
+	s.securityRecalcRunning = true
+	s.securityRecalcPending = true
+
+	unauthorized := httptest.NewRecorder()
+	s.handleAdminMetrics(unauthorized, httptest.NewRequest("GET", "/api/admin/metrics", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized metrics status = %d, want %d", unauthorized.Code, http.StatusUnauthorized)
+	}
+
+	req := httptest.NewRequest("GET", "/api/admin/metrics", nil)
+	req.Header.Set("X-API-Key", "admin-key")
+	authorized := httptest.NewRecorder()
+	s.handleAdminMetrics(authorized, req)
+	if authorized.Code != http.StatusOK {
+		t.Fatalf("authorized metrics status = %d, want %d", authorized.Code, http.StatusOK)
+	}
+	if got := authorized.Header().Get("Content-Type"); !strings.Contains(got, "text/plain") {
+		t.Fatalf("metrics content type = %q, want text/plain", got)
+	}
+	body := authorized.Body.String()
+	for _, want := range []string{
+		"# TYPE bongsu_build_info gauge",
+		`bongsu_build_info{service="bongsu"} 1`,
+		"bongsu_security_recalculation_running 1",
+		"bongsu_security_recalculation_pending 1",
+		"bongsu_trivy_db_ready 0",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metrics body missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestPrometheusLabelValueEscapesUnsafeCharacters(t *testing.T) {
+	var b strings.Builder
+	writePromGauge(&b, "bongsu_test_info", map[string]string{"revision": "rev\"x\\y\nz"}, 1)
+	if got, want := b.String(), `revision="rev\"x\\y\nz"`; !strings.Contains(got, want) {
+		t.Fatalf("escaped label missing %q in %s", want, got)
 	}
 }
 
@@ -2474,6 +2518,44 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 	}
 	if !strings.Contains(out, "CVE-2026-0001") || !strings.Contains(out, "accepted_risk") || !strings.Contains(out, "platform") {
 		t.Fatalf("missing csv values: %s", out)
+	}
+}
+
+func TestWriteVulnerabilityCSVEscapesFormulaCells(t *testing.T) {
+	var b strings.Builder
+	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{
+		HostID:          "host-1",
+		HostOwner:       "=cmd|' /C calc'!A0",
+		HostTeam:        " +SUM(1,1)",
+		Container:       "@container",
+		VulnerabilityID: "CVE-2026-0001",
+		Severity:        "HIGH",
+		CVSSScore:       8.1,
+		PkgName:         "-danger",
+		InstalledVer:    "=1+1",
+		FixedVersion:    "+2.0.0",
+		Title:           "@title",
+		CreatedAt:       time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
+	}})
+	if err != nil {
+		t.Fatalf("write csv: %v", err)
+	}
+	rows, err := csv.NewReader(strings.NewReader(b.String())).ReadAll()
+	if err != nil {
+		t.Fatalf("read csv: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	header := map[string]int{}
+	for i, name := range rows[0] {
+		header[name] = i
+	}
+	for _, col := range []string{"host_owner", "host_team", "container", "pkg_name", "installed_version", "fixed_version", "title"} {
+		got := rows[1][header[col]]
+		if !strings.HasPrefix(got, "'") {
+			t.Fatalf("%s = %q, want formula-safe leading quote", col, got)
+		}
 	}
 }
 

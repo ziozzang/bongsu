@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -187,6 +188,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/admin/cve-db/recalc-cvss", s.handleCveDbRecalcCVSS)
 	s.mux.HandleFunc("GET /api/admin/cve-db/export", s.handleCveDbExport)
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
+	s.mux.HandleFunc("GET /api/admin/metrics", s.handleAdminMetrics)
 	s.mux.HandleFunc("POST /api/admin/retention/prune", s.handleRetentionPrune)
 	s.mux.HandleFunc("GET /api/admin/rbac/subjects", s.handleListAccessSubjects)
 	s.mux.HandleFunc("POST /api/admin/rbac/subjects", s.handleUpsertAccessSubject)
@@ -1183,32 +1185,32 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	}
 	for _, v := range vulns {
 		if err := cw.Write([]string{
-			v.HostID,
-			v.HostOwner,
-			v.HostTeam,
-			v.HostEnvironment,
-			v.HostCriticality,
-			v.Container,
-			v.VulnerabilityID,
-			v.Severity,
+			csvSafeCell(v.HostID),
+			csvSafeCell(v.HostOwner),
+			csvSafeCell(v.HostTeam),
+			csvSafeCell(v.HostEnvironment),
+			csvSafeCell(v.HostCriticality),
+			csvSafeCell(v.Container),
+			csvSafeCell(v.VulnerabilityID),
+			csvSafeCell(v.Severity),
 			fmt.Sprintf("%.1f", v.CVSSScore),
-			exportStatusLabel(v.TriageStatus),
+			csvSafeCell(exportStatusLabel(v.TriageStatus)),
 			strconv.Itoa(v.SLADays),
 			formatTimePtr(v.DueAt),
 			strconv.FormatBool(v.Overdue),
-			v.PkgName,
-			v.PkgType,
-			v.Ecosystem,
-			v.InstalledVer,
-			v.FixedVersion,
-			v.FindingSource,
-			v.PkgPath,
-			v.Title,
-			v.PrimaryURL,
-			v.TriageReason,
-			v.TriageComment,
+			csvSafeCell(v.PkgName),
+			csvSafeCell(v.PkgType),
+			csvSafeCell(v.Ecosystem),
+			csvSafeCell(v.InstalledVer),
+			csvSafeCell(v.FixedVersion),
+			csvSafeCell(v.FindingSource),
+			csvSafeCell(v.PkgPath),
+			csvSafeCell(v.Title),
+			csvSafeCell(v.PrimaryURL),
+			csvSafeCell(v.TriageReason),
+			csvSafeCell(v.TriageComment),
 			formatTimePtr(v.TriageExpiresAt),
-			v.TriageUpdatedBy,
+			csvSafeCell(v.TriageUpdatedBy),
 			v.CreatedAt.Format(time.RFC3339),
 		}); err != nil {
 			return err
@@ -1216,6 +1218,21 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+func csvSafeCell(s string) string {
+	if s == "" {
+		return s
+	}
+	trimmed := strings.TrimLeft(s, " \t\r\n")
+	if trimmed == "" {
+		return s
+	}
+	switch trimmed[0] {
+	case '=', '+', '-', '@':
+		return "'" + s
+	}
+	return s
 }
 
 func formatTimePtr(t *time.Time) string {
@@ -2478,6 +2495,97 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	io.WriteString(w, s.adminMetrics(r.Context()))
+}
+
+func (s *Server) adminMetrics(ctx context.Context) string {
+	var b strings.Builder
+	writePromGauge(&b, "bongsu_build_info", map[string]string{"service": "bongsu"}, 1)
+	if s.db != nil {
+		stats := s.db.Stats()
+		writePromGauge(&b, "bongsu_database_max_open_connections", nil, float64(stats.MaxOpenConnections))
+		writePromGauge(&b, "bongsu_database_open_connections", nil, float64(stats.OpenConnections))
+		writePromGauge(&b, "bongsu_database_in_use_connections", nil, float64(stats.InUse))
+		writePromGauge(&b, "bongsu_database_idle_connections", nil, float64(stats.Idle))
+		writePromCounter(&b, "bongsu_database_wait_total", nil, float64(stats.WaitCount))
+		writePromCounter(&b, "bongsu_database_wait_duration_seconds_total", nil, stats.WaitDuration.Seconds())
+		writePromCounter(&b, "bongsu_database_max_idle_closed_total", nil, float64(stats.MaxIdleClosed))
+		writePromCounter(&b, "bongsu_database_max_idle_time_closed_total", nil, float64(stats.MaxIdleTimeClosed))
+		writePromCounter(&b, "bongsu_database_max_lifetime_closed_total", nil, float64(stats.MaxLifetimeClosed))
+	}
+	recalc := s.securityRecalculationStatus(true)
+	writePromGauge(&b, "bongsu_security_recalculation_running", nil, boolMetric(recalc["running"]))
+	writePromGauge(&b, "bongsu_security_recalculation_pending", nil, boolMetric(recalc["pending"]))
+	if s.dbMgr != nil && s.dbMgr.IsReady() {
+		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 1)
+	} else {
+		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 0)
+	}
+	if s.db != nil {
+		if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
+			writePromGauge(&b, "bongsu_security_db_revision_info", map[string]string{"revision": revision}, 1)
+			if counts, err := s.db.CountSecurityDBRescanRequestsByStatus(ctx, nil, true, revision); err == nil {
+				for _, status := range []string{"pending", "claimed", "completed", "failed", "cancelled"} {
+					writePromGauge(&b, "bongsu_security_db_rescan_requests", map[string]string{"status": status}, float64(counts[status]))
+				}
+			} else {
+				writePromGauge(&b, "bongsu_security_db_rescan_metrics_error", nil, 1)
+			}
+		} else {
+			writePromGauge(&b, "bongsu_security_db_revision_metrics_error", nil, 1)
+		}
+	}
+	return b.String()
+}
+
+func boolMetric(v any) float64 {
+	if b, ok := v.(bool); ok && b {
+		return 1
+	}
+	return 0
+}
+
+func writePromGauge(b *strings.Builder, name string, labels map[string]string, value float64) {
+	writePromMetric(b, "gauge", name, labels, value)
+}
+
+func writePromCounter(b *strings.Builder, name string, labels map[string]string, value float64) {
+	writePromMetric(b, "counter", name, labels, value)
+}
+
+func writePromMetric(b *strings.Builder, metricType, name string, labels map[string]string, value float64) {
+	fmt.Fprintf(b, "# TYPE %s %s\n", name, metricType)
+	fmt.Fprint(b, name)
+	if len(labels) > 0 {
+		keys := make([]string, 0, len(labels))
+		for k := range labels {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		b.WriteByte('{')
+		for i, k := range keys {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			fmt.Fprintf(b, "%s=\"%s\"", k, prometheusLabelValue(labels[k]))
+		}
+		b.WriteByte('}')
+	}
+	fmt.Fprintf(b, " %g\n", value)
+}
+
+func prometheusLabelValue(v string) string {
+	v = strings.ReplaceAll(v, "\\", "\\\\")
+	v = strings.ReplaceAll(v, "\n", "\\n")
+	return strings.ReplaceAll(v, "\"", "\\\"")
 }
 
 func (s *Server) securityRecalculationStatus(includeReason bool) map[string]any {
