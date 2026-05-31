@@ -302,6 +302,18 @@ func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
 	}
 }
 
+func TestFallbackHostIDUsesStableInventoryIdentity(t *testing.T) {
+	if got := fallbackHostID(models.Host{Hostname: "App-01 "}); got != "hostname:app-01" {
+		t.Fatalf("hostname fallback = %q", got)
+	}
+	if got := fallbackHostID(models.Host{IPAddress: "10.0.0.5"}); got != "ip:10.0.0.5" {
+		t.Fatalf("ip fallback = %q", got)
+	}
+	if got := fallbackHostID(models.Host{}); got == "" {
+		t.Fatal("empty host fallback should still create an id")
+	}
+}
+
 func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
 	out, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {

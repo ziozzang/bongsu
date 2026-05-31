@@ -405,9 +405,18 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if report.ScanID == "" {
 		report.ScanID = uuid.New().String()
 	}
+	if report.ScanType == "" {
+		report.ScanType = "inventory"
+	}
+	if report.Timestamp.IsZero() {
+		report.Timestamp = time.Now().UTC()
+	}
 
 	if report.Host.ID == "" {
-		report.Host.ID = uuid.New().String()
+		report.Host.ID = fallbackHostID(report.Host)
+	}
+	if report.Host.Hostname == "" {
+		report.Host.Hostname = report.Host.ID
 	}
 
 	if err := s.db.UpsertHost(ctx, &report.Host); err != nil {
@@ -1245,6 +1254,16 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
+func fallbackHostID(host models.Host) string {
+	if host.Hostname != "" {
+		return "hostname:" + strings.ToLower(strings.TrimSpace(host.Hostname))
+	}
+	if host.IPAddress != "" {
+		return "ip:" + strings.TrimSpace(host.IPAddress)
+	}
+	return uuid.New().String()
 }
 
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {

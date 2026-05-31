@@ -85,7 +85,7 @@ Running container metadata is stored separately from package rows in `container_
 
 ## Asset Metadata
 
-Hosts preserve operator-owned metadata independently from agent reports: owner, team, environment, criticality, and JSON tags. Agent check-ins update technical facts such as OS, IP, CPU, and memory without overwriting this metadata. Admins can update it through `/api/hosts/{id}/metadata`, the dashboard shows it on host inventory/detail pages, and CycloneDX SBOM exports include it as `bongsu:*` root component properties.
+Hosts preserve operator-owned metadata independently from agent reports: owner, team, environment, criticality, and JSON tags. Agent check-ins update technical facts such as OS, IP, CPU, and memory without overwriting this metadata. Agents normally send a stable host ID derived from machine-id or hostname; if an older or malformed report omits it, the server derives a stable fallback from hostname or IP before using a random ID as the last resort. Admins can update metadata through `/api/hosts/{id}/metadata`, the dashboard shows it on host inventory/detail pages, and CycloneDX SBOM exports include it as `bongsu:*` root component properties.
 
 Agent status is derived from each host's `last_seen` timestamp at read time. The dashboard and `/api/hosts?agent_status=...` expose `online`, `stale`, `offline`, or `unknown`; defaults mark agents online for 26 hours and offline after 72 hours, controlled by `BONGSU_AGENT_ONLINE_MINUTES` and `BONGSU_AGENT_OFFLINE_MINUTES`.
 
