@@ -258,6 +258,8 @@ function DashboardView() {
   const [rematching, setRematching] = useState(false);
   const [rematchMsg, setRematchMsg] = useState('');
   const [rematchMinQuality, setRematchMinQuality] = useState('');
+  const [cvssRecalcBusy, setCvssRecalcBusy] = useState(false);
+  const [cvssRecalcMsg, setCvssRecalcMsg] = useState('');
   const [retentionMsg, setRetentionMsg] = useState('');
   const [retentionBusy, setRetentionBusy] = useState(false);
 
@@ -336,6 +338,20 @@ function DashboardView() {
       setRematchMsg('Rematch failed (check server logs)');
     }
     setRematching(false);
+  };
+
+  const handleCvssRecalc = async () => {
+    setCvssRecalcBusy(true);
+    setCvssRecalcMsg('');
+    try {
+      const r = await api.recalcCveCVSS();
+      const revisionMsg = r.security_db_revision ? `, DB rev ${r.security_db_revision}` : r.security_db_revision_error ? ', DB revision unavailable' : '';
+      setCvssRecalcMsg(`Recalculated ${r.updated.toLocaleString()} CVSS records${revisionMsg}`);
+      api.cveDbStats().then(x => setCveSources(x.sources || [])).catch(() => {});
+    } catch {
+      setCvssRecalcMsg('CVSS recalculation failed or requires admin API key');
+    }
+    setCvssRecalcBusy(false);
   };
 
   const handleRetentionPrune = async (dryRun: boolean) => {
@@ -540,11 +556,20 @@ function DashboardView() {
         >
           {rematching ? 'Matching...' : 'Rematch CVEs'}
         </button>
+        <button
+          className="update-btn"
+          onClick={handleCvssRecalc}
+          disabled={cvssRecalcBusy}
+          style={{ marginLeft: '0.5rem' }}
+        >
+          {cvssRecalcBusy ? 'Recalculating...' : 'Recalc CVSS'}
+        </button>
       </div>
       {health?.trivy_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Trivy DB: {health.trivy_db.last_error}</div>}
       {health?.security_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security sources: {health.security_db.last_error}</div>}
       {updateMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: updateMsg.includes('fail') ? 'var(--critical)' : 'var(--low)' }}>{updateMsg}</div>}
       {rematchMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: rematchMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{rematchMsg}</div>}
+      {cvssRecalcMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: cvssRecalcMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{cvssRecalcMsg}</div>}
       <div className="db-status-bar" style={{ marginTop: '1rem' }}>
         <h3>Operational Retention</h3>
         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Defaults: scans 180d, requests 90d, audit 365d</span>

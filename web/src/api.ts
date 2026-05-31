@@ -410,6 +410,8 @@ export const api = {
   updateSecurityDB: () => request<{status: string; security_db: HealthStatus['security_db']}>('/admin/security-db/update', undefined, 'POST'),
   rematchCVEs: (body?: { sources?: string[]; min_source_matchable_percent?: number; candidate_limit?: number }) =>
     requestJSON<{matched: number; new_vulns: number; skipped: number; candidate_limit: number; limited: boolean; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),
+  recalcCveCVSS: () =>
+    request<{status: string; updated: number; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/recalc-cvss', undefined, 'POST'),
   pruneRetention: (body: { dry_run: boolean; scan_days?: number; request_days?: number; audit_days?: number }) =>
     requestJSON<RetentionPruneResult>('/admin/retention/prune', body),
 };
