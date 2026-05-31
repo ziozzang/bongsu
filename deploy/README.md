@@ -221,7 +221,8 @@ spec:
 | `POST` | `/api/admin/rbac/policies` | Create RBAC policy |
 | `GET` | `/api/admin/audit-logs` | Query audit log events by actor/action/resource/status |
 | `POST` | `/api/scan-requests` | Request force scan for host/all |
-| `GET` | `/api/scan-requests` | List force scan requests |
+| `GET` | `/api/scan-requests` | List force scan requests with host-scoped RBAC |
+| `POST` | `/api/scan-requests/{id}/cancel` | Cancel pending or claimed force scan request |
 | `POST` | `/api/agent/scan-requests/claim` | Agent claims a pending force scan |
 | `POST` | `/api/agent/scan-requests/{id}/complete` | Agent completes/fails a force scan |
 | `GET` | `/api/health` | Health check |

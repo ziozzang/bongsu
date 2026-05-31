@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = a.replace(/^v?/, '').split(/[._-]/);
@@ -1529,9 +1529,14 @@ function CveSearchView() {
 
 function ScansView() {
   const [scans, setScans] = useState<Scan[]>([]);
+  const [requests, setRequests] = useState<ScanRequest[]>([]);
+  const [requestTotal, setRequestTotal] = useState(0);
+  const [requestStatus, setRequestStatus] = useState('');
+  const [requestMsg, setRequestMsg] = useState('');
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [requestsLoading, setRequestsLoading] = useState(true);
   const [hostMap, setHostMap] = useState<Record<string, string>>({});
   const [hostIPMap, setHostIPMap] = useState<Record<string, string>>({});
   const limit = 50;
@@ -1553,13 +1558,70 @@ function ScansView() {
       .catch(() => setLoading(false));
   }, []);
 
+  const loadRequests = useCallback((status: string) => {
+    setRequestsLoading(true);
+    const params: Record<string, string> = { limit: '50', offset: '0' };
+    if (status) params.status = status;
+    api.scanRequests(params)
+      .then(r => { setRequests(r.items || []); setRequestTotal(r.total || 0); setRequestsLoading(false); })
+      .catch(() => setRequestsLoading(false));
+  }, []);
+
   useEffect(() => { load(0); }, [load]);
+  useEffect(() => { loadRequests(requestStatus); }, [loadRequests, requestStatus]);
 
   const statusColor = (s: string) => s === 'completed' ? 'var(--low)' : s === 'failed' ? 'var(--critical)' : 'var(--medium)';
+  const cancelRequest = async (id: string) => {
+    setRequestMsg('');
+    try {
+      await api.cancelScanRequest(id);
+      setRequestMsg('Scan request cancelled');
+      loadRequests(requestStatus);
+    } catch {
+      setRequestMsg('Cancel failed');
+    }
+  };
 
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>Scan History</h1>
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <div className="card-header">
+          <h2>{requestTotal} scan requests</h2>
+          <select value={requestStatus} onChange={(e) => setRequestStatus(e.target.value)}>
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="claimed">Claimed</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+        {requestMsg && <div style={{ padding: '0.75rem 1rem 0', color: requestMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{requestMsg}</div>}
+        {requestsLoading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+          <table>
+            <thead>
+              <tr><th>Requested</th><th>Host</th><th>Type</th><th>Status</th><th>Mode</th><th>Reason</th><th>Claimed</th><th>Completed</th><th></th></tr>
+            </thead>
+            <tbody>
+              {requests.map(req => (
+                <tr key={req.id}>
+                  <td className="mono">{new Date(req.created_at).toLocaleString()}</td>
+                  <td><span className="host-link" title={`IP: ${req.host_id ? hostIPMap[req.host_id] || '' : ''}`}>{req.host_id ? hostMap[req.host_id] || req.host_id : 'All polling agents'}</span></td>
+                  <td>{req.scan_type}</td>
+                  <td style={{ color: statusColor(req.status), fontWeight: 600 }}>{req.status}</td>
+                  <td>{req.packages_only ? 'packages' : 'full'}</td>
+                  <td className="path-cell">{req.reason || req.error_message || '-'}{(req.reason || req.error_message) && <span className="path-tip">{req.reason || req.error_message}</span>}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{req.claimed_at ? new Date(req.claimed_at).toLocaleString() : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{req.completed_at ? new Date(req.completed_at).toLocaleString() : '-'}</td>
+                  <td>{['pending', 'claimed'].includes(req.status) && <button className="delete-btn" onClick={() => cancelRequest(req.id)}>Cancel</button>}</td>
+                </tr>
+              ))}
+              {requests.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scan requests</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </div>
       <div className="card">
         <div className="card-header">
           <h2>{total} scans</h2>

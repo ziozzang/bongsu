@@ -713,13 +713,17 @@ WHERE NOT EXISTS (
 	return queued, tx.Commit()
 }
 
-func (db *DB) ListScanRequests(ctx context.Context, hostID, status string, limit, offset int) ([]models.ScanRequest, int, error) {
+func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []string, status string, limit, offset int) ([]models.ScanRequest, int, error) {
 	baseQ := `FROM scan_requests WHERE 1=1`
 	args := []any{}
 	n := 1
 	if hostID != "" {
 		baseQ += fmt.Sprintf(" AND host_id=$%d", n)
 		args = append(args, hostID)
+		n++
+	} else if len(hostIDs) > 0 {
+		baseQ += fmt.Sprintf(" AND host_id = ANY($%d)", n)
+		args = append(args, pqStringArray(hostIDs))
 		n++
 	}
 	if status != "" {

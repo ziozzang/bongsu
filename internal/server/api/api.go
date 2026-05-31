@@ -121,6 +121,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/scans", s.handleListScans)
 	s.mux.HandleFunc("GET /api/scan-requests", s.handleListScanRequests)
 	s.mux.HandleFunc("POST /api/scan-requests", s.handleCreateScanRequest)
+	s.mux.HandleFunc("POST /api/scan-requests/{id}/cancel", s.handleCancelScanRequest)
 	s.mux.HandleFunc("POST /api/agent/scan-requests/claim", s.handleClaimScanRequest)
 	s.mux.HandleFunc("POST /api/agent/scan-requests/{id}/complete", s.handleCompleteScanRequest)
 	s.mux.HandleFunc("GET /api/install.sh", s.handleInstallScript)
@@ -1349,9 +1350,20 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeJSON(w, http.StatusOK, map[string]any{"items": []models.ScanRequest{}, "total": 0})
+		return
+	}
+	hostID := r.URL.Query().Get("host_id")
+	if hostID != "" && !scope.CanReadHost(hostID) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	items, total, err := s.db.ListScanRequests(
 		r.Context(),
-		r.URL.Query().Get("host_id"),
+		hostID,
+		scope.HostIDs,
 		r.URL.Query().Get("status"),
 		intParam(r, "limit", 50),
 		intParam(r, "offset", 0),
@@ -1362,6 +1374,25 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
+}
+
+func (s *Server) handleCancelScanRequest(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+	if err := s.db.CompleteScanRequest(r.Context(), id, "cancelled", "cancelled by admin"); err != nil {
+		log.Printf("cancel scan request: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	s.audit(r, "scan_request.cancel", "scan_request", id, "cancelled", nil)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
 func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request) {

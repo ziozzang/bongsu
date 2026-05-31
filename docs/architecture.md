@@ -66,7 +66,7 @@ The server stores force scan requests in `scan_requests`. The intended lifecycle
 - `claimed`: an agent picked up the request.
 - `completed` or `failed`: the agent submitted a result or reported failure.
 
-Current implementation exposes request creation/listing plus agent claim/complete endpoints. Agents can run with `--daemon --poll-interval 60s` to claim pending requests, execute a scan, upload the report, and mark the request completed or failed. Security DB updates enqueue `security-db-update` scan requests automatically, deduplicated against existing pending or claimed work per host.
+Current implementation exposes request creation/listing/cancel plus agent claim/complete endpoints. Agents can run with `--daemon --poll-interval 60s` to claim pending requests, execute a scan, upload the report, and mark the request completed or failed. Security DB updates enqueue `security-db-update` scan requests automatically, deduplicated against existing pending or claimed work per host. Viewer access to scan request queues is host-scoped through RBAC; global all-host requests remain visible only to admins.
 
 ## Container Inventory
 
