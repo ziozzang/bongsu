@@ -2853,6 +2853,19 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 0)
 	}
 	if s.db != nil {
+		if riskCountsByHost, err := s.db.GetCurrentActionableVulnRiskCountsByHost(ctx, nil); err == nil {
+			activeRiskCounts := map[string]int{}
+			for _, counts := range riskCountsByHost {
+				for riskLevel, count := range counts {
+					activeRiskCounts[riskLevel] += count
+				}
+			}
+			for _, riskLevel := range []string{"critical", "high", "medium", "low"} {
+				writePromGauge(&b, "bongsu_active_vulnerabilities_by_risk_level", map[string]string{"risk_level": riskLevel}, float64(activeRiskCounts[riskLevel]))
+			}
+		} else {
+			writePromGauge(&b, "bongsu_active_vulnerability_risk_metrics_error", nil, 1)
+		}
 		freshness := s.securityDBFreshnessStatus(ctx, true)
 		writePromGauge(&b, "bongsu_security_db_source_stale", nil, boolMetric(freshness["stale"]))
 		if count, ok := freshness["source_count"].(int); ok {
