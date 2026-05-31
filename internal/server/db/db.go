@@ -1849,14 +1849,11 @@ type VulnFilter struct {
 }
 
 func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offset int) ([]models.Vulnerability, int, error) {
-	useLatest := f.HostID == ""
 	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id`
 	args := []any{}
 	argN := 1
 
-	if useLatest {
-		baseQ += ` JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id`
-	}
+	baseQ += ` JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id`
 
 	baseQ += vulnTriageJoin
 	baseQ += ` WHERE 1=1`

@@ -482,6 +482,29 @@ func TestCurrentActionableVulnSQLUsesRemediationFilters(t *testing.T) {
 	}
 }
 
+func TestListVulnerabilitiesAlwaysUsesLatestScan(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) ListVulnerabilities")
+	if start < 0 {
+		t.Fatal("ListVulnerabilities not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetHostVulnCounts")
+	if end < 0 {
+		t.Fatal("GetHostVulnCounts not found")
+	}
+	fn := body[start : start+end]
+	if !strings.Contains(fn, "JOIN ` + latestScansSub") {
+		t.Fatalf("ListVulnerabilities must join latest scans even with host_id filters: %s", fn)
+	}
+	if strings.Contains(fn, "useLatest :=") {
+		t.Fatalf("ListVulnerabilities must not disable latest-scan filtering for host_id filters: %s", fn)
+	}
+}
+
 func TestVulnSummaryUsesActiveFindingFilter(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
