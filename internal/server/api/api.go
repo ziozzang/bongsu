@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,6 +45,11 @@ type Server struct {
 	dbMgr        *trivydb.Manager
 	secMgr       *secdb.Manager
 	notifier     *webhookNotifier
+
+	securityRecalcMu      sync.Mutex
+	securityRecalcRunning bool
+	securityRecalcPending bool
+	securityRecalcReason  string
 }
 
 func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, secMgr *secdb.Manager) *Server {
@@ -2058,37 +2064,84 @@ func (s *Server) SecurityDatabaseUpdated(reason string) {
 }
 
 func (s *Server) recalculateSecurityFindings(reason string) {
+	s.securityRecalcMu.Lock()
+	if s.securityRecalcRunning {
+		s.securityRecalcPending = true
+		s.securityRecalcReason = coalesceSecurityRecalcReason(s.securityRecalcReason, reason)
+		s.securityRecalcMu.Unlock()
+		log.Printf("security recalculation already running; queued another pass (%s)", reason)
+		s.auditSystem("security_db.recalculation", "security_db", "aggregate", "queued", map[string]any{"reason": reason})
+		return
+	}
+	s.securityRecalcRunning = true
+	s.securityRecalcMu.Unlock()
+
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
-		defer cancel()
-		log.Printf("security recalculation started (%s)", reason)
-		if n, err := s.db.CalcCvssScores(ctx); err != nil {
-			log.Printf("security recalculation cvss failed: %v", err)
-		} else if n > 0 {
-			log.Printf("security recalculation updated CVSS for %d CVE records", n)
+		for currentReason := reason; ; {
+			s.runSecurityRecalculation(currentReason)
+
+			s.securityRecalcMu.Lock()
+			if !s.securityRecalcPending {
+				s.securityRecalcRunning = false
+				s.securityRecalcMu.Unlock()
+				return
+			}
+			currentReason = s.securityRecalcReason
+			s.securityRecalcPending = false
+			s.securityRecalcReason = ""
+			s.securityRecalcMu.Unlock()
 		}
-		if n, err := s.db.EnrichVulnerabilities(ctx); err != nil {
-			log.Printf("security recalculation enrich failed: %v", err)
-		} else if n > 0 {
-			log.Printf("security recalculation enriched %d findings", n)
-		}
-		if r, err := s.db.RematchCVEs(ctx, rematchOptionsFromEnv()); err != nil {
-			log.Printf("security recalculation rematch failed: %v", err)
-		} else {
-			log.Printf("security recalculation rematched candidates=%d new=%d skipped=%d", r.Matched, r.NewVulns, r.Skipped)
-		}
-		if n, err := s.db.NormalizeVulnSeverity(ctx); err != nil {
-			log.Printf("security recalculation severity normalization failed: %v", err)
-		} else if n > 0 {
-			log.Printf("security recalculation normalized %d findings", n)
-		}
-		log.Printf("security recalculation finished (%s)", reason)
 	}()
+}
+
+func (s *Server) runSecurityRecalculation(reason string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
+	defer cancel()
+	log.Printf("security recalculation started (%s)", reason)
+	s.auditSystem("security_db.recalculation", "security_db", "aggregate", "started", map[string]any{"reason": reason})
+	if n, err := s.db.CalcCvssScores(ctx); err != nil {
+		log.Printf("security recalculation cvss failed: %v", err)
+	} else if n > 0 {
+		log.Printf("security recalculation updated CVSS for %d CVE records", n)
+	}
+	if n, err := s.db.EnrichVulnerabilities(ctx); err != nil {
+		log.Printf("security recalculation enrich failed: %v", err)
+	} else if n > 0 {
+		log.Printf("security recalculation enriched %d findings", n)
+	}
+	if r, err := s.db.RematchCVEs(ctx, rematchOptionsFromEnv()); err != nil {
+		log.Printf("security recalculation rematch failed: %v", err)
+	} else {
+		log.Printf("security recalculation rematched candidates=%d new=%d skipped=%d", r.Matched, r.NewVulns, r.Skipped)
+	}
+	if n, err := s.db.NormalizeVulnSeverity(ctx); err != nil {
+		log.Printf("security recalculation severity normalization failed: %v", err)
+	} else if n > 0 {
+		log.Printf("security recalculation normalized %d findings", n)
+	}
+	log.Printf("security recalculation finished (%s)", reason)
+	s.auditSystem("security_db.recalculation", "security_db", "aggregate", "ok", map[string]any{"reason": reason})
+}
+
+func coalesceSecurityRecalcReason(previous, next string) string {
+	if previous == "" {
+		return next
+	}
+	if previous == next {
+		return previous
+	}
+	for _, existing := range strings.Split(previous, "; ") {
+		if existing == next {
+			return previous
+		}
+	}
+	return previous + "; " + next
 }
 
 func (s *Server) queueSecurityDBRescans(reason string) {
 	if !envBool("BONGSU_AUTO_RESCAN_ON_DB_UPDATE", true) {
 		log.Printf("security-db auto rescan disabled (%s)", reason)
+		s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "disabled", map[string]any{"reason": reason})
 		return
 	}
 	go func() {
@@ -2102,9 +2155,21 @@ func (s *Server) queueSecurityDBRescans(reason string) {
 		queued, err := s.db.QueueSecurityDBRescans(ctx, "system", reason, lastSeenAfter)
 		if err != nil {
 			log.Printf("security-db auto rescan queue failed (%s): %v", reason, err)
+			s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "error", map[string]any{
+				"reason":          reason,
+				"last_seen_after": lastSeenAfter,
+				"last_seen_hours": lookbackHours,
+				"error":           err.Error(),
+			})
 			return
 		}
 		log.Printf("security-db auto rescan queued %d host scans (%s)", queued, reason)
+		s.auditSystem("security_db.auto_rescan", "scan_request", "security-db-update", "ok", map[string]any{
+			"reason":          reason,
+			"queued":          queued,
+			"last_seen_after": lastSeenAfter,
+			"last_seen_hours": lookbackHours,
+		})
 	}()
 }
 

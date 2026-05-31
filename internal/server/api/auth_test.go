@@ -154,6 +154,18 @@ func TestRematchOptionsFromEnv(t *testing.T) {
 	}
 }
 
+func TestCoalesceSecurityRecalcReason(t *testing.T) {
+	if got := coalesceSecurityRecalcReason("", "osv import"); got != "osv import" {
+		t.Fatalf("empty previous = %q", got)
+	}
+	if got := coalesceSecurityRecalcReason("osv import", "osv import"); got != "osv import" {
+		t.Fatalf("duplicate reason = %q", got)
+	}
+	if got := coalesceSecurityRecalcReason("osv import", "nvd import"); got != "osv import; nvd import" {
+		t.Fatalf("merged reason = %q", got)
+	}
+}
+
 func TestHostInventoryStatus(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	recent := now.Add(-1 * time.Hour)
