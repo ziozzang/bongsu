@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ziozzang/bongsu/internal/server/db"
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
@@ -150,6 +151,30 @@ func TestRematchOptionsFromEnv(t *testing.T) {
 	}
 	if opts.MinSourceMatchablePercent != 100 {
 		t.Fatalf("min quality = %.1f", opts.MinSourceMatchablePercent)
+	}
+}
+
+func TestHostInventoryStatus(t *testing.T) {
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	recent := now.Add(-1 * time.Hour)
+	old := now.Add(-72 * time.Hour)
+
+	tests := []struct {
+		name string
+		inv  db.HostInventorySummary
+		want string
+	}{
+		{"none", db.HostInventorySummary{}, "none"},
+		{"empty", db.HostInventorySummary{ScanID: "scan-1", ScannedAt: &recent}, "empty"},
+		{"stale", db.HostInventorySummary{ScanID: "scan-1", ScannedAt: &old, PackageCount: 10}, "stale"},
+		{"healthy", db.HostInventorySummary{ScanID: "scan-1", ScannedAt: &recent, PackageCount: 10}, "healthy"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hostInventoryStatus(tt.inv, now, 48*time.Hour); got != tt.want {
+				t.Fatalf("status = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

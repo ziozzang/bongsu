@@ -328,7 +328,7 @@ export interface RetentionPruneResult {
 }
 
 export const api = {
-  hosts: (params?: { agent_status?: string }) => request<Host[]>('/hosts', params),
+  hosts: (params?: { agent_status?: string; inventory_status?: string }) => request<Host[]>('/hosts', params),
   host: (id: string) => request<Host>(`/hosts/${id}`),
   updateHostMetadata: (id: string, body: { owner?: string; team?: string; environment?: string; criticality?: string; tags?: string }) =>
     requestJSON<Host>(`/hosts/${id}/metadata`, body),

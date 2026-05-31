@@ -540,6 +540,8 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	scope := s.accessScope(r)
 	statusFilter := r.URL.Query().Get("agent_status")
+	inventoryStatusFilter := r.URL.Query().Get("inventory_status")
+	inventoryStaleAfter := time.Duration(envInt("BONGSU_INVENTORY_STALE_HOURS", 48)) * time.Hour
 	hosts, err := s.db.ListHosts(ctx)
 	if err != nil {
 		log.Printf("list hosts: %v", err)
@@ -575,12 +577,28 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		item := hostWithVulns{Host: h, VulnCounts: vulnCounts[h.ID], LatestInventory: inventory[h.ID]}
+		if inventoryStatusFilter != "" && hostInventoryStatus(item.LatestInventory, now, inventoryStaleAfter) != inventoryStatusFilter {
+			continue
+		}
 		if item.VulnCounts == nil {
 			item.VulnCounts = map[string]int{}
 		}
 		result = append(result, item)
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func hostInventoryStatus(inv db.HostInventorySummary, now time.Time, staleAfter time.Duration) string {
+	if inv.ScanID == "" {
+		return "none"
+	}
+	if inv.PackageCount == 0 {
+		return "empty"
+	}
+	if staleAfter > 0 && inv.ScannedAt != nil && now.Sub(*inv.ScannedAt) > staleAfter {
+		return "stale"
+	}
+	return "healthy"
 }
 
 func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {

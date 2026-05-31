@@ -503,13 +503,14 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
   const [loading, setLoading] = useState(true);
   const [scanMsg, setScanMsg] = useState('');
   const [agentStatus, setAgentStatus] = useState('');
-  const load = useCallback((status: string) => {
+  const [inventoryStatus, setInventoryStatus] = useState('');
+  const load = useCallback((status: string, inventory: string) => {
     setLoading(true);
-    api.hosts(status ? { agent_status: status } : undefined)
+    api.hosts({ ...(status ? { agent_status: status } : {}), ...(inventory ? { inventory_status: inventory } : {}) })
       .then(h => { setHosts(h || []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
-  useEffect(() => { load(agentStatus); }, [load, agentStatus]);
+  useEffect(() => { load(agentStatus, inventoryStatus); }, [load, agentStatus, inventoryStatus]);
 
   if (loading) return <div>Loading...</div>;
 
@@ -543,8 +544,15 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
             <option value="offline">Offline</option>
             <option value="unknown">Unknown</option>
           </select>
+          <select value={inventoryStatus} onChange={(e) => setInventoryStatus(e.target.value)}>
+            <option value="">All Inventory</option>
+            <option value="healthy">Healthy SBOM</option>
+            <option value="stale">Stale SBOM</option>
+            <option value="empty">Empty SBOM</option>
+            <option value="none">No Completed Scan</option>
+          </select>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            Status is derived from server last_seen thresholds
+            Agent status uses last_seen; inventory status uses latest completed scan
           </span>
         </div>
       </div>

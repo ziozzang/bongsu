@@ -42,6 +42,7 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 - 호스트/동작 중인 컨테이너 SBOM 수집 및 이미지/컨테이너 연관정보 저장
 - 스캔별 패키지/취약점/컨테이너 수와 이전 스캔 대비 inventory delta 추적
 - 호스트 목록에서 최신 SBOM 수집량과 완료 스캔 시각 표시
+- healthy/stale/empty/none 기준의 호스트 SBOM 상태 필터
 - 패키지별 CVE 상세 정보 (air-gapped 환경 지원)
 - Docker / air-gapped 배포 지원
 - One-liner 에이전트 설치

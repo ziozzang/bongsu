@@ -188,6 +188,7 @@ spec:
 | `BONGSU_SLA_LOW_DAYS` | `180` | Remediation SLA days for low findings |
 | `BONGSU_AGENT_ONLINE_MINUTES` | `1560` | Last-seen age treated as online (26h default for daily scans) |
 | `BONGSU_AGENT_OFFLINE_MINUTES` | `4320` | Last-seen age treated as offline after this threshold |
+| `BONGSU_INVENTORY_STALE_HOURS` | `48` | Latest completed inventory older than this is `stale` in host filters |
 | `BONGSU_RETENTION_SCAN_DAYS` | `180` | Default scan history retention for admin prune action |
 | `BONGSU_RETENTION_SCAN_REQUEST_DAYS` | `90` | Default completed/failed/cancelled scan request retention |
 | `BONGSU_RETENTION_AUDIT_DAYS` | `365` | Default audit log retention for admin prune action |
@@ -209,7 +210,7 @@ spec:
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/report` | Agent scan report submission |
-| `GET` | `/api/hosts` | List hosts with agent status, RBAC scope, vulnerability counts, and latest inventory summary |
+| `GET` | `/api/hosts` | List hosts with `agent_status` and `inventory_status` filters, RBAC scope, vulnerability counts, and latest inventory summary |
 | `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
 | `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON |
 | `GET` | `/api/vulnerabilities` | List CVEs with host/container/owner/team/environment filters |
