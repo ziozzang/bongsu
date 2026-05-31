@@ -353,7 +353,7 @@ function DashboardView() {
         </div>
         <div className="install-box">
           <div className="label">One-line agent install</div>
-          <code>curl -fsSL {window.location.origin}/api/install.sh | sudo bash</code>
+          <code>curl -fsSL "{window.location.origin}/api/install.sh?token=$BONGSU_INSTALL_TOKEN" | sudo bash</code>
         </div>
       </section>
       <div className="stats-grid">

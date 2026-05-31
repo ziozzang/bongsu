@@ -302,6 +302,20 @@ func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
 	}
 }
 
+func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
+	out, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	if !strings.Contains(body, `api/install.sh?token=$BONGSU_INSTALL_TOKEN`) {
+		t.Fatal("dashboard install snippet must include BONGSU_INSTALL_TOKEN placeholder")
+	}
+	if strings.Contains(body, `api/install.sh | sudo bash`) {
+		t.Fatal("dashboard install snippet must not show unauthenticated installer URL")
+	}
+}
+
 func TestHostInventoryStatus(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	recent := now.Add(-1 * time.Hour)
