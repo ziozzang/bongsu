@@ -3136,10 +3136,9 @@ WHERE v.package_id = p.id
 	  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
 	  AND %s = %s
 	  AND (
-		(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
-		OR jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') IS NOT NULL
+		%s
 	  )
-  )`, affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("p")))
+  )`, affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("p"), cveSourceFixedPredicateSQL()))
 	if err != nil {
 		return 0, err
 	}
@@ -3161,7 +3160,7 @@ func cveContextualFixedVersionSQL(cveAlias, vulnAlias string) string {
 	}
 	return fmt.Sprintf(`(
 		SELECT COALESCE(
-			NULLIF(ap->'fixed'->>0, ''),
+			%s,
 			NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
 		)
 		FROM packages p
@@ -3170,11 +3169,10 @@ func cveContextualFixedVersionSQL(cveAlias, vulnAlias string) string {
 		  AND lower(ap->>'name') = lower(COALESCE(NULLIF(p.name, ''), NULLIF(%s.pkg_name, '')))
 		  AND %s = %s
 		  AND (
-			(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
-			OR jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') IS NOT NULL
+			%s
 		  )
 		LIMIT 1
-	)`, cvePrefix, cvePrefix, vulnAlias, vulnAlias, affectedProductEcosystemSQL(cveAlias, "ap"), packageEcosystemSQL("p"))
+	)`, safeAffectedFixedVersionSQL("ap"), cvePrefix, cvePrefix, vulnAlias, vulnAlias, affectedProductEcosystemSQL(cveAlias, "ap"), packageEcosystemSQL("p"), cveSourceFixedPredicateSQL())
 }
 
 func cveSafeFixedVersionSQL(alias string) string {
@@ -3196,9 +3194,18 @@ func cveFixedVersionSQL(alias string) string {
 		prefix = alias + "."
 	}
 	return fmt.Sprintf(`COALESCE(
-		NULLIF(%saffected_products->0->'fixed'->>0, ''),
+		%s,
 		NULLIF(jsonb_path_query_first(%saffected_products, '$[*].ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
-	)`, prefix, prefix)
+	)`, safeAffectedFixedVersionSQL(prefix+"affected_products->0"), prefix)
+}
+
+func safeAffectedFixedVersionSQL(affectedExpr string) string {
+	return fmt.Sprintf(`CASE
+			WHEN jsonb_typeof(%s->'fixed') = 'array'
+			  AND jsonb_array_length(%s->'fixed') = 1
+			THEN NULLIF(%s->'fixed'->>0, '')
+			ELSE NULL
+		END`, affectedExpr, affectedExpr, affectedExpr)
 }
 
 func affectedProductEcosystemSQL(cveAlias, affectedAlias string) string {

@@ -657,6 +657,51 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 	}
 }
 
+func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
+	for name, got := range map[string]string{
+		"contextual": cveContextualFixedVersionSQL("c", "v"),
+		"safe":       cveSafeFixedVersionSQL("c"),
+		"fixed":      cveFixedVersionSQL("c"),
+	} {
+		for _, want := range []string{
+			"jsonb_array_length",
+			"= 1",
+			"ranges[*].events[*].fixed",
+		} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("%s CVE fixed enrichment missing %q: %s", name, want, got)
+			}
+		}
+		if strings.Contains(got, "jsonb_array_length(ap->'fixed') > 0") ||
+			strings.Contains(got, "affected_products->0->'fixed'->>0") && !strings.Contains(got, "jsonb_array_length") {
+			t.Fatalf("%s CVE fixed enrichment can select ambiguous fixed versions: %s", name, got)
+		}
+	}
+}
+
+func TestRemoveStaleRematchedVulnerabilitiesUsesSourceQualityFixedPredicate(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) RemoveStaleRematchedVulnerabilities")
+	if start < 0 {
+		t.Fatal("RemoveStaleRematchedVulnerabilities not found")
+	}
+	end := strings.Index(body[start:], "func cveEnrichmentFixedVersionSQL")
+	if end < 0 {
+		t.Fatal("RemoveStaleRematchedVulnerabilities end not found")
+	}
+	fn := body[start : start+end]
+	if !strings.Contains(fn, "cveSourceFixedPredicateSQL()") {
+		t.Fatalf("stale rematch cleanup must reuse source fixed-quality predicate: %s", fn)
+	}
+	if strings.Contains(fn, "jsonb_array_length(ap->'fixed') > 0") {
+		t.Fatalf("stale rematch cleanup must not keep ambiguous multi-fixed entries: %s", fn)
+	}
+}
+
 func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
