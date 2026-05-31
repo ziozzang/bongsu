@@ -221,14 +221,14 @@ func (s *Server) authenticateAgent(r *http.Request) bool {
 }
 
 func (s *Server) authenticateInstall(r *http.Request) bool {
-	if s.installToken == "" {
-		return true
-	}
 	token := r.Header.Get("X-Install-Token")
 	if token == "" {
 		token = r.URL.Query().Get("token")
 	}
-	return s.matchKey(token, s.installToken) || s.authenticateAdmin(r)
+	if s.installToken != "" && s.matchKey(token, s.installToken) {
+		return true
+	}
+	return s.authenticateAdmin(r)
 }
 
 func (s *Server) viewerSubject(r *http.Request) string {
@@ -1238,6 +1238,10 @@ func shellQuote(s string) string {
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateInstall(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if s.installToken == "" {
+		http.Error(w, "install token is not configured", http.StatusServiceUnavailable)
 		return
 	}
 	scheme := "http"

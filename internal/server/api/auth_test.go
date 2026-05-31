@@ -50,6 +50,27 @@ func TestAuthSeparation(t *testing.T) {
 	}
 }
 
+func TestInstallAuthRequiresTokenOrAdminHeader(t *testing.T) {
+	s := &Server{apiKey: "admin-key", agentKey: "agent-key"}
+
+	req := httptest.NewRequest("GET", "/api/install.sh", nil)
+	if s.authenticateInstall(req) {
+		t.Fatal("installer must not be public when install token is unset")
+	}
+
+	req = httptest.NewRequest("GET", "/api/install.sh", nil)
+	req.Header.Set("X-API-Key", "admin-key")
+	if !s.authenticateInstall(req) {
+		t.Fatal("admin header should authenticate installer for manual downloads")
+	}
+
+	s.installToken = "install-token"
+	req = httptest.NewRequest("GET", "/api/install.sh?token=install-token", nil)
+	if !s.authenticateInstall(req) {
+		t.Fatal("install token should authenticate installer")
+	}
+}
+
 func TestWebAuthCanBeDisabledWithoutOpeningAdmin(t *testing.T) {
 	s := &Server{apiKey: "admin-key", agentKey: "agent-key", webAuth: false}
 	req := httptest.NewRequest("GET", "/", nil)

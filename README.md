@@ -18,7 +18,7 @@ cp deploy/.env.example deploy/.env
 cd deploy && docker compose up -d --build
 
 # 3. 에이전트 설치 (타겟 호스트에서)
-curl -sL http://your-server:8080/api/install.sh | bash
+curl -fsSL "http://your-server:8080/api/install.sh?token=$BONGSU_INSTALL_TOKEN" | sudo bash
 ```
 
 ## 아키텍처
@@ -71,7 +71,7 @@ BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 
 ## 에이전트 설치
 
-웹 대시보드 첫 화면과 `/api/install.sh`에서 같은 one-line 설치를 제공합니다.
+웹 대시보드 첫 화면과 `/api/install.sh`에서 같은 one-line 설치를 제공합니다. 이 endpoint는 agent key를 포함하므로 `BONGSU_INSTALL_TOKEN` 설정이 필요합니다.
 
 ```bash
 curl -fsSL "http://server:8080/api/install.sh?token=$BONGSU_INSTALL_TOKEN" | sudo bash
