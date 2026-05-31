@@ -1,0 +1,41 @@
+# Binaries
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Frontend build
+web/dist/
+web/node_modules/
+web/tsconfig.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment (contains API keys)
+.env
+*.local
+
+# Trivy cache
+trivy-cache/
+trivy-db.tar.gz
+
+# Temp/build output
+tmp/
+*.tar.gz
+*.tar.gz.sha256
+
+# Logs
+*.log
+
+# Claude
+.claude/

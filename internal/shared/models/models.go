@@ -1,0 +1,171 @@
+package models
+
+import "time"
+
+type Host struct {
+	ID           string    `json:"id"`
+	Hostname     string    `json:"hostname"`
+	IPAddress    string    `json:"ip_address"`
+	OSName       string    `json:"os_name"`
+	OSVersion    string    `json:"os_version"`
+	Kernel       string    `json:"kernel"`
+	Arch         string    `json:"arch"`
+	CPUModel     string    `json:"cpu_model"`
+	CPUCores     int       `json:"cpu_cores"`
+	MemoryMB     int64     `json:"memory_mb"`
+	AgentVersion string    `json:"agent_version"`
+	LastSeen     time.Time `json:"last_seen"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type Scan struct {
+	ID         string     `json:"id"`
+	HostID     string     `json:"host_id"`
+	ScanType   string     `json:"scan_type"` // "daily", "manual"
+	Status     string     `json:"status"`    // "running", "completed", "failed"
+	StartedAt  time.Time  `json:"started_at"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+type ScanRequest struct {
+	ID           string     `json:"id"`
+	HostID       string     `json:"host_id,omitempty"`
+	RequestedBy  string     `json:"requested_by,omitempty"`
+	ScanType     string     `json:"scan_type"`
+	PackagesOnly bool       `json:"packages_only"`
+	Reason       string     `json:"reason,omitempty"`
+	Status       string     `json:"status"`
+	ClaimedAt    *time.Time `json:"claimed_at,omitempty"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
+type Package struct {
+	ID          string    `json:"id"`
+	ScanID      string    `json:"scan_id"`
+	HostID      string    `json:"host_id"`
+	AssetType   string    `json:"asset_type"`
+	AssetID     string    `json:"asset_id,omitempty"`
+	Source      string    `json:"source"`
+	Container   string    `json:"container,omitempty"`
+	ContainerID string    `json:"container_id,omitempty"`
+	ImageName   string    `json:"image_name,omitempty"`
+	ImageID     string    `json:"image_id,omitempty"`
+	Name        string    `json:"name"`
+	Version     string    `json:"version"`
+	Arch        string    `json:"arch,omitempty"`
+	PkgType     string    `json:"pkg_type"`
+	Ecosystem   string    `json:"ecosystem,omitempty"`
+	PURL        string    `json:"purl,omitempty"`
+	SrcName     string    `json:"src_name,omitempty"`
+	FilePath    string    `json:"file_path,omitempty"`
+	LayerID     string    `json:"layer_id,omitempty"`
+	Target      string    `json:"target,omitempty"`
+	MaxCVSS     float64   `json:"max_cvss"`
+	VulnCount   int       `json:"vuln_count"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type Vulnerability struct {
+	ID              string    `json:"id"`
+	PackageID       string    `json:"package_id"`
+	ScanID          string    `json:"scan_id"`
+	HostID          string    `json:"host_id"`
+	VulnerabilityID string    `json:"vulnerability_id"`
+	Severity        string    `json:"severity"`
+	Title           string    `json:"title,omitempty"`
+	Description     string    `json:"description,omitempty"`
+	PkgName         string    `json:"pkg_name"`
+	PkgPath         string    `json:"pkg_path,omitempty"`
+	InstalledVer    string    `json:"installed_version"`
+	FixedVersion    string    `json:"fixed_version,omitempty"`
+	CVSSScore       float64   `json:"cvss_score,omitempty"`
+	CVSSVector      string    `json:"cvss_vector,omitempty"`
+	PrimaryURL      string    `json:"primary_url,omitempty"`
+	Container       string    `json:"container,omitempty"`
+	LayerID         string    `json:"layer_id,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+type UserAccount struct {
+	ID       string `json:"id"`
+	ScanID   string `json:"scan_id"`
+	HostID   string `json:"host_id"`
+	Username string `json:"username"`
+	UID      int    `json:"uid"`
+	GID      int    `json:"gid"`
+	HomeDir  string `json:"home_dir"`
+	Shell    string `json:"shell"`
+}
+
+type ProcessSnapshot struct {
+	ID       string  `json:"id"`
+	ScanID   string  `json:"scan_id"`
+	HostID   string  `json:"host_id"`
+	PID      int     `json:"pid"`
+	Name     string  `json:"name"`
+	Cmdline  string  `json:"cmdline"`
+	User     string  `json:"user"`
+	CPUUsage float64 `json:"cpu_usage"`
+	MemUsage float64 `json:"mem_usage"`
+}
+
+type PortInfo struct {
+	ID       string `json:"id"`
+	ScanID   string `json:"scan_id"`
+	HostID   string `json:"host_id"`
+	Name     string `json:"name"`
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+	Address  string `json:"address"`
+	PID      int    `json:"pid"`
+}
+
+type ContainerAsset struct {
+	ID          string     `json:"id"`
+	ScanID      string     `json:"scan_id"`
+	HostID      string     `json:"host_id"`
+	Runtime     string     `json:"runtime"`
+	ContainerID string     `json:"container_id"`
+	Name        string     `json:"name"`
+	ImageName   string     `json:"image_name"`
+	ImageID     string     `json:"image_id"`
+	ImageDigest string     `json:"image_digest,omitempty"`
+	State       string     `json:"state"`
+	Labels      string     `json:"labels,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+type ScanReport struct {
+	Host       Host              `json:"host"`
+	ScanType   string            `json:"scan_type"`
+	ScanID     string            `json:"scan_id"`
+	Containers []ContainerAsset  `json:"containers"`
+	Packages   []Package         `json:"packages"`
+	Vulns      []Vulnerability   `json:"vulnerabilities"`
+	Users      []UserAccount     `json:"users"`
+	Processes  []ProcessSnapshot `json:"processes"`
+	Ports      []PortInfo        `json:"ports"`
+	Timestamp  time.Time         `json:"timestamp"`
+}
+
+type CveEntry struct {
+	ID               string     `json:"id"`
+	VulnerabilityID  string     `json:"vulnerability_id"`
+	Source           string     `json:"source"`
+	Category         string     `json:"category,omitempty"`
+	Ecosystem        string     `json:"ecosystem,omitempty"`
+	Severity         string     `json:"severity"`
+	CVSSScore        float64    `json:"cvss_score"`
+	CVSSVector       string     `json:"cvss_vector"`
+	Title            string     `json:"title"`
+	Description      string     `json:"description"`
+	PublishedDate    *time.Time `json:"published_date,omitempty"`
+	ModifiedDate     *time.Time `json:"modified_date,omitempty"`
+	AffectedProducts string     `json:"affected_products"`
+	References       string     `json:"references"`
+	RawData          string     `json:"raw_data"`
+	UpdatedAt        time.Time  `json:"updated_at"`
+}

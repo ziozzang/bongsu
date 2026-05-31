@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${BONGSU_DB_USER:-bongsu}
+      POSTGRES_PASSWORD: ${BONGSU_DB_PASSWORD:-bongsu}
+      POSTGRES_DB: ${BONGSU_DB_NAME:-bongsu}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bongsu"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - bongsu-net
+
+  trivy-db:
+    image: bongsu-server:${BONGSU_VERSION:-0.1.0}
+    restart: "no"
+    volumes:
+      - trivy-cache:/cache
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -f /cache/db/trivy.db ]; then
+          echo "trivy-db already exists, skipping"
+          exit 0
+        fi
+        echo "Downloading trivy-db from ${BONGSU_TRIVY_DB_REPO:-ghcr.io/aquasecurity/trivy-db} ..."
+        trivy image --download-db-only --cache-dir /cache || \
+          echo "WARNING: trivy-db download failed (air-gapped?)"
+    networks:
+      - bongsu-net
+
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.server
+      args:
+        BONGSU_VERSION: ${BONGSU_VERSION:-0.1.0}
+    image: bongsu-server:${BONGSU_VERSION:-0.1.0}
+    ports:
+      - "${BONGSU_PORT:-8080}:8080"
+    environment:
+      BONGSU_DB_DSN: postgres://${BONGSU_DB_USER:-bongsu}:${BONGSU_DB_PASSWORD:-bongsu}@postgres:5432/${BONGSU_DB_NAME:-bongsu}?sslmode=disable
+      BONGSU_API_KEY: ${BONGSU_API_KEY:?Set BONGSU_API_KEY in .env}
+      BONGSU_AUTO_MIGRATE: "true"
+      BONGSU_TRIVY_PATH: /usr/local/bin/trivy
+      BONGSU_TRIVY_CACHE_DIR: /app/trivy-cache
+      BONGSU_TRIVY_DB_REPO: ${BONGSU_TRIVY_DB_REPO:-ghcr.io/aquasecurity/trivy-db}
+      BONGSU_TRIVY_DB_INTERVAL_HOURS: ${BONGSU_TRIVY_DB_INTERVAL_HOURS:-0}
+      BONGSU_SECURITY_DB_SYNC_CMD: ${BONGSU_SECURITY_DB_SYNC_CMD:-}
+      BONGSU_SECURITY_DB_INTERVAL_HOURS: ${BONGSU_SECURITY_DB_INTERVAL_HOURS:-6}
+      BONGSU_WEB_AUTH: ${BONGSU_WEB_AUTH:-false}
+    volumes:
+      - trivy-cache:/app/trivy-cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      trivy-db:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    networks:
+      - bongsu-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  bongsu-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+  trivy-cache:

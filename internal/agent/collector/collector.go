@@ -1,0 +1,212 @@
+package collector
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/google/uuid"
+
+	"github.com/ziozzang/bongsu/internal/shared/models"
+	"github.com/ziozzang/bongsu/internal/shared/trivyparse"
+)
+
+const defaultDBRepository = "ghcr.io/aquasecurity/trivy-db"
+
+type Collector struct {
+	workDir      string
+	trivy        string
+	osquery      string
+	dbRepository string
+	PackagesOnly bool
+}
+
+func New(workDir string) *Collector {
+	dbRepo := os.Getenv("TRIVY_DB_REPOSITORY")
+	if dbRepo == "" {
+		dbRepo = defaultDBRepository
+	}
+	binDir := filepath.Join(workDir, "bin")
+	cacheDir := filepath.Join(workDir, "trivy-cache")
+	os.RemoveAll(filepath.Join(cacheDir, "fanal"))
+	return &Collector{
+		workDir:      workDir,
+		trivy:        filepath.Join(binDir, "trivy"),
+		osquery:      filepath.Join(binDir, "osqueryi"),
+		dbRepository: dbRepo,
+	}
+}
+
+func (c *Collector) ensureTrivy() error {
+	if _, err := os.Stat(c.trivy); err == nil {
+		return nil
+	}
+	if p, err := exec.LookPath("trivy"); err == nil {
+		c.trivy = p
+		return nil
+	}
+	return fmt.Errorf("trivy not found at %s — download from https://github.com/aquasecurity/trivy/releases", c.trivy)
+}
+
+func (c *Collector) ensureOSQuery() error {
+	if _, err := os.Stat(c.osquery); err == nil {
+		return nil
+	}
+	if _, err := exec.LookPath("osqueryi"); err == nil {
+		c.osquery = "osqueryi"
+		return nil
+	}
+	return fmt.Errorf("osqueryi not found — install osquery or place binary at %s", c.osquery)
+}
+
+func (c *Collector) trivyCommand(args ...string) *exec.Cmd {
+	allArgs := append([]string{}, args...)
+	if !c.PackagesOnly {
+		hasDBFlag := false
+		for _, a := range allArgs {
+			if a == "--db-repository" {
+				hasDBFlag = true
+				break
+			}
+		}
+		if !hasDBFlag {
+			allArgs = append([]string{"--db-repository", c.dbRepository}, allArgs...)
+		}
+	} else {
+		allArgs = append([]string{"--skip-db-update", "--skip-java-db-update"}, allArgs...)
+	}
+	cmd := exec.Command(c.trivy, allArgs...)
+	cmd.Env = append(os.Environ(), "TRIVY_CACHE_DIR="+filepath.Join(c.workDir, "trivy-cache"))
+	return cmd
+}
+
+func (c *Collector) CollectHostPackages() ([]models.Package, []models.Vulnerability, error) {
+	if err := c.ensureTrivy(); err != nil {
+		return nil, nil, err
+	}
+
+	var cmd *exec.Cmd
+	if c.PackagesOnly {
+		cmd = c.trivyCommand("fs", "--format", "json", "--list-all-pkgs", "/")
+	} else {
+		cmd = c.trivyCommand("fs", "--format", "json", "--list-all-pkgs", "--scanners", "vuln", "/")
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, nil, fmt.Errorf("trivy fs: %w", err)
+	}
+
+	return trivyparse.ExtractPackagesAndVulns(out, "trivy-host", "")
+}
+
+func (c *Collector) CollectContainerPackages(containerName string) ([]models.Package, []models.Vulnerability, error) {
+	if err := c.ensureTrivy(); err != nil {
+		return nil, nil, err
+	}
+
+	imageRef, err := c.getContainerImage(containerName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var cmd *exec.Cmd
+	if c.PackagesOnly {
+		cmd = c.trivyCommand("image", "--format", "json", "--list-all-pkgs", imageRef)
+	} else {
+		cmd = c.trivyCommand("image", "--format", "json", "--list-all-pkgs", "--scanners", "vuln", imageRef)
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, nil, fmt.Errorf("trivy image %s: %w", imageRef, err)
+	}
+
+	return trivyparse.ExtractPackagesAndVulns(out, "trivy-container", containerName)
+}
+
+func (c *Collector) getContainerImage(containerName string) (string, error) {
+	out, err := exec.Command("docker", "inspect", "--format", "{{.Config.Image}}", containerName).Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func (c *Collector) CollectOSQueryPackages() ([]models.Package, error) {
+	if err := c.ensureOSQuery(); err != nil {
+		return nil, err
+	}
+
+	queries := []string{
+		"SELECT name, version, arch, source_name FROM deb_packages",
+		"SELECT name, version, arch, '' as source_name FROM rpm_packages",
+	}
+
+	var allPkgs []models.Package
+	for _, q := range queries {
+		out, err := exec.Command(c.osquery, "--json", q).Output()
+		if err != nil {
+			continue
+		}
+		var results []map[string]any
+		if err := json.Unmarshal(out, &results); err != nil {
+			continue
+		}
+		for _, r := range results {
+			allPkgs = append(allPkgs, models.Package{
+				ID:      uuid.New().String(),
+				Name:    strVal(r, "name"),
+				Version: strVal(r, "version"),
+				Arch:    strVal(r, "arch"),
+				SrcName: strVal(r, "source_name"),
+				PkgType: "os",
+				Source:  "osquery",
+			})
+		}
+	}
+	return allPkgs, nil
+}
+
+func (c *Collector) CollectOSQueryListeningPorts() ([]models.PortInfo, error) {
+	if err := c.ensureOSQuery(); err != nil {
+		return nil, err
+	}
+	out, err := exec.Command(c.osquery, "--json",
+		"SELECT DISTINCT name, port, protocol, address, pid FROM listening_ports l LEFT JOIN processes p ON l.pid = p.pid WHERE port > 0 ORDER BY port").Output()
+	if err != nil {
+		return nil, fmt.Errorf("osquery listening_ports: %w", err)
+	}
+	var results []map[string]any
+	if err := json.Unmarshal(out, &results); err != nil {
+		return nil, err
+	}
+	var ports []models.PortInfo
+	for _, r := range results {
+		ports = append(ports, models.PortInfo{
+			Name:     strVal(r, "name"),
+			Port:     intVal(r, "port"),
+			Protocol: strVal(r, "protocol"),
+			Address:  strVal(r, "address"),
+			PID:      intVal(r, "pid"),
+		})
+	}
+	return ports, nil
+}
+
+func strVal(m map[string]any, key string) string {
+	if v, ok := m[key]; ok {
+		return fmt.Sprintf("%v", v)
+	}
+	return ""
+}
+
+func intVal(m map[string]any, key string) int {
+	if v, ok := m[key]; ok {
+		var n int
+		fmt.Sscanf(fmt.Sprintf("%v", v), "%d", &n)
+		return n
+	}
+	return 0
+}
