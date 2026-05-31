@@ -2861,12 +2861,9 @@ func (s *Server) securityDBChangedMeta(reason string) map[string]any {
 	meta := map[string]any{"reason": reason}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	revision, err := s.db.GetSecurityDBRevision(ctx)
-	if err != nil {
-		meta["security_db_revision_error"] = err.Error()
-		return meta
+	for k, v := range s.securityDBRevisionMeta(ctx) {
+		meta[k] = v
 	}
-	meta["security_db_revision"] = revision
 	return meta
 }
 
@@ -3100,15 +3097,21 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	revisionMeta := s.securityDBRevisionMeta(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":   "ok",
-		"imported": count,
-		"total":    count,
+		"status":               "ok",
+		"imported":             count,
+		"total":                count,
+		"security_db_revision": revisionMeta["security_db_revision"],
 	})
-	s.audit(r, "cve_db.import", "cve_db", source, "ok", map[string]any{
+	auditMeta := map[string]any{
 		"imported": count,
 		"source":   source,
-	})
+	}
+	for k, v := range revisionMeta {
+		auditMeta[k] = v
+	}
+	s.audit(r, "cve_db.import", "cve_db", source, "ok", auditMeta)
 	s.SecurityDatabaseUpdated("cve-db import")
 }
 
@@ -3297,6 +3300,7 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	source := r.URL.Query().Get("source")
+	revisionMeta := s.securityDBRevisionMeta(r.Context())
 
 	cveFile, count, _, err := s.writeCveJSONLTemp(r.Context(), source)
 	if err != nil {
@@ -3320,7 +3324,22 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("cve-db export write: %v", err)
 		return
 	}
-	s.audit(r, "cve_db.export", "cve_db", source, "ok", map[string]any{"source": source, "records": count})
+	auditMeta := map[string]any{"source": source, "records": count}
+	for k, v := range revisionMeta {
+		auditMeta[k] = v
+	}
+	s.audit(r, "cve_db.export", "cve_db", source, "ok", auditMeta)
+}
+
+func (s *Server) securityDBRevisionMeta(ctx context.Context) map[string]any {
+	meta := map[string]any{}
+	revision, err := s.db.GetSecurityDBRevision(ctx)
+	if err != nil {
+		meta["security_db_revision_error"] = err.Error()
+		return meta
+	}
+	meta["security_db_revision"] = revision
+	return meta
 }
 
 func (s *Server) writeCveJSONLTemp(ctx context.Context, source string) (string, int, string, error) {

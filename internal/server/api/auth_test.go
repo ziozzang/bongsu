@@ -943,11 +943,7 @@ func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 		t.Fatal("securityDBChangedMeta end not found")
 	}
 	fn = body[start : start+end]
-	for _, want := range []string{
-		"GetSecurityDBRevision",
-		`"security_db_revision"`,
-		`"security_db_revision_error"`,
-	} {
+	for _, want := range []string{"securityDBRevisionMeta"} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("security DB change revision metadata missing %q: %s", want, fn)
 		}
@@ -1800,6 +1796,51 @@ func TestCveDbImportAuditsFailures(t *testing.T) {
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("cve db import failure handling missing %q", want)
+		}
+	}
+}
+
+func TestCveDbImportAndExportAuditSecurityDBRevision(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleCveDbImport")
+	if start < 0 {
+		t.Fatal("handleCveDbImport not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) importCveJSONL")
+	if end < 0 {
+		t.Fatal("importCveJSONL not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"revisionMeta := s.securityDBRevisionMeta(ctx)",
+		`"security_db_revision": revisionMeta["security_db_revision"]`,
+		"for k, v := range revisionMeta",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("cve db import revision metadata missing %q: %s", want, fn)
+		}
+	}
+
+	start = strings.Index(body, "func (s *Server) handleCveDbExport")
+	if start < 0 {
+		t.Fatal("handleCveDbExport not found")
+	}
+	end = strings.Index(body[start:], "func (s *Server) securityDBRevisionMeta")
+	if end < 0 {
+		t.Fatal("securityDBRevisionMeta not found")
+	}
+	fn = body[start : start+end]
+	for _, want := range []string{
+		"revisionMeta := s.securityDBRevisionMeta(r.Context())",
+		"for k, v := range revisionMeta",
+		`"cve_db.export"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("cve db export revision metadata missing %q: %s", want, fn)
 		}
 	}
 }
