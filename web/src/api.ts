@@ -116,6 +116,13 @@ export interface Host {
   agent_status?: string;
   last_seen_age_seconds?: number;
   vuln_counts?: Record<string, number>;
+  latest_inventory?: {
+    latest_scan_id?: string;
+    latest_scan_at?: string | null;
+    latest_package_count: number;
+    latest_vulnerability_count: number;
+    latest_container_count: number;
+  };
 }
 
 export interface Vuln {

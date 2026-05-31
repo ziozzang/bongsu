@@ -552,10 +552,16 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		log.Printf("vuln counts: %v", err)
 		vulnCounts = map[string]map[string]int{}
 	}
+	inventory, err := s.db.GetHostInventorySummaries(ctx)
+	if err != nil {
+		log.Printf("host inventory summaries: %v", err)
+		inventory = map[string]db.HostInventorySummary{}
+	}
 
 	type hostWithVulns struct {
 		models.Host
-		VulnCounts map[string]int `json:"vuln_counts"`
+		VulnCounts      map[string]int          `json:"vuln_counts"`
+		LatestInventory db.HostInventorySummary `json:"latest_inventory"`
 	}
 
 	now := time.Now()
@@ -568,7 +574,7 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		if statusFilter != "" && h.AgentStatus != statusFilter {
 			continue
 		}
-		item := hostWithVulns{Host: h, VulnCounts: vulnCounts[h.ID]}
+		item := hostWithVulns{Host: h, VulnCounts: vulnCounts[h.ID], LatestInventory: inventory[h.ID]}
 		if item.VulnCounts == nil {
 			item.VulnCounts = map[string]int{}
 		}

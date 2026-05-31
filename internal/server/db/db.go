@@ -1499,6 +1499,42 @@ func (db *DB) ListHosts(ctx context.Context) ([]models.Host, error) {
 	return hosts, nil
 }
 
+type HostInventorySummary struct {
+	ScanID         string     `json:"latest_scan_id,omitempty"`
+	ScannedAt      *time.Time `json:"latest_scan_at,omitempty"`
+	PackageCount   int        `json:"latest_package_count"`
+	VulnCount      int        `json:"latest_vulnerability_count"`
+	ContainerCount int        `json:"latest_container_count"`
+}
+
+func (db *DB) GetHostInventorySummaries(ctx context.Context) (map[string]HostInventorySummary, error) {
+	q := `SELECT
+		s.host_id,
+		s.id,
+		s.finished_at,
+		(SELECT count(*) FROM packages p WHERE p.scan_id=s.id)::int AS package_count,
+		(SELECT count(*) FROM vulnerabilities v WHERE v.scan_id=s.id)::int AS vulnerability_count,
+		(SELECT count(*) FROM container_assets c WHERE c.scan_id=s.id)::int AS container_count
+	FROM scans s
+	JOIN ` + latestScansSub + ` ls ON ls.id=s.id`
+	rows, err := db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := map[string]HostInventorySummary{}
+	for rows.Next() {
+		var hostID string
+		var s HostInventorySummary
+		if err := rows.Scan(&hostID, &s.ScanID, &s.ScannedAt, &s.PackageCount, &s.VulnCount, &s.ContainerCount); err != nil {
+			return nil, err
+		}
+		out[hostID] = s
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) GetHost(ctx context.Context, id string) (*models.Host, error) {
 	q := `SELECT ` + hostCols + ` FROM hosts WHERE id=$1`
 	var h models.Host

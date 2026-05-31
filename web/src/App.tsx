@@ -560,6 +560,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
               <th>Env</th>
               <th>Criticality</th>
               <th>IP</th>
+              <th>Latest SBOM</th>
               <th>Critical</th>
               <th>High</th>
               <th>Medium</th>
@@ -581,6 +582,14 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
                 <td>{h.environment || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                 <td>{h.criticality || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                 <td className="mono">{h.ip_address}</td>
+                <td className="mono" style={{ fontSize: '0.75rem' }}>
+                  {h.latest_inventory?.latest_scan_id ? (
+                    <>
+                      {h.latest_inventory.latest_package_count || 0} pkgs / {h.latest_inventory.latest_vulnerability_count || 0} vulns / {h.latest_inventory.latest_container_count || 0} ctrs
+                      <div style={{ color: 'var(--text-muted)' }}>{h.latest_inventory.latest_scan_at ? new Date(h.latest_inventory.latest_scan_at).toLocaleString() : '-'}</div>
+                    </>
+                  ) : <span style={{ color: 'var(--text-muted)' }}>No completed scan</span>}
+                </td>
                 <td style={{ color: sevColor('CRITICAL'), fontWeight: 600 }}>{h.vuln_counts?.CRITICAL || 0}</td>
                 <td style={{ color: sevColor('HIGH'), fontWeight: 600 }}>{h.vuln_counts?.HIGH || 0}</td>
                 <td style={{ color: sevColor('MEDIUM'), fontWeight: 600 }}>{h.vuln_counts?.MEDIUM || 0}</td>
@@ -605,7 +614,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
                 </td>
               </tr>
             ))}
-            {hosts.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
+            {hosts.length === 0 && <tr><td colSpan={14} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
           </tbody>
         </table>
       </div>
