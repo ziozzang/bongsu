@@ -2249,8 +2249,16 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 			fail(http.StatusBadRequest, "invalid tar bundle", "tar", err)
 			return
 		}
+		if err := validateSecurityDBBundleEntry(hdr); err != nil {
+			fail(http.StatusBadRequest, err.Error(), "tar_entry", err)
+			return
+		}
 		switch hdr.Name {
 		case "manifest.json":
+			if manifest != nil {
+				fail(http.StatusBadRequest, "duplicate manifest.json", "manifest", nil)
+				return
+			}
 			var m securityDBBundleManifest
 			if err := json.NewDecoder(tr).Decode(&m); err != nil {
 				fail(http.StatusBadRequest, "invalid bundle manifest", "manifest", err)
@@ -2263,7 +2271,8 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 			manifest = &m
 		case "cve-database.jsonl":
 			if cveFile != "" {
-				os.Remove(cveFile)
+				fail(http.StatusBadRequest, "duplicate cve-database.jsonl", "cve", nil)
+				return
 			}
 			cveFile, cveSHA, err = writeBundleEntryTemp(tr, "bongsu-bundle-cve-*.jsonl")
 			if err != nil {
@@ -2272,7 +2281,8 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 			}
 		case "trivy-db.tar.gz":
 			if trivyArchive != "" {
-				os.Remove(trivyArchive)
+				fail(http.StatusBadRequest, "duplicate trivy-db.tar.gz", "trivy", nil)
+				return
 			}
 			trivyArchive, trivySHA, err = writeBundleEntryTemp(tr, "bongsu-bundle-trivy-db-*.tar.gz")
 			if err != nil {
@@ -2388,6 +2398,21 @@ func validateSecurityDBBundle(manifest *securityDBBundleManifest, cveFile, cveSH
 		}
 	}
 	return nil
+}
+
+func validateSecurityDBBundleEntry(hdr *tar.Header) error {
+	if hdr == nil {
+		return fmt.Errorf("invalid tar entry")
+	}
+	if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
+		return fmt.Errorf("unsupported bundle entry type: %s", hdr.Name)
+	}
+	switch hdr.Name {
+	case "manifest.json", "cve-database.jsonl", "trivy-db.tar.gz":
+		return nil
+	default:
+		return fmt.Errorf("unexpected bundle entry: %s", hdr.Name)
+	}
 }
 
 func (s *Server) SecurityDatabaseUpdated(reason string) {

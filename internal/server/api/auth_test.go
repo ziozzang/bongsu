@@ -1,6 +1,7 @@
 package api
 
 import (
+	"archive/tar"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -311,6 +312,55 @@ func TestValidateSecurityDBBundleChecksums(t *testing.T) {
 	}
 	if err := validateSecurityDBBundle(manifest, "/tmp/cve.jsonl", cveSHA, "/tmp/trivy.tar.gz", "bad"); err == nil || !strings.Contains(err.Error(), "trivy db checksum") {
 		t.Fatalf("trivy checksum error = %v", err)
+	}
+}
+
+func TestValidateSecurityDBBundleEntryRejectsUnexpectedTarMembers(t *testing.T) {
+	valid := []string{"manifest.json", "cve-database.jsonl", "trivy-db.tar.gz"}
+	for _, name := range valid {
+		if err := validateSecurityDBBundleEntry(&tar.Header{Name: name, Typeflag: tar.TypeReg}); err != nil {
+			t.Fatalf("valid bundle entry %s rejected: %v", name, err)
+		}
+	}
+	tests := []tar.Header{
+		{Name: "../manifest.json", Typeflag: tar.TypeReg},
+		{Name: "extra.txt", Typeflag: tar.TypeReg},
+		{Name: "manifest.json", Typeflag: tar.TypeDir},
+	}
+	for _, hdr := range tests {
+		if err := validateSecurityDBBundleEntry(&hdr); err == nil {
+			t.Fatalf("invalid bundle entry accepted: %#v", hdr)
+		}
+	}
+}
+
+func TestSecurityDBBundleImportRejectsDuplicateEntries(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleSecurityDbImport")
+	if start < 0 {
+		t.Fatal("handleSecurityDbImport not found")
+	}
+	end := strings.Index(body[start:], "func writeBundleEntryTemp")
+	if end < 0 {
+		t.Fatal("writeBundleEntryTemp not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"validateSecurityDBBundleEntry(hdr)",
+		`"duplicate manifest.json"`,
+		`"duplicate cve-database.jsonl"`,
+		`"duplicate trivy-db.tar.gz"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("bundle import duplicate/entry guard missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "os.Remove(cveFile)\n\t\t\t}") || strings.Contains(fn, "os.Remove(trivyArchive)\n\t\t\t}") {
+		t.Fatal("bundle import must reject duplicate payload entries instead of replacing staged files")
 	}
 }
 
