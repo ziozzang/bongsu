@@ -179,7 +179,7 @@ spec:
 | `BONGSU_AUTO_RESCAN_ON_DB_UPDATE` | `true` | Queue background rescans after security DB changes |
 | `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` | `720` | Only auto-rescan hosts seen within this many hours (`0`=all hosts) |
 | `BONGSU_CVE_MATCH_SOURCES` | empty | Optional comma-separated CVE source allowlist for automatic rematch |
-| `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT` | `0` | Skip CVE sources below this matchable-record percentage during automatic rematch |
+| `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT` | `0` | Skip CVE sources below this matchable-record percentage during automatic rematch; matchable records require name, ecosystem, and fixed-version data |
 | `BONGSU_AGENT_REPORT_MAX_BYTES` | `536870912` | Maximum accepted agent report body size |
 | `BONGSU_VULN_EXPORT_MAX_ROWS` | `100000` | Maximum vulnerability rows per report export |
 | `BONGSU_WEBHOOK_URL` | empty | Optional outbound webhook URL for scan/security DB events |

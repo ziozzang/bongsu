@@ -294,6 +294,23 @@ func TestQueueSecurityDBRescanInsertSQLUsesAtomicDedupe(t *testing.T) {
 	}
 }
 
+func TestCveSourceQualityRequiresFixedData(t *testing.T) {
+	got := cveSourceMatchablePredicateSQL("affected_products", "ecosystem")
+	for _, want := range []string{
+		"COALESCE(ap->>'name', '') != ''",
+		"NULLIF(ap->>'ecosystem', '')",
+		"jsonb_typeof(ap->'fixed') = 'array'",
+		"jsonb_path_exists(ap, '$.ranges[*].events[*].fixed ? (@ != \"\")')",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("source quality predicate missing %q: %s", want, got)
+		}
+	}
+	if strings.Contains(got, "jsonb_array_length(ap->'ranges') > 0") {
+		t.Fatalf("source quality must not treat range metadata without fixed events as matchable: %s", got)
+	}
+}
+
 func TestLatestScansIncludesDegradedInventory(t *testing.T) {
 	if !strings.Contains(latestScansSub, "status IN ('completed','degraded')") {
 		t.Fatalf("latest scans must include degraded scans: %s", latestScansSub)

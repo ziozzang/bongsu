@@ -3257,7 +3257,7 @@ type CveSourceStats struct {
 }
 
 func (db *DB) GetCveSourceStats(ctx context.Context) ([]CveSourceStats, error) {
-	rows, err := db.QueryContext(ctx, `
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 WITH normalized AS (
 	SELECT
 		source,
@@ -3277,15 +3277,7 @@ SELECT
 	source,
 	COUNT(*) AS count,
 	COUNT(*) FILTER (
-		WHERE EXISTS (
-			SELECT 1 FROM jsonb_array_elements(affected_products) ap
-			WHERE COALESCE(ap->>'name', '') != ''
-			  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(ecosystem, '')) IS NOT NULL
-			  AND (
-				(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
-				OR (jsonb_typeof(ap->'ranges') = 'array' AND jsonb_array_length(ap->'ranges') > 0)
-			  )
-		)
+		WHERE %s
 	) AS matchable,
 	COUNT(*) FILTER (
 		WHERE ecosystem != '' OR EXISTS (
@@ -3294,10 +3286,7 @@ SELECT
 		)
 	) AS with_ecosystem,
 	COUNT(*) FILTER (
-		WHERE EXISTS (
-			SELECT 1 FROM jsonb_array_elements(affected_products) ap
-			WHERE jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0
-		)
+		WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(affected_products) ap WHERE %s)
 	) AS with_fixed,
 	COUNT(*) FILTER (
 		WHERE EXISTS (
@@ -3309,7 +3298,7 @@ SELECT
 	MAX(updated_at) AS last_update
 FROM normalized
 GROUP BY source
-ORDER BY source`)
+ORDER BY source`, cveSourceMatchablePredicateSQL("affected_products", "ecosystem"), cveSourceFixedPredicateSQL()))
 	if err != nil {
 		return nil, err
 	}
@@ -3337,6 +3326,21 @@ type RematchOptions struct {
 	MinSourceMatchablePercent float64
 }
 
+func cveSourceFixedPredicateSQL() string {
+	return `(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
+		OR jsonb_path_exists(ap, '$.ranges[*].events[*].fixed ? (@ != "")')`
+}
+
+func cveSourceMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr string) string {
+	return fmt.Sprintf(`EXISTS (
+		SELECT 1
+		FROM jsonb_array_elements(%s) ap
+		WHERE COALESCE(ap->>'name', '') != ''
+		  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(%s, '')) IS NOT NULL
+		  AND (%s)
+	)`, affectedProductsExpr, ecosystemExpr, cveSourceFixedPredicateSQL())
+}
+
 func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchResult, error) {
 	args := []any{}
 	filters := ""
@@ -3349,22 +3353,14 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		filters += fmt.Sprintf(" AND (100.0 * sq.matchable / NULLIF(sq.total, 0)) >= $%d", len(args))
 	}
 
+	affectedProducts := `CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END`
 	query := fmt.Sprintf(`
 		WITH source_quality AS (
 			SELECT
 				source,
 				COUNT(*) AS total,
 				COUNT(*) FILTER (
-					WHERE EXISTS (
-						SELECT 1
-						FROM jsonb_array_elements(CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END) ap
-						WHERE COALESCE(ap->>'name', '') != ''
-						  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(ecosystem, '')) IS NOT NULL
-						  AND (
-							(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
-							OR (jsonb_typeof(ap->'ranges') = 'array' AND jsonb_array_length(ap->'ranges') > 0)
-						  )
-					)
+					WHERE %s
 				) AS matchable
 			FROM cve_database
 			WHERE source != ''
@@ -3380,7 +3376,7 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		JOIN source_quality sq ON sq.source = c.source
 		WHERE 1=1%s
 		LIMIT 50000
-	`, latestScansSub, filters)
+	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), latestScansSub, filters)
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
