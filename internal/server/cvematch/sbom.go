@@ -1,6 +1,7 @@
 package cvematch
 
 import (
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -139,18 +140,23 @@ type spdxCreationInfo struct {
 }
 
 type spdxPackage struct {
-	SPDXID           string            `json:"SPDXID"`
-	Name             string            `json:"name"`
-	VersionInfo      string            `json:"versionInfo,omitempty"`
-	DownloadLocation string            `json:"downloadLocation"`
-	FilesAnalyzed    bool              `json:"filesAnalyzed"`
-	LicenseConcluded string            `json:"licenseConcluded"`
-	LicenseDeclared  string            `json:"licenseDeclared"`
-	CopyrightText    string            `json:"copyrightText"`
-	Supplier         string            `json:"supplier"`
-	PackageURL       string            `json:"packageUrl,omitempty"`
-	ExternalRefs     []spdxExternalRef `json:"externalRefs,omitempty"`
-	Comment          string            `json:"comment,omitempty"`
+	SPDXID                  string               `json:"SPDXID"`
+	Name                    string               `json:"name"`
+	VersionInfo             string               `json:"versionInfo,omitempty"`
+	DownloadLocation        string               `json:"downloadLocation"`
+	FilesAnalyzed           bool                 `json:"filesAnalyzed"`
+	PackageVerificationCode spdxVerificationCode `json:"packageVerificationCode"`
+	LicenseConcluded        string               `json:"licenseConcluded"`
+	LicenseDeclared         string               `json:"licenseDeclared"`
+	CopyrightText           string               `json:"copyrightText"`
+	Supplier                string               `json:"supplier"`
+	PackageURL              string               `json:"packageUrl,omitempty"`
+	ExternalRefs            []spdxExternalRef    `json:"externalRefs,omitempty"`
+	Comment                 string               `json:"comment,omitempty"`
+}
+
+type spdxVerificationCode struct {
+	PackageVerificationCodeValue string `json:"packageVerificationCodeValue"`
 }
 
 type spdxExternalRef struct {
@@ -250,16 +256,17 @@ func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 	}
 	rootID := "SPDXRef-Host-" + sanitizeSPDXID(defaultSPDXName(host.ID, host.Hostname))
 	doc.Packages = append(doc.Packages, spdxPackage{
-		SPDXID:           rootID,
-		Name:             defaultSPDXName(host.Hostname, host.ID),
-		VersionInfo:      strings.TrimSpace(host.OSName + " " + host.OSVersion),
-		DownloadLocation: "NOASSERTION",
-		FilesAnalyzed:    false,
-		LicenseConcluded: "NOASSERTION",
-		LicenseDeclared:  "NOASSERTION",
-		CopyrightText:    "NOASSERTION",
-		Supplier:         "Organization: bongsu",
-		Comment:          fmt.Sprintf("bongsu host_id=%s ip_address=%s owner=%s team=%s environment=%s criticality=%s", host.ID, host.IPAddress, host.Owner, host.Team, host.Environment, host.Criticality),
+		SPDXID:                  rootID,
+		Name:                    defaultSPDXName(host.Hostname, host.ID),
+		VersionInfo:             strings.TrimSpace(host.OSName + " " + host.OSVersion),
+		DownloadLocation:        "NOASSERTION",
+		FilesAnalyzed:           false,
+		PackageVerificationCode: spdxVerificationCode{PackageVerificationCodeValue: spdxPackageVerificationCode(host.ID, host.Hostname, host.OSName, host.OSVersion)},
+		LicenseConcluded:        "NOASSERTION",
+		LicenseDeclared:         "NOASSERTION",
+		CopyrightText:           "NOASSERTION",
+		Supplier:                "Organization: bongsu",
+		Comment:                 fmt.Sprintf("bongsu host_id=%s ip_address=%s owner=%s team=%s environment=%s criticality=%s", host.ID, host.IPAddress, host.Owner, host.Team, host.Environment, host.Criticality),
 	})
 	doc.Relationships = append(doc.Relationships, spdxRelationship{SPDXElementID: docID, RelationshipType: "DESCRIBES", RelatedSPDXElement: rootID})
 
@@ -276,16 +283,17 @@ func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 			spdxID = fmt.Sprintf("%s-%d", baseID, seen[baseID])
 		}
 		doc.Packages = append(doc.Packages, spdxPackage{
-			SPDXID:           spdxID,
-			Name:             pkg.Name,
-			VersionInfo:      pkg.Version,
-			DownloadLocation: "NOASSERTION",
-			FilesAnalyzed:    false,
-			LicenseConcluded: "NOASSERTION",
-			LicenseDeclared:  "NOASSERTION",
-			CopyrightText:    "NOASSERTION",
-			Supplier:         "NOASSERTION",
-			PackageURL:       purl,
+			SPDXID:                  spdxID,
+			Name:                    pkg.Name,
+			VersionInfo:             pkg.Version,
+			DownloadLocation:        "NOASSERTION",
+			FilesAnalyzed:           false,
+			PackageVerificationCode: spdxVerificationCode{PackageVerificationCodeValue: spdxPackageVerificationCode(spdxPackageIdentity(pkg)...)},
+			LicenseConcluded:        "NOASSERTION",
+			LicenseDeclared:         "NOASSERTION",
+			CopyrightText:           "NOASSERTION",
+			Supplier:                "NOASSERTION",
+			PackageURL:              purl,
 			ExternalRefs: []spdxExternalRef{{
 				ReferenceCategory: "PACKAGE-MANAGER",
 				ReferenceType:     "purl",
@@ -300,6 +308,20 @@ func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 		return nil, fmt.Errorf("no valid packages for SBOM generation")
 	}
 	return json.Marshal(doc)
+}
+
+func spdxPackageVerificationCode(parts ...string) string {
+	sum := sha1.Sum([]byte(strings.Join(parts, "\x00")))
+	return fmt.Sprintf("%x", sum[:])
+}
+
+func spdxPackageIdentity(pkg models.Package) []string {
+	return []string{
+		pkg.ID, pkg.HostID, pkg.AssetType, pkg.AssetID, pkg.Source,
+		pkg.Container, pkg.ContainerID, pkg.ImageName, pkg.ImageID,
+		pkg.Name, pkg.Version, pkg.Arch, pkg.PkgType, pkg.Ecosystem,
+		pkg.PURL, pkg.SrcName, pkg.FilePath, pkg.Target,
+	}
 }
 
 func defaultSPDXName(primary, fallback string) string {
