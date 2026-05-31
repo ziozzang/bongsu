@@ -1,6 +1,7 @@
 package db
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -315,6 +316,27 @@ func TestDeleteScanProtectsLatestInventory(t *testing.T) {
 func TestDeleteScanErrorsAreDistinct(t *testing.T) {
 	if ErrLatestInventoryScan == ErrScanNotFound {
 		t.Fatal("delete scan guard and not-found errors must be distinct")
+	}
+}
+
+func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
+	fn := "UpsertCveEntries"
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) "+fn)
+	if start < 0 {
+		t.Fatalf("%s not found", fn)
+	}
+	next := strings.Index(body[start+1:], "\nfunc ")
+	if next < 0 {
+		t.Fatalf("%s body end not found", fn)
+	}
+	body = body[start : start+1+next]
+	if !strings.Contains(body, "if firstErr != nil") || strings.Contains(body, "if count == 0 && firstErr != nil") {
+		t.Fatalf("%s must reject the whole batch after any row insert error: %s", fn, body)
 	}
 }
 

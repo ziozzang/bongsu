@@ -2047,6 +2047,10 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	if trivyArchive != "" && s.dbMgr == nil {
+		http.Error(w, "bundle contains trivy db but manager is unavailable", http.StatusServiceUnavailable)
+		return
+	}
 	cveReader, err := os.Open(cveFile)
 	if err != nil {
 		http.Error(w, "cve archive read failed", http.StatusInternalServerError)
@@ -2061,10 +2065,6 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 	}
 	trivyLoaded := false
 	if trivyArchive != "" {
-		if s.dbMgr == nil {
-			http.Error(w, "bundle contains trivy db but manager is unavailable", http.StatusServiceUnavailable)
-			return
-		}
 		if err := s.dbMgr.LoadFromFile(trivyArchive); err != nil {
 			log.Printf("security-db bundle trivy import: %v", err)
 			http.Error(w, "trivy db import failed", http.StatusInternalServerError)

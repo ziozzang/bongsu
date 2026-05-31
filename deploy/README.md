@@ -115,7 +115,7 @@ After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB
 ./scripts/import-security-db-bundle.sh http://server:8080 your-api-key bongsu-security-db-bundle.tar.gz
 ```
 
-Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and optional `trivy-db.tar.gz` before applying any database or cache changes. A corrupt or tampered bundle is rejected.
+Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and optional `trivy-db.tar.gz` before applying any database or cache changes. A corrupt or tampered bundle is rejected, and CVE rows are imported in transactional batches so bad rows do not leave partially committed batch data.
 
 ## Agent Installation
 

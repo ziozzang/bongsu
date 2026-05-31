@@ -63,7 +63,7 @@ Vulnerability inserts drop dangling scanner rows that have no package, scan, hos
 5. Import Trivy DB through `/api/admin/trivy-db`.
 6. Import CVE JSONL through `/api/admin/cve-db/import`.
 
-The implemented bundle is a versioned `tar.gz` archive containing `manifest.json`, `cve-database.jsonl`, checksums, source stats, and optional `trivy-db.tar.gz`. Import stages payloads to temporary files and verifies manifest SHA-256 checksums before mutating the CVE database or Trivy cache. After validation, importing the bundle loads CVE records in batches, loads Trivy DB when present, and triggers background CVSS/enrichment/rematch recalculation plus automatic package-only rescans.
+The implemented bundle is a versioned `tar.gz` archive containing `manifest.json`, `cve-database.jsonl`, checksums, source stats, and optional `trivy-db.tar.gz`. Import stages payloads to temporary files and verifies manifest SHA-256 checksums before mutating the CVE database or Trivy cache. After validation, importing the bundle loads CVE records in transactional batches, loads Trivy DB when present, and triggers background CVSS/enrichment/rematch recalculation plus automatic package-only rescans. Any row insert error rejects its entire CVE batch instead of committing a partially corrupt source update.
 
 ## Force Scan Model
 

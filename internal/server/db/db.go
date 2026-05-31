@@ -2743,7 +2743,7 @@ ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 		}
 		count++
 	}
-	if count == 0 && firstErr != nil {
+	if firstErr != nil {
 		return 0, firstErr
 	}
 	return count, tx.Commit()
