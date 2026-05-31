@@ -23,6 +23,7 @@ type Manager struct {
 	lastOutput  string
 	updateHook  func(string)
 	failureHook func(string, error)
+	syncOnStart bool
 }
 
 func NewManager(command string, interval time.Duration) *Manager {
@@ -30,7 +31,18 @@ func NewManager(command string, interval time.Duration) *Manager {
 }
 
 func (m *Manager) Start(ctx context.Context) {
-	if m.command == "" || m.interval <= 0 {
+	if m.command == "" {
+		return
+	}
+	m.mu.RLock()
+	syncOnStart := m.syncOnStart
+	m.mu.RUnlock()
+	if syncOnStart {
+		if err := m.UpdateNowWithReason(ctx, "security-db startup sync"); err != nil {
+			log.Printf("security-db startup sync failed: %v", err)
+		}
+	}
+	if m.interval <= 0 {
 		return
 	}
 	log.Printf("security-db periodic sync enabled (interval: %s)", m.interval)
@@ -58,6 +70,12 @@ func (m *Manager) SetFailureHook(hook func(string, error)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.failureHook = hook
+}
+
+func (m *Manager) SetSyncOnStart(enabled bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.syncOnStart = enabled
 }
 
 func (m *Manager) UpdateNow(ctx context.Context) error {

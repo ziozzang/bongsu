@@ -66,6 +66,7 @@ func main() {
 	secSyncCmd := os.Getenv("BONGSU_SECURITY_DB_SYNC_CMD")
 	secInterval := time.Duration(envInt("BONGSU_SECURITY_DB_INTERVAL_HOURS", 6)) * time.Hour
 	secMgr := secdb.NewManager(secSyncCmd, secInterval)
+	secMgr.SetSyncOnStart(envBool("BONGSU_SECURITY_DB_SYNC_ON_START", true))
 
 	server := api.New(database, matcher, dbMgr, secMgr)
 	secMgr.SetFailureHook(server.SecurityDatabaseSyncFailed)

@@ -103,6 +103,49 @@ func TestUpdateNowFailureHookCoversConfigurationErrors(t *testing.T) {
 	}
 }
 
+func TestStartRunsStartupSyncWhenEnabled(t *testing.T) {
+	m := NewManager("printf startup-ok", 0)
+	m.SetSyncOnStart(true)
+	called := make(chan string, 1)
+	m.SetUpdateHook(func(reason string) {
+		called <- reason
+	})
+
+	m.Start(context.Background())
+
+	select {
+	case got := <-called:
+		if got != "security-db startup sync" {
+			t.Fatalf("startup hook reason = %q", got)
+		}
+	default:
+		t.Fatal("expected startup sync hook")
+	}
+	status := m.Status()
+	if status["status"] != "ok" || status["last_output"] != "startup-ok" {
+		t.Fatalf("startup sync status = %#v", status)
+	}
+}
+
+func TestStartSkipsStartupSyncWhenDisabled(t *testing.T) {
+	m := NewManager("printf startup-ok", 0)
+	called := make(chan string, 1)
+	m.SetUpdateHook(func(reason string) {
+		called <- reason
+	})
+
+	m.Start(context.Background())
+
+	select {
+	case got := <-called:
+		t.Fatalf("startup sync should be disabled by default, got %q", got)
+	default:
+	}
+	if status := m.Status(); status["status"] != "never" {
+		t.Fatalf("status = %#v", status)
+	}
+}
+
 func TestSyncOutputIsTailTruncated(t *testing.T) {
 	t.Setenv("BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES", "6")
 	if got := trimCommandOutput("0123456789", maxSyncOutputBytes()); got != "456789" {

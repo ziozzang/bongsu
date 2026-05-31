@@ -39,7 +39,7 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 - 보안 DB 소스별 matchable/fixed/range/CVSS 품질 지표
 - 소스 allowlist / matchable 비율 기반 취약점 rematch 품질 게이트
 - 대형 환경 CVE rematch candidate limit 및 partial-pass 표시
-- 온라인 환경 6시간 주기 업데이트와 air-gapped 환경 수동 import
+- 온라인 환경 시작 시/6시간 주기 업데이트와 air-gapped 환경 수동 import
 - 호스트/동작 중인 컨테이너 SBOM 수집 및 이미지/컨테이너 연관정보 저장
 - CycloneDX 1.5 / SPDX 2.3 SBOM export
 - 스캔별 패키지/취약점/컨테이너 수와 이전 스캔 대비 inventory delta 추적
