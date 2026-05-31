@@ -144,3 +144,13 @@ func TestContainerSortExprAllowlist(t *testing.T) {
 		t.Fatalf("unsafe sort expr should fall back, got %q", got)
 	}
 }
+
+func TestAppendUnique(t *testing.T) {
+	items := []string{"host-1"}
+	items = appendUnique(items, "host-1")
+	items = appendUnique(items, "host-2")
+	items = appendUnique(items, "")
+	if len(items) != 2 || items[0] != "host-1" || items[1] != "host-2" {
+		t.Fatalf("appendUnique produced %#v", items)
+	}
+}

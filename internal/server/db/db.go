@@ -957,6 +957,10 @@ WHERE s.external_id=$1 AND p.permission IN ('read','admin')`, externalID)
 	}
 	defer rows.Close()
 	scope := AccessScope{}
+	containerRefs := []string{}
+	imageRefs := []string{}
+	containerWildcard := false
+	imageWildcard := false
 	for rows.Next() {
 		var rt, rid string
 		if err := rows.Scan(&rt, &rid); err != nil {
@@ -967,11 +971,98 @@ WHERE s.external_id=$1 AND p.permission IN ('read','admin')`, externalID)
 			scope.All = true
 		case "host":
 			if rid != "" && rid != "*" {
-				scope.HostIDs = append(scope.HostIDs, rid)
+				scope.HostIDs = appendUnique(scope.HostIDs, rid)
+			}
+		case "container":
+			if rid == "*" {
+				containerWildcard = true
+			} else if rid != "" {
+				containerRefs = append(containerRefs, rid)
+			}
+		case "image":
+			if rid == "*" {
+				imageWildcard = true
+			} else if rid != "" {
+				imageRefs = append(imageRefs, rid)
 			}
 		}
 	}
-	return scope, rows.Err()
+	if err := rows.Err(); err != nil {
+		return AccessScope{}, err
+	}
+	if scope.All {
+		return scope, nil
+	}
+	hostIDs, err := db.hostIDsForContainerPolicies(ctx, containerRefs, containerWildcard)
+	if err != nil {
+		return AccessScope{}, err
+	}
+	for _, id := range hostIDs {
+		scope.HostIDs = appendUnique(scope.HostIDs, id)
+	}
+	hostIDs, err = db.hostIDsForImagePolicies(ctx, imageRefs, imageWildcard)
+	if err != nil {
+		return AccessScope{}, err
+	}
+	for _, id := range hostIDs {
+		scope.HostIDs = appendUnique(scope.HostIDs, id)
+	}
+	return scope, nil
+}
+
+func (db *DB) hostIDsForContainerPolicies(ctx context.Context, refs []string, wildcard bool) ([]string, error) {
+	if !wildcard && len(refs) == 0 {
+		return nil, nil
+	}
+	q := `SELECT DISTINCT c.host_id FROM container_assets c JOIN ` + latestScansSub + ` ls ON c.scan_id = ls.id`
+	args := []any{}
+	if !wildcard {
+		q += ` WHERE c.container_id = ANY($1) OR c.name = ANY($1)`
+		args = append(args, pqStringArray(refs))
+	}
+	return db.queryStringList(ctx, q, args...)
+}
+
+func (db *DB) hostIDsForImagePolicies(ctx context.Context, refs []string, wildcard bool) ([]string, error) {
+	if !wildcard && len(refs) == 0 {
+		return nil, nil
+	}
+	q := `SELECT DISTINCT c.host_id FROM container_assets c JOIN ` + latestScansSub + ` ls ON c.scan_id = ls.id`
+	args := []any{}
+	if !wildcard {
+		q += ` WHERE c.image_name = ANY($1) OR c.image_id = ANY($1) OR c.image_digest = ANY($1)`
+		args = append(args, pqStringArray(refs))
+	}
+	return db.queryStringList(ctx, q, args...)
+}
+
+func (db *DB) queryStringList(ctx context.Context, q string, args ...any) ([]string, error) {
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, err
+		}
+		out = appendUnique(out, v)
+	}
+	return out, rows.Err()
+}
+
+func appendUnique(items []string, item string) []string {
+	if item == "" {
+		return items
+	}
+	for _, existing := range items {
+		if existing == item {
+			return items
+		}
+	}
+	return append(items, item)
 }
 
 func (db *DB) UpsertAccessSubject(ctx context.Context, id, subjectType, externalID, displayName string) error {

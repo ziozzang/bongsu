@@ -2100,8 +2100,20 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 		http.Error(w, "subject_external_id and resource_type are required", http.StatusBadRequest)
 		return
 	}
+	switch body.ResourceType {
+	case "host", "container", "image", "asset_group", "all":
+	default:
+		http.Error(w, "invalid resource_type", http.StatusBadRequest)
+		return
+	}
 	if body.Permission == "" {
 		body.Permission = "read"
+	}
+	switch body.Permission {
+	case "read", "write", "admin":
+	default:
+		http.Error(w, "invalid permission", http.StatusBadRequest)
+		return
 	}
 	if err := s.db.UpsertAccessPolicy(r.Context(), body.ID, body.SubjectExternalID, body.ResourceType, body.ResourceID, body.Permission); err != nil {
 		log.Printf("upsert access policy: %v", err)
