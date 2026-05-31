@@ -1290,7 +1290,9 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	if err := db.QueryRowContext(ctx, "SELECT count(*) "+baseQ, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	q := `SELECT id, host_id, requested_by, scan_type, packages_only, reason, security_db_revision, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at ` + baseQ + fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", n, n+1)
+	q := `SELECT id, host_id, requested_by, scan_type, packages_only, reason, security_db_revision, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at,
+		EXTRACT(EPOCH FROM (now() - created_at))::bigint AS request_age_seconds,
+		CASE WHEN claimed_at IS NULL THEN 0 ELSE EXTRACT(EPOCH FROM (now() - claimed_at))::bigint END AS claim_age_seconds ` + baseQ + fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", n, n+1)
 	args = append(args, limit, offset)
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -1300,7 +1302,7 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	var out []models.ScanRequest
 	for rows.Next() {
 		var r models.ScanRequest
-		if err := rows.Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.SecurityDBRevision, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.SecurityDBRevision, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt, &r.RequestAgeS, &r.ClaimAgeS); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, r)
@@ -1310,9 +1312,11 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 
 func (db *DB) GetScanRequest(ctx context.Context, id string) (*models.ScanRequest, error) {
 	var r models.ScanRequest
-	err := db.QueryRowContext(ctx, `SELECT id, host_id, requested_by, scan_type, packages_only, reason, security_db_revision, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at
+	err := db.QueryRowContext(ctx, `SELECT id, host_id, requested_by, scan_type, packages_only, reason, security_db_revision, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at,
+	EXTRACT(EPOCH FROM (now() - created_at))::bigint AS request_age_seconds,
+	CASE WHEN claimed_at IS NULL THEN 0 ELSE EXTRACT(EPOCH FROM (now() - claimed_at))::bigint END AS claim_age_seconds
 FROM scan_requests
-WHERE id=$1`, id).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.SecurityDBRevision, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt)
+WHERE id=$1`, id).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.SecurityDBRevision, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt, &r.RequestAgeS, &r.ClaimAgeS)
 	if err != nil {
 		return nil, err
 	}

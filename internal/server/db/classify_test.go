@@ -468,6 +468,10 @@ func TestGetScanRequestReturnsOperationalFields(t *testing.T) {
 		"claimed_by_host_id, claimed_at, completed_at",
 		"&r.SecurityDBRevision",
 		"&r.ClaimedByHostID",
+		"request_age_seconds",
+		"claim_age_seconds",
+		"&r.RequestAgeS",
+		"&r.ClaimAgeS",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("scan request lookup missing %q: %s", want, fn)

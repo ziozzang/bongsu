@@ -287,6 +287,8 @@ export interface ScanRequest {
   error_message?: string;
   claimed_by_host_id?: string;
   claimed_at?: string | null;
+  request_age_seconds?: number;
+  claim_age_seconds?: number;
   completed_at?: string | null;
   created_at: string;
 }

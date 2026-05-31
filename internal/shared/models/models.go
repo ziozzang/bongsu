@@ -56,6 +56,8 @@ type ScanRequest struct {
 	ErrorMessage       string     `json:"error_message,omitempty"`
 	ClaimedByHostID    string     `json:"claimed_by_host_id,omitempty"`
 	ClaimedAt          *time.Time `json:"claimed_at,omitempty"`
+	RequestAgeS        int64      `json:"request_age_seconds,omitempty"`
+	ClaimAgeS          int64      `json:"claim_age_seconds,omitempty"`
 	CompletedAt        *time.Time `json:"completed_at,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 }
