@@ -77,7 +77,7 @@ BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 curl -fsSL "http://server:8080/api/install.sh?token=$BONGSU_INSTALL_TOKEN" | sudo bash
 ```
 
-설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다. 설치된 에이전트는 admin key가 아니라 `BONGSU_AGENT_API_KEY`를 사용합니다.
+설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다. 설치된 에이전트는 admin key가 아니라 `BONGSU_AGENT_API_KEY`를 사용하며, credential이 들어있는 config는 `0600` 권한으로 생성됩니다.
 
 Force scan 요청을 즉시 받아 처리하는 상주 모드는 다음처럼 실행할 수 있습니다.
 

@@ -97,12 +97,14 @@ else
     echo "WARNING: trivy not found. Package scanning requires trivy at $WORK_DIR/bin/trivy or in PATH."
 fi
 
-# Write config file
+# Write config file. It contains the agent API key, so keep it owner-readable only.
+umask 077
 cat > "$WORK_DIR/config.yaml" << EOF
 server_url: ${SERVER_URL}
 api_key: ${API_KEY}
 work_dir: ${WORK_DIR}
 EOF
+chmod 600 "$WORK_DIR/config.yaml"
 echo "Config written: $WORK_DIR/config.yaml"
 
 # Build agent command
@@ -123,6 +125,10 @@ Type=oneshot
 ExecStart=$AGENT_CMD
 Nice=10
 IOSchedulingClass=best-effort
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths=$WORK_DIR
+PrivateTmp=true
 SERVICE
     cat > /etc/systemd/system/bongsu-agent.timer << TIMER
 [Unit]
@@ -152,6 +158,10 @@ Restart=always
 RestartSec=10
 Nice=10
 IOSchedulingClass=best-effort
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths=$WORK_DIR
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

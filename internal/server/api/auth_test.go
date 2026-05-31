@@ -235,6 +235,26 @@ func TestSecurityDBBundleImportAuditsFailures(t *testing.T) {
 	}
 }
 
+func TestInstallScriptHardensAgentCredentialFile(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"umask 077",
+		`chmod 600 "$WORK_DIR/config.yaml"`,
+		"UMask=0077",
+		"ProtectSystem=strict",
+		"ReadWritePaths=$WORK_DIR",
+		"PrivateTmp=true",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("install script hardening missing %q", want)
+		}
+	}
+}
+
 func TestHostInventoryStatus(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	recent := now.Add(-1 * time.Hour)

@@ -340,6 +340,26 @@ func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
 	}
 }
 
+func TestPackagedInstallScriptHardensAgentCredentialFile(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/install-agent.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"umask 077",
+		`chmod 600 "$WORK_DIR/config.yaml"`,
+		"UMask=0077",
+		"ProtectSystem=strict",
+		"ReadWritePaths=$WORK_DIR",
+		"PrivateTmp=true",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("install-agent.sh hardening missing %q", want)
+		}
+	}
+}
+
 func TestRetentionPruneDoesNotDeleteRunningScans(t *testing.T) {
 	got := pruneOldScansCTE()
 	if !strings.Contains(got, "status IN ('completed','degraded','failed')") {

@@ -1285,12 +1285,14 @@ else
     echo "WARNING: trivy download failed; install trivy manually or provide it at $WORK_DIR/bin/trivy"
 fi
 
-# Write config
+# Write config. It contains the agent API key, so keep it owner-readable only.
+umask 077
 cat > "$WORK_DIR/config.yaml" <<EOF
 server_url: ${SERVER}
 api_key: ${API_KEY}
 work_dir: ${WORK_DIR}
 EOF
+chmod 600 "$WORK_DIR/config.yaml"
 
 AGENT_CMD="$WORK_DIR/bin/bongsu-agent --config $WORK_DIR/config.yaml --type daily --packages-only"
 
@@ -1306,6 +1308,10 @@ Type=oneshot
 ExecStart=$AGENT_CMD
 Nice=10
 IOSchedulingClass=best-effort
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths=$WORK_DIR
+PrivateTmp=true
 SERVICE
     cat > /etc/systemd/system/bongsu-agent.timer <<TIMER
 [Unit]
@@ -1335,6 +1341,10 @@ Restart=always
 RestartSec=10
 Nice=10
 IOSchedulingClass=best-effort
+UMask=0077
+ProtectSystem=strict
+ReadWritePaths=$WORK_DIR
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target

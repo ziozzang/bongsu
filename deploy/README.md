@@ -128,7 +128,7 @@ Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and o
 
 The script:
 - Installs agent binary to `/opt/bongsu/bin/`
-- Creates config at `/opt/bongsu/config.yaml`
+- Creates credential-bearing config at `/opt/bongsu/config.yaml` with `0600` permissions
 - Sets up daily cron job at 03:00
 - Runs first scan immediately
 
