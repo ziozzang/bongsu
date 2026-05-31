@@ -221,7 +221,7 @@ spec:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/report` | Agent scan report submission |
+| `POST` | `/api/report` | Agent scan report submission, including bounded optional `errors[]` collection failures that mark scans degraded |
 | `GET` | `/api/stats` | Dashboard totals, raw vulnerability rows, active remediation finding counts, and scan request backlog counts |
 | `GET` | `/api/hosts` | List hosts with `agent_status` and `inventory_status` filters (`healthy`,`degraded`,`stale`,`empty`,`none`), RBAC scope, raw and active vulnerability counts, and latest inventory summary |
 | `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |

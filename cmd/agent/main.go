@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -14,6 +15,11 @@ import (
 	"github.com/ziozzang/bongsu/internal/agent/reporter"
 	"github.com/ziozzang/bongsu/internal/agent/system"
 	"github.com/ziozzang/bongsu/internal/shared/models"
+)
+
+const (
+	maxCollectionErrors     = 32
+	maxCollectionErrorBytes = 2048
 )
 
 func main() {
@@ -166,12 +172,14 @@ func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
 	}
 	host.AgentVersion = "0.1.0"
 	log.Printf("Host: %s (%s %s)", host.Hostname, host.OSName, host.OSVersion)
+	collectionErrors := []string{}
 
 	// 2. Users
 	log.Println("Collecting user accounts...")
 	users, err := system.CollectUsers()
 	if err != nil {
 		log.Printf("Warning: users collection failed: %v", err)
+		collectionErrors = appendCollectionError(collectionErrors, "users", err)
 	}
 	log.Printf("Found %d users", len(users))
 
@@ -180,6 +188,7 @@ func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
 	procs, err := system.CollectProcesses()
 	if err != nil {
 		log.Printf("Warning: process collection failed: %v", err)
+		collectionErrors = appendCollectionError(collectionErrors, "processes", err)
 	}
 	log.Printf("Found %d processes", len(procs))
 
@@ -196,6 +205,7 @@ func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
 	pkgs, vulns, err := coll.CollectHostPackages()
 	if err != nil {
 		log.Printf("Warning: Trivy host scan failed: %v", err)
+		collectionErrors = appendCollectionError(collectionErrors, "trivy_host", err)
 	} else {
 		for i := range pkgs {
 			pkgs[i].AssetType = "host"
@@ -211,12 +221,14 @@ func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
 	containers, err := system.GetRunningContainers()
 	if err != nil {
 		log.Printf("Warning: container detection failed: %v", err)
+		collectionErrors = appendCollectionError(collectionErrors, "containers", err)
 	}
 	for _, c := range containers {
 		log.Printf("Running Trivy scan for container: %s (%s)", c.Name, c.ImageName)
 		pkgs, vulns, err := coll.CollectContainerPackages(c.Name)
 		if err != nil {
 			log.Printf("Warning: container %s scan failed: %v", c.Name, err)
+			collectionErrors = appendCollectionError(collectionErrors, "container "+c.Name, err)
 			continue
 		}
 		assetID := c.ContainerID
@@ -240,6 +252,7 @@ func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
 	osqPkgs, err := coll.CollectOSQueryPackages()
 	if err != nil {
 		log.Printf("Warning: OSQuery scan failed: %v", err)
+		collectionErrors = appendCollectionError(collectionErrors, "osquery_packages", err)
 	} else {
 		for i := range osqPkgs {
 			osqPkgs[i].AssetType = "host"
@@ -255,6 +268,7 @@ func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
 	ports, err = coll.CollectOSQueryListeningPorts()
 	if err != nil {
 		log.Printf("Warning: port collection failed: %v", err)
+		collectionErrors = appendCollectionError(collectionErrors, "osquery_ports", err)
 	} else {
 		log.Printf("Found %d listening ports", len(ports))
 	}
@@ -264,6 +278,7 @@ func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
 		Host:       *host,
 		ScanType:   scanType,
 		ScanID:     scanID,
+		Errors:     collectionErrors,
 		Containers: containers,
 		Packages:   allPkgs,
 		Users:      users,
@@ -285,6 +300,32 @@ func run(serverURL, apiKey, workDir, scanType string, packagesOnly bool) error {
 
 	log.Println("=== Scan complete ===")
 	return nil
+}
+
+func appendCollectionError(errs []string, area string, err error) []string {
+	if err == nil {
+		return errs
+	}
+	entry := trimSpace(area + ": " + err.Error())
+	if len(entry) > maxCollectionErrorBytes {
+		entry = truncateValidUTF8(entry, maxCollectionErrorBytes) + "...(truncated)"
+	}
+	if len(errs) >= maxCollectionErrors {
+		errs[maxCollectionErrors-1] = "additional collection errors omitted"
+		return errs
+	}
+	return append(errs, entry)
+}
+
+func truncateValidUTF8(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	s = s[:limit]
+	for !utf8.ValidString(s) && len(s) > 0 {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 // Minimal string helpers (avoid importing full strings package for edge cases)

@@ -23,6 +23,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -53,6 +54,11 @@ type Server struct {
 	securityRecalcPending bool
 	securityRecalcReason  string
 }
+
+const (
+	maxReportErrors     = 32
+	maxReportErrorBytes = 2048
+)
 
 func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, secMgr *secdb.Manager) *Server {
 	apiKey := os.Getenv("BONGSU_API_KEY")
@@ -453,7 +459,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	ingestErrors := []string{}
+	ingestErrors := append([]string{}, report.Errors...)
 
 	for i := range report.Containers {
 		if report.Containers[i].ID == "" {
@@ -633,7 +639,43 @@ func normalizeScanReport(report *models.ScanReport) error {
 	if report.Host.Hostname == "" {
 		report.Host.Hostname = report.Host.ID
 	}
+	report.Errors = normalizeReportErrors(report.Errors)
 	return nil
+}
+
+func normalizeReportErrors(errs []string) []string {
+	if len(errs) == 0 {
+		return nil
+	}
+	normalized := make([]string, 0, min(len(errs), maxReportErrors))
+	for _, entry := range errs {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if len(entry) > maxReportErrorBytes {
+			entry = truncateValidUTF8(entry, maxReportErrorBytes) + "...(truncated)"
+		}
+		normalized = append(normalized, entry)
+		if len(normalized) == maxReportErrors {
+			break
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func truncateValidUTF8(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	s = s[:limit]
+	for !utf8.ValidString(s) && len(s) > 0 {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 func reportAuditStatus(skippedVulns, ingestErrorCount int) string {

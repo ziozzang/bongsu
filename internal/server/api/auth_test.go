@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ziozzang/bongsu/internal/server/db"
 	"github.com/ziozzang/bongsu/internal/server/trivydb"
@@ -666,6 +667,49 @@ func TestNormalizeScanReportDerivesStableHostDefaults(t *testing.T) {
 	}
 }
 
+func TestNormalizeScanReportCarriesBoundedCollectionErrors(t *testing.T) {
+	longErr := strings.Repeat("x", maxReportErrorBytes+20)
+	report := models.ScanReport{
+		Host: models.Host{Hostname: "app-01"},
+		Errors: []string{
+			"  trivy_host: missing binary  ",
+			"",
+			longErr,
+		},
+	}
+	for i := 0; i < maxReportErrors+5; i++ {
+		report.Errors = append(report.Errors, fmt.Sprintf("container-%02d: failed", i))
+	}
+
+	if err := normalizeScanReport(&report); err != nil {
+		t.Fatalf("normalize scan report: %v", err)
+	}
+	if len(report.Errors) != maxReportErrors {
+		t.Fatalf("normalized errors = %d, want %d", len(report.Errors), maxReportErrors)
+	}
+	if report.Errors[0] != "trivy_host: missing binary" {
+		t.Fatalf("error was not trimmed: %q", report.Errors[0])
+	}
+	if !strings.HasSuffix(report.Errors[1], "...(truncated)") {
+		t.Fatalf("long error was not truncated: %q", report.Errors[1])
+	}
+	report.Errors = []string{"", "  "}
+	if err := normalizeScanReport(&report); err != nil {
+		t.Fatalf("normalize empty errors: %v", err)
+	}
+	if report.Errors != nil {
+		t.Fatalf("empty errors should normalize to nil: %#v", report.Errors)
+	}
+
+	report.Errors = []string{strings.Repeat("한", maxReportErrorBytes)}
+	if err := normalizeScanReport(&report); err != nil {
+		t.Fatalf("normalize unicode errors: %v", err)
+	}
+	if !utf8.ValidString(report.Errors[0]) {
+		t.Fatalf("truncated unicode error is not valid UTF-8: %q", report.Errors[0])
+	}
+}
+
 func TestHandleReportNormalizesScannerInput(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
@@ -686,6 +730,7 @@ func TestHandleReportNormalizesScannerInput(t *testing.T) {
 		`http.Error(w, err.Error(), http.StatusBadRequest)`,
 		`uuid.Parse(report.ScanID)`,
 		`"invalid scan_type"`,
+		`ingestErrors := append([]string{}, report.Errors...)`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("report normalization missing %q: %s", want, fn)

@@ -221,6 +221,7 @@ type ScanReport struct {
 	Host       Host              `json:"host"`
 	ScanType   string            `json:"scan_type"`
 	ScanID     string            `json:"scan_id"`
+	Errors     []string          `json:"errors,omitempty"`
 	Containers []ContainerAsset  `json:"containers"`
 	Packages   []Package         `json:"packages"`
 	Vulns      []Vulnerability   `json:"vulnerabilities"`
