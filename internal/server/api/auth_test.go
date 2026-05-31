@@ -1124,6 +1124,8 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		"s.secMgr.Status()",
 		"s.secMgr.PublicStatus()",
 		`"security_recalculation": s.securityRecalculationStatus(isAdmin)`,
+		"for k, v := range s.securityDBRevisionMeta(r.Context())",
+		`k == "security_db_revision" || isAdmin`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("health handler missing %q: %s", want, fn)
@@ -1184,9 +1186,13 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"health?.trivy_db?.last_error",
 		"health?.security_db?.last_error",
 		"health?.security_recalculation",
+		"health?.security_db_revision",
+		"health?.security_db_revision_error",
+		"DB rev:",
 		"Recalc:",
 		"Trivy DB:",
 		"Security sources:",
+		"Security DB revision:",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard DB health display missing %q", want)

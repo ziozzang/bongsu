@@ -2316,6 +2316,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		resp["status"] = "degraded"
 		resp["db_error"] = "connection failed"
 	}
+	for k, v := range s.securityDBRevisionMeta(r.Context()) {
+		if k == "security_db_revision" || isAdmin {
+			resp[k] = v
+		}
+	}
 	if s.dbMgr != nil {
 		resp["trivy_db_ready"] = s.dbMgr.IsReady()
 		if lu := s.dbMgr.LastUpdate(); !lu.IsZero() {
