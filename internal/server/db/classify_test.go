@@ -104,6 +104,18 @@ func TestCompatibleSecurityCandidateChecksAffectedRanges(t *testing.T) {
 	}
 }
 
+func TestCompatibleSecurityCandidateUsesRangeFixedVersion(t *testing.T) {
+	affected := `[{"name":"foo","ecosystem":"npm","ranges":[{"type":"SEMVER","events":[{"introduced":"1.0.0"},{"fixed":"2.0.0"}]}]}]`
+	got, ok := compatibleSecurityCandidate("foo", "npm", "npm", "1.5.0", "code-library", "", affected)
+	if !ok {
+		t.Fatal("range-only fixed event should be matchable")
+	}
+	fixed := fixedVersions(got)
+	if len(fixed) != 1 || fixed[0] != "2.0.0" {
+		t.Fatalf("fixed versions = %#v, want 2.0.0", fixed)
+	}
+}
+
 func TestCalcCvssScoreVersions(t *testing.T) {
 	tests := []struct {
 		name   string

@@ -35,7 +35,7 @@ The merge strategy is:
 1. Normalize source records into `cve_database`.
 2. Keep source provenance in `source`, `category`, `ecosystem`, `raw_data`, and timestamps.
 3. Prefer stronger CVSS scores/vectors and fixed-version data when enriching scan findings.
-4. Match by ecosystem-aware identity first. Name-only candidates are discarded unless `affected_products` contains the same package name, compatible ecosystem/category, fixed-version data, and an affected range that contains the installed version.
+4. Match by ecosystem-aware identity first. Name-only candidates are discarded unless `affected_products` contains the same package name, compatible ecosystem/category, fixed-version data, and an affected range that contains the installed version. Fixed versions can come from either the advisory's top-level `fixed` list or fixed events inside range data.
 5. CVSS vectors are recalculated after import for supported CVSS v2, v3.x, and v4.0 formats.
 6. `/api/cve-db/stats` reports source quality counters for ecosystem metadata, fixed versions, affected ranges, CVSS data, and matchable records so operators can reject weak feeds before they create noisy matches.
 7. Rematch can be constrained by source allowlist and minimum matchable percentage through `BONGSU_CVE_MATCH_SOURCES`, `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT`, or the dashboard rematch control.

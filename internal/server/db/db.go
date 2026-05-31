@@ -325,7 +325,7 @@ func compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installedVersion, cve
 		if effectiveEco == "" {
 			continue
 		}
-		if len(p.Fixed) == 0 {
+		if len(fixedVersions(p)) == 0 {
 			continue
 		}
 		if !versionIsAffected(installedVersion, p) {
@@ -365,6 +365,25 @@ func versionIsAffected(installed string, p affectedProduct) bool {
 		}
 	}
 	return false
+}
+
+func fixedVersions(p affectedProduct) []string {
+	out := append([]string{}, p.Fixed...)
+	seen := map[string]bool{}
+	for _, fixed := range out {
+		seen[fixed] = true
+	}
+	for _, r := range p.Ranges {
+		for _, ev := range r.Events {
+			fixed := strings.TrimSpace(ev.Fixed)
+			if fixed == "" || seen[fixed] {
+				continue
+			}
+			out = append(out, fixed)
+			seen[fixed] = true
+		}
+	}
+	return out
 }
 
 func versionInRange(installed string, events []struct {
@@ -3089,7 +3108,7 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 			ID: uuid.New().String(), PackageID: m.pkgID, ScanID: m.scanID, HostID: m.hostID,
 			VulnerabilityID: m.vulnID, Severity: sev, Title: truncate(m.title, 500),
 			Description: truncate(m.description, 2000), PkgName: m.pkgName, PkgPath: m.filePath,
-			InstalledVer: m.version, FixedVersion: affected.Fixed[0], CVSSScore: m.cvssScore, CVSSVector: m.cvssVector,
+			InstalledVer: m.version, FixedVersion: fixedVersions(affected)[0], CVSSScore: m.cvssScore, CVSSVector: m.cvssVector,
 			PrimaryURL: primaryURL, Container: m.container,
 		}
 		newVulns = append(newVulns, v)
