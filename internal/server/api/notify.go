@@ -20,7 +20,9 @@ type webhookNotifier struct {
 	minSeverity       string
 	inventoryStatuses map[string]bool
 	client            *http.Client
-	onResult          func(event string, data map[string]any, status string, httpStatus int, errMsg string)
+	maxAttempts       int
+	retryDelay        time.Duration
+	onResult          func(event string, data map[string]any, status string, httpStatus int, errMsg string, attempts int)
 }
 
 type webhookPayload struct {
@@ -40,6 +42,8 @@ func newWebhookNotifierFromEnv() *webhookNotifier {
 		minSeverity:       strings.ToUpper(strings.TrimSpace(os.Getenv("BONGSU_WEBHOOK_MIN_SEVERITY"))),
 		inventoryStatuses: parseInventoryStatuses(os.Getenv("BONGSU_WEBHOOK_INVENTORY_STATUSES")),
 		client:            &http.Client{Timeout: 10 * time.Second},
+		maxAttempts:       webhookRetryAttemptsFromEnv(),
+		retryDelay:        time.Duration(envInt("BONGSU_WEBHOOK_RETRY_DELAY_MS", 1000)) * time.Millisecond,
 	}
 }
 
@@ -52,9 +56,9 @@ func (n *webhookNotifier) Send(event string, data map[string]any) {
 		return
 	}
 	go func() {
-		report := func(status string, httpStatus int, errMsg string) {
+		report := func(status string, httpStatus int, errMsg string, attempts int) {
 			if n.onResult != nil {
-				n.onResult(event, data, status, httpStatus, errMsg)
+				n.onResult(event, data, status, httpStatus, errMsg, attempts)
 			}
 		}
 		payload := webhookPayload{
@@ -65,43 +69,84 @@ func (n *webhookNotifier) Send(event string, data map[string]any) {
 		body, err := json.Marshal(payload)
 		if err != nil {
 			log.Printf("webhook marshal %s: %v", event, err)
-			report("failed", 0, err.Error())
+			report("failed", 0, err.Error(), 1)
 			return
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.url, bytes.NewReader(body))
-		if err != nil {
-			log.Printf("webhook request %s: %v", event, err)
-			report("failed", 0, err.Error())
-			return
+		attempts := n.maxAttempts
+		if attempts <= 0 {
+			attempts = 1
 		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "bongsu-webhook/0.1.0")
-		req.Header.Set("X-Bongsu-Event", event)
-		if n.secret != "" {
-			mac := hmac.New(sha256.New, []byte(n.secret))
-			mac.Write(body)
-			req.Header.Set("X-Bongsu-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+		delay := n.retryDelay
+		if delay <= 0 {
+			delay = time.Second
 		}
 		client := n.client
 		if client == nil {
 			client = http.DefaultClient
 		}
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Printf("webhook send %s: %v", event, err)
-			report("failed", 0, err.Error())
-			return
+		var lastStatus int
+		var lastErr string
+		for attempt := 1; attempt <= attempts; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.url, bytes.NewReader(body))
+			if err != nil {
+				cancel()
+				log.Printf("webhook request %s: %v", event, err)
+				report("failed", 0, err.Error(), attempt)
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("User-Agent", "bongsu-webhook/0.1.0")
+			req.Header.Set("X-Bongsu-Event", event)
+			if n.secret != "" {
+				mac := hmac.New(sha256.New, []byte(n.secret))
+				mac.Write(body)
+				req.Header.Set("X-Bongsu-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+			}
+			resp, err := client.Do(req)
+			cancel()
+			if err != nil {
+				lastStatus = 0
+				lastErr = err.Error()
+				log.Printf("webhook send %s attempt %d/%d: %v", event, attempt, attempts, err)
+				if attempt < attempts {
+					time.Sleep(delay)
+					continue
+				}
+				report("failed", lastStatus, lastErr, attempt)
+				return
+			}
+			lastStatus = resp.StatusCode
+			resp.Body.Close()
+			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+				report("ok", resp.StatusCode, "", attempt)
+				return
+			}
+			lastErr = ""
+			log.Printf("webhook send %s attempt %d/%d returned HTTP %d", event, attempt, attempts, resp.StatusCode)
+			if !retryWebhookStatus(resp.StatusCode) || attempt == attempts {
+				report("failed", resp.StatusCode, "", attempt)
+				return
+			}
+			time.Sleep(delay)
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			log.Printf("webhook send %s returned HTTP %d", event, resp.StatusCode)
-			report("failed", resp.StatusCode, "")
-			return
-		}
-		report("ok", resp.StatusCode, "")
+		report("failed", lastStatus, lastErr, attempts)
 	}()
+}
+
+func retryWebhookStatus(status int) bool {
+	return status == http.StatusTooManyRequests || status >= 500
+}
+
+func webhookRetryAttemptsFromEnv() int {
+	attempts := envInt("BONGSU_WEBHOOK_RETRY_ATTEMPTS", 3)
+	if attempts < 1 {
+		return 1
+	}
+	if attempts > 10 {
+		return 10
+	}
+	return attempts
 }
 
 func (n *webhookNotifier) ShouldSendSeverity(counts map[string]int) bool {

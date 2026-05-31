@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -40,7 +41,7 @@ func TestWebhookNotifierSendsSignedPayload(t *testing.T) {
 		url:    server.URL,
 		secret: "secret",
 		client: server.Client(),
-		onResult: func(event string, data map[string]any, status string, httpStatus int, errMsg string) {
+		onResult: func(event string, data map[string]any, status string, httpStatus int, errMsg string, attempts int) {
 			results <- status
 		},
 	}
@@ -68,6 +69,7 @@ func TestWebhookNotifierReportsHTTPFailure(t *testing.T) {
 	results := make(chan struct {
 		status     string
 		httpStatus int
+		attempts   int
 	}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadGateway)
@@ -77,12 +79,14 @@ func TestWebhookNotifierReportsHTTPFailure(t *testing.T) {
 	n := &webhookNotifier{
 		url:    server.URL,
 		client: server.Client(),
-		onResult: func(event string, data map[string]any, status string, httpStatus int, errMsg string) {
+		onResult: func(event string, data map[string]any, status string, httpStatus int, errMsg string, attempts int) {
 			results <- struct {
 				status     string
 				httpStatus int
-			}{status: status, httpStatus: httpStatus}
+				attempts   int
+			}{status: status, httpStatus: httpStatus, attempts: attempts}
 		},
+		maxAttempts: 1,
 	}
 	n.Send("scan.completed", map[string]any{"scan_id": "scan-1"})
 	select {
@@ -92,6 +96,88 @@ func TestWebhookNotifierReportsHTTPFailure(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("webhook failure result was not reported")
+	}
+}
+
+func TestWebhookNotifierRetriesTransientFailures(t *testing.T) {
+	var requests atomic.Int32
+	results := make(chan struct {
+		status   string
+		attempts int
+	}, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer server.Close()
+
+	n := &webhookNotifier{
+		url:         server.URL,
+		client:      server.Client(),
+		maxAttempts: 2,
+		retryDelay:  time.Millisecond,
+		onResult: func(event string, data map[string]any, status string, httpStatus int, errMsg string, attempts int) {
+			results <- struct {
+				status   string
+				attempts int
+			}{status: status, attempts: attempts}
+		},
+	}
+	n.Send("scan.completed", map[string]any{"scan_id": "scan-1"})
+	select {
+	case result := <-results:
+		if result.status != "ok" || result.attempts != 2 || requests.Load() != 2 {
+			t.Fatalf("retry result=%#v requests=%d", result, requests.Load())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook retry result was not reported")
+	}
+}
+
+func TestWebhookNotifierDoesNotRetryClientErrors(t *testing.T) {
+	var requests atomic.Int32
+	results := make(chan int, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	n := &webhookNotifier{
+		url:         server.URL,
+		client:      server.Client(),
+		maxAttempts: 3,
+		retryDelay:  time.Millisecond,
+		onResult: func(event string, data map[string]any, status string, httpStatus int, errMsg string, attempts int) {
+			results <- attempts
+		},
+	}
+	n.Send("scan.completed", map[string]any{"scan_id": "scan-1"})
+	select {
+	case attempts := <-results:
+		if attempts != 1 || requests.Load() != 1 {
+			t.Fatalf("client error attempts=%d requests=%d", attempts, requests.Load())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("webhook client error result was not reported")
+	}
+}
+
+func TestWebhookRetryAttemptsFromEnv(t *testing.T) {
+	t.Setenv("BONGSU_WEBHOOK_RETRY_ATTEMPTS", "0")
+	if got := webhookRetryAttemptsFromEnv(); got != 1 {
+		t.Fatalf("zero attempts clamp = %d, want 1", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_RETRY_ATTEMPTS", "11")
+	if got := webhookRetryAttemptsFromEnv(); got != 10 {
+		t.Fatalf("high attempts clamp = %d, want 10", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_RETRY_ATTEMPTS", "4")
+	if got := webhookRetryAttemptsFromEnv(); got != 4 {
+		t.Fatalf("attempts = %d, want 4", got)
 	}
 }
 

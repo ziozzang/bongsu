@@ -194,6 +194,8 @@ spec:
 | `BONGSU_WEBHOOK_SECRET` | empty | Optional HMAC-SHA256 signing secret for webhooks |
 | `BONGSU_WEBHOOK_MIN_SEVERITY` | `HIGH` | Minimum scan severity that triggers `scan.completed` webhook |
 | `BONGSU_WEBHOOK_INVENTORY_STATUSES` | `empty` | Comma-separated inventory states that trigger `scan.completed` webhook (`healthy`,`degraded`,`stale`,`empty`,`none`) |
+| `BONGSU_WEBHOOK_RETRY_ATTEMPTS` | `3` | Webhook delivery attempts for network errors, HTTP 429, and HTTP 5xx responses; clamped to 1-10 |
+| `BONGSU_WEBHOOK_RETRY_DELAY_MS` | `1000` | Delay between retryable webhook attempts in milliseconds |
 | `BONGSU_SLA_CRITICAL_DAYS` | `7` | Remediation SLA days for critical findings |
 | `BONGSU_SLA_HIGH_DAYS` | `30` | Remediation SLA days for high findings |
 | `BONGSU_SLA_MEDIUM_DAYS` | `90` | Remediation SLA days for medium findings |

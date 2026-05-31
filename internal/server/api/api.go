@@ -352,7 +352,7 @@ func (s *Server) auditSystem(action, resourceType, resourceID, status string, me
 	}
 }
 
-func (s *Server) auditWebhookResult(event string, data map[string]any, status string, httpStatus int, errMsg string) {
+func (s *Server) auditWebhookResult(event string, data map[string]any, status string, httpStatus int, errMsg string, attempts int) {
 	resourceType := "webhook"
 	resourceID := event
 	if id, ok := data["scan_id"].(string); ok && id != "" {
@@ -365,6 +365,7 @@ func (s *Server) auditWebhookResult(event string, data map[string]any, status st
 	meta := map[string]any{
 		"event":       event,
 		"http_status": httpStatus,
+		"attempts":    attempts,
 	}
 	if errMsg != "" {
 		meta["error"] = errMsg
