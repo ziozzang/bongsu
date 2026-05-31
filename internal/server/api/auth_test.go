@@ -1711,6 +1711,26 @@ func TestSecurityDBSyncScriptFailsOnImportErrors(t *testing.T) {
 	}
 }
 
+func TestSecurityDBSyncScriptImportsNvdOnceAfterCombiningYears(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`NVD_ALL_FILE="${TMPDIR}/nvd-all.jsonl"`,
+		`cat "${NVD_FILE}" >> "${NVD_ALL_FILE}"`,
+		`import_cve_file "${NVD_ALL_FILE}" "nvd"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-all-cvedb must combine NVD years before import, missing %q", want)
+		}
+	}
+	if strings.Contains(body, `import_cve_file "${NVD_FILE}" "nvd"`) {
+		t.Fatal("sync-all-cvedb must not replace the nvd source once per year")
+	}
+}
+
 func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 	for _, path := range []string{
 		"../../../deploy/docker-compose.yml",

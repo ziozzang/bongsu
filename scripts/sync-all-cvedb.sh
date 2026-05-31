@@ -72,18 +72,25 @@ echo ""
 # --- 2. NVD ---
 echo "[2/3] Downloading NVD data..."
 CURRENT_YEAR=$(date +%Y)
+NVD_ALL_FILE="${TMPDIR}/nvd-all.jsonl"
 for YEAR in $(seq $((CURRENT_YEAR - 3)) ${CURRENT_YEAR}); do
     NVD_FILE="${TMPDIR}/nvd-${YEAR}.jsonl"
     echo "  Year ${YEAR}..."
     "${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${YEAR}" || echo "  SKIP: ${YEAR} failed"
 
     if [ -s "${NVD_FILE}" ]; then
-        echo "    Importing ($(wc -l < "${NVD_FILE}") entries)..."
-        IMPORTED=$(import_cve_file "${NVD_FILE}" "nvd")
-        echo "    Imported/updated: ${IMPORTED}"
-        TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+        echo "    Collected $(wc -l < "${NVD_FILE}") entries"
+        cat "${NVD_FILE}" >> "${NVD_ALL_FILE}"
     fi
 done
+if [ -s "${NVD_ALL_FILE}" ]; then
+    echo "  Importing combined NVD data ($(wc -l < "${NVD_ALL_FILE}") entries, $(du -h "${NVD_ALL_FILE}" | cut -f1))..."
+    IMPORTED=$(import_cve_file "${NVD_ALL_FILE}" "nvd")
+    echo "  Imported/updated: ${IMPORTED}"
+    TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+else
+    echo "  SKIP: no NVD data"
+fi
 echo ""
 
 # --- 3. Trivy DB ---
