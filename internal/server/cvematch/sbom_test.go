@@ -57,6 +57,9 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 	if component["purl"] == "" {
 		t.Fatal("component purl is empty")
 	}
+	if component["bom-ref"] == component["purl"] {
+		t.Fatal("CycloneDX bom-ref must be a bongsu-stable identity, not a potentially duplicated purl")
+	}
 	props := component["properties"].([]any)
 	foundAsset := false
 	for _, item := range props {
@@ -82,6 +85,71 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 	}
 	if !foundOwner {
 		t.Fatal("bongsu host owner property missing")
+	}
+	deps := doc["dependencies"].([]any)
+	if len(deps) != 2 {
+		t.Fatalf("dependencies = %d, want host plus package", len(deps))
+	}
+	rootDeps := deps[0].(map[string]any)
+	if rootDeps["ref"] != root["bom-ref"] {
+		t.Fatalf("root dependency ref = %v, want root bom-ref %v", rootDeps["ref"], root["bom-ref"])
+	}
+	dependsOn := rootDeps["dependsOn"].([]any)
+	if len(dependsOn) != 1 || dependsOn[0] != component["bom-ref"] {
+		t.Fatalf("root dependsOn = %#v, want package bom-ref %v", dependsOn, component["bom-ref"])
+	}
+}
+
+func TestGenerateCycloneDXUsesUniqueBOMRefsForDuplicatePURLs(t *testing.T) {
+	host := models.Host{ID: "host-1", Hostname: "node-1", OSName: "Ubuntu"}
+	base := models.Package{
+		HostID:      "host-1",
+		AssetType:   "container",
+		Source:      "trivy",
+		Name:        "openssl",
+		Version:     "3.0.13",
+		PkgType:     "deb",
+		Ecosystem:   "Ubuntu",
+		Container:   "api",
+		ContainerID: "container-a",
+		ImageName:   "example/api:1.0",
+	}
+	other := base
+	other.ID = "pkg-2"
+	other.Container = "worker"
+	other.ContainerID = "container-b"
+
+	data, err := GenerateCycloneDX([]models.Package{base, other}, host)
+	if err != nil {
+		t.Fatalf("GenerateCycloneDX: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatalf("unmarshal sbom: %v", err)
+	}
+	components := doc["components"].([]any)
+	if len(components) != 2 {
+		t.Fatalf("components = %d, want 2", len(components))
+	}
+	refs := map[string]bool{}
+	var purl string
+	for _, item := range components {
+		component := item.(map[string]any)
+		ref := component["bom-ref"].(string)
+		if refs[ref] {
+			t.Fatalf("duplicate bom-ref %q", ref)
+		}
+		refs[ref] = true
+		if purl == "" {
+			purl = component["purl"].(string)
+		} else if component["purl"].(string) != purl {
+			t.Fatalf("test expected duplicate purls, got %q and %q", purl, component["purl"])
+		}
+	}
+	deps := doc["dependencies"].([]any)
+	rootDeps := deps[0].(map[string]any)["dependsOn"].([]any)
+	if len(rootDeps) != 2 {
+		t.Fatalf("root dependsOn = %#v, want both packages", rootDeps)
 	}
 }
 

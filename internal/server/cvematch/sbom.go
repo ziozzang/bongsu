@@ -99,13 +99,15 @@ type cycloneDX struct {
 			Version string `json:"version"`
 		} `json:"tools"`
 		Component struct {
+			BOMRef     string        `json:"bom-ref,omitempty"`
 			Type       string        `json:"type"`
 			Name       string        `json:"name"`
 			Version    string        `json:"version,omitempty"`
 			Properties []cdxProperty `json:"properties,omitempty"`
 		} `json:"component"`
 	} `json:"metadata"`
-	Components []cdxComponent `json:"components"`
+	Components   []cdxComponent  `json:"components"`
+	Dependencies []cdxDependency `json:"dependencies,omitempty"`
 }
 
 type cdxComponent struct {
@@ -121,6 +123,11 @@ type cdxComponent struct {
 type cdxProperty struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+type cdxDependency struct {
+	Ref       string   `json:"ref"`
+	DependsOn []string `json:"dependsOn,omitempty"`
 }
 
 type spdxDocument struct {
@@ -183,6 +190,8 @@ func GenerateCycloneDX(pkgs []models.Package, host models.Host) ([]byte, error) 
 		Name    string `json:"name"`
 		Version string `json:"version"`
 	}{Vendor: "ziozzang", Name: "bongsu", Version: "0.1.0"})
+	rootRef := "bongsu:host:" + stableRef(defaultSPDXName(host.ID, host.Hostname))
+	sbom.Metadata.Component.BOMRef = rootRef
 	sbom.Metadata.Component.Type = "application"
 	sbom.Metadata.Component.Name = host.Hostname
 	sbom.Metadata.Component.Version = host.OSName + " " + host.OSVersion
@@ -201,11 +210,14 @@ func GenerateCycloneDX(pkgs []models.Package, host models.Host) ([]byte, error) 
 	}
 
 	components := make([]cdxComponent, 0, len(pkgs))
+	refs := make([]string, 0, len(pkgs))
+	seenRefs := map[string]int{}
 	for _, pkg := range pkgs {
 		if pkg.Name == "" || pkg.Version == "" {
 			continue
 		}
 		p := buildPurl(pkg, host)
+		ref := uniqueBOMRef("bongsu:pkg:"+stableRef(cycloneDXPackageIdentity(pkg)), seenRefs)
 		props := []cdxProperty{
 			{Name: "bongsu:package_id", Value: pkg.ID},
 			{Name: "bongsu:host_id", Value: pkg.HostID},
@@ -225,11 +237,12 @@ func GenerateCycloneDX(pkgs []models.Package, host models.Host) ([]byte, error) 
 			Type:       "library",
 			Name:       pkg.Name,
 			Version:    pkg.Version,
-			BOMRef:     p,
+			BOMRef:     ref,
 			PURL:       p,
 			Scope:      "required",
 			Properties: props,
 		})
+		refs = append(refs, ref)
 	}
 
 	if len(components) == 0 {
@@ -237,7 +250,43 @@ func GenerateCycloneDX(pkgs []models.Package, host models.Host) ([]byte, error) 
 	}
 
 	sbom.Components = components
+	sbom.Dependencies = append(sbom.Dependencies, cdxDependency{Ref: rootRef, DependsOn: refs})
+	for _, ref := range refs {
+		sbom.Dependencies = append(sbom.Dependencies, cdxDependency{Ref: ref})
+	}
 	return json.Marshal(sbom)
+}
+
+func cycloneDXPackageIdentity(pkg models.Package) string {
+	return strings.Join([]string{
+		pkg.AssetType,
+		pkg.AssetID,
+		pkg.Source,
+		pkg.Container,
+		pkg.ContainerID,
+		pkg.ImageName,
+		pkg.Name,
+		pkg.Version,
+		pkg.Arch,
+		pkg.PkgType,
+		pkg.Ecosystem,
+		pkg.PURL,
+		pkg.FilePath,
+		pkg.Target,
+	}, "\x00")
+}
+
+func uniqueBOMRef(base string, seen map[string]int) string {
+	seen[base]++
+	if seen[base] == 1 {
+		return base
+	}
+	return fmt.Sprintf("%s-%d", base, seen[base])
+}
+
+func stableRef(s string) string {
+	sum := sha1.Sum([]byte(s))
+	return fmt.Sprintf("%x", sum[:])
 }
 
 func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {

@@ -217,7 +217,7 @@ spec:
 | `GET` | `/api/stats` | Dashboard totals, raw vulnerability rows, active remediation finding counts, and scan request backlog counts |
 | `GET` | `/api/hosts` | List hosts with `agent_status` and `inventory_status` filters (`healthy`,`degraded`,`stale`,`empty`,`none`), RBAC scope, raw and active vulnerability counts, and latest inventory summary |
 | `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
-| `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON or SPDX JSON with `format=spdx` |
+| `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON with stable `bom-ref` dependencies or SPDX JSON with `format=spdx` |
 | `GET` | `/api/vulnerabilities` | List latest-scan CVEs with host/container/owner/team/environment filters |
 | `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON with host metadata |
 | `GET` | `/api/vuln-summary?group_by=owner` | Group active remediation findings by owner/team/environment/criticality |
