@@ -139,6 +139,34 @@ func TestVersionInRangeHandlesMultipleIntervals(t *testing.T) {
 	}
 }
 
+func TestCompareVersionsTreatsPrereleaseBelowRelease(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"1.0.0-alpha.1", "1.0.0", -1},
+		{"2.0.0-rc.1", "2.0.0", -1},
+		{"1.0.0", "1.0.0-beta.1", 1},
+		{"1.0.0", "1.0.0", 0},
+	}
+	for _, tt := range tests {
+		got, ok := compareVersions(tt.a, tt.b)
+		if !ok {
+			t.Fatalf("compareVersions(%q, %q) not comparable", tt.a, tt.b)
+		}
+		if got != tt.want {
+			t.Fatalf("compareVersions(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "1.0.0-rc.1", "code-library", "", `[{"name":"foo","ecosystem":"npm","fixed":["1.0.0"]}]`); !ok {
+		t.Fatal("pre-release installed version should remain affected until the final fixed release")
+	}
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "1.0.0", "code-library", "", `[{"name":"foo","ecosystem":"npm","fixed":["1.0.0"]}]`); ok {
+		t.Fatal("final fixed release should not remain affected")
+	}
+}
+
 func TestCalcCvssScoreVersions(t *testing.T) {
 	tests := []struct {
 		name   string

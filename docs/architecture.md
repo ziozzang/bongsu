@@ -41,6 +41,7 @@ The merge strategy is:
 7. Rematch can be constrained by source allowlist and minimum matchable percentage through `BONGSU_CVE_MATCH_SOURCES`, `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT`, or the dashboard rematch control.
 
 Scanner package ecosystems are kept distro-specific for OS advisories. For example, Trivy `ubuntu` packages are stored as `Ubuntu` rather than collapsed into `Debian`, so Ubuntu advisories can match without weakening Debian/Ubuntu separation.
+Version comparisons treat pre-release markers such as `alpha`, `beta`, and `rc` as lower than the corresponding final release so release candidates are not incorrectly considered fixed.
 
 ## Connected Update Flow
 

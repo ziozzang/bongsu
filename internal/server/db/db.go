@@ -466,11 +466,32 @@ func compareVersions(a, b string) (int, bool) {
 			return 1, true
 		}
 	}
+	aPre := isPreReleaseVersion(a)
+	bPre := isPreReleaseVersion(b)
+	if aPre && !bPre {
+		return -1, true
+	}
+	if !aPre && bPre {
+		return 1, true
+	}
 	return 0, true
 }
 
+func isPreReleaseVersion(v string) bool {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if idx := strings.IndexAny(v, "+~"); idx >= 0 {
+		v = v[:idx]
+	}
+	for _, marker := range preReleaseMarkers() {
+		if strings.Contains(v, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func versionSegments(v string) []int {
-	v = strings.TrimSpace(v)
+	v = stripPreReleaseSuffix(strings.TrimSpace(v))
 	if i := strings.Index(v, ":"); i >= 0 {
 		v = v[i+1:]
 	}
@@ -489,6 +510,25 @@ func versionSegments(v string) []int {
 		out = append(out, n)
 	}
 	return out
+}
+
+func stripPreReleaseSuffix(v string) string {
+	low := strings.ToLower(v)
+	if idx := strings.IndexAny(low, "+~"); idx >= 0 {
+		low = low[:idx]
+		v = v[:idx]
+	}
+	cut := len(v)
+	for _, marker := range preReleaseMarkers() {
+		if idx := strings.Index(low, marker); idx >= 0 && idx < cut {
+			cut = idx
+		}
+	}
+	return strings.TrimRight(v[:cut], "-_.")
+}
+
+func preReleaseMarkers() []string {
+	return []string{"alpha", "beta", "rc", "pre", "preview", "dev", "snapshot"}
 }
 
 const pkgCols = `p.id, p.scan_id, p.host_id, p.asset_type, p.asset_id, p.source, p.container, p.container_id, p.image_name, p.image_id, p.name, p.version, p.arch, p.pkg_type, p.ecosystem, p.purl, p.src_name, p.file_path, p.layer_id, p.target, p.created_at`
