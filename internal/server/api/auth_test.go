@@ -1918,6 +1918,12 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"Matchable %",
 		"below gate",
 		"minQualityForDisplay",
+		"cveDbStatus",
+		"CVE DB Status",
+		"CVE Matchable",
+		"Weakest CVE Source",
+		"Stale CVE Sources",
+		"oldestCveAgeDays",
 	} {
 		if !strings.Contains(appBody, want) {
 			t.Fatalf("dashboard source quality gate missing %q", want)

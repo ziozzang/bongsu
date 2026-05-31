@@ -367,6 +367,33 @@ function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: S
   const minQualityForDisplay = Number.parseFloat(rematchMinQuality);
   const sourceBelowQuality = (s: CveSourceStat) =>
     Number.isFinite(minQualityForDisplay) && minQualityForDisplay > 0 && (s.matchable_percent || 0) < minQualityForDisplay;
+  const cveTotalRecords = cveSources.reduce((sum, s) => sum + (s.count || 0), 0);
+  const cveTotalMatchable = cveSources.reduce((sum, s) => sum + (s.matchable || 0), 0);
+  const cveMatchablePercent = cveTotalRecords > 0 ? (cveTotalMatchable * 100) / cveTotalRecords : 0;
+  const weakestCveSource = cveSources.reduce<CveSourceStat | null>((worst, source) =>
+    !worst || (source.matchable_percent ?? 0) < (worst.matchable_percent ?? 0) ? source : worst, null);
+  const staleCveSourceCount = health?.security_db_freshness?.stale_sources?.length || 0;
+  const oldestCveAgeDays = health?.security_db_freshness?.oldest_age_seconds
+    ? health.security_db_freshness.oldest_age_seconds / 86400
+    : 0;
+  const cveDbStatus = !securityDbConfigured
+    ? 'not configured'
+    : health?.security_db?.running
+      ? 'syncing'
+      : health?.security_db_freshness?.stale
+        ? 'stale'
+        : health?.security_db?.status || 'unknown';
+  const cveDbStatusColor = !securityDbConfigured || cveDbStatus === 'stale'
+    ? 'var(--critical)'
+    : cveDbStatus === 'syncing' || cveDbStatus === 'unknown'
+      ? 'var(--medium)'
+      : 'var(--low)';
+  const cveFreshnessColor = staleCveSourceCount > 0 || health?.security_db_freshness?.stale ? 'var(--critical)' : 'var(--low)';
+  const cveMatchableColor = cveMatchablePercent < 50 && cveTotalRecords > 0
+    ? 'var(--critical)'
+    : cveMatchablePercent < 80 && cveTotalRecords > 0
+      ? 'var(--medium)'
+      : 'var(--low)';
 
   const handleCvssRecalc = async () => {
     setCvssRecalcBusy(true);
@@ -480,7 +507,7 @@ function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: S
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
           <div className="label">CVE DB Records</div>
-          <div className="value">{cveSources.reduce((s, x) => s + x.count, 0).toLocaleString()}</div>
+          <div className="value">{cveTotalRecords.toLocaleString()}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
@@ -671,6 +698,48 @@ function DashboardView({ onOpenScanRequests }: { onOpenScanRequests: (filters: S
         >
           {cvssRecalcBusy ? 'Recalculating...' : 'Recalc CVSS'}
         </button>
+      </div>
+      <div className="stats-grid" style={{ marginTop: '1rem' }}>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: cveDbStatusColor }} />
+          <div className="label">CVE DB Status</div>
+          <div className="value" style={{ color: cveDbStatusColor }}>{cveDbStatus}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {health?.security_db_revision ? `rev ${health.security_db_revision}` : `${cveSources.length || 0} sources tracked`}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--primary)' }} />
+          <div className="label">CVE DB Records</div>
+          <div className="value">{cveTotalRecords.toLocaleString()}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {cveSources.length || 0} merged sources
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: cveMatchableColor }} />
+          <div className="label">CVE Matchable</div>
+          <div className="value" style={{ color: cveMatchableColor }}>{cveTotalRecords ? cveMatchablePercent.toFixed(1) : '0.0'}%</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {cveTotalMatchable.toLocaleString()} records with ecosystem/range data
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: weakestCveSource && (weakestCveSource.matchable_percent ?? 0) < 50 ? 'var(--medium)' : 'var(--low)' }} />
+          <div className="label">Weakest CVE Source</div>
+          <div className="value">{weakestCveSource ? weakestCveSource.source.toUpperCase() : '-'}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {weakestCveSource ? `${(weakestCveSource.matchable_percent ?? 0).toFixed(1)}% matchable` : 'waiting for source stats'}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: cveFreshnessColor }} />
+          <div className="label">Stale CVE Sources</div>
+          <div className="value" style={{ color: cveFreshnessColor }}>{staleCveSourceCount}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {health?.security_db_freshness?.oldest_source ? `${health.security_db_freshness.oldest_source} oldest, ${oldestCveAgeDays.toFixed(1)}d` : 'freshness pending'}
+          </div>
+        </div>
       </div>
       {health?.trivy_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Trivy DB: {health.trivy_db.last_error}</div>}
       {health?.security_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security sources: {health.security_db.last_error}</div>}
