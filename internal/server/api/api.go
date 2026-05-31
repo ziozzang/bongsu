@@ -1092,8 +1092,13 @@ func (s *Server) handleVulnFilters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeJSON(w, http.StatusOK, &db.FilterOptions{})
+		return
+	}
 
-	opts, err := s.db.GetVulnFilterOptions(ctx)
+	opts, err := s.db.GetVulnFilterOptions(ctx, scopeHostFilter(scope, scope.HostIDs))
 	if err != nil {
 		log.Printf("vuln filter options: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
@@ -1654,8 +1659,13 @@ func (s *Server) handlePackageFilters(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeJSON(w, http.StatusOK, &db.FilterOptions{})
+		return
+	}
 
-	opts, err := s.db.GetFilterOptions(ctx)
+	opts, err := s.db.GetFilterOptions(ctx, scopeHostFilter(scope, scope.HostIDs))
 	if err != nil {
 		log.Printf("filter options: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)

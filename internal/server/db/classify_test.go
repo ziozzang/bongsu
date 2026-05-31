@@ -728,6 +728,63 @@ func TestVulnSummaryUsesActiveFindingFilter(t *testing.T) {
 	}
 }
 
+func TestFilterOptionsAreHostScopedAndLatestOnly(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	tests := []struct {
+		name  string
+		start string
+		end   string
+		wants []string
+	}{
+		{
+			name:  "package filters",
+			start: "func (db *DB) GetFilterOptions",
+			end:   "func pkgSortExpr",
+			wants: []string{
+				"hostIDs []string",
+				"p.host_id = ANY($1)",
+				"+latestScansSub+",
+				"SELECT DISTINCT p.host_id",
+				"SELECT DISTINCT COALESCE(NULLIF(p.container",
+				"SELECT DISTINCT p.pkg_type",
+				"SELECT DISTINCT p.source",
+			},
+		},
+		{
+			name:  "vulnerability filters",
+			start: "func (db *DB) GetVulnFilterOptions",
+			end:   "type CveSearchFilter",
+			wants: []string{
+				"hostIDs []string",
+				"v.host_id = ANY($1)",
+				"+latestScansSub+",
+				"SELECT DISTINCT v.host_id",
+				"SELECT DISTINCT COALESCE(NULLIF(v.container",
+			},
+		},
+	}
+	for _, tt := range tests {
+		start := strings.Index(body, tt.start)
+		if start < 0 {
+			t.Fatalf("%s not found", tt.start)
+		}
+		end := strings.Index(body[start:], tt.end)
+		if end < 0 {
+			t.Fatalf("%s end not found", tt.name)
+		}
+		fn := body[start : start+end]
+		for _, want := range tt.wants {
+			if !strings.Contains(fn, want) {
+				t.Fatalf("%s missing %q: %s", tt.name, want, fn)
+			}
+		}
+	}
+}
+
 func TestInsertableVulnerabilitiesDropsDanglingRows(t *testing.T) {
 	valid := models.Vulnerability{
 		ID:              "vuln-1",

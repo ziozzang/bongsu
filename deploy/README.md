@@ -219,10 +219,12 @@ spec:
 | `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
 | `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON with stable `bom-ref` dependencies or SPDX JSON with `format=spdx` |
 | `GET` | `/api/vulnerabilities` | List latest-scan CVEs with host/container/owner/team/environment filters |
+| `GET` | `/api/vulnerabilities/filters` | List vulnerability filter options scoped to the caller's latest-scan RBAC visibility |
 | `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON with host metadata |
 | `GET` | `/api/vuln-summary?group_by=owner` | Group active remediation findings by owner/team/environment/criticality |
 | `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope/expiry |
 | `GET` | `/api/packages` | List latest-scan packages with active finding `max_cvss`/`vuln_count` (supports `sort_by`, `q`, filters, pagination) |
+| `GET` | `/api/packages/filters` | List package filter options scoped to the caller's latest-scan RBAC visibility |
 | `GET` | `/api/packages/{id}/vulnerabilities` | Latest-scan active package vulnerability details |
 | `GET` | `/api/containers` | List latest container/image assets with host-scoped RBAC |
 | `GET` | `/api/scans` | Scan history with inventory counts and package delta |

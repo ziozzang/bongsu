@@ -77,7 +77,7 @@ Current implementation exposes request creation/listing/cancel plus agent claim/
 
 ## Container Inventory
 
-Running container metadata is stored separately from package rows in `container_assets`. The inventory preserves host ID, runtime, container instance ID/name, image name, image ID/digest, state, labels, and start time. `/api/containers` returns the latest completed or degraded scan per host and supports host, runtime, state, image, name, container ID, and image ID filters. Viewer RBAC is applied before returning rows, so container and image browsing follows the same host scope as package, vulnerability, scan, SBOM, and stats views.
+Running container metadata is stored separately from package rows in `container_assets`. The inventory preserves host ID, runtime, container instance ID/name, image name, image ID/digest, state, labels, and start time. `/api/containers` returns the latest completed or degraded scan per host and supports host, runtime, state, image, name, container ID, and image ID filters. Viewer RBAC is applied before returning rows and before returning package/vulnerability filter options, so container names, package sources, package types, and host IDs are not exposed outside the viewer's allowed host scope.
 
 ## Scan Inventory Drift
 
@@ -100,7 +100,7 @@ RBAC tables are present:
 - `access_subjects`: future users and groups from company identity systems.
 - `access_policies`: permissions on `host`, `container`, `image`, `asset_group`, or `all`.
 
-Runtime RBAC supports viewer API keys mapped to external subjects through `BONGSU_VIEWER_API_KEYS=key:subject`. Admins create, list, and delete `access_subjects` and `access_policies` through `/api/admin/rbac/*` or the dashboard RBAC view; viewer queries are scoped to allowed hosts across host, package, vulnerability, scan, and stats views. Deleting a subject revokes all attached policies through database cascade. Policy creation accepts a subject UUID or external ID, and the dashboard uses UUIDs to avoid ambiguity when a user and group share the same external ID. Policy creation requires a known subject so typos do not silently create ineffective access grants. Future SSO integration should replace static viewer keys with identity-provider subjects.
+Runtime RBAC supports viewer API keys mapped to external subjects through `BONGSU_VIEWER_API_KEYS=key:subject`. Admins create, list, and delete `access_subjects` and `access_policies` through `/api/admin/rbac/*` or the dashboard RBAC view; viewer queries are scoped to allowed hosts across host, package, vulnerability, scan, filter-option, and stats views. Deleting a subject revokes all attached policies through database cascade. Policy creation accepts a subject UUID or external ID, and the dashboard uses UUIDs to avoid ambiguity when a user and group share the same external ID. Policy creation requires a known subject so typos do not silently create ineffective access grants. Future SSO integration should replace static viewer keys with identity-provider subjects.
 
 RBAC resource matching supports:
 

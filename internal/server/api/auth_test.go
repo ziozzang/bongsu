@@ -645,6 +645,34 @@ func TestCveImportErrorStatusMapsJsonErrors(t *testing.T) {
 	}
 }
 
+func TestFilterEndpointsApplyRBACScope(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, fnName := range []string{"handleVulnFilters", "handlePackageFilters"} {
+		start := strings.Index(body, "func (s *Server) "+fnName)
+		if start < 0 {
+			t.Fatalf("%s not found", fnName)
+		}
+		next := strings.Index(body[start+1:], "\nfunc ")
+		if next < 0 {
+			t.Fatalf("%s body end not found", fnName)
+		}
+		fn := body[start : start+1+next]
+		for _, want := range []string{
+			"s.accessScope(r)",
+			"scope.Empty()",
+			"scopeHostFilter(scope, scope.HostIDs)",
+		} {
+			if !strings.Contains(fn, want) {
+				t.Fatalf("%s must apply RBAC scope, missing %q: %s", fnName, want, fn)
+			}
+		}
+	}
+}
+
 func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{

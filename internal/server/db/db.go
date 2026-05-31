@@ -2400,9 +2400,15 @@ type FilterOptions struct {
 	Sources    []string `json:"sources"`
 }
 
-func (db *DB) GetVulnFilterOptions(ctx context.Context) (*FilterOptions, error) {
+func (db *DB) GetVulnFilterOptions(ctx context.Context, hostIDs []string) (*FilterOptions, error) {
 	opts := &FilterOptions{}
-	rows, err := db.QueryContext(ctx, `SELECT DISTINCT v.host_id FROM vulnerabilities v JOIN `+latestScansSub+` ls ON v.scan_id = ls.id ORDER BY v.host_id`)
+	args := []any{}
+	hostFilter := ""
+	if len(hostIDs) > 0 {
+		hostFilter = " AND v.host_id = ANY($1)"
+		args = append(args, pqStringArray(hostIDs))
+	}
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT v.host_id FROM vulnerabilities v JOIN `+latestScansSub+` ls ON v.scan_id = ls.id WHERE 1=1`+hostFilter+` ORDER BY v.host_id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2413,7 +2419,7 @@ func (db *DB) GetVulnFilterOptions(ctx context.Context) (*FilterOptions, error) 
 	}
 	rows.Close()
 
-	rows, err = db.QueryContext(ctx, `SELECT DISTINCT COALESCE(NULLIF(v.container, ''), '(host)') FROM vulnerabilities v JOIN `+latestScansSub+` ls ON v.scan_id = ls.id ORDER BY 1`)
+	rows, err = db.QueryContext(ctx, `SELECT DISTINCT COALESCE(NULLIF(v.container, ''), '(host)') FROM vulnerabilities v JOIN `+latestScansSub+` ls ON v.scan_id = ls.id WHERE 1=1`+hostFilter+` ORDER BY 1`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2676,10 +2682,16 @@ func normalizeEcosystemSQL(raw string) string {
 	END`, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw, raw)
 }
 
-func (db *DB) GetFilterOptions(ctx context.Context) (*FilterOptions, error) {
+func (db *DB) GetFilterOptions(ctx context.Context, hostIDs []string) (*FilterOptions, error) {
 	opts := &FilterOptions{}
+	args := []any{}
+	hostFilter := ""
+	if len(hostIDs) > 0 {
+		hostFilter = " AND p.host_id = ANY($1)"
+		args = append(args, pqStringArray(hostIDs))
+	}
 
-	rows, err := db.QueryContext(ctx, `SELECT DISTINCT host_id FROM packages ORDER BY host_id`)
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT p.host_id FROM packages p JOIN `+latestScansSub+` ls ON p.scan_id = ls.id WHERE 1=1`+hostFilter+` ORDER BY p.host_id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2690,7 +2702,7 @@ func (db *DB) GetFilterOptions(ctx context.Context) (*FilterOptions, error) {
 	}
 	rows.Close()
 
-	rows, err = db.QueryContext(ctx, `SELECT DISTINCT COALESCE(NULLIF(container, ''), '(host)') FROM packages ORDER BY 1`)
+	rows, err = db.QueryContext(ctx, `SELECT DISTINCT COALESCE(NULLIF(p.container, ''), '(host)') FROM packages p JOIN `+latestScansSub+` ls ON p.scan_id = ls.id WHERE 1=1`+hostFilter+` ORDER BY 1`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2701,7 +2713,7 @@ func (db *DB) GetFilterOptions(ctx context.Context) (*FilterOptions, error) {
 	}
 	rows.Close()
 
-	rows, err = db.QueryContext(ctx, `SELECT DISTINCT pkg_type FROM packages ORDER BY pkg_type`)
+	rows, err = db.QueryContext(ctx, `SELECT DISTINCT p.pkg_type FROM packages p JOIN `+latestScansSub+` ls ON p.scan_id = ls.id WHERE 1=1`+hostFilter+` ORDER BY p.pkg_type`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -2712,7 +2724,7 @@ func (db *DB) GetFilterOptions(ctx context.Context) (*FilterOptions, error) {
 	}
 	rows.Close()
 
-	rows, err = db.QueryContext(ctx, `SELECT DISTINCT source FROM packages ORDER BY source`)
+	rows, err = db.QueryContext(ctx, `SELECT DISTINCT p.source FROM packages p JOIN `+latestScansSub+` ls ON p.scan_id = ls.id WHERE 1=1`+hostFilter+` ORDER BY p.source`, args...)
 	if err != nil {
 		return nil, err
 	}
