@@ -1208,6 +1208,41 @@ func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 	}
 }
 
+func TestSecurityDBUpdateSurfacesTriggerBackgroundRecalculation(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	tests := []struct {
+		name string
+		fn   string
+		next string
+		want string
+	}{
+		{"trivy upload", "func (s *Server) handleTrivyDBUpload", "func trivyDBLoadErrorStatus", `s.SecurityDatabaseUpdated("trivy-db upload")`},
+		{"trivy update", "func (s *Server) handleTrivyDBUpdate", "func (s *Server) handleCveDbExport", `s.SecurityDatabaseUpdated("trivy-db update")`},
+		{"bundle import", "func (s *Server) handleSecurityDbImport", "type securityDBBundleManifest", `s.SecurityDatabaseUpdated("security-db bundle import")`},
+		{"cve jsonl import", "func (s *Server) handleCveDbImport", "func (s *Server) importCveJSONL", `s.SecurityDatabaseUpdated("cve-db import")`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			start := strings.Index(body, tt.fn)
+			if start < 0 {
+				t.Fatalf("%s not found", tt.fn)
+			}
+			end := strings.Index(body[start:], tt.next)
+			if end < 0 {
+				t.Fatalf("%s end not found", tt.fn)
+			}
+			fn := body[start : start+end]
+			if !strings.Contains(fn, tt.want) {
+				t.Fatalf("%s must trigger background recalculation/rescan with %q: %s", tt.fn, tt.want, fn)
+			}
+		})
+	}
+}
+
 func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
@@ -1514,6 +1549,9 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"BONGSU_ALLOW_WEAK_SECRETS: ${BONGSU_ALLOW_WEAK_SECRETS:-false}",
 				"BONGSU_ACCESS_LOG: ${BONGSU_ACCESS_LOG:-true}",
 				"BONGSU_ACCESS_LOG_HEALTH: ${BONGSU_ACCESS_LOG_HEALTH:-false}",
+				"BONGSU_DB_MAX_OPEN_CONNS: ${BONGSU_DB_MAX_OPEN_CONNS:-25}",
+				"BONGSU_DB_MAX_IDLE_CONNS: ${BONGSU_DB_MAX_IDLE_CONNS:-5}",
+				"BONGSU_DB_CONN_MAX_LIFETIME_MINUTES: ${BONGSU_DB_CONN_MAX_LIFETIME_MINUTES:-5}",
 				"BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS: ${BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS:-10}",
 				"BONGSU_HTTP_READ_TIMEOUT_SECONDS: ${BONGSU_HTTP_READ_TIMEOUT_SECONDS:-30}",
 				"BONGSU_HTTP_WRITE_TIMEOUT_SECONDS: ${BONGSU_HTTP_WRITE_TIMEOUT_SECONDS:-120}",

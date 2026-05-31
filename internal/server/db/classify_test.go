@@ -33,6 +33,28 @@ func TestClassifySecuritySource(t *testing.T) {
 	}
 }
 
+func TestDBPoolConfigFromEnv(t *testing.T) {
+	t.Setenv("BONGSU_DB_MAX_OPEN_CONNS", "40")
+	t.Setenv("BONGSU_DB_MAX_IDLE_CONNS", "12")
+	t.Setenv("BONGSU_DB_CONN_MAX_LIFETIME_MINUTES", "9")
+
+	cfg := dbPoolConfigFromEnv()
+	if cfg.MaxOpenConns != 40 || cfg.MaxIdleConns != 12 || cfg.ConnMaxLifetimeMin != 9 {
+		t.Fatalf("dbPoolConfigFromEnv() = %#v, want max_open=40 max_idle=12 lifetime=9", cfg)
+	}
+}
+
+func TestDBPoolConfigFallsBackForInvalidValues(t *testing.T) {
+	t.Setenv("BONGSU_DB_MAX_OPEN_CONNS", "0")
+	t.Setenv("BONGSU_DB_MAX_IDLE_CONNS", "-1")
+	t.Setenv("BONGSU_DB_CONN_MAX_LIFETIME_MINUTES", "invalid")
+
+	cfg := dbPoolConfigFromEnv()
+	if cfg.MaxOpenConns != 25 || cfg.MaxIdleConns != 5 || cfg.ConnMaxLifetimeMin != 5 {
+		t.Fatalf("dbPoolConfigFromEnv() = %#v, want defaults", cfg)
+	}
+}
+
 func TestCompatibleSecurityCandidateSeparatesEcosystems(t *testing.T) {
 	affected := `[
 		{"name":"foo","ecosystem":"PyPI","fixed":["1.2.3"]},

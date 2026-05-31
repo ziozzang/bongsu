@@ -178,6 +178,9 @@ spec:
 | `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
 | `BONGSU_PORT` | `8080` | Server listen port |
 | `BONGSU_DB_DSN` | `postgres://bongsu:...` | PostgreSQL connection string |
+| `BONGSU_DB_MAX_OPEN_CONNS` | `25` | Maximum open PostgreSQL connections from the server |
+| `BONGSU_DB_MAX_IDLE_CONNS` | `5` | Maximum idle PostgreSQL connections retained |
+| `BONGSU_DB_CONN_MAX_LIFETIME_MINUTES` | `5` | Maximum lifetime for pooled PostgreSQL connections |
 | `BONGSU_AUTO_MIGRATE` | `true` | Run checksum-tracked DB migrations on startup |
 | `BONGSU_TRIVY_PATH` | `trivy` | Trivy binary path |
 | `BONGSU_TRIVY_CACHE_DIR` | `/app/trivy-cache` | Trivy cache directory |

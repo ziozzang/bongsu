@@ -54,14 +54,32 @@ func New(ctx context.Context, dsn string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(5 * time.Minute)
+	applyDBPoolConfig(db, dbPoolConfigFromEnv())
 
 	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 	return &DB{db}, nil
+}
+
+type poolConfig struct {
+	MaxOpenConns       int
+	MaxIdleConns       int
+	ConnMaxLifetimeMin int
+}
+
+func dbPoolConfigFromEnv() poolConfig {
+	return poolConfig{
+		MaxOpenConns:       envPositiveInt("BONGSU_DB_MAX_OPEN_CONNS", 25),
+		MaxIdleConns:       envPositiveInt("BONGSU_DB_MAX_IDLE_CONNS", 5),
+		ConnMaxLifetimeMin: envPositiveInt("BONGSU_DB_CONN_MAX_LIFETIME_MINUTES", 5),
+	}
+}
+
+func applyDBPoolConfig(db *sql.DB, cfg poolConfig) {
+	db.SetMaxOpenConns(cfg.MaxOpenConns)
+	db.SetMaxIdleConns(cfg.MaxIdleConns)
+	db.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMin) * time.Minute)
 }
 
 func (db *DB) RunMigrations(ctx context.Context) error {
@@ -1816,6 +1834,14 @@ func envInt(key string, def int) int {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil {
+		return def
+	}
+	return n
+}
+
+func envPositiveInt(key string, def int) int {
+	n := envInt(key, def)
+	if n <= 0 {
 		return def
 	}
 	return n
