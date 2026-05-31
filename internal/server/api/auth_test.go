@@ -95,6 +95,36 @@ func TestReportBodyLimitIsConfigured(t *testing.T) {
 	}
 }
 
+func TestSecurityDBUploadLimitsAreConfigured(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"maxTrivyDBUploadBytes()",
+		"maxCveDBImportBytes()",
+		"maxSecurityDBBundleBytes()",
+		`envBytes("BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES", 2<<30)`,
+		`envBytes("BONGSU_CVE_DB_IMPORT_MAX_BYTES", 2<<30)`,
+		`envBytes("BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES", 4<<30)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("security DB upload limit missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"MaxBytesReader(w, r.Body, 2<<30)",
+		"MaxBytesReader(w, r.Body, 4<<30)",
+		"ParseMultipartForm(2 << 30)",
+		"ParseMultipartForm(4 << 30)",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("security DB uploads must not use hard-coded body limit %q", forbidden)
+		}
+	}
+}
+
 func TestMaxAgentReportBytes(t *testing.T) {
 	t.Setenv("BONGSU_AGENT_REPORT_MAX_BYTES", "1048576")
 	if got := maxAgentReportBytes(); got != 1048576 {
@@ -105,6 +135,38 @@ func TestMaxAgentReportBytes(t *testing.T) {
 		t.Setenv("BONGSU_AGENT_REPORT_MAX_BYTES", value)
 		if got := maxAgentReportBytes(); got != 512<<20 {
 			t.Fatalf("maxAgentReportBytes(%q) = %d, want %d", value, got, 512<<20)
+		}
+	}
+}
+
+func TestMaxSecurityDBUploadBytes(t *testing.T) {
+	t.Setenv("BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES", "12345")
+	if got := maxTrivyDBUploadBytes(); got != 12345 {
+		t.Fatalf("trivy upload max = %d, want 12345", got)
+	}
+	t.Setenv("BONGSU_CVE_DB_IMPORT_MAX_BYTES", "23456")
+	if got := maxCveDBImportBytes(); got != 23456 {
+		t.Fatalf("cve import max = %d, want 23456", got)
+	}
+	t.Setenv("BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES", "34567")
+	if got := maxSecurityDBBundleBytes(); got != 34567 {
+		t.Fatalf("bundle max = %d, want 34567", got)
+	}
+
+	for _, tt := range []struct {
+		key  string
+		def  int64
+		call func() int64
+	}{
+		{"BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES", 2 << 30, maxTrivyDBUploadBytes},
+		{"BONGSU_CVE_DB_IMPORT_MAX_BYTES", 2 << 30, maxCveDBImportBytes},
+		{"BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES", 4 << 30, maxSecurityDBBundleBytes},
+	} {
+		for _, value := range []string{"0", "-1", "invalid"} {
+			t.Setenv(tt.key, value)
+			if got := tt.call(); got != tt.def {
+				t.Fatalf("%s=%q got %d, want %d", tt.key, value, got, tt.def)
+			}
 		}
 	}
 }
@@ -686,6 +748,9 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"${BONGSU_DB_PASSWORD:?Set BONGSU_DB_PASSWORD in .env}",
 				"${BONGSU_AGENT_API_KEY:?Set BONGSU_AGENT_API_KEY in .env}",
 				"${BONGSU_INSTALL_TOKEN:?Set BONGSU_INSTALL_TOKEN in .env}",
+				"BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES: ${BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES:-2147483648}",
+				"BONGSU_CVE_DB_IMPORT_MAX_BYTES: ${BONGSU_CVE_DB_IMPORT_MAX_BYTES:-2147483648}",
+				"BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES: ${BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES:-4294967296}",
 				`pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"`,
 			} {
 				if !strings.Contains(body, want) {

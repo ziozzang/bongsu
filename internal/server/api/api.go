@@ -2088,8 +2088,9 @@ func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, 2<<30)
-	if err := r.ParseMultipartForm(2 << 30); err != nil {
+	uploadLimit := maxTrivyDBUploadBytes()
+	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
+	if err := r.ParseMultipartForm(uploadLimit); err != nil {
 		http.Error(w, "file too large or invalid form", http.StatusBadRequest)
 		return
 	}
@@ -2270,8 +2271,9 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		s.audit(r, "security_db.import", "security_db", "bundle", "error", meta)
 		http.Error(w, msg, status)
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<30)
-	if err := r.ParseMultipartForm(4 << 30); err != nil {
+	uploadLimit := maxSecurityDBBundleBytes()
+	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
+	if err := r.ParseMultipartForm(uploadLimit); err != nil {
 		fail(http.StatusBadRequest, "file too large or invalid form", "parse_form", err)
 		return
 	}
@@ -2634,8 +2636,9 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 
-	r.Body = http.MaxBytesReader(w, r.Body, 2<<30)
-	if err := r.ParseMultipartForm(2 << 30); err != nil {
+	uploadLimit := maxCveDBImportBytes()
+	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
+	if err := r.ParseMultipartForm(uploadLimit); err != nil {
 		http.Error(w, "file too large", http.StatusBadRequest)
 		return
 	}
@@ -3397,6 +3400,30 @@ func maxAgentReportBytes() int64 {
 		n = 512 << 20
 	}
 	return int64(n)
+}
+
+func maxTrivyDBUploadBytes() int64 {
+	return envBytes("BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES", 2<<30)
+}
+
+func maxCveDBImportBytes() int64 {
+	return envBytes("BONGSU_CVE_DB_IMPORT_MAX_BYTES", 2<<30)
+}
+
+func maxSecurityDBBundleBytes() int64 {
+	return envBytes("BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES", 4<<30)
+}
+
+func envBytes(key string, def int64) int64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }
 
 func envBool(key string, def bool) bool {
