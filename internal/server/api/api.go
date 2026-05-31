@@ -2754,11 +2754,15 @@ func scanRequestErrorMessage(err error) string {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	isAdmin := s.authenticateAdmin(r)
+	recalcStatus := s.securityRecalculationStatus(isAdmin)
+	if last := s.securityRecalculationLastResult(r.Context(), isAdmin); last != nil {
+		recalcStatus["last_result"] = last
+	}
 	resp := map[string]any{
 		"status":                 "ok",
 		"trivy_db_ready":         false,
 		"web_auth":               s.webAuth,
-		"security_recalculation": s.securityRecalculationStatus(isAdmin),
+		"security_recalculation": recalcStatus,
 	}
 	if err := s.db.PingContext(r.Context()); err != nil {
 		resp["status"] = "degraded"
@@ -2909,6 +2913,15 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 	recalc := s.securityRecalculationStatus(true)
 	writePromGauge(&b, "bongsu_security_recalculation_running", nil, boolMetric(recalc["running"]))
 	writePromGauge(&b, "bongsu_security_recalculation_pending", nil, boolMetric(recalc["pending"]))
+	if last := s.securityRecalculationLastResult(ctx, true); last != nil {
+		if ts, ok := last["finished_at_unix"].(float64); ok {
+			writePromGauge(&b, "bongsu_security_recalculation_last_finished_timestamp_seconds", nil, ts)
+		}
+		writePromGauge(&b, "bongsu_security_recalculation_last_error", nil, boolMetric(last["status"] == "error"))
+		writePromGauge(&b, "bongsu_security_recalculation_last_cvss_updated", nil, metricNumber(last["cvss_updated"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_findings_enriched", nil, metricNumber(last["findings_enriched"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_new_vulns", nil, metricNumber(last["rematch_new_vulns"]))
+	}
 	if s.dbMgr != nil && s.dbMgr.IsReady() {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 1)
 	} else {
@@ -3072,6 +3085,22 @@ func boolMetric(v any) float64 {
 	return 0
 }
 
+func metricNumber(v any) float64 {
+	switch n := v.(type) {
+	case int:
+		return float64(n)
+	case int64:
+		return float64(n)
+	case float64:
+		return n
+	case json.Number:
+		f, _ := n.Float64()
+		return f
+	default:
+		return 0
+	}
+}
+
 func writePromGauge(b *strings.Builder, name string, labels map[string]string, value float64) {
 	writePromMetric(b, "gauge", name, labels, value)
 }
@@ -3118,6 +3147,59 @@ func (s *Server) securityRecalculationStatus(includeReason bool) map[string]any 
 		status["pending_reason"] = s.securityRecalcReason
 	}
 	return status
+}
+
+func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDetails bool) map[string]any {
+	if s.db == nil {
+		return nil
+	}
+	item, err := s.db.GetLatestAuditLog(ctx, db.AuditLogFilter{
+		Action:       "security_db.recalculation",
+		ResourceType: "security_db",
+		ResourceID:   "aggregate",
+	}, []string{"started", "queued"})
+	if err != nil {
+		if includeDetails {
+			return map[string]any{"status": "error", "error": err.Error()}
+		}
+		return nil
+	}
+	if item == nil {
+		return nil
+	}
+	meta := map[string]any{}
+	if len(item.Metadata) > 0 {
+		_ = json.Unmarshal(item.Metadata, &meta)
+	}
+	out := map[string]any{
+		"status":           item.Status,
+		"finished_at":      item.CreatedAt.Format(time.RFC3339),
+		"finished_at_unix": float64(item.CreatedAt.Unix()),
+	}
+	if reason, _ := meta["reason"].(string); reason != "" {
+		out["reason"] = reason
+	}
+	for _, key := range []string{
+		"cvss_updated",
+		"findings_enriched",
+		"stale_rematch_removed",
+		"rematch_candidates",
+		"rematch_new_vulns",
+		"rematch_skipped",
+		"rematch_limited",
+		"rematch_candidate_limit",
+		"severity_normalized",
+	} {
+		if v, ok := meta[key]; ok {
+			out[key] = v
+		}
+	}
+	if includeDetails {
+		if errors, ok := meta["errors"]; ok {
+			out["errors"] = errors
+		}
+	}
+	return out
 }
 
 func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {

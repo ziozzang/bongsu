@@ -79,6 +79,34 @@ func TestAuditLogFilterSupportsTimeRanges(t *testing.T) {
 	}
 }
 
+func TestLatestAuditLogSupportsOperationalSummaries(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetLatestAuditLog")
+	if start < 0 {
+		t.Fatal("GetLatestAuditLog not found")
+	}
+	end := strings.Index(body[start:], "type AccessScope")
+	if end < 0 {
+		t.Fatal("GetLatestAuditLog end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"AuditLogFilter",
+		"excludedStatuses []string",
+		"NOT (status = ANY($%d))",
+		"ORDER BY created_at DESC LIMIT 1",
+		"errors.Is(err, sql.ErrNoRows)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("latest audit log helper missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestCompatibleSecurityCandidateSeparatesEcosystems(t *testing.T) {
 	affected := `[
 		{"name":"foo","ecosystem":"PyPI","fixed":["1.2.3"]},

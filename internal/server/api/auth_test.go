@@ -1726,7 +1726,10 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		"s.dbMgr.PublicStatus()",
 		"s.secMgr.Status()",
 		"s.secMgr.PublicStatus()",
-		`"security_recalculation": s.securityRecalculationStatus(isAdmin)`,
+		"recalcStatus := s.securityRecalculationStatus(isAdmin)",
+		`s.securityRecalculationLastResult(r.Context(), isAdmin)`,
+		`recalcStatus["last_result"] = last`,
+		`"security_recalculation": recalcStatus`,
 		"for k, v := range s.securityDBRevisionMeta(r.Context())",
 		`k == "security_db_revision" || isAdmin`,
 		`s.securityDBFreshnessStatus(r.Context(), isAdmin)`,
@@ -1784,6 +1787,72 @@ func TestSecurityRecalculationStatusIncludesAdminPendingReason(t *testing.T) {
 	}
 }
 
+func TestSecurityRecalculationLastResultUsesAuditLog(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) securityRecalculationLastResult")
+	if start < 0 {
+		t.Fatal("securityRecalculationLastResult not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleDeleteScan")
+	if end < 0 {
+		t.Fatal("securityRecalculationLastResult end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"GetLatestAuditLog(ctx, db.AuditLogFilter",
+		`Action:       "security_db.recalculation"`,
+		`ResourceType: "security_db"`,
+		`ResourceID:   "aggregate"`,
+		`[]string{"started", "queued"}`,
+		`"finished_at"`,
+		`"finished_at_unix"`,
+		`"cvss_updated"`,
+		`"findings_enriched"`,
+		`"stale_rematch_removed"`,
+		`"rematch_new_vulns"`,
+		`if includeDetails`,
+		`out["errors"] = errors`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("security recalculation last result missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) adminMetrics")
+	if start < 0 {
+		t.Fatal("adminMetrics not found")
+	}
+	end := strings.Index(body[start:], "func boolMetric")
+	if end < 0 {
+		t.Fatal("boolMetric not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"securityRecalculationLastResult(ctx, true)",
+		"bongsu_security_recalculation_last_finished_timestamp_seconds",
+		"bongsu_security_recalculation_last_error",
+		"bongsu_security_recalculation_last_cvss_updated",
+		"bongsu_security_recalculation_last_findings_enriched",
+		"bongsu_security_recalculation_last_rematch_new_vulns",
+		"metricNumber",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("admin metrics security recalculation last result missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
 	out, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {
@@ -1816,6 +1885,10 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"health?.trivy_db?.last_error",
 		"health?.security_db?.last_error",
 		"health?.security_recalculation",
+		"health?.security_recalculation?.last_result",
+		"Last Recalculation",
+		"lastRecalcColor",
+		"lastRecalcTitle",
 		"health?.security_db_revision",
 		"health?.security_db_revision_error",
 		"health?.security_db_freshness",

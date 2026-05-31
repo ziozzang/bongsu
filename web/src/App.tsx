@@ -414,6 +414,13 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
     : cveMatchablePercent < 80 && cveTotalRecords > 0
       ? 'var(--medium)'
       : 'var(--low)';
+  const lastRecalc = health?.security_recalculation?.last_result;
+  const lastRecalcColor = lastRecalc?.status === 'error'
+    ? 'var(--critical)'
+    : lastRecalc?.status === 'ok'
+      ? 'var(--low)'
+      : 'var(--medium)';
+  const lastRecalcTitle = lastRecalc?.errors?.length ? lastRecalc.errors.join('\n') : lastRecalc?.reason || '';
   const triageActiveCounts = stats?.triage_active_counts || {};
   const triageExpiringSoonCounts = stats?.triage_expiring_soon_counts || {};
   const suppressedTriageCount = ['accepted_risk', 'false_positive', 'fixed', 'ignored']
@@ -884,6 +891,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
           <div className="value" style={{ color: cveRematchExcludedCount > 0 ? 'var(--medium)' : 'var(--low)' }}>{cveRematchEligibleCount}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             {cveRematchExcludedCount} excluded, {cveRematchPolicyText}
+          </div>
+        </div>
+        <div className="stat-card" title={lastRecalcTitle}>
+          <div className="accent-bar" style={{ background: lastRecalcColor }} />
+          <div className="label">Last Recalculation</div>
+          <div className="value" style={{ color: lastRecalcColor }}>{lastRecalc?.status || '-'}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {lastRecalc?.finished_at ? `${new Date(lastRecalc.finished_at).toLocaleString()} · ${lastRecalc.rematch_new_vulns || 0} new` : 'waiting for audit result'}
           </div>
         </div>
         <div className="stat-card">

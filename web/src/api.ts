@@ -293,6 +293,21 @@ export interface HealthStatus {
     running: boolean;
     pending: boolean;
     pending_reason?: string;
+    last_result?: {
+      status: string;
+      finished_at?: string;
+      reason?: string;
+      cvss_updated?: number;
+      findings_enriched?: number;
+      stale_rematch_removed?: number;
+      rematch_candidates?: number;
+      rematch_new_vulns?: number;
+      rematch_skipped?: number;
+      rematch_limited?: boolean;
+      rematch_candidate_limit?: number;
+      severity_normalized?: number;
+      errors?: string[];
+    };
   };
   security_db?: {
     configured: boolean;
