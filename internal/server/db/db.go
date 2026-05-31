@@ -163,7 +163,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "scan_requests", column: "claimed_by_host_id"},
 		{table: "audit_logs"},
 		{table: "vulnerability_triage"},
-		{index: "idx_scan_requests_active_security_db_host"},
+		{index: "idx_scan_requests_pending_security_db_host"},
 		{index: "idx_vulnerabilities_package_scan_vuln"},
 	}
 	for _, check := range checks {
@@ -1238,9 +1238,9 @@ INSERT INTO scan_requests (id, host_id, requested_by, scan_type, packages_only, 
 SELECT $1,$2,$3,'security-db-update',true,$4,'pending',now()
 WHERE NOT EXISTS (
 	SELECT 1 FROM scan_requests
-	WHERE host_id=$2 AND scan_type='security-db-update' AND status IN ('pending','claimed')
+	WHERE host_id=$2 AND scan_type='security-db-update' AND status='pending'
 )
-ON CONFLICT (host_id) WHERE host_id <> '' AND scan_type='security-db-update' AND status IN ('pending','claimed') DO NOTHING`
+ON CONFLICT (host_id) WHERE host_id <> '' AND scan_type='security-db-update' AND status='pending' DO NOTHING`
 }
 
 func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []string, status string, limit, offset int) ([]models.ScanRequest, int, error) {
@@ -1324,7 +1324,15 @@ func (db *DB) RequeueStaleScanRequests(ctx context.Context, timeout time.Duratio
 		timeout = time.Hour
 	}
 	cutoff := time.Now().Add(-timeout)
-	res, err := db.ExecContext(ctx, `UPDATE scan_requests
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if err := cancelStaleSecurityDBDuplicates(ctx, tx, cutoff); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE scan_requests
 SET status='pending', claimed_at=NULL, claimed_by_host_id='', error_message='requeued after claim timeout'
 WHERE status='claimed' AND claimed_at < $1`, cutoff)
 	if err != nil {
@@ -1334,7 +1342,7 @@ WHERE status='claimed' AND claimed_at < $1`, cutoff)
 	if err != nil {
 		return 0, err
 	}
-	return int(n), nil
+	return int(n), tx.Commit()
 }
 
 func (db *DB) ClaimScanRequest(ctx context.Context, hostID string, timeout time.Duration) (*models.ScanRequest, int, error) {
@@ -1348,6 +1356,9 @@ func (db *DB) ClaimScanRequest(ctx context.Context, hostID string, timeout time.
 	defer tx.Rollback()
 
 	cutoff := time.Now().Add(-timeout)
+	if err := cancelStaleSecurityDBDuplicates(ctx, tx, cutoff); err != nil {
+		return nil, 0, err
+	}
 	requeued, err := tx.ExecContext(ctx, `UPDATE scan_requests
 SET status='pending', claimed_at=NULL, claimed_by_host_id='', error_message='requeued after claim timeout'
 WHERE status='claimed' AND claimed_at < $1`, cutoff)
@@ -1378,6 +1389,33 @@ RETURNING id, host_id, requested_by, scan_type, packages_only, reason, status, e
 		return nil, int(requeuedCount), err
 	}
 	return &r, int(requeuedCount), tx.Commit()
+}
+
+func cancelStaleSecurityDBDuplicates(ctx context.Context, tx *sql.Tx, cutoff time.Time) error {
+	_, err := tx.ExecContext(ctx, `WITH stale AS (
+	SELECT
+		sr.id,
+		row_number() OVER (PARTITION BY sr.host_id ORDER BY sr.claimed_at DESC, sr.created_at DESC, sr.id DESC) AS rn,
+		EXISTS (
+			SELECT 1 FROM scan_requests pending
+			WHERE pending.host_id=sr.host_id
+			  AND pending.scan_type='security-db-update'
+			  AND pending.status='pending'
+		) AS has_pending
+	FROM scan_requests sr
+	WHERE sr.status='claimed'
+	  AND sr.claimed_at < $1
+	  AND sr.host_id <> ''
+	  AND sr.scan_type='security-db-update'
+)
+UPDATE scan_requests sr
+SET status='cancelled',
+	completed_at=now(),
+	error_message='cancelled stale duplicate security-db-update request because a newer pending or claimed request exists'
+FROM stale
+WHERE sr.id=stale.id
+  AND (stale.has_pending OR stale.rn > 1)`, cutoff)
+	return err
 }
 
 func (db *DB) CompleteScanRequest(ctx context.Context, id, status, message string) error {

@@ -285,11 +285,61 @@ func TestQueueSecurityDBRescanInsertSQLUsesAtomicDedupe(t *testing.T) {
 		"ON CONFLICT (host_id)",
 		"host_id <> ''",
 		"scan_type='security-db-update'",
-		"status IN ('pending','claimed')",
+		"status='pending'",
 		"DO NOTHING",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("rescan insert SQL missing %q: %s", want, got)
+		}
+	}
+	if strings.Contains(got, "status IN ('pending','claimed')") {
+		t.Fatalf("claimed requests must not suppress follow-up DB update rescans: %s", got)
+	}
+}
+
+func TestAutoRescanPendingUniqueMigrationAllowsClaimedFollowUp(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/015_pending_auto_rescan_unique.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DROP INDEX IF EXISTS idx_scan_requests_active_security_db_host",
+		"idx_scan_requests_pending_security_db_host",
+		"status = 'pending'",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("pending auto-rescan migration missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "status IN ('pending', 'claimed')") || strings.Contains(body, "status IN ('pending','claimed')") {
+		t.Fatalf("pending auto-rescan uniqueness must not include claimed requests: %s", body)
+	}
+}
+
+func TestStaleSecurityDBRequeueCancelsDuplicateClaimedRequests(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func cancelStaleSecurityDBDuplicates")
+	if start < 0 {
+		t.Fatal("cancelStaleSecurityDBDuplicates not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) CompleteScanRequest")
+	if end < 0 {
+		t.Fatal("cancelStaleSecurityDBDuplicates end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"row_number() OVER (PARTITION BY sr.host_id",
+		"has_pending",
+		"stale.rn > 1",
+		"pending.status='pending'",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("stale security-db duplicate cleanup missing %q: %s", want, fn)
 		}
 	}
 }
@@ -409,7 +459,7 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		`{table: "scan_requests", column: "claimed_by_host_id"}`,
 		`{table: "audit_logs"}`,
 		`{table: "vulnerability_triage"}`,
-		`{index: "idx_scan_requests_active_security_db_host"}`,
+		`{index: "idx_scan_requests_pending_security_db_host"}`,
 		`{index: "idx_vulnerabilities_package_scan_vuln"}`,
 		"db.columnExists",
 		"db.indexExists",
