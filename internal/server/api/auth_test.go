@@ -197,6 +197,65 @@ func TestSecurityHeadersMiddlewareLeavesDashboardAssetsCacheable(t *testing.T) {
 	}
 }
 
+func TestRequestIDMiddlewarePropagatesAndGeneratesIDs(t *testing.T) {
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := requestIDFromRequest(r); got != "scan-req-123" {
+			t.Fatalf("request context id = %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest("GET", "http://example.com/api/hosts", nil)
+	req.Header.Set("X-Request-ID", "scan-req-123")
+	rr := httptest.NewRecorder()
+
+	s.requestIDMiddleware(next).ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("X-Request-ID"); got != "scan-req-123" {
+		t.Fatalf("response request id = %q", got)
+	}
+
+	req = httptest.NewRequest("GET", "http://example.com/api/hosts", nil)
+	req.Header.Set("X-Request-ID", "bad id with spaces")
+	rr = httptest.NewRecorder()
+	var generated string
+	s.requestIDMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		generated = requestIDFromRequest(r)
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(rr, req)
+	if generated == "" || generated == "bad id with spaces" {
+		t.Fatalf("invalid request id was not replaced: %q", generated)
+	}
+	if got := rr.Header().Get("X-Request-ID"); got != generated {
+		t.Fatalf("generated response request id = %q, want %q", got, generated)
+	}
+}
+
+func TestAuditAddsRequestIDMetadata(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) audit(")
+	if start < 0 {
+		t.Fatal("audit function not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) auditSystem")
+	if end < 0 {
+		t.Fatal("audit function end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"requestIDFromRequest(r)",
+		`metadata["request_id"]`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("audit request id metadata missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestReportBodyLimitIsConfigured(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {

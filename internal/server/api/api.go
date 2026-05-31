@@ -135,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.recoverMiddleware(h)
 	h = s.corsMiddleware(h)
 	h = s.securityHeadersMiddleware(h)
+	h = s.requestIDMiddleware(h)
 	return h
 }
 
@@ -304,6 +305,11 @@ func (s *Server) audit(r *http.Request, action, resourceType, resourceID, status
 	}
 	if metadata == nil {
 		metadata = map[string]any{}
+	}
+	if rid := requestIDFromRequest(r); rid != "" {
+		if _, exists := metadata["request_id"]; !exists {
+			metadata["request_id"] = rid
+		}
 	}
 	meta, err := json.Marshal(metadata)
 	if err != nil {
@@ -4109,11 +4115,54 @@ func sanitizeFilename(s string) string {
 	return strings.Trim(b.String(), "-.")
 }
 
+type requestIDContextKey struct{}
+
+func (s *Server) requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rid := cleanRequestID(r.Header.Get("X-Request-ID"))
+		if rid == "" {
+			rid = uuid.NewString()
+		}
+		w.Header().Set("X-Request-ID", rid)
+		ctx := context.WithValue(r.Context(), requestIDContextKey{}, rid)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func requestIDFromRequest(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	if rid, ok := r.Context().Value(requestIDContextKey{}).(string); ok {
+		return rid
+	}
+	return cleanRequestID(r.Header.Get("X-Request-ID"))
+}
+
+func cleanRequestID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || len(raw) > 128 {
+		return ""
+	}
+	for _, r := range raw {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			continue
+		}
+		switch r {
+		case '-', '_', '.', ':', '/':
+			continue
+		default:
+			return ""
+		}
+	}
+	return raw
+}
+
 func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
-				log.Printf("panic recovered: %v %s %s", err, r.Method, r.URL.Path)
+				log.Printf("panic recovered request_id=%s: %v %s %s", requestIDFromRequest(r), err, r.Method, r.URL.Path)
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}
 		}()
