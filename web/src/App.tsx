@@ -13,6 +13,25 @@ const verCmp = (a: string, b: string): number => {
   return 0;
 };
 
+function agentStatusColor(status?: string) {
+  switch (status) {
+    case 'online': return 'var(--low)';
+    case 'stale': return 'var(--medium)';
+    case 'offline': return 'var(--critical)';
+    default: return 'var(--text-muted)';
+  }
+}
+
+function formatAge(seconds?: number) {
+  if (seconds === undefined || seconds === null) return '-';
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
 function parseCvssVector(vector: string) {
   const isV4 = vector.startsWith('CVSS:4.0/');
   const isV3 = vector.startsWith('CVSS:3.');
@@ -160,6 +179,7 @@ function DashboardView() {
   const [dbStatus, setDbStatus] = useState<{ready: boolean; lastUpdate: string | null} | null>(null);
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
   const [cveSources, setCveSources] = useState<CveSourceStat[]>([]);
+  const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
   const [totalPkgs, setTotalPkgs] = useState(0);
   const [ownerSummary, setOwnerSummary] = useState<VulnSummaryRow[]>([]);
   const [environmentSummary, setEnvironmentSummary] = useState<VulnSummaryRow[]>([]);
@@ -178,6 +198,11 @@ function DashboardView() {
   useEffect(() => {
     api.cveDbStats().then(r => setCveSources(r.sources || [])).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
+    api.hosts().then(items => setAgentCounts(items.reduce((acc, h) => {
+      const status = h.agent_status || 'unknown';
+      acc[status] = (acc[status] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>))).catch(() => {});
     api.vulnSummary({ group_by: 'owner' }).then(r => setOwnerSummary(r.items || [])).catch(() => {});
     api.vulnSummary({ group_by: 'environment' }).then(r => setEnvironmentSummary(r.items || [])).catch(() => {});
   }, []);
@@ -271,6 +296,21 @@ function DashboardView() {
         </div>
       </div>
       <div className="stats-grid" style={{ marginTop: '1rem' }}>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--low)' }} />
+          <div className="label">Agents Online</div>
+          <div className="value" style={{ color: 'var(--low)' }}>{agentCounts.online || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+          <div className="label">Agents Stale</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{agentCounts.stale || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--critical)' }} />
+          <div className="label">Agents Offline</div>
+          <div className="value" style={{ color: 'var(--critical)' }}>{agentCounts.offline || 0}</div>
+        </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
           <div className="label">Tracked Packages</div>
@@ -408,7 +448,14 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanMsg, setScanMsg] = useState('');
-  useEffect(() => { api.hosts().then(h => { setHosts(h || []); setLoading(false); }).catch(() => setLoading(false)); }, []);
+  const [agentStatus, setAgentStatus] = useState('');
+  const load = useCallback((status: string) => {
+    setLoading(true);
+    api.hosts(status ? { agent_status: status } : undefined)
+      .then(h => { setHosts(h || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(agentStatus); }, [load, agentStatus]);
 
   if (loading) return <div>Loading...</div>;
 
@@ -433,12 +480,27 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
           Force Scan All
         </button>
       </div>
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="filters">
+          <select value={agentStatus} onChange={(e) => setAgentStatus(e.target.value)}>
+            <option value="">All Agent Status</option>
+            <option value="online">Online</option>
+            <option value="stale">Stale</option>
+            <option value="offline">Offline</option>
+            <option value="unknown">Unknown</option>
+          </select>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            Status is derived from server last_seen thresholds
+          </span>
+        </div>
+      </div>
       {scanMsg && <div style={{ marginBottom: '0.75rem', color: scanMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{scanMsg}</div>}
       <div className="card">
         <table>
           <thead>
             <tr>
               <th>Hostname</th>
+              <th>Agent</th>
               <th>OS</th>
               <th>Owner</th>
               <th>Env</th>
@@ -456,6 +518,10 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
             {hosts.map(h => (
               <tr key={h.id}>
                 <td><span className="host-link" title={`IP: ${h.ip_address}`} onClick={() => onSelectHost(h.id)}>{h.hostname}</span></td>
+                <td>
+                  <span className="badge" style={{ color: agentStatusColor(h.agent_status), background: 'var(--bg-raised)' }}>{h.agent_status || 'unknown'}</span>
+                  <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{formatAge(h.last_seen_age_seconds)}</div>
+                </td>
                 <td>{h.os_name} {h.os_version}</td>
                 <td>{h.owner || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                 <td>{h.environment || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
@@ -485,7 +551,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
                 </td>
               </tr>
             ))}
-            {hosts.length === 0 && <tr><td colSpan={12} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
+            {hosts.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
           </tbody>
         </table>
       </div>
@@ -563,6 +629,12 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
       </div>
 
       <div className="stats-grid" style={{ marginBottom: '2rem' }}>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: agentStatusColor(host.agent_status) }} />
+          <div className="label">Agent</div>
+          <div style={{ fontSize: '0.875rem', color: agentStatusColor(host.agent_status), fontWeight: 700, textTransform: 'uppercase' }}>{host.agent_status || 'unknown'}</div>
+          <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{formatAge(host.last_seen_age_seconds)} since check-in</div>
+        </div>
         <div className="stat-card"><div className="label">OS</div><div style={{ fontSize: '0.875rem' }}>{host.os_name} {host.os_version}</div></div>
         <div className="stat-card"><div className="label">Kernel</div><div className="mono" style={{ fontSize: '0.875rem' }}>{host.kernel}</div></div>
         <div className="stat-card"><div className="label">CPU</div><div style={{ fontSize: '0.875rem' }}>{host.cpu_cores} cores</div></div>

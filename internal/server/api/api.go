@@ -537,6 +537,7 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	scope := s.accessScope(r)
+	statusFilter := r.URL.Query().Get("agent_status")
 	hosts, err := s.db.ListHosts(ctx)
 	if err != nil {
 		log.Printf("list hosts: %v", err)
@@ -555,9 +556,14 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		VulnCounts map[string]int `json:"vuln_counts"`
 	}
 
+	now := time.Now()
 	result := make([]hostWithVulns, 0, len(hosts))
 	for _, h := range hosts {
 		if !scope.CanReadHost(h.ID) {
+			continue
+		}
+		applyAgentStatus(&h, now)
+		if statusFilter != "" && h.AgentStatus != statusFilter {
 			continue
 		}
 		item := hostWithVulns{Host: h, VulnCounts: vulnCounts[h.ID]}
@@ -586,6 +592,7 @@ func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
+	applyAgentStatus(host, time.Now())
 	writeJSON(w, http.StatusOK, host)
 }
 
@@ -2455,6 +2462,32 @@ func floatParam(r *http.Request, key string, def float64) float64 {
 		return def
 	}
 	return n
+}
+
+func applyAgentStatus(h *models.Host, now time.Time) {
+	if h.LastSeen.IsZero() {
+		h.AgentStatus = "unknown"
+		h.LastSeenAgeS = 0
+		return
+	}
+	age := now.Sub(h.LastSeen)
+	if age < 0 {
+		age = 0
+	}
+	h.LastSeenAgeS = int64(age.Seconds())
+	online := time.Duration(envInt("BONGSU_AGENT_ONLINE_MINUTES", 26*60)) * time.Minute
+	offline := time.Duration(envInt("BONGSU_AGENT_OFFLINE_MINUTES", 72*60)) * time.Minute
+	if offline < online {
+		offline = online
+	}
+	switch {
+	case age <= online:
+		h.AgentStatus = "online"
+	case age <= offline:
+		h.AgentStatus = "stale"
+	default:
+		h.AgentStatus = "offline"
+	}
 }
 
 func envInt(key string, def int) int {

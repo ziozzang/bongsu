@@ -23,6 +23,8 @@ type Host struct {
 	Criticality  string    `json:"criticality,omitempty"`
 	Tags         string    `json:"tags,omitempty"`
 	LastSeen     time.Time `json:"last_seen"`
+	AgentStatus  string    `json:"agent_status,omitempty"`
+	LastSeenAgeS int64     `json:"last_seen_age_seconds,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

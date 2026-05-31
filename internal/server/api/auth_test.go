@@ -111,6 +111,35 @@ func TestAuditActorAndClientIP(t *testing.T) {
 	}
 }
 
+func TestApplyAgentStatus(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_ONLINE_MINUTES", "60")
+	t.Setenv("BONGSU_AGENT_OFFLINE_MINUTES", "180")
+	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name string
+		seen time.Time
+		want string
+	}{
+		{"online", now.Add(-30 * time.Minute), "online"},
+		{"stale", now.Add(-2 * time.Hour), "stale"},
+		{"offline", now.Add(-4 * time.Hour), "offline"},
+		{"future clock skew", now.Add(5 * time.Minute), "online"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := models.Host{LastSeen: tt.seen}
+			applyAgentStatus(&h, now)
+			if h.AgentStatus != tt.want {
+				t.Fatalf("status = %q, want %q", h.AgentStatus, tt.want)
+			}
+			if h.LastSeenAgeS < 0 {
+				t.Fatalf("age should not be negative: %d", h.LastSeenAgeS)
+			}
+		})
+	}
+}
+
 func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{

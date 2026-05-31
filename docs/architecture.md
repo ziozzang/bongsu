@@ -76,6 +76,8 @@ Running container metadata is stored separately from package rows in `container_
 
 Hosts preserve operator-owned metadata independently from agent reports: owner, team, environment, criticality, and JSON tags. Agent check-ins update technical facts such as OS, IP, CPU, and memory without overwriting this metadata. Admins can update it through `/api/hosts/{id}/metadata`, the dashboard shows it on host inventory/detail pages, and CycloneDX SBOM exports include it as `bongsu:*` root component properties.
 
+Agent status is derived from each host's `last_seen` timestamp at read time. The dashboard and `/api/hosts?agent_status=...` expose `online`, `stale`, `offline`, or `unknown`; defaults mark agents online for 26 hours and offline after 72 hours, controlled by `BONGSU_AGENT_ONLINE_MINUTES` and `BONGSU_AGENT_OFFLINE_MINUTES`.
+
 Dashboard summary views can group current findings by `owner`, `team`, `environment`, or `criticality` through `/api/vuln-summary?group_by=...`. The summary is RBAC-scoped and includes total, severity, and SLA-overdue counts so remediation queues can be routed by operational ownership.
 
 ## RBAC Model

@@ -113,6 +113,8 @@ export interface Host {
   criticality?: string;
   tags?: string;
   last_seen: string;
+  agent_status?: string;
+  last_seen_age_seconds?: number;
   vuln_counts?: Record<string, number>;
 }
 
@@ -292,7 +294,7 @@ export interface CveDbEntry {
 }
 
 export const api = {
-  hosts: () => request<Host[]>('/hosts'),
+  hosts: (params?: { agent_status?: string }) => request<Host[]>('/hosts', params),
   host: (id: string) => request<Host>(`/hosts/${id}`),
   updateHostMetadata: (id: string, body: { owner?: string; team?: string; environment?: string; criticality?: string; tags?: string }) =>
     requestJSON<Host>(`/hosts/${id}/metadata`, body),

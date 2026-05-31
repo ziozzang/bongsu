@@ -184,6 +184,8 @@ spec:
 | `BONGSU_SLA_HIGH_DAYS` | `30` | Remediation SLA days for high findings |
 | `BONGSU_SLA_MEDIUM_DAYS` | `90` | Remediation SLA days for medium findings |
 | `BONGSU_SLA_LOW_DAYS` | `180` | Remediation SLA days for low findings |
+| `BONGSU_AGENT_ONLINE_MINUTES` | `1560` | Last-seen age treated as online (26h default for daily scans) |
+| `BONGSU_AGENT_OFFLINE_MINUTES` | `4320` | Last-seen age treated as offline after this threshold |
 | `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login) |
 
 ### Agent
