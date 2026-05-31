@@ -166,11 +166,13 @@ function parseCvssVector(vector: string) {
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
 type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string; triageStatus?: string };
+type HostFilters = { agent_status?: string; inventory_status?: string };
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard');
   const [scanRequestFilters, setScanRequestFilters] = useState<ScanRequestFilters>({});
   const [vulnerabilityFilters, setVulnerabilityFilters] = useState<VulnerabilityFilters>({});
+  const [hostFilters, setHostFilters] = useState<HostFilters>({});
   const [selectedHostId, setSelectedHostId] = useState('');
   const [selectedVuln, setSelectedVuln] = useState<Vuln | null>(null);
   const [authed, setAuthed] = useState(!!getApiKey());
@@ -188,6 +190,7 @@ export default function App() {
   const navigate = (v: View) => {
     if (v === 'scans') setScanRequestFilters({});
     if (v === 'vulns') setVulnerabilityFilters({});
+    if (v === 'hosts') setHostFilters({});
     setView(v);
   };
   const openScanRequests = (filters: ScanRequestFilters) => {
@@ -198,13 +201,17 @@ export default function App() {
     setVulnerabilityFilters(filters);
     setView('vulns');
   };
+  const openHosts = (filters: HostFilters) => {
+    setHostFilters(filters);
+    setView('hosts');
+  };
 
   return (
     <div className="layout">
       <Sidebar view={view} onNavigate={navigate} onLogout={noAuthMode ? undefined : () => { clearApiKey(); setAuthed(false); }} />
       <div className="main">
-        {view === 'dashboard' && <DashboardView onOpenScanRequests={openScanRequests} onOpenVulnerabilities={openVulnerabilities} />}
-        {view === 'hosts' && <HostsView onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
+        {view === 'dashboard' && <DashboardView onOpenScanRequests={openScanRequests} onOpenVulnerabilities={openVulnerabilities} onOpenHosts={openHosts} />}
+        {view === 'hosts' && <HostsView initialFilters={hostFilters} onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
         {view === 'host-detail' && <HostDetailView hostId={selectedHostId} onBack={() => setView('hosts')} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'packages' && <PackagesView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'containers' && <ContainersView />}
@@ -274,7 +281,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
   );
 }
 
-function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenScanRequests: (filters: ScanRequestFilters) => void; onOpenVulnerabilities: (filters: VulnerabilityFilters) => void }) {
+function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts }: { onOpenScanRequests: (filters: ScanRequestFilters) => void; onOpenVulnerabilities: (filters: VulnerabilityFilters) => void; onOpenHosts: (filters: HostFilters) => void }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
@@ -628,22 +635,54 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--low)' }} />
           <div className="label">Agents Online</div>
-          <div className="value" style={{ color: 'var(--low)' }}>{effectiveAgentCounts.online || 0}</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenHosts({ agent_status: 'online' })}
+            style={{ color: 'var(--low)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open online hosts"
+          >
+            {effectiveAgentCounts.online || 0}
+          </button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
           <div className="label">Agents Stale</div>
-          <div className="value" style={{ color: 'var(--medium)' }}>{effectiveAgentCounts.stale || 0}</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenHosts({ agent_status: 'stale' })}
+            style={{ color: 'var(--medium)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open stale hosts"
+          >
+            {effectiveAgentCounts.stale || 0}
+          </button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--critical)' }} />
           <div className="label">Agents Offline</div>
-          <div className="value" style={{ color: 'var(--critical)' }}>{effectiveAgentCounts.offline || 0}</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenHosts({ agent_status: 'offline' })}
+            style={{ color: 'var(--critical)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open offline hosts"
+          >
+            {effectiveAgentCounts.offline || 0}
+          </button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: inventoryCoverageColor }} />
           <div className="label">SBOM Coverage</div>
-          <div className="value" style={{ color: inventoryCoverageColor }}>{inventoryCoveragePercent.toFixed(1)}%</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenHosts({ inventory_status: 'none' })}
+            style={{ color: inventoryCoverageColor, background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open hosts without completed or degraded inventory scans"
+          >
+            {inventoryCoveragePercent.toFixed(1)}%
+          </button>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             {stats.inventory_covered_hosts || 0} / {stats.total_hosts} hosts
           </div>
@@ -668,27 +707,27 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--low)' }} />
           <div className="label">Healthy SBOM</div>
-          <div className="value" style={{ color: 'var(--low)' }}>{effectiveInventoryCounts.healthy || 0}</div>
+          <button type="button" className="value" onClick={() => onOpenHosts({ inventory_status: 'healthy' })} style={{ color: 'var(--low)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>{effectiveInventoryCounts.healthy || 0}</button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
           <div className="label">Degraded SBOM</div>
-          <div className="value" style={{ color: 'var(--medium)' }}>{effectiveInventoryCounts.degraded || 0}</div>
+          <button type="button" className="value" onClick={() => onOpenHosts({ inventory_status: 'degraded' })} style={{ color: 'var(--medium)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>{effectiveInventoryCounts.degraded || 0}</button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
           <div className="label">Stale SBOM</div>
-          <div className="value" style={{ color: 'var(--medium)' }}>{effectiveInventoryCounts.stale || 0}</div>
+          <button type="button" className="value" onClick={() => onOpenHosts({ inventory_status: 'stale' })} style={{ color: 'var(--medium)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>{effectiveInventoryCounts.stale || 0}</button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--high)' }} />
           <div className="label">Empty SBOM</div>
-          <div className="value" style={{ color: 'var(--high)' }}>{effectiveInventoryCounts.empty || 0}</div>
+          <button type="button" className="value" onClick={() => onOpenHosts({ inventory_status: 'empty' })} style={{ color: 'var(--high)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>{effectiveInventoryCounts.empty || 0}</button>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--critical)' }} />
           <div className="label">No Completed Scan</div>
-          <div className="value" style={{ color: 'var(--critical)' }}>{effectiveInventoryCounts.none || 0}</div>
+          <button type="button" className="value" onClick={() => onOpenHosts({ inventory_status: 'none' })} style={{ color: 'var(--critical)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}>{effectiveInventoryCounts.none || 0}</button>
         </div>
       </div>
       <div className="stats-grid" style={{ marginTop: '1rem' }}>
@@ -1091,12 +1130,12 @@ function SummaryTable({ title, rows }: { title: string; rows: VulnSummaryRow[] }
   );
 }
 
-function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
+function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: HostFilters; onSelectHost: (id: string) => void }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
   const [scanMsg, setScanMsg] = useState('');
-  const [agentStatus, setAgentStatus] = useState('');
-  const [inventoryStatus, setInventoryStatus] = useState('');
+  const [agentStatus, setAgentStatus] = useState(initialFilters.agent_status || '');
+  const [inventoryStatus, setInventoryStatus] = useState(initialFilters.inventory_status || '');
   const load = useCallback((status: string, inventory: string) => {
     setLoading(true);
     api.hosts({ ...(status ? { agent_status: status } : {}), ...(inventory ? { inventory_status: inventory } : {}) })
