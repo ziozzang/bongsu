@@ -15,7 +15,7 @@ Bongsu means "봉수대": a watchtower network that sends signals from the edge 
 
 - Server: Go static binary, PostgreSQL, Vite dashboard, Docker Compose deployment.
 - Agent: Go static binary. It collects host metadata, users, processes, listening ports, host packages, and running Docker container packages.
-- Auth: admin APIs use `BONGSU_API_KEY`; agent report and force-scan polling use `BONGSU_AGENT_API_KEY`; installer and binary downloads can be protected by `BONGSU_INSTALL_TOKEN`; viewer keys from `BONGSU_VIEWER_API_KEYS` are scoped through RBAC policies.
+- Auth: admin APIs use `BONGSU_API_KEY`; agent report and force-scan polling use `BONGSU_AGENT_API_KEY`; installer and binary downloads can be protected by `BONGSU_INSTALL_TOKEN`; viewer keys from `BONGSU_VIEWER_API_KEYS` are scoped through RBAC policies. The generated one-line installer renders embedded credentials as shell-safe literals and returns `Cache-Control: no-store`.
 - Matching: packages-only mode sends packages to the server, then the server runs Trivy SBOM matching with the local Trivy DB.
 - Security DB: JSONL import/export for `cve_database`, Trivy DB upload/update, source sync command hook via `BONGSU_SECURITY_DB_SYNC_CMD`.
 - Airgap: server can import CVE JSONL and Trivy DB archives. The one-line installer downloads the agent and Trivy binaries from the management server.

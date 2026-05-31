@@ -255,6 +255,30 @@ func TestInstallScriptHardensAgentCredentialFile(t *testing.T) {
 	}
 }
 
+func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
+	got := shellQuote(`agent'key"$HOME`)
+	want := `'agent'"'"'key"$HOME'`
+	if got != want {
+		t.Fatalf("shellQuote = %q, want %q", got, want)
+	}
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"shellQuote(serverURL)",
+		"shellQuote(apiKey)",
+		"shellQuote(tokenQuery)",
+		"url.QueryEscape(s.installToken)",
+		`w.Header().Set("Cache-Control", "no-store")`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("installer credential rendering missing %q", want)
+		}
+	}
+}
+
 func TestHostInventoryStatus(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	recent := now.Add(-1 * time.Hour)

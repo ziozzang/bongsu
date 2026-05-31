@@ -17,6 +17,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1230,6 +1231,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateInstall(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -1243,8 +1248,9 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	apiKey := s.agentKey
 	tokenQuery := ""
 	if s.installToken != "" {
-		tokenQuery = "?token=" + s.installToken
+		tokenQuery = "?token=" + url.QueryEscape(s.installToken)
 	}
+	serverURL := fmt.Sprintf("%s://%s", scheme, host)
 
 	script := fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
@@ -1252,9 +1258,9 @@ set -euo pipefail
 # Bongsu Agent Installer
 # Usage: curl -sL %s://%s/api/install.sh%s | bash
 
-SERVER="%s://%s"
-API_KEY="%s"
-INSTALL_TOKEN_QUERY="%s"
+SERVER=%s
+API_KEY=%s
+INSTALL_TOKEN_QUERY=%s
 WORK_DIR="${BONGSU_WORK_DIR:-/opt/bongsu}"
 INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
@@ -1368,8 +1374,9 @@ echo "=== Done ==="
 echo "  Config:  $WORK_DIR/config.yaml"
 echo "  Manual:  $WORK_DIR/bin/bongsu-agent --config $WORK_DIR/config.yaml --type daily --packages-only"
 echo "  Log:     $WORK_DIR/agent.log"
-`, scheme, host, tokenQuery, scheme, host, apiKey, tokenQuery)
+`, scheme, host, tokenQuery, shellQuote(serverURL), shellQuote(apiKey), shellQuote(tokenQuery))
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/x-shellscript")
 	w.Write([]byte(script))
 }
