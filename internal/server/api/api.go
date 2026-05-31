@@ -1331,7 +1331,7 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
-		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "exploited", "epss_score", "epss_percentile", "severity", "cvss_score", "triage_status",
+		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "risk_score", "exploited", "epss_score", "epss_percentile", "severity", "cvss_score", "triage_status",
 		"sla_days", "due_at", "overdue", "pkg_name", "pkg_type", "ecosystem", "installed_version", "fixed_version", "finding_source", "pkg_path", "title", "primary_url",
 		"triage_reason", "triage_comment", "triage_expires_at", "triage_updated_by", "created_at",
 	}); err != nil {
@@ -1346,6 +1346,7 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 			csvSafeCell(v.HostCriticality),
 			csvSafeCell(v.Container),
 			csvSafeCell(v.VulnerabilityID),
+			fmt.Sprintf("%.1f", v.RiskScore),
 			strconv.FormatBool(v.Exploited),
 			fmt.Sprintf("%.5f", v.EPSSScore),
 			fmt.Sprintf("%.5f", v.EPSSPercentile),

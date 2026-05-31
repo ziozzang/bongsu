@@ -1103,7 +1103,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [hostId, setHostId] = useState('');
   const [container, setContainer] = useState('');
   const [pkgQuery, setPkgQuery] = useState('');
-  const [sortBy, setSortBy] = useState('cvss_score');
+  const [sortBy, setSortBy] = useState('risk_score');
   const [sortDesc, setSortDesc] = useState(true);
   const [loading, setLoading] = useState(true);
   const [hostMap, setHostMap] = useState<Record<string, string>>({});
@@ -1169,7 +1169,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
-    const nextDesc = sortBy === col ? !sortDesc : col === 'cvss_score' || col === 'severity' || col === 'exploited' || col === 'epss_score' || col === 'epss_percentile';
+    const nextDesc = sortBy === col ? !sortDesc : col === 'risk_score' || col === 'cvss_score' || col === 'severity' || col === 'exploited' || col === 'epss_score' || col === 'epss_percentile';
     setSortBy(col);
     setSortDesc(nextDesc);
     load(0, severity, triageStatus, findingSource, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
@@ -1223,7 +1223,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const criticalities = Array.from(new Set(Object.values(hostMeta).map(h => h.criticality || '').filter(Boolean))).sort();
 
   const cols: [string, string][] = [
-    ['exploited', 'KEV'], ['epss_score', 'EPSS'], ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
+    ['risk_score', 'Risk'], ['exploited', 'KEV'], ['epss_score', 'EPSS'], ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
     ['pkg_name', 'Package'], ['owner', 'Owner'], ['environment', 'Env'], ['container', 'Container'], ['pkg_type', 'Pkg Type'],
     ['installed_version', 'Installed'], ['fixed_version', 'Fixed'], ['due_at', 'Due'],
   ];
@@ -1341,6 +1341,9 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   <td><span className="host-link">{hostMap[v.host_id] || v.host_id.slice(0, 8)}</span></td>
                   <td><span className="badge">{(v.triage_status || 'open').replace('_', ' ')}</span></td>
                   <td><span className="badge">{findingSourceLabel(v.finding_source)}</span></td>
+                  <td className="mono" style={{ fontWeight: 700, color: (v.risk_score || 0) >= 80 ? 'var(--critical)' : (v.risk_score || 0) >= 60 ? 'var(--high)' : (v.risk_score || 0) >= 40 ? 'var(--medium)' : 'var(--text-muted)' }}>
+                    {v.risk_score ? v.risk_score.toFixed(1) : '-'}
+                  </td>
                   <td>{v.exploited ? <span className="badge badge-critical">KEV</span> : <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                   <td className="mono" style={{ color: (v.epss_score || 0) >= 0.5 ? 'var(--critical)' : (v.epss_score || 0) >= 0.1 ? 'var(--high)' : 'var(--text-muted)' }}>
                     {v.epss_score ? `${(v.epss_score * 100).toFixed(1)}%` : '-'}
@@ -1377,7 +1380,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   </td>
                 </tr>
               ))}
-              {vulns.length === 0 && <tr><td colSpan={16} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
+              {vulns.length === 0 && <tr><td colSpan={17} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
             </tbody>
           </table>
         )}
@@ -1453,6 +1456,12 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         <div className="stat-card">
           <div className="label">CVSS Score</div>
           <div className="value" style={{ color: sevColor }}>{vuln.cvss_score > 0 ? vuln.cvss_score.toFixed(1) : '-'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Risk Score</div>
+          <div className="value" style={{ color: (vuln.risk_score || 0) >= 80 ? 'var(--critical)' : (vuln.risk_score || 0) >= 60 ? 'var(--high)' : (vuln.risk_score || 0) >= 40 ? 'var(--medium)' : 'inherit' }}>
+            {vuln.risk_score ? vuln.risk_score.toFixed(1) : '-'}
+          </div>
         </div>
         <div className="stat-card">
           <div className="label">Host</div>

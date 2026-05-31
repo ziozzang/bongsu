@@ -156,6 +156,7 @@ export interface Vuln {
   exploited: boolean;
   epss_score?: number;
   epss_percentile?: number;
+  risk_score?: number;
   container: string;
   triage_status: string;
   triage_reason: string;

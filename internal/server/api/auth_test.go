@@ -1587,6 +1587,7 @@ func TestVulnerabilityAPIExposesExploitedFilterAndExportColumn(t *testing.T) {
 		`"exploited"`,
 		`"epss_score"`,
 		`"epss_percentile"`,
+		`"risk_score"`,
 		`strconv.FormatBool(v.Exploited)`,
 	} {
 		if !strings.Contains(body, want) {
@@ -1676,7 +1677,10 @@ func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
 		"minEpss",
 		"params.exploited = 'true'",
 		"params.min_epss = minEpssParam",
+		"risk_score",
+		"Risk Score",
 		"['exploited', 'KEV']",
+		"['risk_score', 'Risk']",
 		"['epss_score', 'EPSS']",
 		"CISA KEV",
 		"Min EPSS %",
@@ -1689,7 +1693,8 @@ func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
 		}
 	}
 	if !strings.Contains(apiBody, "exploited: boolean") || !strings.Contains(apiBody, "exploited?: string") ||
-		!strings.Contains(apiBody, "epss_score?: number") || !strings.Contains(apiBody, "min_epss?: string") {
+		!strings.Contains(apiBody, "epss_score?: number") || !strings.Contains(apiBody, "risk_score?: number") ||
+		!strings.Contains(apiBody, "min_epss?: string") {
 		t.Fatal("web API types must expose exploited and EPSS vulnerability fields and filters")
 	}
 }

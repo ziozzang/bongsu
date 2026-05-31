@@ -1539,6 +1539,7 @@ func TestListVulnerabilitiesExposesCisaKevPrioritization(t *testing.T) {
 		"&v.Exploited",
 		"&v.EPSSScore",
 		"&v.EPSSPercentile",
+		"&v.RiskScore",
 		`kev.source = 'cisa-kev'`,
 		`epss.source = 'epss'`,
 		`kev.vulnerability_id = v.vulnerability_id`,
@@ -1547,6 +1548,8 @@ func TestListVulnerabilitiesExposesCisaKevPrioritization(t *testing.T) {
 		"if f.MinEPSSPct > 0",
 		`"exploited":`,
 		`"epss_score":`,
+		`"risk_score":`,
+		"vulnRiskScoreExpr",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("ListVulnerabilities KEV prioritization missing %q", want)

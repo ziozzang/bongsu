@@ -1001,13 +1001,19 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,now())`
 
 const vulnCols = `id, package_id, scan_id, host_id, vulnerability_id, severity, title, description, pkg_name, installed_version, fixed_version, cvss_score, cvss_vector, primary_url, pkg_path, layer_id, container, finding_source, created_at`
 
+const vulnExploitedExpr = `EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)`
+const vulnEPSSScoreExpr = `COALESCE((SELECT epss.epss_score FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)`
+const vulnEPSSPercentileExpr = `COALESCE((SELECT epss.epss_percentile FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)`
+const vulnRiskScoreExpr = `LEAST(100, GREATEST(0, (v.cvss_score * 5) + (` + vulnEPSSScoreExpr + ` * 30) + CASE WHEN ` + vulnExploitedExpr + ` THEN 20 ELSE 0 END + CASE lower(COALESCE(h.criticality, '')) WHEN 'critical' THEN 10 WHEN 'high' THEN 5 ELSE 0 END))`
+
 const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name,
 COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), ''),
 v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, ''),
-EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id),
-COALESCE((SELECT epss.epss_score FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0),
-COALESCE((SELECT epss.epss_percentile FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)`
+` + vulnExploitedExpr + `,
+` + vulnEPSSScoreExpr + `,
+` + vulnEPSSPercentileExpr + `,
+` + vulnRiskScoreExpr
 
 const vulnTriageJoin = ` LEFT JOIN LATERAL (
 	SELECT status, reason, comment, expires_at, updated_by, updated_at
@@ -1028,7 +1034,7 @@ func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnera
 		&v.PkgName, &v.PkgType, &v.Ecosystem, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
 		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
 		&v.FindingSource, &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
-		&v.Exploited, &v.EPSSScore, &v.EPSSPercentile, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
+		&v.Exploited, &v.EPSSScore, &v.EPSSPercentile, &v.RiskScore, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
 }
 
 type VulnerabilityInsertResult struct {
@@ -3396,16 +3402,17 @@ func vulnSortExpr(col string, desc bool) string {
 		"cvss_score": "v.cvss_score", "pkg_name": "v.pkg_name",
 		"host_id": "v.host_id", "container": "v.container", "installed_version": "v.installed_version",
 		"fixed_version": "v.fixed_version", "created_at": "v.created_at", "due_at": "v.created_at",
-		"exploited":       "EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)",
-		"epss_score":      "COALESCE((SELECT epss.epss_score FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)",
-		"epss_percentile": "COALESCE((SELECT epss.epss_percentile FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)",
+		"exploited":       vulnExploitedExpr,
+		"epss_score":      vulnEPSSScoreExpr,
+		"epss_percentile": vulnEPSSPercentileExpr,
+		"risk_score":      vulnRiskScoreExpr,
 		"pkg_type":        "COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), '')",
 		"ecosystem":       "COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), '')",
 		"owner":           "h.owner", "team": "h.team", "environment": "h.environment", "criticality": "h.criticality",
 	}
 	expr, ok := allowed[col]
 	if !ok {
-		expr = "v.cvss_score"
+		expr = vulnRiskScoreExpr
 	}
 	dir := "ASC"
 	if desc {
