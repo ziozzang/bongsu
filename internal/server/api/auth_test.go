@@ -161,6 +161,42 @@ func TestSecurityHeadersMiddlewareHonorsForwardedHTTPSAndHSTSDisable(t *testing.
 	}
 }
 
+func TestSecurityHeadersMiddlewareMarksAPIResponsesNoStore(t *testing.T) {
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest("GET", "http://example.com/api/vulnerabilities", nil)
+	rr := httptest.NewRecorder()
+
+	s.securityHeadersMiddleware(next).ServeHTTP(rr, req)
+
+	for name, want := range map[string]string{
+		"Cache-Control": "no-store",
+		"Pragma":        "no-cache",
+		"Expires":       "0",
+	} {
+		if got := rr.Header().Get(name); got != want {
+			t.Fatalf("%s = %q, want %q", name, got, want)
+		}
+	}
+}
+
+func TestSecurityHeadersMiddlewareLeavesDashboardAssetsCacheable(t *testing.T) {
+	s := &Server{}
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	req := httptest.NewRequest("GET", "http://example.com/assets/app.js", nil)
+	rr := httptest.NewRecorder()
+
+	s.securityHeadersMiddleware(next).ServeHTTP(rr, req)
+
+	if got := rr.Header().Get("Cache-Control"); got != "" {
+		t.Fatalf("non-API asset cache header = %q, want empty", got)
+	}
+}
+
 func TestReportBodyLimitIsConfigured(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
