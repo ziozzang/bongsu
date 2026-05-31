@@ -293,6 +293,9 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
   const [cvssRecalcMsg, setCvssRecalcMsg] = useState('');
   const [retentionMsg, setRetentionMsg] = useState('');
   const [retentionBusy, setRetentionBusy] = useState(false);
+  const [securityBundleMsg, setSecurityBundleMsg] = useState('');
+  const [securityBundleBusy, setSecurityBundleBusy] = useState(false);
+  const [securityBundleIncludeTrivy, setSecurityBundleIncludeTrivy] = useState(true);
 
   useEffect(() => { api.stats().then(setStats).catch(() => {}); }, []);
   useEffect(() => {
@@ -438,6 +441,37 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
       setRetentionMsg('Retention prune failed or requires admin API key');
     }
     setRetentionBusy(false);
+  };
+
+  const handleSecurityBundleExport = async () => {
+    setSecurityBundleBusy(true);
+    setSecurityBundleMsg('Exporting security DB bundle...');
+    try {
+      await api.exportSecurityDBBundle(securityBundleIncludeTrivy);
+      setSecurityBundleMsg(`Exported airgap bundle${securityBundleIncludeTrivy ? ' with Trivy DB when available' : ' without Trivy DB'}`);
+    } catch {
+      setSecurityBundleMsg('Security DB bundle export failed or requires admin API key');
+    }
+    setSecurityBundleBusy(false);
+  };
+
+  const handleSecurityBundleImport = async (file?: File) => {
+    if (!file) return;
+    setSecurityBundleBusy(true);
+    setSecurityBundleMsg(`Importing ${file.name}...`);
+    try {
+      const r = await api.importSecurityDBBundle(file);
+      setSecurityBundleMsg(`Imported ${r.imported.toLocaleString()} CVE records${r.trivy_db_loaded ? ' and Trivy DB' : ''}; recalculation started`);
+      api.rawHealth().then(h => {
+        setHealth(h);
+        setSecurityDbConfigured(!!h.security_db?.configured);
+      }).catch(() => {});
+      api.cveDbStats().then(x => setCveSources(x.sources || [])).catch(() => {});
+      api.stats().then(setStats).catch(() => {});
+    } catch {
+      setSecurityBundleMsg('Security DB bundle import failed or requires admin API key');
+    }
+    setSecurityBundleBusy(false);
   };
 
   if (!stats) return <div style={{ color: 'var(--text-muted)', padding: '2rem' }}>Loading...</div>;
@@ -829,6 +863,32 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
       {updateMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: updateMsg.includes('fail') ? 'var(--critical)' : 'var(--low)' }}>{updateMsg}</div>}
       {rematchMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: rematchMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{rematchMsg}</div>}
       {cvssRecalcMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: cvssRecalcMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{cvssRecalcMsg}</div>}
+      <div className="db-status-bar" style={{ marginTop: '1rem' }}>
+        <h3>Airgap Security Bundle</h3>
+        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Export outside, import inside air-gapped environments</span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto', fontSize: '0.75rem', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+          <input type="checkbox" checked={securityBundleIncludeTrivy} onChange={(e) => setSecurityBundleIncludeTrivy(e.target.checked)} />
+          Include Trivy DB
+        </label>
+        <button className="update-btn" onClick={handleSecurityBundleExport} disabled={securityBundleBusy} style={{ marginLeft: '0.5rem' }}>
+          Export Bundle
+        </button>
+        <label className="update-btn" style={{ marginLeft: '0.5rem', cursor: securityBundleBusy ? 'default' : 'pointer', opacity: securityBundleBusy ? 0.6 : 1 }}>
+          Import Bundle
+          <input
+            type="file"
+            accept=".tar.gz,.tgz,application/gzip"
+            disabled={securityBundleBusy}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.currentTarget.value = '';
+              handleSecurityBundleImport(file);
+            }}
+            style={{ display: 'none' }}
+          />
+        </label>
+      </div>
+      {securityBundleMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: securityBundleMsg.includes('failed') ? 'var(--critical)' : 'var(--text-muted)' }}>{securityBundleMsg}</div>}
       <div className="db-status-bar" style={{ marginTop: '1rem' }}>
         <h3>Operational Retention</h3>
         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Defaults: scans 180d, requests 90d, audit 365d</span>

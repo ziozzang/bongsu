@@ -1937,6 +1937,46 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 	}
 }
 
+func TestDashboardExposesAirgapSecurityBundleActions(t *testing.T) {
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBody := string(appOut)
+	apiBody := string(apiOut)
+	for _, want := range []string{
+		"Airgap Security Bundle",
+		"Include Trivy DB",
+		"Export Bundle",
+		"Import Bundle",
+		"handleSecurityBundleExport",
+		"handleSecurityBundleImport",
+		"securityBundleIncludeTrivy",
+		"recalculation started",
+	} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("dashboard airgap bundle action missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"exportSecurityDBBundle",
+		"importSecurityDBBundle",
+		"/admin/security-db/export",
+		"/admin/security-db/import",
+		"FormData",
+		"uploadForm",
+		"bongsu-security-db-bundle.tar.gz",
+	} {
+		if !strings.Contains(apiBody, want) {
+			t.Fatalf("web API airgap bundle helper missing %q", want)
+		}
+	}
+}
+
 func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/install-agent.sh")
 	if err != nil {

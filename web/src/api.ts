@@ -100,6 +100,19 @@ async function download(path: string, filename: string, params?: Record<string, 
   URL.revokeObjectURL(objectUrl);
 }
 
+async function uploadForm<T>(path: string, form: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  const res = await fetch(API_BASE + path, { method: 'POST', headers, body: form });
+  if (res.status === 401) {
+    clearApiKey();
+    if (onUnauthorized) onUnauthorized();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw await responseError(res);
+  return res.json();
+}
+
 export interface Host {
   id: string;
   hostname: string;
@@ -455,6 +468,13 @@ export const api = {
   deleteRbacPolicy: (id: string) => requestEmpty<{ status: string }>(`/admin/rbac/policies/${encodeURIComponent(id)}`, 'DELETE'),
   updateTrivyDB: () => request<{status: string; message: string; trivy_db_ready: boolean; last_update: string}>('/admin/trivy-db/update', undefined, 'POST'),
   updateSecurityDB: () => request<{status: string; security_db: HealthStatus['security_db']}>('/admin/security-db/update', undefined, 'POST'),
+  exportSecurityDBBundle: (includeTrivy = true) =>
+    download('/admin/security-db/export', 'bongsu-security-db-bundle.tar.gz', { include_trivy: includeTrivy ? 'true' : 'false' }),
+  importSecurityDBBundle: (file: File) => {
+    const form = new FormData();
+    form.append('bundle', file);
+    return uploadForm<{ status: string; imported: number; trivy_db_loaded: boolean }>('/admin/security-db/import', form);
+  },
   rematchCVEs: (body?: { sources?: string[]; min_source_matchable_percent?: number; candidate_limit?: number }) =>
     requestJSON<{matched: number; new_vulns: number; skipped: number; candidate_limit: number; limited: boolean; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),
   recalcCveCVSS: () =>
