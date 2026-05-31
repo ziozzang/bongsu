@@ -446,6 +446,37 @@ func TestValidateSecurityDBBundleChecksums(t *testing.T) {
 	}
 }
 
+func TestSecurityDBBundleManifestCarriesRevision(t *testing.T) {
+	manifest := securityDBBundleManifest{SecurityDBRevision: "rev-123"}
+	if manifest.SecurityDBRevision != "rev-123" {
+		t.Fatalf("manifest revision = %q", manifest.SecurityDBRevision)
+	}
+
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleSecurityDbExport")
+	if start < 0 {
+		t.Fatal("handleSecurityDbExport not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleSecurityDbImport")
+	if end < 0 {
+		t.Fatal("handleSecurityDbImport not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"GetSecurityDBRevision",
+		"SecurityDBRevision: revision",
+		`"security_db_revision": revision`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("bundle export revision handling missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestValidateSecurityDBBundleEntryRejectsUnexpectedTarMembers(t *testing.T) {
 	valid := []string{"manifest.json", "cve-database.jsonl", "trivy-db.tar.gz"}
 	for _, name := range valid {
@@ -485,6 +516,7 @@ func TestSecurityDBBundleImportRejectsDuplicateEntries(t *testing.T) {
 		`"duplicate manifest.json"`,
 		`"duplicate cve-database.jsonl"`,
 		`"duplicate trivy-db.tar.gz"`,
+		`"security_db_revision": manifest.SecurityDBRevision`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("bundle import duplicate/entry guard missing %q: %s", want, fn)

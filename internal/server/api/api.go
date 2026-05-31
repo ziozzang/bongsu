@@ -2492,7 +2492,7 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	includeTrivy := r.URL.Query().Get("include_trivy") != "false"
-	bundleFile, cveCount, trivyIncluded, bundleSize, err := s.buildSecurityDBBundleTemp(r.Context(), includeTrivy)
+	bundleFile, cveCount, trivyIncluded, bundleSize, revision, err := s.buildSecurityDBBundleTemp(r.Context(), includeTrivy)
 	if err != nil {
 		log.Printf("security-db bundle export: %v", err)
 		http.Error(w, "export failed", http.StatusInternalServerError)
@@ -2515,16 +2515,17 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.audit(r, "security_db.export", "security_db", "bundle", "ok", map[string]any{
-		"cve_records":       cveCount,
-		"trivy_db_included": trivyIncluded,
-		"bytes":             bundleSize,
+		"cve_records":          cveCount,
+		"trivy_db_included":    trivyIncluded,
+		"bytes":                bundleSize,
+		"security_db_revision": revision,
 	})
 }
 
-func (s *Server) buildSecurityDBBundleTemp(ctx context.Context, includeTrivy bool) (string, int, bool, int64, error) {
+func (s *Server) buildSecurityDBBundleTemp(ctx context.Context, includeTrivy bool) (string, int, bool, int64, string, error) {
 	cveFile, cveCount, cveSHA, err := s.writeCveJSONLTemp(ctx, "")
 	if err != nil {
-		return "", 0, false, 0, err
+		return "", 0, false, 0, "", err
 	}
 	defer os.Remove(cveFile)
 
@@ -2541,30 +2542,35 @@ func (s *Server) buildSecurityDBBundleTemp(ctx context.Context, includeTrivy boo
 	}
 
 	sourceStats, _ := s.db.GetCveSourceStats(ctx)
+	revision, err := s.db.GetSecurityDBRevision(ctx)
+	if err != nil {
+		return "", 0, false, 0, "", err
+	}
 	manifest := securityDBBundleManifest{
-		Format:            "bongsu-security-db-bundle",
-		Version:           1,
-		CreatedAt:         time.Now().UTC().Format(time.RFC3339),
-		CveRecords:        cveCount,
-		CveDatabaseSHA256: cveSHA,
-		TrivyDBIncluded:   len(trivyBytes) > 0,
-		TrivyDBSHA256:     trivySHA,
-		Sources:           sourceStats,
+		Format:             "bongsu-security-db-bundle",
+		Version:            1,
+		CreatedAt:          time.Now().UTC().Format(time.RFC3339),
+		SecurityDBRevision: revision,
+		CveRecords:         cveCount,
+		CveDatabaseSHA256:  cveSHA,
+		TrivyDBIncluded:    len(trivyBytes) > 0,
+		TrivyDBSHA256:      trivySHA,
+		Sources:            sourceStats,
 	}
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		return "", 0, false, 0, err
+		return "", 0, false, 0, "", err
 	}
 
 	tmp, err := os.CreateTemp("", "bongsu-security-db-bundle-*.tar.gz")
 	if err != nil {
-		return "", 0, false, 0, err
+		return "", 0, false, 0, "", err
 	}
 	path := tmp.Name()
-	cleanup := func(err error) (string, int, bool, int64, error) {
+	cleanup := func(err error) (string, int, bool, int64, string, error) {
 		tmp.Close()
 		os.Remove(path)
-		return "", 0, false, 0, err
+		return "", 0, false, 0, "", err
 	}
 
 	gz := gzip.NewWriter(tmp)
@@ -2588,14 +2594,14 @@ func (s *Server) buildSecurityDBBundleTemp(ctx context.Context, includeTrivy boo
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(path)
-		return "", 0, false, 0, err
+		return "", 0, false, 0, "", err
 	}
 	info, err := os.Stat(path)
 	if err != nil {
 		os.Remove(path)
-		return "", 0, false, 0, err
+		return "", 0, false, 0, "", err
 	}
-	return path, cveCount, len(trivyBytes) > 0, info.Size(), nil
+	return path, cveCount, len(trivyBytes) > 0, info.Size(), revision, nil
 }
 
 func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) {
@@ -2756,22 +2762,24 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		trivyLoaded = true
 	}
 	s.audit(r, "security_db.import", "security_db", "bundle", "ok", map[string]any{
-		"imported":        imported,
-		"trivy_db_loaded": trivyLoaded,
+		"imported":             imported,
+		"trivy_db_loaded":      trivyLoaded,
+		"security_db_revision": manifest.SecurityDBRevision,
 	})
 	s.SecurityDatabaseUpdated("security-db bundle import")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "imported": imported, "trivy_db_loaded": trivyLoaded})
 }
 
 type securityDBBundleManifest struct {
-	Format            string              `json:"format"`
-	Version           int                 `json:"version"`
-	CreatedAt         string              `json:"created_at"`
-	CveRecords        int                 `json:"cve_records"`
-	CveDatabaseSHA256 string              `json:"cve_database_sha256"`
-	TrivyDBIncluded   bool                `json:"trivy_db_included"`
-	TrivyDBSHA256     string              `json:"trivy_db_sha256"`
-	Sources           []db.CveSourceStats `json:"sources,omitempty"`
+	Format             string              `json:"format"`
+	Version            int                 `json:"version"`
+	CreatedAt          string              `json:"created_at"`
+	SecurityDBRevision string              `json:"security_db_revision,omitempty"`
+	CveRecords         int                 `json:"cve_records"`
+	CveDatabaseSHA256  string              `json:"cve_database_sha256"`
+	TrivyDBIncluded    bool                `json:"trivy_db_included"`
+	TrivyDBSHA256      string              `json:"trivy_db_sha256"`
+	Sources            []db.CveSourceStats `json:"sources,omitempty"`
 }
 
 var errNoValidCveEntries = errors.New("no valid cve entries")
