@@ -1924,15 +1924,15 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 	}
 
 	sourceStats, _ := s.db.GetCveSourceStats(ctx)
-	manifest := map[string]any{
-		"format":              "bongsu-security-db-bundle",
-		"version":             1,
-		"created_at":          time.Now().UTC().Format(time.RFC3339),
-		"cve_records":         cveCount,
-		"cve_database_sha256": cveSHA,
-		"trivy_db_included":   len(trivyBytes) > 0,
-		"trivy_db_sha256":     trivySHA,
-		"sources":             sourceStats,
+	manifest := securityDBBundleManifest{
+		Format:            "bongsu-security-db-bundle",
+		Version:           1,
+		CreatedAt:         time.Now().UTC().Format(time.RFC3339),
+		CveRecords:        cveCount,
+		CveDatabaseSHA256: cveSHA,
+		TrivyDBIncluded:   len(trivyBytes) > 0,
+		TrivyDBSHA256:     trivySHA,
+		Sources:           sourceStats,
 	}
 	manifestBytes, _ := json.MarshalIndent(manifest, "", "  ")
 
@@ -1989,7 +1989,19 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 	tr := tar.NewReader(gz)
 
 	imported := 0
+	var manifest *securityDBBundleManifest
+	var cveFile string
+	var cveSHA string
 	var trivyArchive string
+	var trivySHA string
+	defer func() {
+		if cveFile != "" {
+			os.Remove(cveFile)
+		}
+		if trivyArchive != "" {
+			os.Remove(trivyArchive)
+		}
+	}()
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -2001,39 +2013,54 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		}
 		switch hdr.Name {
 		case "manifest.json":
-			var manifest map[string]any
-			_ = json.NewDecoder(tr).Decode(&manifest)
-			if manifest["format"] != "bongsu-security-db-bundle" {
+			var m securityDBBundleManifest
+			if err := json.NewDecoder(tr).Decode(&m); err != nil {
+				http.Error(w, "invalid bundle manifest", http.StatusBadRequest)
+				return
+			}
+			if m.Format != "bongsu-security-db-bundle" {
 				http.Error(w, "unsupported bundle format", http.StatusBadRequest)
 				return
 			}
+			manifest = &m
 		case "cve-database.jsonl":
-			n, err := s.importCveJSONL(r.Context(), tr, "")
+			if cveFile != "" {
+				os.Remove(cveFile)
+			}
+			cveFile, cveSHA, err = writeBundleEntryTemp(tr, "bongsu-bundle-cve-*.jsonl")
 			if err != nil {
-				log.Printf("security-db bundle cve import: %v", err)
-				http.Error(w, "cve import failed", http.StatusInternalServerError)
+				http.Error(w, "cve archive write failed", http.StatusInternalServerError)
 				return
 			}
-			imported += n
 		case "trivy-db.tar.gz":
-			tmp, err := os.CreateTemp("", "bongsu-bundle-trivy-db-*.tar.gz")
-			if err != nil {
-				http.Error(w, "temp file error", http.StatusInternalServerError)
-				return
-			}
-			trivyArchive = tmp.Name()
-			if _, err := io.Copy(tmp, tr); err != nil {
-				tmp.Close()
+			if trivyArchive != "" {
 				os.Remove(trivyArchive)
+			}
+			trivyArchive, trivySHA, err = writeBundleEntryTemp(tr, "bongsu-bundle-trivy-db-*.tar.gz")
+			if err != nil {
 				http.Error(w, "trivy archive write failed", http.StatusInternalServerError)
 				return
 			}
-			tmp.Close()
 		}
+	}
+	if err := validateSecurityDBBundle(manifest, cveFile, cveSHA, trivyArchive, trivySHA); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	cveReader, err := os.Open(cveFile)
+	if err != nil {
+		http.Error(w, "cve archive read failed", http.StatusInternalServerError)
+		return
+	}
+	imported, err = s.importCveJSONL(r.Context(), cveReader, "")
+	cveReader.Close()
+	if err != nil {
+		log.Printf("security-db bundle cve import: %v", err)
+		http.Error(w, "cve import failed", http.StatusInternalServerError)
+		return
 	}
 	trivyLoaded := false
 	if trivyArchive != "" {
-		defer os.Remove(trivyArchive)
 		if s.dbMgr == nil {
 			http.Error(w, "bundle contains trivy db but manager is unavailable", http.StatusServiceUnavailable)
 			return
@@ -2051,6 +2078,66 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 	})
 	s.SecurityDatabaseUpdated("security-db bundle import")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "imported": imported, "trivy_db_loaded": trivyLoaded})
+}
+
+type securityDBBundleManifest struct {
+	Format            string              `json:"format"`
+	Version           int                 `json:"version"`
+	CreatedAt         string              `json:"created_at"`
+	CveRecords        int                 `json:"cve_records"`
+	CveDatabaseSHA256 string              `json:"cve_database_sha256"`
+	TrivyDBIncluded   bool                `json:"trivy_db_included"`
+	TrivyDBSHA256     string              `json:"trivy_db_sha256"`
+	Sources           []db.CveSourceStats `json:"sources,omitempty"`
+}
+
+func writeBundleEntryTemp(r io.Reader, pattern string) (string, string, error) {
+	tmp, err := os.CreateTemp("", pattern)
+	if err != nil {
+		return "", "", err
+	}
+	path := tmp.Name()
+	hash := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(tmp, hash), r); err != nil {
+		tmp.Close()
+		os.Remove(path)
+		return "", "", err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(path)
+		return "", "", err
+	}
+	return path, hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func validateSecurityDBBundle(manifest *securityDBBundleManifest, cveFile, cveSHA, trivyArchive, trivySHA string) error {
+	if manifest == nil {
+		return fmt.Errorf("missing bundle manifest")
+	}
+	if manifest.Version != 1 {
+		return fmt.Errorf("unsupported bundle version")
+	}
+	if cveFile == "" {
+		return fmt.Errorf("missing cve-database.jsonl")
+	}
+	if manifest.CveDatabaseSHA256 == "" {
+		return fmt.Errorf("missing cve database checksum")
+	}
+	if !strings.EqualFold(manifest.CveDatabaseSHA256, cveSHA) {
+		return fmt.Errorf("cve database checksum mismatch")
+	}
+	if manifest.TrivyDBIncluded && trivyArchive == "" {
+		return fmt.Errorf("manifest requires trivy db but archive is missing")
+	}
+	if trivyArchive != "" {
+		if manifest.TrivyDBSHA256 == "" {
+			return fmt.Errorf("missing trivy db checksum")
+		}
+		if !strings.EqualFold(manifest.TrivyDBSHA256, trivySHA) {
+			return fmt.Errorf("trivy db checksum mismatch")
+		}
+	}
+	return nil
 }
 
 func (s *Server) SecurityDatabaseUpdated(reason string) {

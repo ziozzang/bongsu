@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -163,6 +165,33 @@ func TestCoalesceSecurityRecalcReason(t *testing.T) {
 	}
 	if got := coalesceSecurityRecalcReason("osv import", "nvd import"); got != "osv import; nvd import" {
 		t.Fatalf("merged reason = %q", got)
+	}
+}
+
+func TestValidateSecurityDBBundleChecksums(t *testing.T) {
+	sum := sha256.Sum256([]byte("cve"))
+	cveSHA := hex.EncodeToString(sum[:])
+	trivySum := sha256.Sum256([]byte("trivy"))
+	trivySHA := hex.EncodeToString(trivySum[:])
+
+	manifest := &securityDBBundleManifest{
+		Format:            "bongsu-security-db-bundle",
+		Version:           1,
+		CveDatabaseSHA256: cveSHA,
+		TrivyDBIncluded:   true,
+		TrivyDBSHA256:     trivySHA,
+	}
+	if err := validateSecurityDBBundle(manifest, "/tmp/cve.jsonl", cveSHA, "/tmp/trivy.tar.gz", trivySHA); err != nil {
+		t.Fatalf("valid bundle rejected: %v", err)
+	}
+	if err := validateSecurityDBBundle(nil, "/tmp/cve.jsonl", cveSHA, "", ""); err == nil || !strings.Contains(err.Error(), "manifest") {
+		t.Fatalf("missing manifest error = %v", err)
+	}
+	if err := validateSecurityDBBundle(manifest, "/tmp/cve.jsonl", "bad", "/tmp/trivy.tar.gz", trivySHA); err == nil || !strings.Contains(err.Error(), "cve database checksum") {
+		t.Fatalf("cve checksum error = %v", err)
+	}
+	if err := validateSecurityDBBundle(manifest, "/tmp/cve.jsonl", cveSHA, "/tmp/trivy.tar.gz", "bad"); err == nil || !strings.Contains(err.Error(), "trivy db checksum") {
+		t.Fatalf("trivy checksum error = %v", err)
 	}
 }
 
