@@ -2132,7 +2132,7 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 	}
 	ctx := r.Context()
 
-	cveFile, cveCount, cveSHA, err := s.writeCveJSONLTemp(ctx)
+	cveFile, cveCount, cveSHA, err := s.writeCveJSONLTemp(ctx, "")
 	if err != nil {
 		log.Printf("security-db bundle cve export: %v", err)
 		http.Error(w, "export failed", http.StatusInternalServerError)
@@ -2777,36 +2777,32 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 	}
 	source := r.URL.Query().Get("source")
 
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("Content-Disposition", "attachment; filename=cve-database.jsonl")
-
-	q := "SELECT " + db.CveCols + " FROM cve_database"
-	args := []any{}
-	if source != "" {
-		q += " WHERE source=$1"
-		args = append(args, source)
-	}
-	q += " ORDER BY vulnerability_id"
-
-	rows, err := s.db.QueryContext(r.Context(), q, args...)
+	cveFile, count, _, err := s.writeCveJSONLTemp(r.Context(), source)
 	if err != nil {
 		log.Printf("cve-db export: %v", err)
+		http.Error(w, "export failed", http.StatusInternalServerError)
 		return
 	}
-	defer rows.Close()
-
-	encoder := json.NewEncoder(w)
-	for rows.Next() {
-		var e models.CveEntry
-		if err := db.ScanCveEntry(rows, &e); err != nil {
-			continue
-		}
-		encoder.Encode(e)
+	defer os.Remove(cveFile)
+	f, err := os.Open(cveFile)
+	if err != nil {
+		log.Printf("cve-db export open: %v", err)
+		http.Error(w, "export failed", http.StatusInternalServerError)
+		return
 	}
-	s.audit(r, "cve_db.export", "cve_db", source, "ok", map[string]any{"source": source})
+	defer f.Close()
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Content-Disposition", "attachment; filename=cve-database.jsonl")
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("cve-db export write: %v", err)
+		return
+	}
+	s.audit(r, "cve_db.export", "cve_db", source, "ok", map[string]any{"source": source, "records": count})
 }
 
-func (s *Server) writeCveJSONLTemp(ctx context.Context) (string, int, string, error) {
+func (s *Server) writeCveJSONLTemp(ctx context.Context, source string) (string, int, string, error) {
 	tmp, err := os.CreateTemp("", "bongsu-cve-database-*.jsonl")
 	if err != nil {
 		return "", 0, "", err
@@ -2814,7 +2810,15 @@ func (s *Server) writeCveJSONLTemp(ctx context.Context) (string, int, string, er
 	path := tmp.Name()
 	defer tmp.Close()
 
-	rows, err := s.db.QueryContext(ctx, "SELECT "+db.CveCols+" FROM cve_database ORDER BY vulnerability_id, source")
+	q := "SELECT " + db.CveCols + " FROM cve_database"
+	args := []any{}
+	if source != "" {
+		q += " WHERE source=$1"
+		args = append(args, source)
+	}
+	q += " ORDER BY vulnerability_id, source"
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		os.Remove(path)
 		return "", 0, "", err

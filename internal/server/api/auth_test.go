@@ -878,6 +878,66 @@ func TestCveDbImportAuditsFailures(t *testing.T) {
 	}
 }
 
+func TestCveDbExportStagesCompleteJSONLBeforeResponse(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleCveDbExport")
+	if start < 0 {
+		t.Fatal("handleCveDbExport not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) writeCveJSONLTemp")
+	if end < 0 {
+		t.Fatal("writeCveJSONLTemp not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"s.writeCveJSONLTemp(r.Context(), source)",
+		"http.Error(w, \"export failed\", http.StatusInternalServerError)",
+		"os.Open(cveFile)",
+		"io.Copy(w, f)",
+		`"records": count`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("cve db export staging missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "db.ScanCveEntry(rows, &e)") || strings.Contains(fn, "encoder.Encode(e)") {
+		t.Fatal("handleCveDbExport must not stream rows directly before full export validation")
+	}
+}
+
+func TestWriteCveJSONLTempSupportsSourceFilterAndRowErrors(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) writeCveJSONLTemp")
+	if start < 0 {
+		t.Fatal("writeCveJSONLTemp not found")
+	}
+	end := strings.Index(body[start:], "func writeTarBytes")
+	if end < 0 {
+		t.Fatal("writeTarBytes not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"source string",
+		"WHERE source=$1",
+		"db.ScanCveEntry(rows, &e)",
+		"encoder.Encode(e)",
+		"rows.Err()",
+		"os.Remove(path)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("writeCveJSONLTemp robustness missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestCveImportErrorStatusMapsJsonErrors(t *testing.T) {
 	if got := cveImportErrorStatus(&json.SyntaxError{}); got != http.StatusBadRequest {
 		t.Fatalf("syntax error status = %d, want %d", got, http.StatusBadRequest)
