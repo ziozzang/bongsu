@@ -64,6 +64,16 @@ func TestCompatibleSecurityCandidateSeparatesEcosystems(t *testing.T) {
 	}
 }
 
+func TestCompatibleSecurityCandidateMatchesUbuntuAsUbuntu(t *testing.T) {
+	affected := `[{"name":"openssl","ecosystem":"Ubuntu","fixed":["3.0.13-0ubuntu3.6"]}]`
+	if _, ok := compatibleSecurityCandidate("openssl", "ubuntu", "Ubuntu", "3.0.13-0ubuntu3.5", "os-package", "Ubuntu", affected); !ok {
+		t.Fatal("Ubuntu package should match Ubuntu advisory")
+	}
+	if _, ok := compatibleSecurityCandidate("openssl", "ubuntu", "Debian", "3.0.13-0ubuntu3.5", "os-package", "Ubuntu", affected); ok {
+		t.Fatal("Ubuntu advisory must not match package recorded as Debian")
+	}
+}
+
 func TestCompatibleSecurityCandidateRejectsWeakOrWrongCandidates(t *testing.T) {
 	noFixed := `[{"name":"foo","ecosystem":"npm"}]`
 	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "4.5.5", "code-library", "", noFixed); ok {

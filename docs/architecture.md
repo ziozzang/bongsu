@@ -40,6 +40,8 @@ The merge strategy is:
 6. `/api/cve-db/stats` reports source quality counters for ecosystem metadata, fixed versions, affected ranges, CVSS data, and matchable records so operators can reject weak feeds before they create noisy matches.
 7. Rematch can be constrained by source allowlist and minimum matchable percentage through `BONGSU_CVE_MATCH_SOURCES`, `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT`, or the dashboard rematch control.
 
+Scanner package ecosystems are kept distro-specific for OS advisories. For example, Trivy `ubuntu` packages are stored as `Ubuntu` rather than collapsed into `Debian`, so Ubuntu advisories can match without weakening Debian/Ubuntu separation.
+
 ## Connected Update Flow
 
 1. Server has `BONGSU_SECURITY_DB_SYNC_CMD` configured, usually:

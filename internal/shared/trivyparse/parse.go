@@ -130,7 +130,9 @@ func ExtractPackagesAndVulns(data []byte, source, container string) ([]models.Pa
 
 func ecosystemForType(pkgType string) string {
 	switch strings.ToLower(pkgType) {
-	case "debian", "ubuntu", "deb":
+	case "ubuntu":
+		return "Ubuntu"
+	case "debian", "deb":
 		return "Debian"
 	case "alpine", "apk":
 		return "Alpine"
@@ -163,7 +165,7 @@ func purlForPackage(pkgType, name, version, arch string) string {
 	}
 	purlType := "generic"
 	switch ecosystemForType(pkgType) {
-	case "Debian":
+	case "Debian", "Ubuntu":
 		purlType = "deb"
 	case "Alpine":
 		purlType = "apk"
