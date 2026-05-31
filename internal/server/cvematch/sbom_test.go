@@ -22,6 +22,7 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 	}
 	pkgs := []models.Package{{
 		ID:          "pkg-1",
+		ScanID:      "scan-1",
 		HostID:      "host-1",
 		AssetType:   "container",
 		AssetID:     "container-1",
@@ -49,6 +50,9 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 	if doc["bomFormat"] != "CycloneDX" {
 		t.Fatalf("bomFormat = %v", doc["bomFormat"])
 	}
+	if serial := doc["serialNumber"].(string); !strings.HasPrefix(serial, "urn:uuid:") {
+		t.Fatalf("serialNumber = %q, want urn:uuid", serial)
+	}
 	components := doc["components"].([]any)
 	if len(components) != 1 {
 		t.Fatalf("components = %d", len(components))
@@ -62,29 +66,41 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 	}
 	props := component["properties"].([]any)
 	foundAsset := false
+	foundPkgScan := false
 	for _, item := range props {
 		prop := item.(map[string]any)
 		if prop["name"] == "bongsu:asset_type" && prop["value"] == "container" {
 			foundAsset = true
-			break
+		}
+		if prop["name"] == "bongsu:scan_id" && prop["value"] == "scan-1" {
+			foundPkgScan = true
 		}
 	}
 	if !foundAsset {
 		t.Fatal("bongsu asset context property missing")
 	}
+	if !foundPkgScan {
+		t.Fatal("bongsu package scan_id property missing")
+	}
 	metadata := doc["metadata"].(map[string]any)
 	root := metadata["component"].(map[string]any)
 	rootProps := root["properties"].([]any)
 	foundOwner := false
+	foundRootScan := false
 	for _, item := range rootProps {
 		prop := item.(map[string]any)
 		if prop["name"] == "bongsu:owner" && prop["value"] == "platform" {
 			foundOwner = true
-			break
+		}
+		if prop["name"] == "bongsu:scan_id" && prop["value"] == "scan-1" {
+			foundRootScan = true
 		}
 	}
 	if !foundOwner {
 		t.Fatal("bongsu host owner property missing")
+	}
+	if !foundRootScan {
+		t.Fatal("bongsu root scan_id property missing")
 	}
 	deps := doc["dependencies"].([]any)
 	if len(deps) != 2 {
@@ -157,6 +173,7 @@ func TestGenerateSPDXIncludesPackagePURLAndRelationships(t *testing.T) {
 	host := models.Host{ID: "host-1", Hostname: "build-node-1", OSName: "Ubuntu", OSVersion: "24.04"}
 	pkgs := []models.Package{{
 		ID:        "pkg-1",
+		ScanID:    "scan-1",
 		HostID:    "host-1",
 		AssetType: "host",
 		AssetID:   "host-1",
@@ -184,8 +201,18 @@ func TestGenerateSPDXIncludesPackagePURLAndRelationships(t *testing.T) {
 		t.Fatalf("packages = %d", len(packages))
 	}
 	pkg := packages[1].(map[string]any)
+	root := packages[0].(map[string]any)
+	if !strings.Contains(root["comment"].(string), "scan_id=scan-1") {
+		t.Fatalf("SPDX host package comment missing scan id: %q", root["comment"])
+	}
 	if pkg["packageUrl"] == "" {
 		t.Fatal("SPDX packageUrl is empty")
+	}
+	if !strings.Contains(pkg["comment"].(string), "scan_id=scan-1") {
+		t.Fatalf("SPDX package comment missing scan id: %q", pkg["comment"])
+	}
+	if !strings.Contains(doc["documentNamespace"].(string), "scan-1") {
+		t.Fatalf("SPDX document namespace missing scan id: %q", doc["documentNamespace"])
 	}
 	for _, field := range []string{"licenseConcluded", "licenseDeclared", "copyrightText", "supplier"} {
 		if pkg[field] == "" {

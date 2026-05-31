@@ -933,6 +933,7 @@ func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no packages available for host", http.StatusNotFound)
 		return
 	}
+	scanID := latestPackageScanID(pkgs)
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
 	if format == "" {
 		format = "cyclonedx"
@@ -972,9 +973,19 @@ func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "sbom.export", "host", hostID, "ok", map[string]any{
 		"hostname": host.Hostname,
+		"scan_id":  scanID,
 		"packages": len(pkgs),
 		"format":   auditFormat,
 	})
+}
+
+func latestPackageScanID(pkgs []models.Package) string {
+	for _, pkg := range pkgs {
+		if strings.TrimSpace(pkg.ScanID) != "" {
+			return strings.TrimSpace(pkg.ScanID)
+		}
+	}
+	return ""
 }
 
 func (s *Server) handleHostVulnCounts(w http.ResponseWriter, r *http.Request) {

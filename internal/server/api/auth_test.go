@@ -767,6 +767,36 @@ func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
 	}
 }
 
+func TestHostSBOMAuditIncludesLatestScanID(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleHostSBOM")
+	if start < 0 {
+		t.Fatal("handleHostSBOM not found")
+	}
+	end := strings.Index(body[start:], "func latestPackageScanID")
+	if end < 0 {
+		t.Fatal("handleHostSBOM end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"scanID := latestPackageScanID(pkgs)",
+		`"scan_id":`,
+		"scanID",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("SBOM audit scan identity missing %q: %s", want, fn)
+		}
+	}
+	pkgs := []models.Package{{ScanID: ""}, {ScanID: " scan-1 "}}
+	if got := latestPackageScanID(pkgs); got != "scan-1" {
+		t.Fatalf("latestPackageScanID = %q, want scan-1", got)
+	}
+}
+
 func TestHealthOnlyShowsSecuritySyncOutputToAdmins(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {

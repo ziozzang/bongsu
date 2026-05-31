@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
@@ -88,10 +90,11 @@ func buildPurl(pkg models.Package, host models.Host) string {
 }
 
 type cycloneDX struct {
-	BOMFormat   string `json:"bomFormat"`
-	SpecVersion string `json:"specVersion"`
-	Version     int    `json:"version"`
-	Metadata    struct {
+	BOMFormat    string `json:"bomFormat"`
+	SpecVersion  string `json:"specVersion"`
+	SerialNumber string `json:"serialNumber,omitempty"`
+	Version      int    `json:"version"`
+	Metadata     struct {
 		Timestamp string `json:"timestamp"`
 		Tools     []struct {
 			Vendor  string `json:"vendor"`
@@ -184,6 +187,10 @@ func GenerateCycloneDX(pkgs []models.Package, host models.Host) ([]byte, error) 
 		SpecVersion: "1.5",
 		Version:     1,
 	}
+	scanID := latestScanID(pkgs)
+	if scanID != "" {
+		sbom.SerialNumber = "urn:uuid:" + uuid.NewSHA1(uuid.NameSpaceURL, []byte("bongsu:cyclonedx:"+host.ID+":"+scanID)).String()
+	}
 	sbom.Metadata.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	sbom.Metadata.Tools = append(sbom.Metadata.Tools, struct {
 		Vendor  string `json:"vendor"`
@@ -197,6 +204,7 @@ func GenerateCycloneDX(pkgs []models.Package, host models.Host) ([]byte, error) 
 	sbom.Metadata.Component.Version = host.OSName + " " + host.OSVersion
 	sbom.Metadata.Component.Properties = []cdxProperty{
 		{Name: "bongsu:host_id", Value: host.ID},
+		{Name: "bongsu:scan_id", Value: scanID},
 		{Name: "bongsu:ip_address", Value: host.IPAddress},
 		{Name: "bongsu:os_name", Value: host.OSName},
 		{Name: "bongsu:os_version", Value: host.OSVersion},
@@ -220,6 +228,7 @@ func GenerateCycloneDX(pkgs []models.Package, host models.Host) ([]byte, error) 
 		ref := uniqueBOMRef("bongsu:pkg:"+stableRef(cycloneDXPackageIdentity(pkg)), seenRefs)
 		props := []cdxProperty{
 			{Name: "bongsu:package_id", Value: pkg.ID},
+			{Name: "bongsu:scan_id", Value: pkg.ScanID},
 			{Name: "bongsu:host_id", Value: pkg.HostID},
 			{Name: "bongsu:asset_type", Value: pkg.AssetType},
 			{Name: "bongsu:asset_id", Value: pkg.AssetID},
@@ -291,9 +300,13 @@ func stableRef(s string) string {
 
 func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
+	scanID := latestScanID(pkgs)
 	docID := "SPDXRef-DOCUMENT"
 	docName := "bongsu-" + sanitizeSPDXID(defaultSPDXName(host.Hostname, host.ID))
 	namespaceID := sanitizeSPDXID(defaultSPDXName(host.ID, host.Hostname))
+	if scanID != "" {
+		namespaceID += "-" + sanitizeSPDXID(scanID)
+	}
 	doc := spdxDocument{
 		SPDXID:            docID,
 		SPDXVersion:       "SPDX-2.3",
@@ -317,7 +330,7 @@ func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 		LicenseDeclared:         "NOASSERTION",
 		CopyrightText:           "NOASSERTION",
 		Supplier:                "Organization: bongsu",
-		Comment:                 fmt.Sprintf("bongsu host_id=%s ip_address=%s owner=%s team=%s environment=%s criticality=%s", host.ID, host.IPAddress, host.Owner, host.Team, host.Environment, host.Criticality),
+		Comment:                 fmt.Sprintf("bongsu host_id=%s scan_id=%s ip_address=%s owner=%s team=%s environment=%s criticality=%s", host.ID, scanID, host.IPAddress, host.Owner, host.Team, host.Environment, host.Criticality),
 	})
 	doc.Relationships = append(doc.Relationships, spdxRelationship{SPDXElementID: docID, RelationshipType: "DESCRIBES", RelatedSPDXElement: rootID})
 
@@ -350,8 +363,8 @@ func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 				ReferenceType:     "purl",
 				ReferenceLocator:  purl,
 			}},
-			Comment: fmt.Sprintf("bongsu package_id=%s asset_type=%s asset_id=%s source=%s pkg_type=%s ecosystem=%s container=%s container_id=%s image_name=%s image_id=%s file_path=%s target=%s",
-				pkg.ID, pkg.AssetType, pkg.AssetID, pkg.Source, pkg.PkgType, pkg.Ecosystem, pkg.Container, pkg.ContainerID, pkg.ImageName, pkg.ImageID, pkg.FilePath, pkg.Target),
+			Comment: fmt.Sprintf("bongsu package_id=%s scan_id=%s asset_type=%s asset_id=%s source=%s pkg_type=%s ecosystem=%s container=%s container_id=%s image_name=%s image_id=%s file_path=%s target=%s",
+				pkg.ID, pkg.ScanID, pkg.AssetType, pkg.AssetID, pkg.Source, pkg.PkgType, pkg.Ecosystem, pkg.Container, pkg.ContainerID, pkg.ImageName, pkg.ImageID, pkg.FilePath, pkg.Target),
 		})
 		doc.Relationships = append(doc.Relationships, spdxRelationship{SPDXElementID: rootID, RelationshipType: "CONTAINS", RelatedSPDXElement: spdxID})
 	}
@@ -359,6 +372,15 @@ func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 		return nil, fmt.Errorf("no valid packages for SBOM generation")
 	}
 	return json.Marshal(doc)
+}
+
+func latestScanID(pkgs []models.Package) string {
+	for _, pkg := range pkgs {
+		if strings.TrimSpace(pkg.ScanID) != "" {
+			return strings.TrimSpace(pkg.ScanID)
+		}
+	}
+	return ""
 }
 
 func spdxPackageVerificationCode(parts ...string) string {
