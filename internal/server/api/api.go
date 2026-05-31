@@ -29,13 +29,15 @@ import (
 )
 
 type Server struct {
-	db      *db.DB
-	apiKey  string
-	webAuth bool
-	mux     *http.ServeMux
-	matcher *cvematch.Matcher
-	dbMgr   *trivydb.Manager
-	secMgr  *secdb.Manager
+	db           *db.DB
+	apiKey       string
+	agentKey     string
+	installToken string
+	webAuth      bool
+	mux          *http.ServeMux
+	matcher      *cvematch.Matcher
+	dbMgr        *trivydb.Manager
+	secMgr       *secdb.Manager
 }
 
 func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, secMgr *secdb.Manager) *Server {
@@ -44,15 +46,22 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		apiKey = uuid.New().String()
 		log.Printf("WARNING: Generated random API key. Set BONGSU_API_KEY env var for persistence.")
 	}
+	agentKey := os.Getenv("BONGSU_AGENT_API_KEY")
+	if agentKey == "" {
+		agentKey = apiKey
+		log.Printf("WARNING: BONGSU_AGENT_API_KEY is not set; agents will share the admin API key.")
+	}
 
 	s := &Server{
-		db:      database,
-		apiKey:  apiKey,
-		webAuth: os.Getenv("BONGSU_WEB_AUTH") != "false",
-		mux:     http.NewServeMux(),
-		matcher: matcher,
-		dbMgr:   dbMgr,
-		secMgr:  secMgr,
+		db:           database,
+		apiKey:       apiKey,
+		agentKey:     agentKey,
+		installToken: os.Getenv("BONGSU_INSTALL_TOKEN"),
+		webAuth:      os.Getenv("BONGSU_WEB_AUTH") != "false",
+		mux:          http.NewServeMux(),
+		matcher:      matcher,
+		dbMgr:        dbMgr,
+		secMgr:       secMgr,
 	}
 	s.routes()
 	return s
@@ -146,19 +155,42 @@ func (s *Server) serveDashboard() {
 	log.Printf("Serving dashboard from %s", distDir)
 }
 
-func (s *Server) authenticate(r *http.Request) bool {
+func (s *Server) authenticateWeb(r *http.Request) bool {
 	if !s.webAuth {
 		return true
 	}
+	return s.matchKey(r.Header.Get("X-API-Key"), s.apiKey)
+}
+
+func (s *Server) authenticateAdmin(r *http.Request) bool {
+	return s.matchKey(r.Header.Get("X-API-Key"), s.apiKey)
+}
+
+func (s *Server) authenticateAgent(r *http.Request) bool {
 	key := r.Header.Get("X-API-Key")
-	if key == "" {
-		key = r.URL.Query().Get("api_key")
+	return s.matchKey(key, s.agentKey) || s.matchKey(key, s.apiKey)
+}
+
+func (s *Server) authenticateInstall(r *http.Request) bool {
+	if s.installToken == "" {
+		return true
 	}
-	return subtle.ConstantTimeCompare([]byte(key), []byte(s.apiKey)) == 1
+	token := r.Header.Get("X-Install-Token")
+	if token == "" {
+		token = r.URL.Query().Get("token")
+	}
+	return s.matchKey(token, s.installToken) || s.authenticateAdmin(r)
+}
+
+func (s *Server) matchKey(got, want string) bool {
+	if got == "" || want == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }
 
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAgent(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -307,7 +339,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -342,7 +374,7 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -358,7 +390,7 @@ func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -382,7 +414,7 @@ func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleHostVulnCounts(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -399,7 +431,7 @@ func (s *Server) handleHostVulnCounts(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -440,7 +472,7 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleVulnFilters(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -456,7 +488,7 @@ func (s *Server) handleVulnFilters(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCveSearch(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -492,7 +524,7 @@ func (s *Server) handleCveSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleVulnSummary(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -508,7 +540,7 @@ func (s *Server) handleVulnSummary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -534,21 +566,30 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateInstall(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	scheme := "http"
 	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "https"
 	}
 	host := r.Host
-	apiKey := s.apiKey
+	apiKey := s.agentKey
+	tokenQuery := ""
+	if s.installToken != "" {
+		tokenQuery = "?token=" + s.installToken
+	}
 
 	script := fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
 
 # Bongsu Agent Installer
-# Usage: curl -sL %s://%s/api/install.sh | bash
+# Usage: curl -sL %s://%s/api/install.sh%s | bash
 
 SERVER="%s://%s"
 API_KEY="%s"
+INSTALL_TOKEN_QUERY="%s"
 WORK_DIR="${BONGSU_WORK_DIR:-/opt/bongsu}"
 INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
@@ -563,7 +604,7 @@ mkdir -p "$WORK_DIR/bin"
 
 # Download agent binary from server
 echo "Downloading bongsu-agent..."
-curl -sL "$SERVER/api/downloads/bongsu-agent" -o "$WORK_DIR/bin/bongsu-agent"
+curl -sL "$SERVER/api/downloads/bongsu-agent$INSTALL_TOKEN_QUERY" -o "$WORK_DIR/bin/bongsu-agent"
 chmod +x "$WORK_DIR/bin/bongsu-agent"
 
 if [ ! -x "$WORK_DIR/bin/bongsu-agent" ]; then
@@ -572,7 +613,7 @@ if [ ! -x "$WORK_DIR/bin/bongsu-agent" ]; then
 fi
 
 echo "Downloading trivy..."
-if curl -fsSL "$SERVER/api/downloads/trivy" -o "$WORK_DIR/bin/trivy"; then
+if curl -fsSL "$SERVER/api/downloads/trivy$INSTALL_TOKEN_QUERY" -o "$WORK_DIR/bin/trivy"; then
     chmod +x "$WORK_DIR/bin/trivy"
 else
     rm -f "$WORK_DIR/bin/trivy"
@@ -652,13 +693,17 @@ echo "=== Done ==="
 echo "  Config:  $WORK_DIR/config.yaml"
 echo "  Manual:  $WORK_DIR/bin/bongsu-agent --config $WORK_DIR/config.yaml --type daily --packages-only"
 echo "  Log:     $WORK_DIR/agent.log"
-`, scheme, host, scheme, host, apiKey)
+`, scheme, host, tokenQuery, scheme, host, apiKey, tokenQuery)
 
 	w.Header().Set("Content-Type", "text/x-shellscript")
 	w.Write([]byte(script))
 }
 
 func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateInstall(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	agentPath := os.Getenv("BONGSU_AGENT_BIN")
 	if agentPath == "" {
 		exe, _ := os.Executable()
@@ -683,6 +728,10 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateInstall(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	trivyPath := os.Getenv("BONGSU_TRIVY_PATH")
 	if trivyPath == "" {
 		trivyPath = "/usr/local/bin/trivy"
@@ -702,7 +751,7 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePackageVulns(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -722,7 +771,7 @@ func (s *Server) handlePackageVulns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -754,7 +803,7 @@ func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePackageFilters(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -770,7 +819,7 @@ func (s *Server) handlePackageFilters(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -794,7 +843,7 @@ func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -814,7 +863,7 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -838,7 +887,7 @@ func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAgent(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -861,7 +910,7 @@ func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAgent(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -908,7 +957,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -922,7 +971,7 @@ func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -968,7 +1017,7 @@ func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTrivyDBUpdate(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -992,7 +1041,7 @@ func (s *Server) handleTrivyDBUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1010,7 +1059,7 @@ func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1074,7 +1123,7 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1189,7 +1238,7 @@ func (s *Server) recalculateSecurityFindings(reason string) {
 }
 
 func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1277,7 +1326,7 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 }
 
 func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1292,7 +1341,7 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Enriched %d vulnerabilities with CVE DB data", enriched)
 }
 func (s *Server) handleCveDbRecalcCVSS(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1305,7 +1354,7 @@ func (s *Server) handleCveDbRecalcCVSS(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "updated": count})
 }
 func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1415,7 +1464,7 @@ func writeTarFile(tw *tar.Writer, name, path string) error {
 }
 
 func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateAdmin(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1428,7 +1477,7 @@ func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1441,7 +1490,7 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticate(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1515,7 +1564,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-API-Key, X-Install-Token")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)

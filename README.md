@@ -12,7 +12,7 @@
 ```bash
 # 1. 설정
 cp deploy/.env.example deploy/.env
-# .env 파일에서 BONGSU_API_KEY, BONGSU_DB_PASSWORD 설정
+# .env 파일에서 BONGSU_API_KEY, BONGSU_AGENT_API_KEY, BONGSU_INSTALL_TOKEN, BONGSU_DB_PASSWORD 설정
 
 # 2. 기동
 cd deploy && docker compose up -d --build
@@ -62,10 +62,10 @@ BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 웹 대시보드 첫 화면과 `/api/install.sh`에서 같은 one-line 설치를 제공합니다.
 
 ```bash
-curl -fsSL http://server:8080/api/install.sh | sudo bash
+curl -fsSL "http://server:8080/api/install.sh?token=$BONGSU_INSTALL_TOKEN" | sudo bash
 ```
 
-설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다.
+설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다. 설치된 에이전트는 admin key가 아니라 `BONGSU_AGENT_API_KEY`를 사용합니다.
 
 Force scan 요청을 즉시 받아 처리하는 상주 모드는 다음처럼 실행할 수 있습니다.
 

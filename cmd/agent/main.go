@@ -47,6 +47,9 @@ func main() {
 		*serverURL = os.Getenv("BONGSU_SERVER_URL")
 	}
 	if *apiKey == "" {
+		*apiKey = os.Getenv("BONGSU_AGENT_API_KEY")
+	}
+	if *apiKey == "" {
 		*apiKey = os.Getenv("BONGSU_API_KEY")
 	}
 	if *serverURL == "" || *apiKey == "" {

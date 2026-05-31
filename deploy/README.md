@@ -22,7 +22,7 @@ Self-hosted package vulnerability monitoring system with server-side CVE matchin
 ```bash
 # 1. Configure
 cp deploy/.env.example deploy/.env
-# Edit deploy/.env — set BONGSU_API_KEY and BONGSU_DB_PASSWORD
+# Edit deploy/.env — set BONGSU_API_KEY, BONGSU_AGENT_API_KEY, BONGSU_INSTALL_TOKEN, and BONGSU_DB_PASSWORD
 
 # 2. Build and start
 cd deploy && docker compose up -d --build
@@ -66,7 +66,9 @@ cd bongsu-0.1.0
 # 3. Configure
 cp deploy/.env.example deploy/.env
 # Edit deploy/.env:
-#   BONGSU_API_KEY=your-secret-key
+#   BONGSU_API_KEY=your-admin-secret-key
+#   BONGSU_AGENT_API_KEY=your-agent-secret-key
+#   BONGSU_INSTALL_TOKEN=your-install-token
 #   BONGSU_DB_PASSWORD=secure-password
 #   BONGSU_TRIVY_DB_INTERVAL_HOURS=0
 
@@ -156,6 +158,8 @@ spec:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BONGSU_API_KEY` | *required* | API key for authentication |
+| `BONGSU_AGENT_API_KEY` | `BONGSU_API_KEY` | Agent-only report upload and force-scan polling key |
+| `BONGSU_INSTALL_TOKEN` | empty | Optional token required for `/api/install.sh` and binary downloads |
 | `BONGSU_PORT` | `8080` | Server listen port |
 | `BONGSU_DB_DSN` | `postgres://bongsu:...` | PostgreSQL connection string |
 | `BONGSU_AUTO_MIGRATE` | `true` | Run DB migrations on startup |
@@ -172,7 +176,7 @@ spec:
 | Variable | Flag | Description |
 |----------|------|-------------|
 | `BONGSU_SERVER_URL` | `--server` | Server URL |
-| `BONGSU_API_KEY` | `--api-key` | API key |
+| `BONGSU_API_KEY` | `--api-key` | Agent API key, preferably `BONGSU_AGENT_API_KEY` from server config |
 | - | `--work-dir` | Working directory (default: `/opt/bongsu`) |
 | - | `--packages-only` | Server-side CVE matching |
 | - | `--type` | Scan type: `daily` or `manual` |
@@ -204,7 +208,7 @@ spec:
 
 **"trivy-db not found" on startup**: Expected on first start in air-gapped environments. Use `scripts/update-trivy-db.sh` to import, or the init container downloads it automatically in connected environments.
 
-**API key mismatch**: Check `BONGSU_API_KEY` in `.env` matches the key used by agents.
+**API key mismatch**: Web/admin calls use `BONGSU_API_KEY`; agents should use `BONGSU_AGENT_API_KEY`.
 
 **Agent connection failures**: Verify network connectivity and that `BONGSU_SERVER_URL` points to the correct address.
 
