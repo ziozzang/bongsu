@@ -283,6 +283,32 @@ func TestAccessPolicyExternalSubjectResolutionRejectsAmbiguousUntypedRefs(t *tes
 	}
 }
 
+func TestListAccessPoliciesSupportsTypedSubjectFilter(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) ListAccessPolicies")
+	if start < 0 {
+		t.Fatal("ListAccessPolicies not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) DeleteAccessSubject")
+	if end < 0 {
+		t.Fatal("ListAccessPolicies end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"parseAccessSubjectRef(subjectExternalID)",
+		"s.external_id=$1",
+		"s.subject_type=$2",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("typed subject policy filter missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestVulnSummaryGroupExprAllowlist(t *testing.T) {
 	if got := vulnSummaryGroupExpr("team"); got != "COALESCE(NULLIF(h.team, ''), '(unassigned)')" {
 		t.Fatalf("team group expr = %q", got)

@@ -1909,8 +1909,13 @@ FROM access_policies p
 JOIN access_subjects s ON s.id = p.subject_id`
 	args := []any{}
 	if subjectExternalID != "" {
+		subjectType, externalID := parseAccessSubjectRef(subjectExternalID)
 		q += ` WHERE s.external_id=$1`
-		args = append(args, subjectExternalID)
+		args = append(args, externalID)
+		if subjectType != "" {
+			q += ` AND s.subject_type=$2`
+			args = append(args, subjectType)
+		}
 	}
 	q += ` ORDER BY s.external_id, p.resource_type, p.resource_id, p.permission`
 	rows, err := db.QueryContext(ctx, q, args...)

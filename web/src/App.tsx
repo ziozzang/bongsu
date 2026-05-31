@@ -73,6 +73,10 @@ function findingSourceLabel(source?: string): string {
   }
 }
 
+function accessSubjectRef(subject: AccessSubject): string {
+  return `${subject.subject_type}:${subject.external_id}`;
+}
+
 function agentStatusColor(status?: string) {
   switch (status) {
     case 'online': return 'var(--low)';
@@ -2252,7 +2256,7 @@ function RBACView() {
               <option value="">Select Subject</option>
               {subjects.map(s => <option key={s.id} value={s.id}>{s.subject_type}/{s.external_id}</option>)}
             </select>
-            <datalist id="rbac-subjects">{subjects.map(s => <option key={s.id} value={s.external_id} />)}</datalist>
+            <datalist id="rbac-subjects">{subjects.map(s => <option key={s.id} value={accessSubjectRef(s)} />)}</datalist>
             <select value={resourceType} onChange={(e) => setResourceType(e.target.value)}>
               <option value="host">Host</option>
               <option value="container">Container</option>
@@ -2272,7 +2276,7 @@ function RBACView() {
       </div>
       <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
         <div className="filters">
-          <input list="rbac-subjects" type="text" placeholder="Filter policies by subject" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} />
+          <input list="rbac-subjects" type="text" placeholder="Filter by user:alice or group:platform" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} />
           <button className="filter-btn" onClick={() => load(subjectFilter)}>Search</button>
           <button onClick={() => { setSubjectFilter(''); load(''); }}>Clear</button>
           <span style={{ color: message.startsWith('Failed') || message.includes('requires') || message.includes('required') ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>
