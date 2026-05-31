@@ -1239,22 +1239,30 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	totalVulns := 0
 	sevCounts := map[string]int{}
 	visibleHosts := 0
+	visibleHostIDs := []string{}
 	for _, h := range hosts {
 		if !scope.CanReadHost(h.ID) {
 			continue
 		}
 		visibleHosts++
+		visibleHostIDs = append(visibleHostIDs, h.ID)
 		vc := vulnCounts[h.ID]
 		for sev, cnt := range vc {
 			totalVulns += cnt
 			sevCounts[sev] += cnt
 		}
 	}
+	scanRequestCounts, err := s.db.CountScanRequestsByStatus(ctx, visibleHostIDs, scope.All)
+	if err != nil {
+		log.Printf("scan request status counts: %v", err)
+		scanRequestCounts = map[string]int{}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total_hosts":           visibleHosts,
 		"total_vulnerabilities": totalVulns,
 		"severity_counts":       sevCounts,
+		"scan_request_counts":   scanRequestCounts,
 	})
 }
 

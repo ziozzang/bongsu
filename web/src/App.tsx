@@ -447,6 +447,23 @@ function DashboardView() {
           <div className="value" style={{ color: 'var(--critical)' }}>{inventoryCounts.none || 0}</div>
         </div>
       </div>
+      <div className="stats-grid" style={{ marginTop: '1rem' }}>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+          <div className="label">Scan Requests Pending</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{stats.scan_request_counts?.pending || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--primary)' }} />
+          <div className="label">Scan Requests Claimed</div>
+          <div className="value">{stats.scan_request_counts?.claimed || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--critical)' }} />
+          <div className="label">Scan Requests Failed</div>
+          <div className="value" style={{ color: 'var(--critical)' }}>{stats.scan_request_counts?.failed || 0}</div>
+        </div>
+      </div>
       <div className="db-status-bar" style={{ marginTop: '1.5rem' }}>
         <h3>Vulnerability Database</h3>
         <span className={`status-dot ${dbStatus?.ready ? 'ready' : 'not-ready'}`}>

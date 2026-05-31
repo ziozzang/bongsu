@@ -199,6 +199,7 @@ export interface Stats {
   total_hosts: number;
   total_vulnerabilities: number;
   severity_counts: Record<string, number>;
+  scan_request_counts?: Record<string, number>;
 }
 
 export interface VulnSummaryRow {
