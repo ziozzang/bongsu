@@ -298,3 +298,21 @@ func TestCveFixedVersionSQLIncludesTopLevelAndRangeEvents(t *testing.T) {
 		}
 	}
 }
+
+func TestInsertableVulnerabilitiesDropsDanglingRows(t *testing.T) {
+	valid := models.Vulnerability{
+		ID:              "vuln-1",
+		PackageID:       "pkg-1",
+		ScanID:          "scan-1",
+		HostID:          "host-1",
+		VulnerabilityID: "CVE-2026-0001",
+	}
+	items := insertableVulnerabilities([]models.Vulnerability{
+		{ID: "vuln-empty-package", ScanID: "scan-1", HostID: "host-1", VulnerabilityID: "CVE-2026-0002"},
+		valid,
+		{ID: "vuln-empty-cve", PackageID: "pkg-1", ScanID: "scan-1", HostID: "host-1"},
+	})
+	if len(items) != 1 || items[0].ID != valid.ID {
+		t.Fatalf("insertable vulnerabilities = %#v, want only %s", items, valid.ID)
+	}
+}

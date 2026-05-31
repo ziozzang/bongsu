@@ -43,6 +43,7 @@ The merge strategy is:
 Scanner package ecosystems are kept distro-specific for OS advisories. For example, Trivy `ubuntu` packages are stored as `Ubuntu` rather than collapsed into `Debian`, so Ubuntu advisories can match without weakening Debian/Ubuntu separation.
 Version comparisons treat pre-release markers such as `alpha`, `beta`, and `rc` as lower than the corresponding final release so release candidates are not incorrectly considered fixed.
 Scanner-imported vulnerabilities are bound back to packages by scanner target and package name, with name-only fallback only when the package name is unique in the scan. This avoids linking same-named packages from different ecosystems or manifests to the wrong package row.
+Vulnerability inserts drop dangling scanner rows that have no package, scan, host, or vulnerability identity instead of letting one malformed row discard the whole batch.
 
 ## Connected Update Flow
 

@@ -658,6 +658,7 @@ func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnera
 }
 
 func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerability) error {
+	vulns = insertableVulnerabilities(vulns)
 	if len(vulns) == 0 {
 		return nil
 	}
@@ -687,6 +688,17 @@ func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerab
 		}
 	}
 	return tx.Commit()
+}
+
+func insertableVulnerabilities(vulns []models.Vulnerability) []models.Vulnerability {
+	out := make([]models.Vulnerability, 0, len(vulns))
+	for _, v := range vulns {
+		if v.ID == "" || v.PackageID == "" || v.ScanID == "" || v.HostID == "" || v.VulnerabilityID == "" {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 func (db *DB) InsertUserAccounts(ctx context.Context, users []models.UserAccount) error {
