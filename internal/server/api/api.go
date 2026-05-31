@@ -3240,8 +3240,15 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "rematch failed", http.StatusInternalServerError)
 		return
 	}
+	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	if v, ok := revisionMeta["security_db_revision"].(string); ok {
+		result.SecurityDBRevision = v
+	}
+	if v, ok := revisionMeta["security_db_revision_error"].(string); ok {
+		result.SecurityDBRevisionError = v
+	}
 	writeJSON(w, http.StatusOK, result)
-	s.audit(r, "cve_db.rematch", "cve_db", "all", "ok", map[string]any{
+	auditMeta := map[string]any{
 		"matched":                      result.Matched,
 		"new_vulns":                    result.NewVulns,
 		"skipped":                      result.Skipped,
@@ -3250,7 +3257,11 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		"sources":                      opts.Sources,
 		"min_source_matchable_percent": opts.MinSourceMatchablePercent,
 		"scan_id":                      opts.ScanID,
-	})
+	}
+	for k, v := range revisionMeta {
+		auditMeta[k] = v
+	}
+	s.audit(r, "cve_db.rematch", "cve_db", "all", "ok", auditMeta)
 	enriched, _ := s.db.EnrichVulnerabilities(r.Context())
 	log.Printf("Enriched %d vulnerabilities with CVE DB data", enriched)
 }
@@ -3291,8 +3302,15 @@ func (s *Server) handleCveDbRecalcCVSS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "recalc failed", http.StatusInternalServerError)
 		return
 	}
-	s.audit(r, "cve_db.recalc_cvss", "cve_db", "all", "ok", map[string]any{"updated": count})
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "updated": count})
+	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	auditMeta := map[string]any{"updated": count}
+	resp := map[string]any{"status": "ok", "updated": count}
+	for k, v := range revisionMeta {
+		auditMeta[k] = v
+		resp[k] = v
+	}
+	s.audit(r, "cve_db.recalc_cvss", "cve_db", "all", "ok", auditMeta)
+	writeJSON(w, http.StatusOK, resp)
 }
 func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {

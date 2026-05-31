@@ -566,6 +566,33 @@ func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
 	}
 }
 
+func TestRematchResultExposesSecurityDBRevision(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "type RematchResult struct")
+	if start < 0 {
+		t.Fatal("RematchResult not found")
+	}
+	end := strings.Index(body[start:], "type RematchOptions struct")
+	if end < 0 {
+		t.Fatal("RematchResult end not found")
+	}
+	typ := body[start : start+end]
+	for _, want := range []string{
+		"SecurityDBRevision",
+		"security_db_revision,omitempty",
+		"SecurityDBRevisionError",
+		"security_db_revision_error,omitempty",
+	} {
+		if !strings.Contains(typ, want) {
+			t.Fatalf("rematch result revision field missing %q: %s", want, typ)
+		}
+	}
+}
+
 func TestLatestScansIncludesDegradedInventory(t *testing.T) {
 	if !strings.Contains(latestScansSub, "status IN ('completed','degraded')") {
 		t.Fatalf("latest scans must include degraded scans: %s", latestScansSub)

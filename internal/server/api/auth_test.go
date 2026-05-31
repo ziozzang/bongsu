@@ -1025,6 +1025,53 @@ func TestWebhookAuditIncludesSecurityDBRevision(t *testing.T) {
 	}
 }
 
+func TestCveDbAdminActionsCarrySecurityDBRevision(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleCveDbRematch")
+	if start < 0 {
+		t.Fatal("handleCveDbRematch not found")
+	}
+	end := strings.Index(body[start:], "func rematchOptionsFromEnv")
+	if end < 0 {
+		t.Fatal("handleCveDbRematch end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"revisionMeta := s.securityDBRevisionMeta(r.Context())",
+		"result.SecurityDBRevision",
+		"for k, v := range revisionMeta",
+		`"cve_db.rematch"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("cve db rematch revision metadata missing %q: %s", want, fn)
+		}
+	}
+
+	start = strings.Index(body, "func (s *Server) handleCveDbRecalcCVSS")
+	if start < 0 {
+		t.Fatal("handleCveDbRecalcCVSS not found")
+	}
+	end = strings.Index(body[start:], "func (s *Server) handleCveDbExport")
+	if end < 0 {
+		t.Fatal("handleCveDbRecalcCVSS end not found")
+	}
+	fn = body[start : start+end]
+	for _, want := range []string{
+		"revisionMeta := s.securityDBRevisionMeta(r.Context())",
+		"resp[k] = v",
+		"for k, v := range revisionMeta",
+		`"cve_db.recalc_cvss"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("cve db cvss recalc revision metadata missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestHostSBOMAuditIncludesLatestScanID(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
