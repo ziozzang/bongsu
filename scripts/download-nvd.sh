@@ -11,14 +11,16 @@ set -euo pipefail
 OUTPUT="${1:-nvd-cve.jsonl}"
 YEARS="${2:-$(date +%Y)}"
 API_KEY="${NVD_API_KEY:-}"
+OUTPUT_TMP="${OUTPUT}.tmp.$$"
+trap 'rm -f "${OUTPUT_TMP}"' EXIT
 
 echo "Downloading NVD CVE data for: ${YEARS}"
-> "${OUTPUT}"
+> "${OUTPUT_TMP}"
 
 python3 << PYEOF
 import json, urllib.request, time, sys
 
-output = "${OUTPUT}"
+output = "${OUTPUT_TMP}"
 api_key = "${API_KEY}" or None
 years = [y.strip() for y in "${YEARS}".split(",")]
 
@@ -62,6 +64,7 @@ for year in years:
                         time.sleep(wait)
                     else:
                         print(f"    FAILED after 3 attempts: {e}", file=sys.stderr)
+                        sys.exit(1)
 
             vulns = data.get("vulnerabilities", [])
             if not vulns:
@@ -147,8 +150,13 @@ for year in years:
             time.sleep(6 if not api_key else 1)
 
 print(f"Total: {total_written} CVE entries written to {output}", file=sys.stderr)
+if total_written == 0:
+    print("ERROR: NVD download produced no CVE entries", file=sys.stderr)
+    sys.exit(1)
 PYEOF
 
+mv "${OUTPUT_TMP}" "${OUTPUT}"
+trap - EXIT
 TOTAL=$(wc -l < "${OUTPUT}")
 echo "Output: ${OUTPUT} (${TOTAL} entries)"
 echo "Import: curl -F 'file=@${OUTPUT}' -F 'source=nvd' -H 'X-API-Key: YOUR_KEY' http://YOUR_SERVER:8080/api/admin/cve-db/import"

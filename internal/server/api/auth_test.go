@@ -1736,6 +1736,30 @@ func TestSecurityDBSyncScriptImportsNvdOnceAfterCombiningYears(t *testing.T) {
 	}
 }
 
+func TestNvdDownloaderFailsClosedAndWritesAtomically(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/download-nvd.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`OUTPUT_TMP="${OUTPUT}.tmp.$$"`,
+		`trap 'rm -f "${OUTPUT_TMP}"' EXIT`,
+		`output = "${OUTPUT_TMP}"`,
+		`FAILED after 3 attempts`,
+		`sys.exit(1)`,
+		`NVD download produced no CVE entries`,
+		`mv "${OUTPUT_TMP}" "${OUTPUT}"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("download-nvd must fail closed and write atomically, missing %q", want)
+		}
+	}
+	if strings.Contains(body, `> "${OUTPUT}"`) || strings.Contains(body, `output = "${OUTPUT}"`) {
+		t.Fatal("download-nvd must not write partial data directly to the final output")
+	}
+}
+
 func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
 	if err != nil {
