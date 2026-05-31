@@ -1764,6 +1764,41 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 	}
 }
 
+func TestConnectedComposeEnablesSecurityDbAutoUpdateDefaults(t *testing.T) {
+	out, err := os.ReadFile("../../../deploy/docker-compose.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"BONGSU_TRIVY_DB_INTERVAL_HOURS: ${BONGSU_TRIVY_DB_INTERVAL_HOURS:-6}",
+		"BONGSU_SECURITY_DB_SYNC_CMD: ${BONGSU_SECURITY_DB_SYNC_CMD:-/app/scripts/sync-all-cvedb.sh http://localhost:8080}",
+		"BONGSU_SECURITY_DB_INTERVAL_HOURS: ${BONGSU_SECURITY_DB_INTERVAL_HOURS:-6}",
+		"BONGSU_SECURITY_DB_SYNC_ON_START: ${BONGSU_SECURITY_DB_SYNC_ON_START:-true}",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("connected compose auto-update default missing %q", want)
+		}
+	}
+}
+
+func TestAirgapComposeDisablesConnectedSecurityDbAutoUpdate(t *testing.T) {
+	out, err := os.ReadFile("../../../deploy/docker-compose.airgap.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_TRIVY_DB_INTERVAL_HOURS: "0"`,
+		`BONGSU_SECURITY_DB_SYNC_CMD: ""`,
+		`BONGSU_SECURITY_DB_SYNC_ON_START: "false"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("airgap compose must disable connected auto-update, missing %q", want)
+		}
+	}
+}
+
 func TestDeployEnvExampleKeepsWebAuthEnabled(t *testing.T) {
 	out, err := os.ReadFile("../../../deploy/.env.example")
 	if err != nil {
@@ -1775,6 +1810,15 @@ func TestDeployEnvExampleKeepsWebAuthEnabled(t *testing.T) {
 	}
 	if strings.Contains(body, "BONGSU_WEB_AUTH=false") {
 		t.Fatal("example deployment must not default web auth to disabled")
+	}
+	for _, want := range []string{
+		"BONGSU_TRIVY_DB_INTERVAL_HOURS=6",
+		"BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:8080",
+		"BONGSU_SECURITY_DB_SYNC_ON_START=true",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("example deployment auto-update default missing %q", want)
+		}
 	}
 }
 

@@ -86,7 +86,7 @@ curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server-host:8080/
 
 ### Connected Environment
 
-trivy-db is managed by the init container in docker-compose. The init container downloads the DB on first start and stores it in a shared volume.
+trivy-db is managed by docker-compose. The init container downloads the DB on first start and stores it in a shared volume; the server then refreshes Trivy DB and the merged OSV/NVD/Trivy CVE sources every 6 hours by default, runs the source sync once after the HTTP listener starts, and queues automatic rescans after each successful DB update.
 
 **Update to latest:**
 ```bash
@@ -94,11 +94,12 @@ docker compose run --rm trivy-db sh -c "rm -rf /cache/db/* && trivy image --down
 docker compose restart server
 ```
 
-**Or enable auto-update** (add to `.env`):
+**Override auto-update** (optional `.env`):
 ```
 BONGSU_TRIVY_DB_INTERVAL_HOURS=6
-BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:8080 your-api-key
+BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:8080
 BONGSU_SECURITY_DB_INTERVAL_HOURS=6
+BONGSU_SECURITY_DB_SYNC_ON_START=true
 BONGSU_AUTO_RESCAN_ON_DB_UPDATE=true
 BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS=720
 ```
@@ -186,8 +187,8 @@ spec:
 | `BONGSU_TRIVY_PATH` | `trivy` | Trivy binary path |
 | `BONGSU_TRIVY_CACHE_DIR` | `/app/trivy-cache` | Trivy cache directory |
 | `BONGSU_TRIVY_DB_REPO` | `ghcr.io/aquasecurity/trivy-db` | Trivy DB registry |
-| `BONGSU_TRIVY_DB_INTERVAL_HOURS` | `0` | DB update interval (`0`=disabled, `6`=connected) |
-| `BONGSU_SECURITY_DB_SYNC_CMD` | empty | Command for OSV/NVD/Trivy source sync |
+| `BONGSU_TRIVY_DB_INTERVAL_HOURS` | `6` connected, `0` airgap | DB update interval (`0`=disabled) |
+| `BONGSU_SECURITY_DB_SYNC_CMD` | `/app/scripts/sync-all-cvedb.sh http://localhost:8080` connected, empty airgap | Command for OSV/NVD/Trivy source sync; the bundled script reads `BONGSU_API_KEY` from the container environment |
 | `BONGSU_SECURITY_DB_INTERVAL_HOURS` | `6` | Security source sync interval |
 | `BONGSU_SECURITY_DB_SYNC_ON_START` | `true` | Run the configured security source sync once on server startup before waiting for the periodic interval |
 | `BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES` | `8192` | Tail bytes of the most recent source sync output retained in admin-authenticated health checks and failed update responses |

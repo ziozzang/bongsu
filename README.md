@@ -63,7 +63,8 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 
 ```bash
 # 온라인 보안 DB 동기화 예시
-BONGSU_SECURITY_DB_SYNC_CMD="./scripts/sync-all-cvedb.sh http://localhost:8080 $BONGSU_API_KEY"
+BONGSU_SECURITY_DB_SYNC_CMD="./scripts/sync-all-cvedb.sh http://localhost:8080"
+BONGSU_SECURITY_DB_SYNC_ON_START=true
 BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 
 # Airgap export/import bundle

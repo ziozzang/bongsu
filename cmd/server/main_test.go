@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -99,5 +101,26 @@ func TestValidateServerSecretsAllowsExplicitWeakOverride(t *testing.T) {
 
 	if err := validateServerSecrets(); err != nil {
 		t.Fatalf("explicit weak-secret override rejected: %v", err)
+	}
+}
+
+func TestMainStartsHTTPListenerBeforeBackgroundSecuritySync(t *testing.T) {
+	out, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`net.Listen("tcp", httpServer.Addr)`,
+		`httpServer.Serve(listener)`,
+		`go secMgr.Start(bgCtx)`,
+		`BONGSU_SECURITY_DB_SYNC_ON_START`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("startup ordering missing %q", want)
+		}
+	}
+	if strings.Index(body, `httpServer.Serve(listener)`) > strings.Index(body, `go secMgr.Start(bgCtx)`) {
+		t.Fatal("security DB startup sync must begin only after the HTTP listener is accepting requests")
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -70,20 +71,6 @@ func main() {
 
 	server := api.New(database, matcher, dbMgr, secMgr)
 	secMgr.SetFailureHook(server.SecurityDatabaseSyncFailed)
-	if dbMgr != nil {
-		dbMgr.SetUpdateHook(server.SecurityDatabaseUpdated)
-		bgCtx, bgCancel := context.WithCancel(context.Background())
-		defer bgCancel()
-		go dbMgr.Start(bgCtx)
-		log.Println("Trivy DB manager started")
-	}
-	if secSyncCmd != "" {
-		secMgr.SetUpdateHook(server.SecurityDatabaseUpdated)
-		bgCtx, bgCancel := context.WithCancel(context.Background())
-		defer bgCancel()
-		go secMgr.Start(bgCtx)
-		log.Println("Security DB sync manager started")
-	}
 	if n, err := database.CalcCvssScores(ctx); err == nil && n > 0 {
 		log.Printf("Calculated CVSS scores for %d entries", n)
 	} else if err != nil {
@@ -107,21 +94,50 @@ func main() {
 	}
 
 	httpServer := newHTTPServer(port, server.Handler())
+	listener, err := net.Listen("tcp", httpServer.Addr)
+	if err != nil {
+		log.Fatalf("listen on %s: %v", httpServer.Addr, err)
+	}
 
+	serveErr := make(chan error, 1)
 	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
+		serveErr <- httpServer.Serve(listener)
+	}()
+
+	log.Printf("Bongsu server listening on :%d", port)
+	if dbMgr != nil {
+		dbMgr.SetUpdateHook(server.SecurityDatabaseUpdated)
+		bgCtx, bgCancel := context.WithCancel(context.Background())
+		defer bgCancel()
+		go dbMgr.Start(bgCtx)
+		log.Println("Trivy DB manager started")
+	}
+	if secSyncCmd != "" {
+		secMgr.SetUpdateHook(server.SecurityDatabaseUpdated)
+		bgCtx, bgCancel := context.WithCancel(context.Background())
+		defer bgCancel()
+		go secMgr.Start(bgCtx)
+		log.Println("Security DB sync manager started")
+	}
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+
+	select {
+	case <-sigCh:
 		log.Println("Shutting down...")
 
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer shutdownCancel()
 		httpServer.Shutdown(shutdownCtx)
-	}()
-
-	log.Printf("Bongsu server listening on :%d", port)
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatalf("server error: %v", err)
+		if err := <-serveErr; err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
+	case err := <-serveErr:
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
 	}
 	log.Println("Server stopped")
 }
