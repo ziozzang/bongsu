@@ -329,7 +329,8 @@ function DashboardView() {
       const r = await api.rematchCVEs(body);
       const qualityMsg = minQuality > 0 ? ` with source quality >= ${minQuality}%` : '';
       const limitedMsg = r.limited ? `, limited at ${r.candidate_limit.toLocaleString()} candidates` : '';
-      setRematchMsg(`Matched ${r.matched.toLocaleString()} packages${qualityMsg}, found ${r.new_vulns.toLocaleString()} new vulnerabilities (${r.skipped} skipped${limitedMsg})`);
+      const revisionMsg = r.security_db_revision ? `, DB rev ${r.security_db_revision}` : r.security_db_revision_error ? ', DB revision unavailable' : '';
+      setRematchMsg(`Matched ${r.matched.toLocaleString()} packages${qualityMsg}, found ${r.new_vulns.toLocaleString()} new vulnerabilities (${r.skipped} skipped${limitedMsg}${revisionMsg})`);
       api.stats().then(setStats).catch(() => {});
     } catch {
       setRematchMsg('Rematch failed (check server logs)');
