@@ -1968,21 +1968,29 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	fail := func(status int, msg, stage string, err error) {
+		meta := map[string]any{"stage": stage, "message": msg}
+		if err != nil {
+			meta["error"] = err.Error()
+		}
+		s.audit(r, "security_db.import", "security_db", "bundle", "error", meta)
+		http.Error(w, msg, status)
+	}
 	r.Body = http.MaxBytesReader(w, r.Body, 4<<30)
 	if err := r.ParseMultipartForm(4 << 30); err != nil {
-		http.Error(w, "file too large or invalid form", http.StatusBadRequest)
+		fail(http.StatusBadRequest, "file too large or invalid form", "parse_form", err)
 		return
 	}
 	file, _, err := r.FormFile("bundle")
 	if err != nil {
-		http.Error(w, "missing 'bundle' file field", http.StatusBadRequest)
+		fail(http.StatusBadRequest, "missing 'bundle' file field", "form_file", err)
 		return
 	}
 	defer file.Close()
 
 	gz, err := gzip.NewReader(file)
 	if err != nil {
-		http.Error(w, "invalid gzip bundle", http.StatusBadRequest)
+		fail(http.StatusBadRequest, "invalid gzip bundle", "gzip", err)
 		return
 	}
 	defer gz.Close()
@@ -2008,18 +2016,18 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 			break
 		}
 		if err != nil {
-			http.Error(w, "invalid tar bundle", http.StatusBadRequest)
+			fail(http.StatusBadRequest, "invalid tar bundle", "tar", err)
 			return
 		}
 		switch hdr.Name {
 		case "manifest.json":
 			var m securityDBBundleManifest
 			if err := json.NewDecoder(tr).Decode(&m); err != nil {
-				http.Error(w, "invalid bundle manifest", http.StatusBadRequest)
+				fail(http.StatusBadRequest, "invalid bundle manifest", "manifest", err)
 				return
 			}
 			if m.Format != "bongsu-security-db-bundle" {
-				http.Error(w, "unsupported bundle format", http.StatusBadRequest)
+				fail(http.StatusBadRequest, "unsupported bundle format", "manifest", nil)
 				return
 			}
 			manifest = &m
@@ -2029,7 +2037,7 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 			}
 			cveFile, cveSHA, err = writeBundleEntryTemp(tr, "bongsu-bundle-cve-*.jsonl")
 			if err != nil {
-				http.Error(w, "cve archive write failed", http.StatusInternalServerError)
+				fail(http.StatusInternalServerError, "cve archive write failed", "stage_cve", err)
 				return
 			}
 		case "trivy-db.tar.gz":
@@ -2038,28 +2046,28 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 			}
 			trivyArchive, trivySHA, err = writeBundleEntryTemp(tr, "bongsu-bundle-trivy-db-*.tar.gz")
 			if err != nil {
-				http.Error(w, "trivy archive write failed", http.StatusInternalServerError)
+				fail(http.StatusInternalServerError, "trivy archive write failed", "stage_trivy", err)
 				return
 			}
 		}
 	}
 	if err := validateSecurityDBBundle(manifest, cveFile, cveSHA, trivyArchive, trivySHA); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		fail(http.StatusBadRequest, err.Error(), "validate", err)
 		return
 	}
 	if trivyArchive != "" && s.dbMgr == nil {
-		http.Error(w, "bundle contains trivy db but manager is unavailable", http.StatusServiceUnavailable)
+		fail(http.StatusServiceUnavailable, "bundle contains trivy db but manager is unavailable", "precondition", nil)
 		return
 	}
 	cveReader, err := os.Open(cveFile)
 	if err != nil {
-		http.Error(w, "cve archive read failed", http.StatusInternalServerError)
+		fail(http.StatusInternalServerError, "cve archive read failed", "read_cve", err)
 		return
 	}
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
 		cveReader.Close()
-		http.Error(w, "cve import transaction failed", http.StatusInternalServerError)
+		fail(http.StatusInternalServerError, "cve import transaction failed", "begin_tx", err)
 		return
 	}
 	imported, err = s.importCveJSONLTx(r.Context(), cveReader, "", tx)
@@ -2067,7 +2075,7 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		tx.Rollback()
 		log.Printf("security-db bundle cve import: %v", err)
-		http.Error(w, "cve import failed", http.StatusInternalServerError)
+		fail(http.StatusInternalServerError, "cve import failed", "import_cve", err)
 		return
 	}
 	trivyLoaded := false
@@ -2075,13 +2083,13 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		if err := s.dbMgr.LoadFromFile(trivyArchive); err != nil {
 			log.Printf("security-db bundle trivy import: %v", err)
 			tx.Rollback()
-			http.Error(w, "trivy db import failed", http.StatusInternalServerError)
+			fail(http.StatusInternalServerError, "trivy db import failed", "import_trivy", err)
 			return
 		}
 		trivyLoaded = true
 	}
 	if err := tx.Commit(); err != nil {
-		http.Error(w, "cve import commit failed", http.StatusInternalServerError)
+		fail(http.StatusInternalServerError, "cve import commit failed", "commit_cve", err)
 		return
 	}
 	s.audit(r, "security_db.import", "security_db", "bundle", "ok", map[string]any{

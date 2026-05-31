@@ -214,6 +214,27 @@ func TestSecurityDBBundleImportUsesSingleCveTransaction(t *testing.T) {
 	}
 }
 
+func TestSecurityDBBundleImportAuditsFailures(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"fail := func",
+		`"security_db.import"`,
+		`"error"`,
+		`"stage"`,
+		`"validate"`,
+		`"import_cve"`,
+		`"import_trivy"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("bundle import failure audit missing %q", want)
+		}
+	}
+}
+
 func TestHostInventoryStatus(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	recent := now.Add(-1 * time.Hour)
