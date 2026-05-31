@@ -1695,6 +1695,8 @@ func TestSecurityDBSyncScriptFailsOnImportErrors(t *testing.T) {
 		"invalid import response",
 		"ERROR: ${source} import request failed",
 		"STATS=$(curl -fsS",
+		"FAILED_SOURCES=()",
+		`exit 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-all-cvedb must fail closed on import errors, missing %q", want)
@@ -1702,6 +1704,7 @@ func TestSecurityDBSyncScriptFailsOnImportErrors(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		`|| echo "0"`,
+		`|| echo "  SKIP:`,
 		"curl -s -X POST",
 		"IMPORT_CMD=",
 	} {
@@ -1719,8 +1722,10 @@ func TestSecurityDBSyncScriptImportsNvdOnceAfterCombiningYears(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`NVD_ALL_FILE="${TMPDIR}/nvd-all.jsonl"`,
+		`NVD_FAILED=0`,
 		`cat "${NVD_FILE}" >> "${NVD_ALL_FILE}"`,
 		`import_cve_file "${NVD_ALL_FILE}" "nvd"`,
+		`incomplete NVD download; preserving existing nvd source`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-all-cvedb must combine NVD years before import, missing %q", want)
@@ -1728,6 +1733,25 @@ func TestSecurityDBSyncScriptImportsNvdOnceAfterCombiningYears(t *testing.T) {
 	}
 	if strings.Contains(body, `import_cve_file "${NVD_FILE}" "nvd"`) {
 		t.Fatal("sync-all-cvedb must not replace the nvd source once per year")
+	}
+}
+
+func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`REQUIRE_TRIVY_SOURCE="${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-true}"`,
+		`TRIVY_FAILED=0`,
+		`FAILED_SOURCES+=("trivy:extract")`,
+		`FAILED_SOURCES+=("trivy:no-data")`,
+		`FAILED_SOURCES+=("trivy:not-installed")`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-all-cvedb must fail closed for required trivy source, missing %q", want)
+		}
 	}
 }
 
@@ -1759,6 +1783,7 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"BONGSU_HTTP_IDLE_TIMEOUT_SECONDS: ${BONGSU_HTTP_IDLE_TIMEOUT_SECONDS:-120}",
 				"BONGSU_HTTP_MAX_HEADER_BYTES: ${BONGSU_HTTP_MAX_HEADER_BYTES:-1048576}",
 				"BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES: ${BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES:-8192}",
+				"BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:",
 				"BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES: ${BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES:-2147483648}",
 				"BONGSU_CVE_DB_IMPORT_MAX_BYTES: ${BONGSU_CVE_DB_IMPORT_MAX_BYTES:-2147483648}",
 				"BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES: ${BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES:-4294967296}",
@@ -1795,6 +1820,7 @@ func TestConnectedComposeEnablesSecurityDbAutoUpdateDefaults(t *testing.T) {
 		"BONGSU_SECURITY_DB_SYNC_CMD: ${BONGSU_SECURITY_DB_SYNC_CMD:-/app/scripts/sync-all-cvedb.sh http://localhost:8080}",
 		"BONGSU_SECURITY_DB_INTERVAL_HOURS: ${BONGSU_SECURITY_DB_INTERVAL_HOURS:-6}",
 		"BONGSU_SECURITY_DB_SYNC_ON_START: ${BONGSU_SECURITY_DB_SYNC_ON_START:-true}",
+		"BONGSU_SYNC_REQUIRE_TRIVY_SOURCE: ${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-true}",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("connected compose auto-update default missing %q", want)
@@ -1812,6 +1838,7 @@ func TestAirgapComposeDisablesConnectedSecurityDbAutoUpdate(t *testing.T) {
 		`BONGSU_TRIVY_DB_INTERVAL_HOURS: "0"`,
 		`BONGSU_SECURITY_DB_SYNC_CMD: ""`,
 		`BONGSU_SECURITY_DB_SYNC_ON_START: "false"`,
+		`BONGSU_SYNC_REQUIRE_TRIVY_SOURCE: ${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-false}`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("airgap compose must disable connected auto-update, missing %q", want)
@@ -1835,6 +1862,7 @@ func TestDeployEnvExampleKeepsWebAuthEnabled(t *testing.T) {
 		"BONGSU_TRIVY_DB_INTERVAL_HOURS=6",
 		"BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:8080",
 		"BONGSU_SECURITY_DB_SYNC_ON_START=true",
+		"BONGSU_SYNC_REQUIRE_TRIVY_SOURCE=true",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("example deployment auto-update default missing %q", want)

@@ -21,6 +21,8 @@ fi
 IMPORT_URL="${SERVER_URL}/api/admin/cve-db/import"
 
 TOTAL_IMPORTED=0
+FAILED_SOURCES=()
+REQUIRE_TRIVY_SOURCE="${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-true}"
 
 import_cve_file() {
     local file="$1"
@@ -65,7 +67,8 @@ if [ -s "${OSV_FILE}" ]; then
     echo "  Imported/updated: ${IMPORTED}"
     TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
 else
-    echo "  SKIP: no OSV data"
+    echo "  ERROR: no OSV data"
+    FAILED_SOURCES+=("osv:no-data")
 fi
 echo ""
 
@@ -73,40 +76,66 @@ echo ""
 echo "[2/3] Downloading NVD data..."
 CURRENT_YEAR=$(date +%Y)
 NVD_ALL_FILE="${TMPDIR}/nvd-all.jsonl"
+NVD_FAILED=0
 for YEAR in $(seq $((CURRENT_YEAR - 3)) ${CURRENT_YEAR}); do
     NVD_FILE="${TMPDIR}/nvd-${YEAR}.jsonl"
     echo "  Year ${YEAR}..."
-    "${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${YEAR}" || echo "  SKIP: ${YEAR} failed"
+    if ! "${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${YEAR}"; then
+        echo "  ERROR: ${YEAR} failed"
+        FAILED_SOURCES+=("nvd:${YEAR}")
+        NVD_FAILED=1
+        continue
+    fi
 
     if [ -s "${NVD_FILE}" ]; then
         echo "    Collected $(wc -l < "${NVD_FILE}") entries"
         cat "${NVD_FILE}" >> "${NVD_ALL_FILE}"
+    else
+        echo "  ERROR: ${YEAR} produced no NVD data"
+        FAILED_SOURCES+=("nvd:${YEAR}:no-data")
+        NVD_FAILED=1
     fi
 done
-if [ -s "${NVD_ALL_FILE}" ]; then
+if [ "${NVD_FAILED}" -ne 0 ]; then
+    echo "  ERROR: incomplete NVD download; preserving existing nvd source"
+elif [ -s "${NVD_ALL_FILE}" ]; then
     echo "  Importing combined NVD data ($(wc -l < "${NVD_ALL_FILE}") entries, $(du -h "${NVD_ALL_FILE}" | cut -f1))..."
     IMPORTED=$(import_cve_file "${NVD_ALL_FILE}" "nvd")
     echo "  Imported/updated: ${IMPORTED}"
     TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
 else
-    echo "  SKIP: no NVD data"
+    echo "  ERROR: no NVD data"
+    FAILED_SOURCES+=("nvd:no-data")
 fi
 echo ""
 
 # --- 3. Trivy DB ---
 echo "[3/3] Extracting Trivy DB CVE data..."
 TRIVY_FILE="${TMPDIR}/trivy-cve.jsonl"
+TRIVY_FAILED=0
 if command -v trivy &>/dev/null || [ -x /opt/bongsu/bin/trivy ]; then
-    "${SCRIPT_DIR}/extract-trivy-cvedb.sh" "${TRIVY_FILE}" || echo "  SKIP: trivy extraction failed"
+    if ! "${SCRIPT_DIR}/extract-trivy-cvedb.sh" "${TRIVY_FILE}"; then
+        echo "  ERROR: trivy extraction failed"
+        FAILED_SOURCES+=("trivy:extract")
+        TRIVY_FAILED=1
+    fi
 
     if [ -s "${TRIVY_FILE}" ]; then
         echo "  Importing Trivy CVEs ($(wc -l < "${TRIVY_FILE}") entries)..."
         IMPORTED=$(import_cve_file "${TRIVY_FILE}" "trivy")
         echo "  Imported/updated: ${IMPORTED}"
         TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+    elif [ "${TRIVY_FAILED}" -eq 0 ]; then
+        echo "  ERROR: no Trivy CVE data"
+        FAILED_SOURCES+=("trivy:no-data")
     fi
 else
-    echo "  SKIP: trivy not installed"
+    if [ "${REQUIRE_TRIVY_SOURCE}" = "true" ]; then
+        echo "  ERROR: trivy not installed"
+        FAILED_SOURCES+=("trivy:not-installed")
+    else
+        echo "  SKIP: trivy not installed"
+    fi
 fi
 echo ""
 
@@ -115,6 +144,11 @@ echo "=========================================="
 echo " Sync Complete"
 echo " Total imported/updated: ${TOTAL_IMPORTED}"
 echo ""
+
+if [ "${#FAILED_SOURCES[@]}" -gt 0 ]; then
+    echo "ERROR: source sync incomplete: ${FAILED_SOURCES[*]}" >&2
+    exit 1
+fi
 
 # Show DB stats
 STATS=$(curl -fsS -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/cve-db/stats")
