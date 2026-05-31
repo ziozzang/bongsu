@@ -845,13 +845,7 @@ func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason st
 		if err := rows.Scan(&hostID); err != nil {
 			return queued, err
 		}
-		res, err := tx.ExecContext(ctx, `
-INSERT INTO scan_requests (id, host_id, requested_by, scan_type, packages_only, reason, status, created_at)
-SELECT $1,$2,$3,'security-db-update',true,$4,'pending',now()
-WHERE NOT EXISTS (
-	SELECT 1 FROM scan_requests
-	WHERE host_id=$2 AND status IN ('pending','claimed')
-)`, uuid.New().String(), hostID, requestedBy, reason)
+		res, err := tx.ExecContext(ctx, queueSecurityDBRescanInsertSQL(), uuid.New().String(), hostID, requestedBy, reason)
 		if err != nil {
 			return queued, err
 		}
@@ -863,6 +857,17 @@ WHERE NOT EXISTS (
 		return queued, err
 	}
 	return queued, tx.Commit()
+}
+
+func queueSecurityDBRescanInsertSQL() string {
+	return `
+INSERT INTO scan_requests (id, host_id, requested_by, scan_type, packages_only, reason, status, created_at)
+SELECT $1,$2,$3,'security-db-update',true,$4,'pending',now()
+WHERE NOT EXISTS (
+	SELECT 1 FROM scan_requests
+	WHERE host_id=$2 AND status IN ('pending','claimed')
+)
+ON CONFLICT (host_id) WHERE host_id <> '' AND scan_type='security-db-update' AND status IN ('pending','claimed') DO NOTHING`
 }
 
 func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []string, status string, limit, offset int) ([]models.ScanRequest, int, error) {

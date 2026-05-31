@@ -197,3 +197,18 @@ func TestPackageIdentitySQLExcludesVersion(t *testing.T) {
 		t.Fatalf("identity SQL must exclude version so upgrades become changes: %s", got)
 	}
 }
+
+func TestQueueSecurityDBRescanInsertSQLUsesAtomicDedupe(t *testing.T) {
+	got := queueSecurityDBRescanInsertSQL()
+	for _, want := range []string{
+		"ON CONFLICT (host_id)",
+		"host_id <> ''",
+		"scan_type='security-db-update'",
+		"status IN ('pending','claimed')",
+		"DO NOTHING",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("rescan insert SQL missing %q: %s", want, got)
+		}
+	}
+}

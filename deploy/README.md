@@ -103,7 +103,7 @@ BONGSU_AUTO_RESCAN_ON_DB_UPDATE=true
 BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS=720
 ```
 
-After a Trivy DB upload/update, CVE JSONL import, security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Agents running in daemon mode pick those requests up through the normal force-scan polling path.
+After a Trivy DB upload/update, CVE JSONL import, security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Active automatic rescan requests are deduplicated per host in the database, so overlapping DB update hooks do not create duplicate work. Agents running in daemon mode pick those requests up through the normal force-scan polling path.
 
 ### Air-Gapped Environment
 
