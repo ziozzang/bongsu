@@ -175,6 +175,66 @@ func (m *Manager) LoadFromFile(path string) error {
 	return nil
 }
 
+func (m *Manager) WriteArchive(w io.Writer) error {
+	dbDir := filepath.Join(m.cacheDir, "db")
+	if !m.checkExisting() {
+		return fmt.Errorf("trivy-db not ready")
+	}
+	gz := gzip.NewWriter(w)
+	defer gz.Close()
+	tw := tar.NewWriter(gz)
+	defer tw.Close()
+
+	return filepath.WalkDir(dbDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(m.cacheDir, path)
+		if err != nil {
+			return err
+		}
+		hdr, err := tar.FileInfoHeader(info, "")
+		if err != nil {
+			return err
+		}
+		hdr.Name = filepath.ToSlash(rel)
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		_, err = io.Copy(tw, f)
+		return err
+	})
+}
+
+func (m *Manager) ArchiveBytes() ([]byte, error) {
+	tmp, err := os.CreateTemp("", "bongsu-trivy-db-*.tar.gz")
+	if err != nil {
+		return nil, err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if err := m.WriteArchive(tmp); err != nil {
+		tmp.Close()
+		return nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(name)
+}
+
 func isSafePath(base, name string) bool {
 	cleaned := filepath.Join(base, name)
 	abs, err := filepath.Abs(cleaned)

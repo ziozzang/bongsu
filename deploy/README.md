@@ -73,10 +73,8 @@ cp deploy/.env.example deploy/.env
 # 4. Start services without online build/update jobs
 cd deploy && docker compose -f docker-compose.airgap.yml up -d
 
-# 5. Import trivy-db and CVE JSONL exports
-./scripts/update-trivy-db.sh http://localhost:8080 your-secret-key ../trivy-db.tar.gz
-curl -H "X-API-Key: your-secret-key" -F file=@../cve-database.jsonl -F source=airgap \
-  http://localhost:8080/api/admin/cve-db/import
+# 5. Import security DB bundle
+./scripts/import-security-db-bundle.sh http://localhost:8080 your-secret-key ../bongsu-security-db-bundle.tar.gz
 
 # 6. Install agents on target hosts
 ./scripts/install-agent.sh http://server-host:8080 your-secret-key
@@ -105,10 +103,10 @@ BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 
 ```bash
 # On connected machine:
-./scripts/download-trivy-db.sh trivy-db-new.tar.gz
+./scripts/export-security-db-bundle.sh http://connected-server:8080 your-api-key bongsu-security-db-bundle.tar.gz
 
 # Transfer to air-gapped, then:
-./scripts/update-trivy-db.sh http://server:8080 your-api-key trivy-db-new.tar.gz
+./scripts/import-security-db-bundle.sh http://server:8080 your-api-key bongsu-security-db-bundle.tar.gz
 ```
 
 ## Agent Installation
@@ -192,6 +190,8 @@ spec:
 | `DELETE` | `/api/scans/{id}` | Delete scan and associated data |
 | `POST` | `/api/admin/trivy-db` | Upload trivy-db (air-gapped update) |
 | `POST` | `/api/admin/security-db/update` | Run configured source sync command |
+| `GET` | `/api/admin/security-db/export` | Export CVE DB + optional Trivy DB bundle |
+| `POST` | `/api/admin/security-db/import` | Import exported security DB bundle |
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
 | `POST` | `/api/scan-requests` | Request force scan for host/all |

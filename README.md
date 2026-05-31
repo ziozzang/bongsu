@@ -52,13 +52,9 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 BONGSU_SECURITY_DB_SYNC_CMD="./scripts/sync-all-cvedb.sh http://localhost:8080 $BONGSU_API_KEY"
 BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 
-# Airgap export/import
-curl -H "X-API-Key: $BONGSU_API_KEY" \
-  http://server:8080/api/admin/cve-db/export > cve-database.jsonl
-
-curl -H "X-API-Key: $BONGSU_API_KEY" \
-  -F file=@cve-database.jsonl -F source=airgap \
-  http://airgap-server:8080/api/admin/cve-db/import
+# Airgap export/import bundle
+./scripts/export-security-db-bundle.sh http://server:8080 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz
+./scripts/import-security-db-bundle.sh http://airgap-server:8080 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz
 ```
 
 ## 에이전트 설치

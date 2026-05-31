@@ -68,10 +68,13 @@ chmod +x "$STAGING/bin/bongsu-agent"
 cp scripts/install-agent.sh "$STAGING/scripts/"
 cp scripts/update-trivy-db.sh "$STAGING/scripts/"
 cp scripts/download-trivy-db.sh "$STAGING/scripts/"
+cp scripts/export-security-db-bundle.sh "$STAGING/scripts/"
+cp scripts/import-security-db-bundle.sh "$STAGING/scripts/"
 chmod +x "$STAGING/scripts/"*.sh
 
 # Copy deploy configs
 cp deploy/docker-compose.yml "$STAGING/deploy/"
+cp deploy/docker-compose.airgap.yml "$STAGING/deploy/"
 cp deploy/.env.example "$STAGING/deploy/"
 
 # Copy migrations
@@ -109,7 +112,7 @@ echo ""
 echo "Contents:"
 echo "  images/              Docker images (server with trivy, agent)"
 echo "  bin/                 Agent binary for direct host install"
-echo "  scripts/             install-agent.sh, download-trivy-db.sh, update-trivy-db.sh"
+echo "  scripts/             installer and security DB bundle import/export tools"
 echo "  deploy/              docker-compose.yml, .env.example"
 echo "  migrations/          Database migrations"
 echo "  load-images.sh       Load Docker images on target"
@@ -119,10 +122,9 @@ echo "  1. Transfer ${PACKAGE_NAME}.tar.gz to target"
 echo "  2. tar xzf ${PACKAGE_NAME}.tar.gz"
 echo "  3. cd ${PACKAGE_NAME} && ./load-images.sh"
 echo "  4. cp deploy/.env.example deploy/.env && edit .env"
-echo "  5. cd deploy && docker compose up -d"
-echo "  6. (Air-gapped) Import trivy-db:"
-echo "     ./scripts/download-trivy-db.sh trivy-db.tar.gz  # on connected machine"
-echo "     ./scripts/update-trivy-db.sh http://localhost:8080 <api-key> trivy-db.tar.gz"
+echo "  5. cd deploy && docker compose -f docker-compose.airgap.yml up -d"
+echo "  6. Import security DB bundle:"
+echo "     ./scripts/import-security-db-bundle.sh http://localhost:8080 <api-key> bongsu-security-db-bundle.tar.gz"
 
 # Cleanup
 rm -rf "$STAGING"

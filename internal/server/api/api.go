@@ -1,8 +1,12 @@
 package api
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -93,6 +97,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/admin/trivy-db", s.handleTrivyDBUpload)
 	s.mux.HandleFunc("POST /api/admin/trivy-db/update", s.handleTrivyDBUpdate)
 	s.mux.HandleFunc("POST /api/admin/cve-db/import", s.handleCveDbImport)
+	s.mux.HandleFunc("GET /api/admin/security-db/export", s.handleSecurityDbExport)
+	s.mux.HandleFunc("POST /api/admin/security-db/import", s.handleSecurityDbImport)
 	s.mux.HandleFunc("POST /api/admin/security-db/update", s.handleSecurityDbUpdate)
 	s.mux.HandleFunc("POST /api/admin/cve-db/rematch", s.handleCveDbRematch)
 	s.mux.HandleFunc("POST /api/admin/cve-db/recalc-cvss", s.handleCveDbRecalcCVSS)
@@ -1003,6 +1009,156 @@ func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "security_db": s.secMgr.Status()})
 }
 
+func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticate(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	ctx := r.Context()
+
+	cveFile, cveCount, cveSHA, err := s.writeCveJSONLTemp(ctx)
+	if err != nil {
+		log.Printf("security-db bundle cve export: %v", err)
+		http.Error(w, "export failed", http.StatusInternalServerError)
+		return
+	}
+	defer os.Remove(cveFile)
+
+	var trivyBytes []byte
+	trivySHA := ""
+	includeTrivy := r.URL.Query().Get("include_trivy") != "false"
+	if includeTrivy && s.dbMgr != nil && s.dbMgr.IsReady() {
+		if b, err := s.dbMgr.ArchiveBytes(); err == nil {
+			trivyBytes = b
+			sum := sha256.Sum256(b)
+			trivySHA = hex.EncodeToString(sum[:])
+		} else {
+			log.Printf("security-db bundle trivy export skipped: %v", err)
+		}
+	}
+
+	sourceStats, _ := s.db.GetCveSourceStats(ctx)
+	manifest := map[string]any{
+		"format":              "bongsu-security-db-bundle",
+		"version":             1,
+		"created_at":          time.Now().UTC().Format(time.RFC3339),
+		"cve_records":         cveCount,
+		"cve_database_sha256": cveSHA,
+		"trivy_db_included":   len(trivyBytes) > 0,
+		"trivy_db_sha256":     trivySHA,
+		"sources":             sourceStats,
+	}
+	manifestBytes, _ := json.MarshalIndent(manifest, "", "  ")
+
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", "attachment; filename=bongsu-security-db-bundle.tar.gz")
+	gz := gzip.NewWriter(w)
+	defer gz.Close()
+	tw := tar.NewWriter(gz)
+	defer tw.Close()
+
+	if err := writeTarBytes(tw, "manifest.json", manifestBytes); err != nil {
+		log.Printf("security-db bundle manifest: %v", err)
+		return
+	}
+	if err := writeTarFile(tw, "cve-database.jsonl", cveFile); err != nil {
+		log.Printf("security-db bundle cve: %v", err)
+		return
+	}
+	if len(trivyBytes) > 0 {
+		if err := writeTarBytes(tw, "trivy-db.tar.gz", trivyBytes); err != nil {
+			log.Printf("security-db bundle trivy: %v", err)
+			return
+		}
+	}
+}
+
+func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticate(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<30)
+	if err := r.ParseMultipartForm(4 << 30); err != nil {
+		http.Error(w, "file too large or invalid form", http.StatusBadRequest)
+		return
+	}
+	file, _, err := r.FormFile("bundle")
+	if err != nil {
+		http.Error(w, "missing 'bundle' file field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		http.Error(w, "invalid gzip bundle", http.StatusBadRequest)
+		return
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
+
+	imported := 0
+	var trivyArchive string
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			http.Error(w, "invalid tar bundle", http.StatusBadRequest)
+			return
+		}
+		switch hdr.Name {
+		case "manifest.json":
+			var manifest map[string]any
+			_ = json.NewDecoder(tr).Decode(&manifest)
+			if manifest["format"] != "bongsu-security-db-bundle" {
+				http.Error(w, "unsupported bundle format", http.StatusBadRequest)
+				return
+			}
+		case "cve-database.jsonl":
+			n, err := s.importCveJSONL(r.Context(), tr, "")
+			if err != nil {
+				log.Printf("security-db bundle cve import: %v", err)
+				http.Error(w, "cve import failed", http.StatusInternalServerError)
+				return
+			}
+			imported += n
+		case "trivy-db.tar.gz":
+			tmp, err := os.CreateTemp("", "bongsu-bundle-trivy-db-*.tar.gz")
+			if err != nil {
+				http.Error(w, "temp file error", http.StatusInternalServerError)
+				return
+			}
+			trivyArchive = tmp.Name()
+			if _, err := io.Copy(tmp, tr); err != nil {
+				tmp.Close()
+				os.Remove(trivyArchive)
+				http.Error(w, "trivy archive write failed", http.StatusInternalServerError)
+				return
+			}
+			tmp.Close()
+		}
+	}
+	trivyLoaded := false
+	if trivyArchive != "" {
+		defer os.Remove(trivyArchive)
+		if s.dbMgr == nil {
+			http.Error(w, "bundle contains trivy db but manager is unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if err := s.dbMgr.LoadFromFile(trivyArchive); err != nil {
+			log.Printf("security-db bundle trivy import: %v", err)
+			http.Error(w, "trivy db import failed", http.StatusInternalServerError)
+			return
+		}
+		trivyLoaded = true
+	}
+	s.recalculateSecurityFindings("security-db bundle import")
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "imported": imported, "trivy_db_loaded": trivyLoaded})
+}
+
 func (s *Server) recalculateSecurityFindings(reason string) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
@@ -1057,40 +1213,67 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 		source = "custom"
 	}
 
-	var entries []models.CveEntry
-	decoder := json.NewDecoder(file)
-	for decoder.More() {
-		var e models.CveEntry
-		if err := decoder.Decode(&e); err != nil {
-			break
-		}
-		if e.VulnerabilityID == "" || strings.HasPrefix(e.VulnerabilityID, "CGA-") {
-			continue
-		}
-		if e.Source == "" {
-			e.Source = source
-		}
-		entries = append(entries, e)
-	}
-
-	if len(entries) == 0 {
-		http.Error(w, "no valid entries found", http.StatusBadRequest)
-		return
-	}
-
-	count, err := s.db.UpsertCveEntries(ctx, entries)
+	count, err := s.importCveJSONL(ctx, file, source)
 	if err != nil {
 		log.Printf("cve-db import: %v", err)
 		http.Error(w, "import failed", http.StatusInternalServerError)
+		return
+	}
+	if count == 0 {
+		http.Error(w, "no valid entries found", http.StatusBadRequest)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":   "ok",
 		"imported": count,
-		"total":    len(entries),
+		"total":    count,
 	})
 	s.recalculateSecurityFindings("cve-db import")
+}
+
+func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string) (int, error) {
+	decoder := json.NewDecoder(reader)
+	batch := make([]models.CveEntry, 0, 1000)
+	total := 0
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		n, err := s.db.UpsertCveEntries(ctx, batch)
+		if err != nil {
+			return err
+		}
+		total += n
+		batch = batch[:0]
+		return nil
+	}
+	for {
+		var e models.CveEntry
+		if err := decoder.Decode(&e); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return total, err
+		}
+		if e.VulnerabilityID == "" || strings.HasPrefix(e.VulnerabilityID, "CGA-") {
+			continue
+		}
+		if e.Source == "" {
+			if source != "" {
+				e.Source = source
+			} else {
+				e.Source = "bundle"
+			}
+		}
+		batch = append(batch, e)
+		if len(batch) >= 1000 {
+			if err := flush(); err != nil {
+				return total, err
+			}
+		}
+	}
+	return total, flush()
 }
 
 func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
@@ -1154,6 +1337,81 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 		}
 		encoder.Encode(e)
 	}
+}
+
+func (s *Server) writeCveJSONLTemp(ctx context.Context) (string, int, string, error) {
+	tmp, err := os.CreateTemp("", "bongsu-cve-database-*.jsonl")
+	if err != nil {
+		return "", 0, "", err
+	}
+	path := tmp.Name()
+	defer tmp.Close()
+
+	rows, err := s.db.QueryContext(ctx, "SELECT "+db.CveCols+" FROM cve_database ORDER BY vulnerability_id, source")
+	if err != nil {
+		os.Remove(path)
+		return "", 0, "", err
+	}
+	defer rows.Close()
+
+	hash := sha256.New()
+	writer := io.MultiWriter(tmp, hash)
+	encoder := json.NewEncoder(writer)
+	count := 0
+	for rows.Next() {
+		var e models.CveEntry
+		if err := db.ScanCveEntry(rows, &e); err != nil {
+			os.Remove(path)
+			return "", 0, "", err
+		}
+		if err := encoder.Encode(e); err != nil {
+			os.Remove(path)
+			return "", 0, "", err
+		}
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		os.Remove(path)
+		return "", 0, "", err
+	}
+	return path, count, hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func writeTarBytes(tw *tar.Writer, name string, data []byte) error {
+	hdr := &tar.Header{
+		Name:    name,
+		Mode:    0644,
+		Size:    int64(len(data)),
+		ModTime: time.Now(),
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	_, err := tw.Write(data)
+	return err
+}
+
+func writeTarFile(tw *tar.Writer, name, path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	hdr := &tar.Header{
+		Name:    name,
+		Mode:    0644,
+		Size:    info.Size(),
+		ModTime: info.ModTime(),
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = io.Copy(tw, f)
+	return err
 }
 
 func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
