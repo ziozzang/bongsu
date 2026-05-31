@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type Host struct {
 	ID           string    `json:"id"`
@@ -40,6 +43,20 @@ type ScanRequest struct {
 	ClaimedAt    *time.Time `json:"claimed_at,omitempty"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
+}
+
+type AuditLog struct {
+	ID           string          `json:"id"`
+	ActorType    string          `json:"actor_type"`
+	ActorID      string          `json:"actor_id"`
+	Action       string          `json:"action"`
+	ResourceType string          `json:"resource_type"`
+	ResourceID   string          `json:"resource_id"`
+	Status       string          `json:"status"`
+	IPAddress    string          `json:"ip_address"`
+	UserAgent    string          `json:"user_agent"`
+	Metadata     json.RawMessage `json:"metadata"`
+	CreatedAt    time.Time       `json:"created_at"`
 }
 
 type Package struct {

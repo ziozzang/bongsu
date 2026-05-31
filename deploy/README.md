@@ -207,6 +207,7 @@ spec:
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
 | `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |
 | `POST` | `/api/admin/rbac/policies` | Create RBAC policy |
+| `GET` | `/api/admin/audit-logs` | Query audit log events by actor/action/resource/status |
 | `POST` | `/api/scan-requests` | Request force scan for host/all |
 | `GET` | `/api/scan-requests` | List force scan requests |
 | `POST` | `/api/agent/scan-requests/claim` | Agent claims a pending force scan |

@@ -77,6 +77,10 @@ RBAC tables are present:
 
 Runtime RBAC supports viewer API keys mapped to external subjects through `BONGSU_VIEWER_API_KEYS=key:subject`. Admins create `access_subjects` and `access_policies`; viewer queries are scoped to allowed hosts across host, package, vulnerability, scan, and stats views. Future SSO integration should replace static viewer keys with identity-provider subjects.
 
+## Audit Trail
+
+Administration and agent events are written to append-only `audit_logs` rows. The current audit surface includes agent report submissions, force-scan request lifecycle events, scan deletion, Trivy DB upload/update, security DB import/export/update, CVE DB import/export/rematch/CVSS recalculation, RBAC subject/policy changes, and periodic security DB change hooks. Admins can query `/api/admin/audit-logs` with `actor_type`, `actor_id`, `action`, `resource_type`, `resource_id`, `status`, `limit`, and `offset`.
+
 ## Test Expectations
 
 Required test surface:

@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -133,6 +134,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
 	s.mux.HandleFunc("POST /api/admin/rbac/subjects", s.handleUpsertAccessSubject)
 	s.mux.HandleFunc("POST /api/admin/rbac/policies", s.handleUpsertAccessPolicy)
+	s.mux.HandleFunc("GET /api/admin/audit-logs", s.handleListAuditLogs)
 	s.mux.HandleFunc("GET /api/cve-db/stats", s.handleCveDbStats)
 	s.mux.HandleFunc("GET /api/cve-db/search", s.handleCveDbSearch)
 	s.serveDashboard()
@@ -236,6 +238,102 @@ func (s *Server) matchKey(got, want string) bool {
 		return false
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+func (s *Server) audit(r *http.Request, action, resourceType, resourceID, status string, metadata map[string]any) {
+	if status == "" {
+		status = "ok"
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	meta, err := json.Marshal(metadata)
+	if err != nil {
+		meta = []byte(`{}`)
+	}
+	entry := &models.AuditLog{
+		ActorType:    s.actorType(r),
+		ActorID:      s.actorID(r),
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Status:       status,
+		IPAddress:    clientIP(r),
+		UserAgent:    r.UserAgent(),
+		Metadata:     meta,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := s.db.RecordAuditLog(ctx, entry); err != nil {
+		log.Printf("audit log failed action=%s resource=%s/%s: %v", action, resourceType, resourceID, err)
+	}
+}
+
+func (s *Server) auditSystem(action, resourceType, resourceID, status string, metadata map[string]any) {
+	if status == "" {
+		status = "ok"
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	meta, err := json.Marshal(metadata)
+	if err != nil {
+		meta = []byte(`{}`)
+	}
+	entry := &models.AuditLog{
+		ActorType:    "system",
+		ActorID:      "bongsu",
+		Action:       action,
+		ResourceType: resourceType,
+		ResourceID:   resourceID,
+		Status:       status,
+		Metadata:     meta,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := s.db.RecordAuditLog(ctx, entry); err != nil {
+		log.Printf("audit log failed action=%s resource=%s/%s: %v", action, resourceType, resourceID, err)
+	}
+}
+
+func (s *Server) actorType(r *http.Request) string {
+	if s.authenticateAdmin(r) {
+		return "admin"
+	}
+	if s.authenticateAgent(r) {
+		return "agent"
+	}
+	if s.viewerSubject(r) != "" {
+		return "viewer"
+	}
+	return "anonymous"
+}
+
+func (s *Server) actorID(r *http.Request) string {
+	if subject := s.viewerSubject(r); subject != "" {
+		return subject
+	}
+	if s.authenticateAdmin(r) {
+		return "admin"
+	}
+	if s.authenticateAgent(r) {
+		return "agent"
+	}
+	return ""
+}
+
+func clientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		return strings.TrimSpace(realIP)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil {
+		return host
+	}
+	return r.RemoteAddr
 }
 
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
@@ -380,6 +478,16 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.CompleteScan(ctx, report.ScanID); err != nil {
 		log.Printf("complete scan: %v", err)
 	}
+	s.audit(r, "agent.report", "scan", report.ScanID, "ok", map[string]any{
+		"host_id":         report.Host.ID,
+		"hostname":        report.Host.Hostname,
+		"packages":        len(report.Packages),
+		"vulnerabilities": len(report.Vulns),
+		"containers":      len(report.Containers),
+		"users":           len(report.Users),
+		"processes":       len(report.Processes),
+		"ports":           len(report.Ports),
+	})
 
 	writeJSON(w, http.StatusOK, map[string]string{
 		"status":  "ok",
@@ -1001,6 +1109,12 @@ func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
+	s.audit(r, "scan_request.create", "scan_request", req.ID, "ok", map[string]any{
+		"host_id":       req.HostID,
+		"scan_type":     req.ScanType,
+		"packages_only": req.PackagesOnly,
+		"reason":        req.Reason,
+	})
 	writeJSON(w, http.StatusAccepted, req)
 }
 
@@ -1024,6 +1138,9 @@ func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusOK, map[string]any{"request": nil})
 		return
 	}
+	s.audit(r, "scan_request.claim", "scan_request", req.ID, "ok", map[string]any{
+		"host_id": hostID,
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"request": req})
 }
 
@@ -1049,6 +1166,9 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
+	s.audit(r, "scan_request.complete", "scan_request", id, body.Status, map[string]any{
+		"message": body.Message,
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"status": body.Status})
 }
 
@@ -1085,6 +1205,7 @@ func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
+	s.audit(r, "scan.delete", "scan", scanID, "ok", nil)
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
@@ -1131,6 +1252,7 @@ func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.audit(r, "trivy_db.upload", "security_db", "trivy", "ok", nil)
 	s.SecurityDatabaseUpdated("trivy-db upload")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "trivy-db loaded"})
 }
@@ -1151,6 +1273,7 @@ func (s *Server) handleTrivyDBUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.audit(r, "trivy_db.update", "security_db", "trivy", "ok", nil)
 	s.SecurityDatabaseUpdated("trivy-db update")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":         "ok",
@@ -1174,6 +1297,7 @@ func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"status": "error", "message": err.Error(), "security_db": s.secMgr.Status()})
 		return
 	}
+	s.audit(r, "security_db.update", "security_db", "aggregate", "ok", nil)
 	s.SecurityDatabaseUpdated("security-db update")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "security_db": s.secMgr.Status()})
 }
@@ -1240,6 +1364,10 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
+	s.audit(r, "security_db.export", "security_db", "bundle", "ok", map[string]any{
+		"cve_records":       cveCount,
+		"trivy_db_included": len(trivyBytes) > 0,
+	})
 }
 
 func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) {
@@ -1324,11 +1452,16 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		}
 		trivyLoaded = true
 	}
+	s.audit(r, "security_db.import", "security_db", "bundle", "ok", map[string]any{
+		"imported":        imported,
+		"trivy_db_loaded": trivyLoaded,
+	})
 	s.SecurityDatabaseUpdated("security-db bundle import")
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "imported": imported, "trivy_db_loaded": trivyLoaded})
 }
 
 func (s *Server) SecurityDatabaseUpdated(reason string) {
+	s.auditSystem("security_db.changed", "security_db", "aggregate", "ok", map[string]any{"reason": reason})
 	s.recalculateSecurityFindings(reason)
 	s.queueSecurityDBRescans(reason)
 }
@@ -1425,6 +1558,10 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 		"imported": count,
 		"total":    count,
 	})
+	s.audit(r, "cve_db.import", "cve_db", source, "ok", map[string]any{
+		"imported": count,
+		"source":   source,
+	})
 	s.SecurityDatabaseUpdated("cve-db import")
 }
 
@@ -1484,6 +1621,11 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+	s.audit(r, "cve_db.rematch", "cve_db", "all", "ok", map[string]any{
+		"matched":   result.Matched,
+		"new_vulns": result.NewVulns,
+		"skipped":   result.Skipped,
+	})
 	enriched, _ := s.db.EnrichVulnerabilities(r.Context())
 	log.Printf("Enriched %d vulnerabilities with CVE DB data", enriched)
 }
@@ -1498,6 +1640,7 @@ func (s *Server) handleCveDbRecalcCVSS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "recalc failed", http.StatusInternalServerError)
 		return
 	}
+	s.audit(r, "cve_db.recalc_cvss", "cve_db", "all", "ok", map[string]any{"updated": count})
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "updated": count})
 }
 func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
@@ -1533,6 +1676,7 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 		}
 		encoder.Encode(e)
 	}
+	s.audit(r, "cve_db.export", "cve_db", source, "ok", map[string]any{"source": source})
 }
 
 func (s *Server) writeCveJSONLTemp(ctx context.Context) (string, int, string, error) {
@@ -1650,6 +1794,10 @@ func (s *Server) handleUpsertAccessSubject(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
+	s.audit(r, "rbac.subject.upsert", "access_subject", body.ExternalID, "ok", map[string]any{
+		"subject_type": body.SubjectType,
+		"display_name": body.DisplayName,
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -1681,7 +1829,34 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
+	s.audit(r, "rbac.policy.upsert", "access_policy", body.SubjectExternalID, "ok", map[string]any{
+		"resource_type": body.ResourceType,
+		"resource_id":   body.ResourceID,
+		"permission":    body.Permission,
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	filter := db.AuditLogFilter{
+		ActorType:    r.URL.Query().Get("actor_type"),
+		ActorID:      r.URL.Query().Get("actor_id"),
+		Action:       r.URL.Query().Get("action"),
+		ResourceType: r.URL.Query().Get("resource_type"),
+		ResourceID:   r.URL.Query().Get("resource_id"),
+		Status:       r.URL.Query().Get("status"),
+	}
+	items, total, err := s.db.ListAuditLogs(r.Context(), filter, intParam(r, "limit", 100), intParam(r, "offset", 0))
+	if err != nil {
+		log.Printf("list audit logs: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
 }
 
 func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {

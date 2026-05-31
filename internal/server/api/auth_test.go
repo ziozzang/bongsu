@@ -78,3 +78,31 @@ func TestViewerKeys(t *testing.T) {
 		t.Fatalf("viewer subject = %q", got)
 	}
 }
+
+func TestAuditActorAndClientIP(t *testing.T) {
+	s := &Server{
+		apiKey:     "admin-key",
+		agentKey:   "agent-key",
+		viewerKeys: map[string]string{"viewer-key": "alice"},
+		webAuth:    true,
+	}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-API-Key", "viewer-key")
+	req.Header.Set("X-Forwarded-For", "203.0.113.10, 10.0.0.1")
+	if got := s.actorType(req); got != "viewer" {
+		t.Fatalf("actor type = %q", got)
+	}
+	if got := s.actorID(req); got != "alice" {
+		t.Fatalf("actor id = %q", got)
+	}
+	if got := clientIP(req); got != "203.0.113.10" {
+		t.Fatalf("client ip = %q", got)
+	}
+
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("X-API-Key", "agent-key")
+	if got := s.actorType(req); got != "agent" {
+		t.Fatalf("agent actor type = %q", got)
+	}
+}
