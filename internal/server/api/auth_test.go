@@ -526,6 +526,26 @@ func TestHostsExposeActiveFindingCounts(t *testing.T) {
 	}
 }
 
+func TestVulnSummaryUsesActiveFindingCounts(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleVulnSummary")
+	if start < 0 {
+		t.Fatal("handleVulnSummary not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleStats")
+	if end < 0 {
+		t.Fatal("handleStats not found")
+	}
+	fn := body[start : start+end]
+	if !strings.Contains(fn, "GetCurrentActionableVulnCountsByHost") {
+		t.Fatalf("vuln summary host counts must use active findings: %s", fn)
+	}
+}
+
 func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{

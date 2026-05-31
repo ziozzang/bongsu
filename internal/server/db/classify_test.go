@@ -482,6 +482,32 @@ func TestCurrentActionableVulnSQLUsesRemediationFilters(t *testing.T) {
 	}
 }
 
+func TestVulnSummaryUsesActiveFindingFilter(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetVulnSummaryByMetadata")
+	if start < 0 {
+		t.Fatal("GetVulnSummaryByMetadata not found")
+	}
+	end := strings.Index(body[start:], "func vulnSummaryGroupExpr")
+	if end < 0 {
+		t.Fatal("vulnSummaryGroupExpr not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"currentActionableVulnSQL()",
+		"JOIN ` + latestScansSub",
+		"v.host_id = ANY($1)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("vuln summary active filter missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestInsertableVulnerabilitiesDropsDanglingRows(t *testing.T) {
 	valid := models.Vulnerability{
 		ID:              "vuln-1",

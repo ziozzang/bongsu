@@ -220,7 +220,7 @@ spec:
 | `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON or SPDX JSON with `format=spdx` |
 | `GET` | `/api/vulnerabilities` | List CVEs with host/container/owner/team/environment filters |
 | `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON with host metadata |
-| `GET` | `/api/vuln-summary?group_by=owner` | Group current findings by owner/team/environment/criticality |
+| `GET` | `/api/vuln-summary?group_by=owner` | Group active remediation findings by owner/team/environment/criticality |
 | `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope/expiry |
 | `GET` | `/api/packages` | List packages (supports `sort_by`, `q`, filters, pagination) |
 | `GET` | `/api/packages/{id}/vulnerabilities` | Package vulnerability details |

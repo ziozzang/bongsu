@@ -2047,7 +2047,7 @@ type VulnerabilitySummaryRow struct {
 
 func (db *DB) GetVulnSummaryByMetadata(ctx context.Context, groupBy string, hostIDs []string) ([]VulnerabilitySummaryRow, error) {
 	groupExpr := vulnSummaryGroupExpr(groupBy)
-	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE 1=1`
+	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL()
 	args := []any{}
 	if len(hostIDs) > 0 {
 		baseQ += ` AND v.host_id = ANY($1)`
@@ -2059,7 +2059,7 @@ func (db *DB) GetVulnSummaryByMetadata(ctx context.Context, groupBy string, host
 		count(*) FILTER (WHERE v.severity='HIGH')::int AS high,
 		count(*) FILTER (WHERE v.severity='MEDIUM')::int AS medium,
 		count(*) FILTER (WHERE v.severity='LOW')::int AS low,
-		count(*) FILTER (WHERE COALESCE(vt.status, 'open') IN ('open', 'in_progress') AND (
+		count(*) FILTER (WHERE (
 			(v.severity='CRITICAL' AND v.created_at < now() - interval '%d days') OR
 			(v.severity='HIGH' AND v.created_at < now() - interval '%d days') OR
 			(v.severity='MEDIUM' AND v.created_at < now() - interval '%d days') OR

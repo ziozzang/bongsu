@@ -1216,20 +1216,11 @@ func (s *Server) handleVulnSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	counts, err := s.db.GetVulnCountsByHost(ctx)
+	counts, err := s.db.GetCurrentActionableVulnCountsByHost(ctx, scopeHostFilter(scope, scope.HostIDs))
 	if err != nil {
 		log.Printf("vuln summary: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
-	}
-	if !scope.All {
-		filtered := map[string]map[string]int{}
-		for hostID, row := range counts {
-			if scope.CanReadHost(hostID) {
-				filtered[hostID] = row
-			}
-		}
-		counts = filtered
 	}
 	writeJSON(w, http.StatusOK, counts)
 }
