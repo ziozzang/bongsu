@@ -178,18 +178,21 @@ func (m *Manager) LoadFromFile(path string) error {
 			return fmt.Errorf("unsafe path in archive: %s", hdr.Name)
 		}
 		target := filepath.Join(staging, hdr.Name)
-		if hdr.Typeflag == tar.TypeDir {
+		switch hdr.Typeflag {
+		case tar.TypeDir:
 			if err := os.MkdirAll(target, 0755); err != nil {
 				return fmt.Errorf("create %s: %w", target, err)
 			}
 			continue
+		case tar.TypeReg, tar.TypeRegA:
+		default:
+			return fmt.Errorf("unsupported archive entry type %c for %s", hdr.Typeflag, hdr.Name)
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
 			return fmt.Errorf("create %s: %w", filepath.Dir(target), err)
 		}
 		out, err := os.Create(target)
 		if err != nil {
-			out.Close()
 			return fmt.Errorf("create %s: %w", target, err)
 		}
 		if _, err := io.Copy(out, tr); err != nil {

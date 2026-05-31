@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -135,7 +136,51 @@ func TestLoadFromFileReplacesDBAfterStaging(t *testing.T) {
 	}
 }
 
+func TestLoadFromFileRejectsUnsupportedArchiveEntryTypes(t *testing.T) {
+	cache := t.TempDir()
+	archive := filepath.Join(t.TempDir(), "unsafe-trivy.tar.gz")
+	if err := writeTrivyArchiveEntries(archive, []tarEntry{
+		{name: "db/trivy.db", content: "db", typeflag: tar.TypeReg},
+		{name: "db/link", typeflag: tar.TypeSymlink, linkname: "/tmp/outside"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager("trivy", cache, "", 0)
+	if err := m.LoadFromFile(archive); err == nil {
+		t.Fatal("expected unsupported archive entry to fail")
+	}
+	if _, err := os.Stat(filepath.Join(cache, "db", "trivy.db")); !os.IsNotExist(err) {
+		t.Fatalf("unsafe archive should not activate db, stat err=%v", err)
+	}
+}
+
+func TestLoadFromFileCreateErrorDoesNotCloseNilFile(t *testing.T) {
+	out, err := os.ReadFile("manager.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	if strings.Contains(body, "if err != nil {\n\t\t\tout.Close()") {
+		t.Fatal("os.Create error path must not close a nil file handle")
+	}
+}
+
+type tarEntry struct {
+	name     string
+	content  string
+	typeflag byte
+	linkname string
+}
+
 func writeTrivyArchive(path string, files map[string]string) error {
+	entries := make([]tarEntry, 0, len(files))
+	for name, content := range files {
+		entries = append(entries, tarEntry{name: name, content: content, typeflag: tar.TypeReg})
+	}
+	return writeTrivyArchiveEntries(path, entries)
+}
+
+func writeTrivyArchiveEntries(path string, entries []tarEntry) error {
 	f, err := os.Create(path)
 	if err != nil {
 		return err
@@ -145,17 +190,28 @@ func writeTrivyArchive(path string, files map[string]string) error {
 	defer gz.Close()
 	tw := tar.NewWriter(gz)
 	defer tw.Close()
-	for name, content := range files {
+	for _, entry := range entries {
+		typeflag := entry.typeflag
+		if typeflag == 0 {
+			typeflag = tar.TypeReg
+		}
 		hdr := &tar.Header{
-			Name: name,
-			Mode: 0644,
-			Size: int64(len(content)),
+			Name:     entry.name,
+			Mode:     0644,
+			Size:     int64(len(entry.content)),
+			Typeflag: typeflag,
+			Linkname: entry.linkname,
+		}
+		if typeflag != tar.TypeReg && typeflag != tar.TypeRegA {
+			hdr.Size = 0
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
-		if _, err := tw.Write([]byte(content)); err != nil {
-			return err
+		if hdr.Size > 0 {
+			if _, err := tw.Write([]byte(entry.content)); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
