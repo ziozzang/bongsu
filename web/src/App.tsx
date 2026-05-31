@@ -185,6 +185,7 @@ function DashboardView() {
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
   const [cveSources, setCveSources] = useState<CveSourceStat[]>([]);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
+  const [inventoryCounts, setInventoryCounts] = useState<Record<string, number>>({});
   const [totalPkgs, setTotalPkgs] = useState(0);
   const [ownerSummary, setOwnerSummary] = useState<VulnSummaryRow[]>([]);
   const [environmentSummary, setEnvironmentSummary] = useState<VulnSummaryRow[]>([]);
@@ -206,11 +207,24 @@ function DashboardView() {
   useEffect(() => {
     api.cveDbStats().then(r => setCveSources(r.sources || [])).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
-    api.hosts().then(items => setAgentCounts(items.reduce((acc, h) => {
-      const status = h.agent_status || 'unknown';
-      acc[status] = (acc[status] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>))).catch(() => {});
+    api.hosts().then(items => {
+      setAgentCounts(items.reduce((acc, h) => {
+        const status = h.agent_status || 'unknown';
+        acc[status] = (acc[status] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>));
+    }).catch(() => {});
+    Promise.all([
+      api.hosts({ inventory_status: 'healthy' }),
+      api.hosts({ inventory_status: 'stale' }),
+      api.hosts({ inventory_status: 'empty' }),
+      api.hosts({ inventory_status: 'none' }),
+    ]).then(([healthy, stale, empty, none]) => setInventoryCounts({
+      healthy: healthy.length,
+      stale: stale.length,
+      empty: empty.length,
+      none: none.length,
+    })).catch(() => {});
     api.vulnSummary({ group_by: 'owner' }).then(r => setOwnerSummary(r.items || [])).catch(() => {});
     api.vulnSummary({ group_by: 'environment' }).then(r => setEnvironmentSummary(r.items || [])).catch(() => {});
   }, []);
@@ -349,6 +363,28 @@ function DashboardView() {
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
           <div className="label">CVE Sources</div>
           <div className="value">{cveSources.length || '-'}</div>
+        </div>
+      </div>
+      <div className="stats-grid" style={{ marginTop: '1rem' }}>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--low)' }} />
+          <div className="label">Healthy SBOM</div>
+          <div className="value" style={{ color: 'var(--low)' }}>{inventoryCounts.healthy || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+          <div className="label">Stale SBOM</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{inventoryCounts.stale || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--high)' }} />
+          <div className="label">Empty SBOM</div>
+          <div className="value" style={{ color: 'var(--high)' }}>{inventoryCounts.empty || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--critical)' }} />
+          <div className="label">No Completed Scan</div>
+          <div className="value" style={{ color: 'var(--critical)' }}>{inventoryCounts.none || 0}</div>
         </div>
       </div>
       <div className="db-status-bar" style={{ marginTop: '1.5rem' }}>
