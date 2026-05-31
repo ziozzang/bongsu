@@ -3125,6 +3125,14 @@ func TestDashboardShowsRiskLevelSummary(t *testing.T) {
 		"onOpenVulnerabilities({ overdueOnly: true",
 		"row.risk?.critical",
 		"row.risk?.high",
+		"group_by: 'owner'",
+		"group_by: 'team'",
+		"group_by: 'environment'",
+		"group_by: 'criticality'",
+		"Owner Remediation Queue",
+		"Team Remediation Queue",
+		"Environment Risk Queue",
+		"Criticality Risk Queue",
 	} {
 		if !strings.Contains(appBody, want) && !strings.Contains(apiBody, want) {
 			t.Fatalf("dashboard risk summary missing %q", want)

@@ -283,7 +283,9 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
   const [inventoryCounts, setInventoryCounts] = useState<Record<string, number>>({});
   const [totalPkgs, setTotalPkgs] = useState(0);
   const [ownerSummary, setOwnerSummary] = useState<VulnSummaryRow[]>([]);
+  const [teamSummary, setTeamSummary] = useState<VulnSummaryRow[]>([]);
   const [environmentSummary, setEnvironmentSummary] = useState<VulnSummaryRow[]>([]);
+  const [criticalitySummary, setCriticalitySummary] = useState<VulnSummaryRow[]>([]);
   const [updating, setUpdating] = useState(false);
   const [updateMsg, setUpdateMsg] = useState('');
   const [rematching, setRematching] = useState(false);
@@ -328,7 +330,9 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
       none: none.length,
     })).catch(() => {});
     api.vulnSummary({ group_by: 'owner' }).then(r => setOwnerSummary(r.items || [])).catch(() => {});
+    api.vulnSummary({ group_by: 'team' }).then(r => setTeamSummary(r.items || [])).catch(() => {});
     api.vulnSummary({ group_by: 'environment' }).then(r => setEnvironmentSummary(r.items || [])).catch(() => {});
+    api.vulnSummary({ group_by: 'criticality' }).then(r => setCriticalitySummary(r.items || [])).catch(() => {});
   }, []);
 
   const handleUpdate = async () => {
@@ -902,10 +906,12 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
         </button>
       </div>
       {retentionMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: retentionMsg.includes('failed') ? 'var(--critical)' : 'var(--text-muted)' }}>{retentionMsg}</div>}
-      {(ownerSummary.length > 0 || environmentSummary.length > 0) && (
+      {(ownerSummary.length > 0 || teamSummary.length > 0 || environmentSummary.length > 0 || criticalitySummary.length > 0) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
           <SummaryTable title="Owner Remediation Queue" rows={ownerSummary} />
+          <SummaryTable title="Team Remediation Queue" rows={teamSummary} />
           <SummaryTable title="Environment Risk Queue" rows={environmentSummary} />
+          <SummaryTable title="Criticality Risk Queue" rows={criticalitySummary} />
         </div>
       )}
       {cveSources.length > 0 && (
