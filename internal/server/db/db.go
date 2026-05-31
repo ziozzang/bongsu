@@ -2200,19 +2200,20 @@ func (db *DB) SearchCVEs(ctx context.Context, f CveSearchFilter, limit, offset i
 }
 
 func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
+	fixedExpr := cveFixedVersionSQL("c")
 	// Step 1: exact vulnerability_id match — fill severity + fixed_version + title/description
-	q1 := `
+	q1 := fmt.Sprintf(`
 	UPDATE vulnerabilities v
 	SET severity = COALESCE(c.severity, v.severity),
 	    cvss_score = CASE WHEN v.cvss_score = 0 OR c.cvss_score > v.cvss_score THEN c.cvss_score ELSE v.cvss_score END,
 	    cvss_vector = COALESCE(NULLIF(c.cvss_vector, ''), v.cvss_vector),
-	    fixed_version = COALESCE(NULLIF(v.fixed_version, ''), COALESCE(c.affected_products->0->'fixed'->>0, '')),
+	    fixed_version = COALESCE(NULLIF(v.fixed_version, ''), COALESCE(%s, '')),
 	    title = CASE WHEN c.title != '' THEN c.title ELSE v.title END,
 	    description = CASE WHEN c.description != '' THEN c.description ELSE v.description END
 	FROM cve_database c
 	WHERE c.vulnerability_id = v.vulnerability_id
 	  AND (v.severity = '' OR v.cvss_score = 0 OR v.fixed_version = '' OR v.title = '' OR v.description = '' OR c.cvss_score > v.cvss_score)
-	  AND (c.cvss_score > 0 OR c.affected_products->0->'fixed'->>0 IS NOT NULL OR c.title != '')`
+	  AND (c.cvss_score > 0 OR %s IS NOT NULL OR c.title != '')`, fixedExpr, fixedExpr)
 	r1, err := db.ExecContext(ctx, q1)
 	if err != nil {
 		return 0, err
@@ -2220,7 +2221,8 @@ func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
 	n1, _ := r1.RowsAffected()
 
 	// Step 2: CVE number extraction match (DEBIAN-CVE-*, ALPINE-CVE-*, etc.)
-	q2 := `
+	fixedExpr = cveFixedVersionSQL("")
+	q2 := fmt.Sprintf(`
 	WITH v_cves AS (
 		SELECT id as vid, SUBSTRING(vulnerability_id FROM 'CVE-\d+-\d+') as cve
 		FROM vulnerabilities
@@ -2228,13 +2230,13 @@ func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
 	),
 	c_cves AS (
 		SELECT DISTINCT ON (cve) severity, cvss_score, cvss_vector,
-		    affected_products->0->'fixed'->>0 as fixed_ver, cve,
+		    %s as fixed_ver, cve,
 		    title as cve_title, description as cve_desc
 		FROM (
 			SELECT severity, cvss_score, cvss_vector, affected_products,
 				   SUBSTRING(vulnerability_id FROM 'CVE-\d+-\d+') as cve,
 				   title, description
-			FROM cve_database WHERE cvss_score > 0 OR affected_products->0->'fixed'->>0 IS NOT NULL OR title != ''
+			FROM cve_database WHERE cvss_score > 0 OR %s IS NOT NULL OR title != ''
 		) sub
 		ORDER BY cve, cvss_score DESC
 	)
@@ -2246,13 +2248,24 @@ func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
 	    title = CASE WHEN c.cve_title != '' THEN c.cve_title ELSE v.title END,
 	    description = CASE WHEN c.cve_desc != '' THEN c.cve_desc ELSE v.description END
 	FROM v_cves vc JOIN c_cves c ON c.cve = vc.cve
-	WHERE v.id = vc.vid`
+	WHERE v.id = vc.vid`, fixedExpr, fixedExpr)
 	r2, err := db.ExecContext(ctx, q2)
 	if err != nil {
 		return int(n1), err
 	}
 	n2, _ := r2.RowsAffected()
 	return int(n1) + int(n2), nil
+}
+
+func cveFixedVersionSQL(alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	return fmt.Sprintf(`COALESCE(
+		NULLIF(%saffected_products->0->'fixed'->>0, ''),
+		NULLIF(jsonb_path_query_first(%saffected_products, '$[*].ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
+	)`, prefix, prefix)
 }
 
 func (db *DB) GetFilterOptions(ctx context.Context) (*FilterOptions, error) {

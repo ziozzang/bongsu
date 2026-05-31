@@ -257,3 +257,16 @@ func TestQueueSecurityDBRescanInsertSQLUsesAtomicDedupe(t *testing.T) {
 		}
 	}
 }
+
+func TestCveFixedVersionSQLIncludesTopLevelAndRangeEvents(t *testing.T) {
+	got := cveFixedVersionSQL("c")
+	for _, want := range []string{
+		"c.affected_products->0->'fixed'->>0",
+		"jsonb_path_query_first(c.affected_products",
+		"ranges[*].events[*].fixed",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("fixed version SQL missing %q: %s", want, got)
+		}
+	}
+}

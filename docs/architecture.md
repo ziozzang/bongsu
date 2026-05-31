@@ -34,7 +34,7 @@ The merge strategy is:
 
 1. Normalize source records into `cve_database`.
 2. Keep source provenance in `source`, `category`, `ecosystem`, `raw_data`, and timestamps.
-3. Prefer stronger CVSS scores/vectors and fixed-version data when enriching scan findings.
+3. Prefer stronger CVSS scores/vectors and fixed-version data when enriching scan findings; fixed-version enrichment reads both top-level fixed lists and fixed events inside affected ranges.
 4. Match by ecosystem-aware identity first. Name-only candidates are discarded unless `affected_products` contains the same package name, compatible ecosystem/category, fixed-version data, and an affected range that contains the installed version. Fixed versions can come from either the advisory's top-level `fixed` list or fixed events inside range data, and multiple introduced/fixed intervals in one range are evaluated independently.
 5. CVSS vectors are recalculated after import for supported CVSS v2, v3.x, and v4.0 formats.
 6. `/api/cve-db/stats` reports source quality counters for ecosystem metadata, fixed versions, affected ranges, CVSS data, and matchable records so operators can reject weak feeds before they create noisy matches.
