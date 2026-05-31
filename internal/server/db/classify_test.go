@@ -475,6 +475,33 @@ func TestGetScanRequestReturnsOperationalFields(t *testing.T) {
 	}
 }
 
+func TestSecurityDBRescanCountsAreScopedByRevision(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) CountSecurityDBRescanRequestsByStatus")
+	if start < 0 {
+		t.Fatal("CountSecurityDBRescanRequestsByStatus not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) RequeueStaleScanRequests")
+	if end < 0 {
+		t.Fatal("CountSecurityDBRescanRequestsByStatus end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"scan_type='security-db-update'",
+		"security_db_revision=$1",
+		"host_id = ANY($2)",
+		"GROUP BY status",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("security DB rescan count query missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestScanRequestSecurityDBRevisionMigration(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/017_scan_request_security_db_revision.sql")
 	if err != nil {

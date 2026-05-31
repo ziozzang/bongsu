@@ -1735,9 +1735,33 @@ func TestStatsExposeActiveFindingCounts(t *testing.T) {
 		"GetCurrentActionableVulnCountsByHost",
 		"active_vulnerabilities",
 		"active_severity_counts",
+		"GetSecurityDBRevision(ctx)",
+		"CountSecurityDBRescanRequestsByStatus",
+		"security_db_revision",
+		"security_db_rescan_request_counts",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("stats active finding signal missing %q", want)
+		}
+	}
+}
+
+func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
+	out, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"stats.security_db_rescan_request_counts?.pending",
+		"stats.security_db_rescan_request_counts?.claimed",
+		"stats.security_db_rescan_request_counts?.failed",
+		"Current DB Rescan Pending",
+		"Current DB Rescan Claimed",
+		"Current DB Rescan Failed",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dashboard DB rescan count missing %q", want)
 		}
 	}
 }

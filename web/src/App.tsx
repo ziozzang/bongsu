@@ -498,6 +498,21 @@ function DashboardView() {
           <div className="label">Scan Requests Failed</div>
           <div className="value" style={{ color: 'var(--critical)' }}>{stats.scan_request_counts?.failed || 0}</div>
         </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+          <div className="label">Current DB Rescan Pending</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{stats.security_db_rescan_request_counts?.pending || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--primary)' }} />
+          <div className="label">Current DB Rescan Claimed</div>
+          <div className="value">{stats.security_db_rescan_request_counts?.claimed || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--critical)' }} />
+          <div className="label">Current DB Rescan Failed</div>
+          <div className="value" style={{ color: 'var(--critical)' }}>{stats.security_db_rescan_request_counts?.failed || 0}</div>
+        </div>
       </div>
       <div className="db-status-bar" style={{ marginTop: '1.5rem' }}>
         <h3>Vulnerability Database</h3>

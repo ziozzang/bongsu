@@ -1354,6 +1354,38 @@ func (db *DB) CountScanRequestsByStatus(ctx context.Context, hostIDs []string, i
 	return out, rows.Err()
 }
 
+func (db *DB) CountSecurityDBRescanRequestsByStatus(ctx context.Context, hostIDs []string, includeGlobal bool, revision string) (map[string]int, error) {
+	q := `SELECT status, count(*) FROM scan_requests WHERE scan_type='security-db-update' AND security_db_revision=$1`
+	args := []any{revision}
+	if len(hostIDs) > 0 {
+		if includeGlobal {
+			q += ` AND (host_id='' OR host_id = ANY($2))`
+		} else {
+			q += ` AND host_id = ANY($2)`
+		}
+		args = append(args, pqStringArray(hostIDs))
+	} else if !includeGlobal {
+		q += ` AND false`
+	}
+	q += ` GROUP BY status`
+
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var status string
+		var count int
+		if err := rows.Scan(&status, &count); err != nil {
+			return nil, err
+		}
+		out[status] = count
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) RequeueStaleScanRequests(ctx context.Context, timeout time.Duration) (int, error) {
 	if timeout <= 0 {
 		timeout = time.Hour

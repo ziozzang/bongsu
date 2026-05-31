@@ -1459,14 +1459,28 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		log.Printf("scan request status counts: %v", err)
 		scanRequestCounts = map[string]int{}
 	}
+	securityDBRevision := ""
+	securityDBRescanCounts := map[string]int{}
+	if revision, err := s.db.GetSecurityDBRevision(ctx); err != nil {
+		log.Printf("security db revision stats: %v", err)
+	} else {
+		securityDBRevision = revision
+		if counts, err := s.db.CountSecurityDBRescanRequestsByStatus(ctx, visibleHostIDs, scope.All, revision); err != nil {
+			log.Printf("security db rescan status counts: %v", err)
+		} else {
+			securityDBRescanCounts = counts
+		}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"total_hosts":            visibleHosts,
-		"total_vulnerabilities":  totalVulns,
-		"severity_counts":        sevCounts,
-		"active_vulnerabilities": activeTotalVulns,
-		"active_severity_counts": activeSevCounts,
-		"scan_request_counts":    scanRequestCounts,
+		"total_hosts":                       visibleHosts,
+		"total_vulnerabilities":             totalVulns,
+		"severity_counts":                   sevCounts,
+		"active_vulnerabilities":            activeTotalVulns,
+		"active_severity_counts":            activeSevCounts,
+		"scan_request_counts":               scanRequestCounts,
+		"security_db_revision":              securityDBRevision,
+		"security_db_rescan_request_counts": securityDBRescanCounts,
 	})
 }
 
