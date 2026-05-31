@@ -62,7 +62,11 @@ func TestAuditLogFilterSupportsTimeRanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(out)
+	modelOut, err := os.ReadFile("../../shared/models/models.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out) + string(modelOut)
 	for _, want := range []string{
 		`CreatedFrom  *time.Time`,
 		`CreatedTo    *time.Time`,
@@ -252,7 +256,11 @@ func TestManualCVSSRecalcUsesFullRecalculationPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(out)
+	modelOut, err := os.ReadFile("../../shared/models/models.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out) + string(modelOut)
 	start := strings.Index(body, "func (db *DB) RecalcCVSSFromVectors")
 	if start < 0 {
 		t.Fatal("RecalcCVSSFromVectors not found")
@@ -1467,14 +1475,33 @@ func TestVulnerabilityRowsExposePackageContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := string(out)
+	modelOut, err := os.ReadFile("../../shared/models/models.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out) + string(modelOut)
 	for _, want := range []string{
+		"(SELECT p.asset_type FROM packages p WHERE p.id = v.package_id)",
 		"(SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id)",
 		"(SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id)",
+		"(SELECT p.container_id FROM packages p WHERE p.id = v.package_id)",
+		"(SELECT p.image_name FROM packages p WHERE p.id = v.package_id)",
+		"(SELECT p.image_id FROM packages p WHERE p.id = v.package_id)",
+		"(SELECT p.target FROM packages p WHERE p.id = v.package_id)",
+		"&v.AssetType",
 		"&v.PkgType",
 		"&v.Ecosystem",
-		`"pkg_type"`,
-		`"ecosystem"`,
+		"&v.ContainerID",
+		"&v.ImageName",
+		"&v.ImageID",
+		"&v.Target",
+		`json:"asset_type`,
+		`json:"pkg_type`,
+		`json:"ecosystem`,
+		`json:"container_id`,
+		`json:"image_name`,
+		`json:"image_id`,
+		`json:"target`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("vulnerability package context missing %q", want)

@@ -153,8 +153,13 @@ export interface Vuln {
   title: string;
   description: string;
   pkg_name: string;
+  asset_type?: string;
   pkg_type?: string;
   ecosystem?: string;
+  container_id?: string;
+  image_name?: string;
+  image_id?: string;
+  target?: string;
   pkg_path: string;
   installed_version: string;
   fixed_version: string;

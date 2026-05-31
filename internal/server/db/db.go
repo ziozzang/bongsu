@@ -1008,8 +1008,13 @@ const vulnRiskScoreExpr = `LEAST(100, GREATEST(0, (v.cvss_score * 5) + (` + vuln
 const vulnRiskLevelExpr = `CASE WHEN ` + vulnRiskScoreExpr + ` >= 80 THEN 'critical' WHEN ` + vulnRiskScoreExpr + ` >= 60 THEN 'high' WHEN ` + vulnRiskScoreExpr + ` >= 40 THEN 'medium' ELSE 'low' END`
 
 const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name,
+COALESCE((SELECT p.asset_type FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), ''),
+COALESCE((SELECT p.container_id FROM packages p WHERE p.id = v.package_id), ''),
+COALESCE((SELECT p.image_name FROM packages p WHERE p.id = v.package_id), ''),
+COALESCE((SELECT p.image_id FROM packages p WHERE p.id = v.package_id), ''),
+COALESCE((SELECT p.target FROM packages p WHERE p.id = v.package_id), ''),
 v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, ''),
 ` + vulnExploitedExpr + `,
 ` + vulnEPSSScoreExpr + `,
@@ -1033,7 +1038,7 @@ const vulnTriageCols = `, COALESCE(vt.status, 'open'), COALESCE(vt.reason, ''), 
 func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnerability) error {
 	return scanner.Scan(&v.ID, &v.PackageID, &v.ScanID, &v.HostID,
 		&v.VulnerabilityID, &v.Severity, &v.Title, &v.Description,
-		&v.PkgName, &v.PkgType, &v.Ecosystem, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
+		&v.PkgName, &v.AssetType, &v.PkgType, &v.Ecosystem, &v.ContainerID, &v.ImageName, &v.ImageID, &v.Target, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
 		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
 		&v.FindingSource, &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
 		&v.Exploited, &v.EPSSScore, &v.EPSSPercentile, &v.RiskScore, &v.RiskLevel, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)

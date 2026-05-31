@@ -135,8 +135,13 @@ type Vulnerability struct {
 	Title           string     `json:"title,omitempty"`
 	Description     string     `json:"description,omitempty"`
 	PkgName         string     `json:"pkg_name"`
+	AssetType       string     `json:"asset_type,omitempty"`
 	PkgType         string     `json:"pkg_type,omitempty"`
 	Ecosystem       string     `json:"ecosystem,omitempty"`
+	ContainerID     string     `json:"container_id,omitempty"`
+	ImageName       string     `json:"image_name,omitempty"`
+	ImageID         string     `json:"image_id,omitempty"`
+	Target          string     `json:"target,omitempty"`
 	PkgPath         string     `json:"pkg_path,omitempty"`
 	InstalledVer    string     `json:"installed_version"`
 	FixedVersion    string     `json:"fixed_version,omitempty"`

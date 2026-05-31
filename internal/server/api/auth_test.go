@@ -3028,9 +3028,14 @@ func TestVulnerabilityViewsShowPackageContext(t *testing.T) {
 	for _, want := range []string{
 		"v.pkg_type || v.ecosystem",
 		"Package Type",
+		"Asset Type",
 		"vuln.pkg_type",
 		"Ecosystem",
 		"vuln.ecosystem",
+		"vuln.image_name",
+		"vuln.image_id",
+		"vuln.container_id",
+		"vuln.target",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("vulnerability UI package context missing %q", want)
@@ -3521,6 +3526,11 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 		HostOwner:       "platform",
 		HostTeam:        "security",
 		Container:       "api",
+		AssetType:       "container",
+		ContainerID:     "container-a",
+		ImageName:       "registry/app:1.0",
+		ImageID:         "sha256:abc",
+		Target:          "package-lock.json",
 		VulnerabilityID: "CVE-2026-0001",
 		Severity:        "HIGH",
 		CVSSScore:       8.1,
@@ -3551,6 +3561,11 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 	if !strings.Contains(out, "risk_level") || !strings.Contains(out, "high") || !strings.Contains(out, "72.3") {
 		t.Fatalf("missing risk fields: %s", out)
 	}
+	for _, want := range []string{"asset_type", "container_id", "image_name", "image_id", "target", "registry/app:1.0", "package-lock.json"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing package placement %q: %s", want, out)
+		}
+	}
 	if !strings.Contains(out, "CVE-2026-0001") || !strings.Contains(out, "accepted_risk") || !strings.Contains(out, "platform") {
 		t.Fatalf("missing csv values: %s", out)
 	}
@@ -3563,6 +3578,10 @@ func TestWriteVulnerabilityCSVEscapesFormulaCells(t *testing.T) {
 		HostOwner:       "=cmd|' /C calc'!A0",
 		HostTeam:        " +SUM(1,1)",
 		Container:       "@container",
+		ContainerID:     "=container-id",
+		ImageName:       "+image",
+		ImageID:         "-image-id",
+		Target:          "@target",
 		VulnerabilityID: "CVE-2026-0001",
 		Severity:        "HIGH",
 		CVSSScore:       8.1,
@@ -3586,7 +3605,7 @@ func TestWriteVulnerabilityCSVEscapesFormulaCells(t *testing.T) {
 	for i, name := range rows[0] {
 		header[name] = i
 	}
-	for _, col := range []string{"host_owner", "host_team", "container", "pkg_name", "installed_version", "fixed_version", "title"} {
+	for _, col := range []string{"host_owner", "host_team", "container", "container_id", "image_name", "image_id", "target", "pkg_name", "installed_version", "fixed_version", "title"} {
 		got := rows[1][header[col]]
 		if !strings.HasPrefix(got, "'") {
 			t.Fatalf("%s = %q, want formula-safe leading quote", col, got)
