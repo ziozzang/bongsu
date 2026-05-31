@@ -1559,6 +1559,8 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		`"security_recalculation": s.securityRecalculationStatus(isAdmin)`,
 		"for k, v := range s.securityDBRevisionMeta(r.Context())",
 		`k == "security_db_revision" || isAdmin`,
+		`s.securityDBFreshnessStatus(r.Context(), isAdmin)`,
+		`resp["security_db_freshness"] = freshness`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("health handler missing %q: %s", want, fn)
@@ -1621,14 +1623,41 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"health?.security_recalculation",
 		"health?.security_db_revision",
 		"health?.security_db_revision_error",
+		"health?.security_db_freshness",
 		"DB rev:",
 		"Recalc:",
+		"DB fresh:",
 		"Trivy DB:",
 		"Security sources:",
 		"Security DB revision:",
+		"Security DB freshness:",
+		"Oldest CVE source:",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard DB health display missing %q", want)
+		}
+	}
+}
+
+func TestSecurityDBFreshnessHealthAndMetricsAreExposed(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS`,
+		`defaultSecurityDBMaxSourceAgeHours`,
+		`GetCveSourceStats(ctx)`,
+		`resp["status"] = "stale"`,
+		`"oldest_source"`,
+		`"stale_sources"`,
+		`bongsu_security_db_source_stale`,
+		`bongsu_security_db_source_count`,
+		`bongsu_security_db_source_oldest_age_seconds`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("security DB freshness support missing %q", want)
 		}
 	}
 }

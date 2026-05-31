@@ -229,6 +229,21 @@ export interface HealthStatus {
   trivy_db_last_update?: string;
   security_db_revision?: string;
   security_db_revision_error?: string;
+  security_db_freshness?: {
+    status: string;
+    stale: boolean;
+    source_count?: number;
+    max_age_hours?: number;
+    oldest_source?: string;
+    oldest_last_update?: string;
+    oldest_age_seconds?: number;
+    stale_sources?: Array<{
+      source: string;
+      last_update?: string;
+      age_seconds?: number;
+    }>;
+    error?: string;
+  };
   trivy_db?: {
     ready: boolean;
     last_update?: string;

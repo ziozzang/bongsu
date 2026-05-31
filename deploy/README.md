@@ -116,7 +116,7 @@ After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB
 ./scripts/import-security-db-bundle.sh http://server:8080 your-api-key bongsu-security-db-bundle.tar.gz
 ```
 
-Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and optional `trivy-db.tar.gz` before applying any database or cache changes. The manifest also carries `security_db_revision`, and export/import audit rows record it so operators can correlate an offline bundle with the automatic rescans it triggers. `/health` and the dashboard show the current merged revision, with revision lookup errors limited to admin health responses. Direct CVE JSONL import responses and CVE import/export audit rows also include the resulting revision. A corrupt or tampered bundle is rejected, the full CVE database is replaced inside one database transaction, and Trivy DB archives are staged before replacing the active cache so bad rows or invalid archives do not leave partially committed CVE/cache data. Direct source imports replace existing rows for that source in the same transaction, so advisories removed upstream do not remain as stale matches.
+Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and optional `trivy-db.tar.gz` before applying any database or cache changes. The manifest also carries `security_db_revision`, and export/import audit rows record it so operators can correlate an offline bundle with the automatic rescans it triggers. `/health` and the dashboard show the current merged revision and source freshness, with revision lookup and freshness errors limited to admin health responses. Direct CVE JSONL import responses and CVE import/export audit rows also include the resulting revision. A corrupt or tampered bundle is rejected, the full CVE database is replaced inside one database transaction, and Trivy DB archives are staged before replacing the active cache so bad rows or invalid archives do not leave partially committed CVE/cache data. Direct source imports replace existing rows for that source in the same transaction, so advisories removed upstream do not remain as stale matches.
 
 ## Agent Installation
 
@@ -192,6 +192,7 @@ spec:
 | `BONGSU_SECURITY_DB_INTERVAL_HOURS` | `6` | Security source sync interval |
 | `BONGSU_SECURITY_DB_SYNC_ON_START` | `true` | Run the configured security source sync once on server startup before waiting for the periodic interval |
 | `BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES` | `8192` | Tail bytes of the most recent source sync output retained in admin-authenticated health checks and failed update responses |
+| `BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS` | `30` | Mark merged security DB source freshness as stale when any source has not updated within this many hours (`0` disables age-based staleness) |
 | `BONGSU_SYNC_REQUIRE_TRIVY_SOURCE` | `true` connected, `false` airgap | Fail the bundled source sync if Trivy CVE extraction is missing or empty instead of silently producing a partial source set |
 | `BONGSU_AUTO_RESCAN_ON_DB_UPDATE` | `true` | Queue background rescans after security DB changes |
 | `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` | `720` | Only auto-rescan hosts seen within this many hours (`0`=all hosts) |
@@ -265,7 +266,7 @@ spec:
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL atomically |
 | `POST` | `/api/admin/cve-db/rematch` | Rematch packages, optionally with `sources`, `min_source_matchable_percent`, and `scan_id` JSON filters |
-| `GET` | `/api/admin/metrics` | Admin-only Prometheus text metrics for DB pool health, security recalculation state, Trivy readiness, and automatic rescan backlog |
+| `GET` | `/api/admin/metrics` | Admin-only Prometheus text metrics for DB pool health, security recalculation state, Trivy readiness, security source freshness, and automatic rescan backlog |
 | `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs |
 | `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
 | `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |
@@ -282,7 +283,7 @@ spec:
 | `POST` | `/api/scan-requests/requeue-stale` | Requeue claimed force-scan requests older than timeout |
 | `POST` | `/api/agent/scan-requests/claim` | Agent claims a pending force scan |
 | `POST` | `/api/agent/scan-requests/{id}/complete` | Agent completes/fails a force scan |
-| `GET` | `/api/health` | Health check |
+| `GET` | `/api/health` | Health check with Trivy readiness, merged security DB revision, and source freshness |
 
 ## RBAC Quick Start
 

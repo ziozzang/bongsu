@@ -58,8 +58,9 @@ type Server struct {
 }
 
 const (
-	maxReportErrors     = 32
-	maxReportErrorBytes = 2048
+	maxReportErrors                    = 32
+	maxReportErrorBytes                = 2048
+	defaultSecurityDBMaxSourceAgeHours = 30
 )
 
 func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, secMgr *secdb.Manager) *Server {
@@ -2660,6 +2661,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			resp[k] = v
 		}
 	}
+	if s.db != nil {
+		freshness := s.securityDBFreshnessStatus(r.Context(), isAdmin)
+		resp["security_db_freshness"] = freshness
+		if status, _ := freshness["status"].(string); status != "" && status != "ok" {
+			resp["status"] = "degraded"
+		}
+	}
 	if s.dbMgr != nil {
 		resp["trivy_db_ready"] = s.dbMgr.IsReady()
 		if lu := s.dbMgr.LastUpdate(); !lu.IsZero() {
@@ -2679,6 +2687,91 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails bool) map[string]any {
+	maxAgeHours := envFloat("BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS", defaultSecurityDBMaxSourceAgeHours)
+	if maxAgeHours < 0 {
+		maxAgeHours = defaultSecurityDBMaxSourceAgeHours
+	}
+	maxAge := time.Duration(maxAgeHours * float64(time.Hour))
+	resp := map[string]any{
+		"max_age_hours": maxAgeHours,
+	}
+	if s.db == nil {
+		resp["status"] = "unavailable"
+		resp["stale"] = true
+		return resp
+	}
+	stats, err := s.db.GetCveSourceStats(ctx)
+	if err != nil {
+		resp["status"] = "error"
+		resp["stale"] = true
+		resp["source_count"] = 0
+		if includeDetails {
+			resp["error"] = err.Error()
+		}
+		return resp
+	}
+	resp["source_count"] = len(stats)
+	if len(stats) == 0 {
+		resp["status"] = "empty"
+		resp["stale"] = true
+		if includeDetails {
+			resp["stale_sources"] = []map[string]any{}
+		}
+		return resp
+	}
+
+	now := time.Now()
+	var oldestSource string
+	var oldestLastUpdate *time.Time
+	var oldestAge time.Duration
+	staleSources := make([]map[string]any, 0)
+	for _, stat := range stats {
+		source := stat.Source
+		sourceStatus := map[string]any{"source": source}
+		isStale := false
+		if stat.LastUpdate == nil {
+			isStale = true
+		} else {
+			age := now.Sub(*stat.LastUpdate)
+			if age < 0 {
+				age = 0
+			}
+			if oldestLastUpdate == nil || age > oldestAge {
+				oldestSource = source
+				oldestLastUpdate = stat.LastUpdate
+				oldestAge = age
+			}
+			sourceStatus["last_update"] = stat.LastUpdate.Format(time.RFC3339)
+			sourceStatus["age_seconds"] = age.Seconds()
+			if maxAge > 0 && age > maxAge {
+				isStale = true
+			}
+		}
+		if isStale {
+			staleSources = append(staleSources, sourceStatus)
+		}
+	}
+	if oldestLastUpdate != nil {
+		resp["oldest_source"] = oldestSource
+		resp["oldest_last_update"] = oldestLastUpdate.Format(time.RFC3339)
+		resp["oldest_age_seconds"] = oldestAge.Seconds()
+	} else if len(stats) > 0 {
+		resp["oldest_source"] = stats[0].Source
+	}
+	if len(staleSources) > 0 {
+		resp["status"] = "stale"
+		resp["stale"] = true
+	} else {
+		resp["status"] = "ok"
+		resp["stale"] = false
+	}
+	if includeDetails {
+		resp["stale_sources"] = staleSources
+	}
+	return resp
 }
 
 func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
@@ -2714,6 +2807,17 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 0)
 	}
 	if s.db != nil {
+		freshness := s.securityDBFreshnessStatus(ctx, true)
+		writePromGauge(&b, "bongsu_security_db_source_stale", nil, boolMetric(freshness["stale"]))
+		if count, ok := freshness["source_count"].(int); ok {
+			writePromGauge(&b, "bongsu_security_db_source_count", nil, float64(count))
+		}
+		if oldestAge, ok := freshness["oldest_age_seconds"].(float64); ok {
+			writePromGauge(&b, "bongsu_security_db_source_oldest_age_seconds", nil, oldestAge)
+		}
+		if status, _ := freshness["status"].(string); status == "error" {
+			writePromGauge(&b, "bongsu_security_db_freshness_metrics_error", nil, 1)
+		}
 		if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
 			writePromGauge(&b, "bongsu_security_db_revision_info", map[string]string{"revision": revision}, 1)
 			if counts, err := s.db.CountSecurityDBRescanRequestsByStatus(ctx, nil, true, revision); err == nil {
