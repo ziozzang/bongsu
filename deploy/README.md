@@ -166,7 +166,7 @@ spec:
 | `BONGSU_API_KEY` | *required* | API key for authentication |
 | `BONGSU_AGENT_API_KEY` | *required* | Agent-only report upload and force-scan polling key; keep it distinct from the admin key |
 | `BONGSU_INSTALL_TOKEN` | *required for installer* | Token required for `/api/install.sh`; binary downloads accept this token or an admin API key header |
-| `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC |
+| `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC; use `key:user:alice` or `key:group:platform` when user and group IDs may overlap |
 | `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
 | `BONGSU_PORT` | `8080` | Server listen port |
 | `BONGSU_DB_DSN` | `postgres://bongsu:...` | PostgreSQL connection string |
@@ -267,8 +267,8 @@ spec:
 ## RBAC Quick Start
 
 ```bash
-# Map a viewer API key to subject "alice"
-echo 'BONGSU_VIEWER_API_KEYS=viewer-secret:alice' >> deploy/.env
+# Map a viewer API key to user subject "alice"
+echo 'BONGSU_VIEWER_API_KEYS=viewer-secret:user:alice' >> deploy/.env
 
 # Create subject and grant read access to one host
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
@@ -276,17 +276,17 @@ curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json"
   http://localhost:8080/api/admin/rbac/subjects
 
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
-  -d '{"subject_external_id":"alice","resource_type":"host","resource_id":"HOST_ID","permission":"read"}' \
+  -d '{"subject_external_id":"user:alice","resource_type":"host","resource_id":"HOST_ID","permission":"read"}' \
   http://localhost:8080/api/admin/rbac/policies
 
 # Container and image policies resolve through the latest container inventory
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
-  -d '{"subject_external_id":"alice","resource_type":"image","resource_id":"registry.local/app/api:2026.06","permission":"read"}' \
+  -d '{"subject_external_id":"user:alice","resource_type":"image","resource_id":"registry.local/app/api:2026.06","permission":"read"}' \
   http://localhost:8080/api/admin/rbac/policies
 
 # Asset group policies resolve through current host metadata
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
-  -d '{"subject_external_id":"alice","resource_type":"asset_group","resource_id":"team:platform","permission":"read"}' \
+  -d '{"subject_external_id":"user:alice","resource_type":"asset_group","resource_id":"team:platform","permission":"read"}' \
   http://localhost:8080/api/admin/rbac/policies
 ```
 

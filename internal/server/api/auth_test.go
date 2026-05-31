@@ -261,11 +261,11 @@ func TestWebAuthCanBeDisabledWithoutOpeningAdmin(t *testing.T) {
 }
 
 func TestViewerKeys(t *testing.T) {
-	keys := parseViewerKeys("viewer-key:alice, team-key:devops, malformed")
+	keys := parseViewerKeys("viewer-key:alice, team-key:group:devops, malformed")
 	if keys["viewer-key"] != "alice" {
 		t.Fatalf("viewer-key subject = %q", keys["viewer-key"])
 	}
-	if keys["team-key"] != "devops" {
+	if keys["team-key"] != "group:devops" {
 		t.Fatalf("team-key subject = %q", keys["team-key"])
 	}
 

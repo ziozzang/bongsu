@@ -237,6 +237,52 @@ func TestAppendUnique(t *testing.T) {
 	}
 }
 
+func TestParseAccessSubjectRefSupportsTypedSubjects(t *testing.T) {
+	tests := []struct {
+		ref     string
+		wantTyp string
+		wantID  string
+	}{
+		{"user:alice", "user", "alice"},
+		{"group/platform", "group", "platform"},
+		{"alice", "", "alice"},
+		{"team:platform", "", "team:platform"},
+	}
+	for _, tt := range tests {
+		gotTyp, gotID := parseAccessSubjectRef(tt.ref)
+		if gotTyp != tt.wantTyp || gotID != tt.wantID {
+			t.Fatalf("parseAccessSubjectRef(%q) = (%q, %q), want (%q, %q)", tt.ref, gotTyp, gotID, tt.wantTyp, tt.wantID)
+		}
+	}
+}
+
+func TestAccessPolicyExternalSubjectResolutionRejectsAmbiguousUntypedRefs(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) resolveAccessSubjectID")
+	if start < 0 {
+		t.Fatal("resolveAccessSubjectID not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) UpsertVulnerabilityTriage")
+	if end < 0 {
+		t.Fatal("resolveAccessSubjectID end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"parseAccessSubjectRef(subjectExternalID)",
+		"len(ids) > 1",
+		"is ambiguous",
+		"user:%s or group:%s",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("ambiguous subject guard missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestVulnSummaryGroupExprAllowlist(t *testing.T) {
 	if got := vulnSummaryGroupExpr("team"); got != "COALESCE(NULLIF(h.team, ''), '(unassigned)')" {
 		t.Fatalf("team group expr = %q", got)

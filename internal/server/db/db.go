@@ -1658,12 +1658,19 @@ func envInt(key string, def int) int {
 	return n
 }
 
-func (db *DB) GetAccessScope(ctx context.Context, externalID string) (AccessScope, error) {
+func (db *DB) GetAccessScope(ctx context.Context, subjectRef string) (AccessScope, error) {
+	subjectType, externalID := parseAccessSubjectRef(subjectRef)
+	args := []any{externalID}
+	typeFilter := ""
+	if subjectType != "" {
+		typeFilter = " AND s.subject_type=$2"
+		args = append(args, subjectType)
+	}
 	rows, err := db.QueryContext(ctx, `
 SELECT p.resource_type, p.resource_id
 FROM access_subjects s
 JOIN access_policies p ON p.subject_id = s.id
-WHERE s.external_id=$1 AND p.permission IN ('read','admin')`, externalID)
+WHERE s.external_id=$1`+typeFilter+` AND p.permission IN ('read','admin')`, args...)
 	if err != nil {
 		return AccessScope{}, err
 	}
@@ -1735,6 +1742,22 @@ WHERE s.external_id=$1 AND p.permission IN ('read','admin')`, externalID)
 		scope.HostIDs = appendUnique(scope.HostIDs, id)
 	}
 	return scope, nil
+}
+
+func parseAccessSubjectRef(ref string) (string, string) {
+	ref = strings.TrimSpace(ref)
+	for _, sep := range []string{":", "/"} {
+		left, right, ok := strings.Cut(ref, sep)
+		if !ok {
+			continue
+		}
+		left = strings.ToLower(strings.TrimSpace(left))
+		right = strings.TrimSpace(right)
+		if (left == "user" || left == "group") && right != "" {
+			return left, right
+		}
+	}
+	return "", ref
 }
 
 func (db *DB) hostIDsForContainerPolicies(ctx context.Context, refs []string, wildcard bool) ([]string, error) {
@@ -1946,10 +1969,8 @@ func (db *DB) UpsertAccessPolicy(ctx context.Context, id, subjectID, subjectExte
 		resourceID = "*"
 	}
 	if subjectID == "" {
-		err := db.QueryRowContext(ctx, `SELECT id FROM access_subjects WHERE external_id=$1 ORDER BY subject_type LIMIT 1`, subjectExternalID).Scan(&subjectID)
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("access subject %q not found", subjectExternalID)
-		}
+		var err error
+		subjectID, err = db.resolveAccessSubjectID(ctx, subjectExternalID)
 		if err != nil {
 			return err
 		}
@@ -1967,6 +1988,39 @@ VALUES ($1, $2, $3, $4, $5, now())
 ON CONFLICT (subject_id, resource_type, resource_id, permission) DO NOTHING`,
 		id, subjectID, resourceType, resourceID, permission)
 	return err
+}
+
+func (db *DB) resolveAccessSubjectID(ctx context.Context, subjectExternalID string) (string, error) {
+	subjectType, externalID := parseAccessSubjectRef(subjectExternalID)
+	args := []any{externalID}
+	typeFilter := ""
+	if subjectType != "" {
+		typeFilter = " AND subject_type=$2"
+		args = append(args, subjectType)
+	}
+	rows, err := db.QueryContext(ctx, `SELECT id FROM access_subjects WHERE external_id=$1`+typeFilter+` ORDER BY subject_type`, args...)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	if len(ids) == 0 {
+		return "", fmt.Errorf("access subject %q not found", subjectExternalID)
+	}
+	if len(ids) > 1 {
+		return "", fmt.Errorf("access subject %q is ambiguous; use user:%s or group:%s", subjectExternalID, externalID, externalID)
+	}
+	return ids[0], nil
 }
 
 func (db *DB) UpsertVulnerabilityTriage(ctx context.Context, t *models.VulnerabilityTriage) error {
