@@ -140,6 +140,19 @@ func TestApplyAgentStatus(t *testing.T) {
 	}
 }
 
+func TestRematchOptionsFromEnv(t *testing.T) {
+	t.Setenv("BONGSU_CVE_MATCH_SOURCES", "osv, nvd,osv, ")
+	t.Setenv("BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT", "175.5")
+
+	opts := rematchOptionsFromEnv()
+	if len(opts.Sources) != 2 || opts.Sources[0] != "osv" || opts.Sources[1] != "nvd" {
+		t.Fatalf("sources = %#v", opts.Sources)
+	}
+	if opts.MinSourceMatchablePercent != 100 {
+		t.Fatalf("min quality = %.1f", opts.MinSourceMatchablePercent)
+	}
+}
+
 func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{

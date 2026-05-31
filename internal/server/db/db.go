@@ -2879,8 +2879,44 @@ type RematchResult struct {
 	Skipped  int `json:"skipped"`
 }
 
-func (db *DB) RematchCVEs(ctx context.Context) (*RematchResult, error) {
+type RematchOptions struct {
+	Sources                   []string
+	MinSourceMatchablePercent float64
+}
+
+func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchResult, error) {
+	args := []any{}
+	filters := ""
+	if len(opts.Sources) > 0 {
+		args = append(args, pq.Array(opts.Sources))
+		filters += fmt.Sprintf(" AND c.source = ANY($%d)", len(args))
+	}
+	if opts.MinSourceMatchablePercent > 0 {
+		args = append(args, opts.MinSourceMatchablePercent)
+		filters += fmt.Sprintf(" AND (100.0 * sq.matchable / NULLIF(sq.total, 0)) >= $%d", len(args))
+	}
+
 	query := fmt.Sprintf(`
+		WITH source_quality AS (
+			SELECT
+				source,
+				COUNT(*) AS total,
+				COUNT(*) FILTER (
+					WHERE EXISTS (
+						SELECT 1
+						FROM jsonb_array_elements(CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END) ap
+						WHERE COALESCE(ap->>'name', '') != ''
+						  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(ecosystem, '')) IS NOT NULL
+						  AND (
+							(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
+							OR (jsonb_typeof(ap->'ranges') = 'array' AND jsonb_array_length(ap->'ranges') > 0)
+						  )
+					)
+				) AS matchable
+			FROM cve_database
+			WHERE source != ''
+			GROUP BY source
+		)
 		SELECT p.id, p.name, p.version, p.host_id, p.scan_id, p.container, p.file_path,
 		       p.pkg_type, p.ecosystem,
 		       c.vulnerability_id, c.severity, c.cvss_score, c.cvss_vector,
@@ -2888,10 +2924,12 @@ func (db *DB) RematchCVEs(ctx context.Context) (*RematchResult, error) {
 		FROM packages p
 		JOIN (%s) ls ON p.scan_id = ls.id
 		JOIN cve_database c ON c.affected_products @> jsonb_build_array(jsonb_build_object('name', p.name))
+		JOIN source_quality sq ON sq.source = c.source
+		WHERE 1=1%s
 		LIMIT 50000
-	`, latestScansSub)
+	`, latestScansSub, filters)
 
-	rows, err := db.QueryContext(ctx, query)
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("match query: %w", err)
 	}

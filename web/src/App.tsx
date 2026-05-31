@@ -192,6 +192,7 @@ function DashboardView() {
   const [updateMsg, setUpdateMsg] = useState('');
   const [rematching, setRematching] = useState(false);
   const [rematchMsg, setRematchMsg] = useState('');
+  const [rematchMinQuality, setRematchMinQuality] = useState('');
   const [retentionMsg, setRetentionMsg] = useState('');
   const [retentionBusy, setRetentionBusy] = useState(false);
 
@@ -243,8 +244,11 @@ function DashboardView() {
     setRematching(true);
     setRematchMsg('');
     try {
-      const r = await api.rematchCVEs();
-      setRematchMsg(`Matched ${r.matched.toLocaleString()} packages, found ${r.new_vulns.toLocaleString()} new vulnerabilities (${r.skipped} already known)`);
+      const minQuality = Number(rematchMinQuality);
+      const body = Number.isFinite(minQuality) && minQuality > 0 ? { min_source_matchable_percent: minQuality } : {};
+      const r = await api.rematchCVEs(body);
+      const qualityMsg = minQuality > 0 ? ` with source quality >= ${minQuality}%` : '';
+      setRematchMsg(`Matched ${r.matched.toLocaleString()} packages${qualityMsg}, found ${r.new_vulns.toLocaleString()} new vulnerabilities (${r.skipped} skipped)`);
       api.stats().then(setStats).catch(() => {});
     } catch {
       setRematchMsg('Rematch failed (check server logs)');
@@ -374,6 +378,18 @@ function DashboardView() {
         >
           Sync Sources
         </button>
+        <input
+          className="compact-input"
+          type="number"
+          min="0"
+          max="100"
+          step="1"
+          value={rematchMinQuality}
+          onChange={(e) => setRematchMinQuality(e.target.value)}
+          placeholder="Min matchable %"
+          title="Only use CVE sources whose matchable record ratio is at least this percent"
+          style={{ width: '9rem', marginLeft: '0.5rem' }}
+        />
         <button
           className="update-btn"
           onClick={handleRematch}

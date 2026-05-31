@@ -1941,7 +1941,7 @@ func (s *Server) recalculateSecurityFindings(reason string) {
 		} else if n > 0 {
 			log.Printf("security recalculation enriched %d findings", n)
 		}
-		if r, err := s.db.RematchCVEs(ctx); err != nil {
+		if r, err := s.db.RematchCVEs(ctx, rematchOptionsFromEnv()); err != nil {
 			log.Printf("security recalculation rematch failed: %v", err)
 		} else {
 			log.Printf("security recalculation rematched candidates=%d new=%d skipped=%d", r.Matched, r.NewVulns, r.Skipped)
@@ -2074,7 +2074,25 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	result, err := s.db.RematchCVEs(r.Context())
+	opts := rematchOptionsFromEnv()
+	if r.Body != nil {
+		var body struct {
+			Sources                   []string `json:"sources"`
+			MinSourceMatchablePercent float64  `json:"min_source_matchable_percent"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+		if len(body.Sources) > 0 {
+			opts.Sources = cleanCSV(body.Sources)
+		}
+		if body.MinSourceMatchablePercent > 0 {
+			opts.MinSourceMatchablePercent = body.MinSourceMatchablePercent
+		}
+	}
+	opts = normalizeRematchOptions(opts)
+	result, err := s.db.RematchCVEs(r.Context(), opts)
 	if err != nil {
 		log.Printf("cve-db rematch: %v", err)
 		http.Error(w, "rematch failed", http.StatusInternalServerError)
@@ -2082,12 +2100,32 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, result)
 	s.audit(r, "cve_db.rematch", "cve_db", "all", "ok", map[string]any{
-		"matched":   result.Matched,
-		"new_vulns": result.NewVulns,
-		"skipped":   result.Skipped,
+		"matched":                      result.Matched,
+		"new_vulns":                    result.NewVulns,
+		"skipped":                      result.Skipped,
+		"sources":                      opts.Sources,
+		"min_source_matchable_percent": opts.MinSourceMatchablePercent,
 	})
 	enriched, _ := s.db.EnrichVulnerabilities(r.Context())
 	log.Printf("Enriched %d vulnerabilities with CVE DB data", enriched)
+}
+
+func rematchOptionsFromEnv() db.RematchOptions {
+	return normalizeRematchOptions(db.RematchOptions{
+		Sources:                   splitCSV(os.Getenv("BONGSU_CVE_MATCH_SOURCES")),
+		MinSourceMatchablePercent: envFloat("BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT", 0),
+	})
+}
+
+func normalizeRematchOptions(opts db.RematchOptions) db.RematchOptions {
+	opts.Sources = cleanCSV(opts.Sources)
+	if opts.MinSourceMatchablePercent < 0 {
+		opts.MinSourceMatchablePercent = 0
+	}
+	if opts.MinSourceMatchablePercent > 100 {
+		opts.MinSourceMatchablePercent = 100
+	}
+	return opts
 }
 func (s *Server) handleCveDbRecalcCVSS(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
@@ -2621,6 +2659,39 @@ func envBool(key string, def bool) bool {
 		return def
 	}
 	return b
+}
+
+func envFloat(key string, def float64) float64 {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.ParseFloat(v, 64)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func splitCSV(v string) []string {
+	if v == "" {
+		return nil
+	}
+	return cleanCSV(strings.Split(v, ","))
+}
+
+func cleanCSV(items []string) []string {
+	out := make([]string, 0, len(items))
+	seen := map[string]bool{}
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" || seen[item] {
+			continue
+		}
+		seen[item] = true
+		out = append(out, item)
+	}
+	return out
 }
 
 func sanitizeFilename(s string) string {

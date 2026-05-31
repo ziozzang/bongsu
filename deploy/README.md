@@ -176,6 +176,8 @@ spec:
 | `BONGSU_SECURITY_DB_INTERVAL_HOURS` | `6` | Security source sync interval |
 | `BONGSU_AUTO_RESCAN_ON_DB_UPDATE` | `true` | Queue background rescans after security DB changes |
 | `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` | `720` | Only auto-rescan hosts seen within this many hours (`0`=all hosts) |
+| `BONGSU_CVE_MATCH_SOURCES` | empty | Optional comma-separated CVE source allowlist for automatic rematch |
+| `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT` | `0` | Skip CVE sources below this matchable-record percentage during automatic rematch |
 | `BONGSU_VULN_EXPORT_MAX_ROWS` | `100000` | Maximum vulnerability rows per report export |
 | `BONGSU_WEBHOOK_URL` | empty | Optional outbound webhook URL for scan/security DB events |
 | `BONGSU_WEBHOOK_SECRET` | empty | Optional HMAC-SHA256 signing secret for webhooks |
@@ -226,6 +228,7 @@ spec:
 | `GET` | `/api/cve-db/stats` | Source counts and quality counters for matchable/fixed/range/CVSS data |
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
+| `POST` | `/api/admin/cve-db/rematch` | Rematch packages, optionally with `sources` and `min_source_matchable_percent` JSON filters |
 | `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs |
 | `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
 | `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |
