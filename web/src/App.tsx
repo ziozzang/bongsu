@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type CveRematchPolicy, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -279,6 +279,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
   const [cveSources, setCveSources] = useState<CveSourceStat[]>([]);
+  const [cveRematchPolicy, setCveRematchPolicy] = useState<CveRematchPolicy | null>(null);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
   const [inventoryCounts, setInventoryCounts] = useState<Record<string, number>>({});
   const [totalPkgs, setTotalPkgs] = useState(0);
@@ -307,7 +308,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
     }).catch(() => {});
   }, [updating]);
   useEffect(() => {
-    api.cveDbStats().then(r => setCveSources(r.sources || [])).catch(() => {});
+    api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); }).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
     api.hosts().then(items => {
       setAgentCounts(items.reduce((acc, h) => {
@@ -353,7 +354,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
     try {
       await api.updateSecurityDB();
       setUpdateMsg('Security sources sync started/completed');
-      api.cveDbStats().then(r => setCveSources(r.sources || [])).catch(() => {});
+      api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); }).catch(() => {});
     } catch {
       setUpdateMsg('Security source sync failed or is not configured');
     }
@@ -384,6 +385,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
   const cveTotalRecords = cveSources.reduce((sum, s) => sum + (s.count || 0), 0);
   const cveTotalMatchable = cveSources.reduce((sum, s) => sum + (s.matchable || 0), 0);
   const cveMatchablePercent = cveTotalRecords > 0 ? (cveTotalMatchable * 100) / cveTotalRecords : 0;
+  const cveRematchEligibleCount = cveRematchPolicy?.eligible_sources ?? cveSources.filter(s => s.rematch_eligible !== false).length;
+  const cveRematchExcludedCount = cveRematchPolicy?.excluded_sources ?? cveSources.filter(s => s.rematch_eligible === false).length;
+  const cveRematchPolicyText = cveRematchPolicy
+    ? `${cveRematchPolicy.sources?.length ? `${cveRematchPolicy.sources.length} allowlisted` : 'all sources'}, min ${(cveRematchPolicy.min_source_matchable_percent || 0).toFixed(1)}%`
+    : 'policy pending';
   const weakestCveSource = cveSources.reduce<CveSourceStat | null>((worst, source) =>
     !worst || (source.matchable_percent ?? 0) < (worst.matchable_percent ?? 0) ? source : worst, null);
   const staleCveSourceCount = health?.security_db_freshness?.stale_sources?.length || 0;
@@ -421,7 +427,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
       const r = await api.recalcCveCVSS();
       const revisionMsg = r.security_db_revision ? `, DB rev ${r.security_db_revision}` : r.security_db_revision_error ? ', DB revision unavailable' : '';
       setCvssRecalcMsg(`Recalculated ${r.updated.toLocaleString()} CVSS records${revisionMsg}`);
-      api.cveDbStats().then(x => setCveSources(x.sources || [])).catch(() => {});
+      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); }).catch(() => {});
     } catch {
       setCvssRecalcMsg('CVSS recalculation failed or requires admin API key');
     }
@@ -470,7 +476,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
         setHealth(h);
         setSecurityDbConfigured(!!h.security_db?.configured);
       }).catch(() => {});
-      api.cveDbStats().then(x => setCveSources(x.sources || [])).catch(() => {});
+      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); }).catch(() => {});
       api.stats().then(setStats).catch(() => {});
     } catch {
       setSecurityBundleMsg('Security DB bundle import failed or requires admin API key');
@@ -873,6 +879,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
           </div>
         </div>
         <div className="stat-card">
+          <div className="accent-bar" style={{ background: cveRematchExcludedCount > 0 ? 'var(--medium)' : 'var(--low)' }} />
+          <div className="label">Rematch Eligible Sources</div>
+          <div className="value" style={{ color: cveRematchExcludedCount > 0 ? 'var(--medium)' : 'var(--low)' }}>{cveRematchEligibleCount}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {cveRematchExcludedCount} excluded, {cveRematchPolicyText}
+          </div>
+        </div>
+        <div className="stat-card">
           <div className="accent-bar" style={{ background: cveFreshnessColor }} />
           <div className="label">Stale CVE Sources</div>
           <div className="value" style={{ color: cveFreshnessColor }}>{staleCveSourceCount}</div>
@@ -944,19 +958,26 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
         <div className="card" style={{ marginTop: '1rem' }}>
           <div className="card-header"><h2>CVE Database Sources</h2></div>
           <table>
-            <thead><tr><th>Source</th><th>Records</th><th>Matchable</th><th>Matchable %</th><th>Ecosystem</th><th>Fixed</th><th>Ranges</th><th>CVSS</th><th>Last Update</th></tr></thead>
+            <thead><tr><th>Source</th><th>Records</th><th>Matchable</th><th>Matchable %</th><th>Rematch</th><th>Ecosystem</th><th>Fixed</th><th>Ranges</th><th>CVSS</th><th>Last Update</th></tr></thead>
             <tbody>
               {cveSources.map(s => {
                 const belowQuality = sourceBelowQuality(s);
+                const excludedByPolicy = s.rematch_eligible === false;
                 return (
-                  <tr key={s.source} style={belowQuality ? { background: 'rgba(224, 176, 32, 0.08)' } : undefined}>
+                  <tr key={s.source} style={belowQuality || excludedByPolicy ? { background: 'rgba(224, 176, 32, 0.08)' } : undefined}>
                     <td>
                       <span style={{ fontWeight: 600 }}>{s.source.toUpperCase()}</span>
                       {belowQuality && <span className="badge" style={{ marginLeft: 6, color: 'var(--medium)' }}>below gate</span>}
+                      {excludedByPolicy && <span className="badge" title={s.rematch_exclusion || ''} style={{ marginLeft: 6, color: 'var(--medium)' }}>policy excluded</span>}
                     </td>
                     <td className="mono">{s.count.toLocaleString()}</td>
                     <td className="mono">{(s.matchable || 0).toLocaleString()}</td>
-                    <td className="mono" style={{ color: belowQuality ? 'var(--medium)' : undefined }}>{(s.matchable_percent ?? 0).toFixed(1)}%</td>
+                    <td className="mono" style={{ color: belowQuality || excludedByPolicy ? 'var(--medium)' : undefined }}>{(s.matchable_percent ?? 0).toFixed(1)}%</td>
+                    <td>
+                      <span className="badge" title={s.rematch_exclusion || ''} style={{ color: excludedByPolicy ? 'var(--medium)' : 'var(--low)' }}>
+                        {excludedByPolicy ? 'excluded' : 'eligible'}
+                      </span>
+                    </td>
                     <td className="mono">{(s.with_ecosystem || 0).toLocaleString()}</td>
                     <td className="mono">{(s.with_fixed || 0).toLocaleString()}</td>
                     <td className="mono">{(s.with_ranges || 0).toLocaleString()}</td>

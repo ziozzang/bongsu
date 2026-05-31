@@ -3027,6 +3027,7 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			writePromGauge(&b, "bongsu_security_db_freshness_metrics_error", nil, 1)
 		}
 		if sourceStats, err := s.db.GetCveSourceStats(ctx); err == nil {
+			rematchPolicy := rematchSourcePolicy(sourceStats, rematchOptionsFromEnv())
 			for _, stat := range sourceStats {
 				labels := map[string]string{"source": stat.Source}
 				writePromGauge(&b, "bongsu_security_db_source_records", labels, float64(stat.Count))
@@ -3036,6 +3037,7 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 				writePromGauge(&b, "bongsu_security_db_source_with_fixed_records", labels, float64(stat.WithFixed))
 				writePromGauge(&b, "bongsu_security_db_source_with_ranges_records", labels, float64(stat.WithRanges))
 				writePromGauge(&b, "bongsu_security_db_source_with_cvss_records", labels, float64(stat.WithCVSS))
+				writePromGauge(&b, "bongsu_security_db_source_rematch_eligible", labels, boolMetric(rematchPolicy[stat.Source]["eligible"]))
 			}
 		} else {
 			writePromGauge(&b, "bongsu_security_db_source_quality_metrics_error", nil, 1)
@@ -4613,7 +4615,60 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sources": stats})
+	opts := rematchOptionsFromEnv()
+	policy := rematchSourcePolicy(stats, opts)
+	sources := make([]map[string]any, 0, len(stats))
+	eligible := 0
+	for _, stat := range stats {
+		source := map[string]any{
+			"source":            stat.Source,
+			"count":             stat.Count,
+			"matchable":         stat.Matchable,
+			"matchable_percent": stat.MatchablePercent,
+			"with_ecosystem":    stat.WithEcosystem,
+			"with_fixed":        stat.WithFixed,
+			"with_ranges":       stat.WithRanges,
+			"with_cvss":         stat.WithCVSS,
+			"last_update":       stat.LastUpdate,
+			"rematch_eligible":  policy[stat.Source]["eligible"],
+			"rematch_exclusion": policy[stat.Source]["reason"],
+		}
+		if ok, _ := policy[stat.Source]["eligible"].(bool); ok {
+			eligible++
+		}
+		sources = append(sources, source)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sources": sources,
+		"rematch_policy": map[string]any{
+			"sources":                      opts.Sources,
+			"min_source_matchable_percent": opts.MinSourceMatchablePercent,
+			"candidate_limit":              opts.CandidateLimit,
+			"eligible_sources":             eligible,
+			"excluded_sources":             len(stats) - eligible,
+		},
+	})
+}
+
+func rematchSourcePolicy(stats []db.CveSourceStats, opts db.RematchOptions) map[string]map[string]any {
+	allowlist := map[string]bool{}
+	for _, source := range opts.Sources {
+		allowlist[source] = true
+	}
+	out := make(map[string]map[string]any, len(stats))
+	for _, stat := range stats {
+		eligible := true
+		reason := ""
+		if len(allowlist) > 0 && !allowlist[stat.Source] {
+			eligible = false
+			reason = "source not in rematch allowlist"
+		} else if opts.MinSourceMatchablePercent > 0 && stat.MatchablePercent < opts.MinSourceMatchablePercent {
+			eligible = false
+			reason = fmt.Sprintf("matchable %.1f%% below %.1f%% policy", stat.MatchablePercent, opts.MinSourceMatchablePercent)
+		}
+		out[stat.Source] = map[string]any{"eligible": eligible, "reason": reason}
+	}
+	return out
 }
 
 func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {

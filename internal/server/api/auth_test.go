@@ -1925,10 +1925,45 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_security_db_source_with_fixed_records",
 		"bongsu_security_db_source_with_ranges_records",
 		"bongsu_security_db_source_with_cvss_records",
+		"rematchSourcePolicy(sourceStats, rematchOptionsFromEnv())",
+		"bongsu_security_db_source_rematch_eligible",
 		"bongsu_security_db_source_quality_metrics_error",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("admin metrics source quality missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleCveDbStats")
+	if start < 0 {
+		t.Fatal("handleCveDbStats not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleCveDbSearch")
+	if end < 0 {
+		t.Fatal("handleCveDbStats end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"rematchOptionsFromEnv()",
+		"rematchSourcePolicy(stats, opts)",
+		`"rematch_eligible"`,
+		`"rematch_exclusion"`,
+		`"rematch_policy"`,
+		`"min_source_matchable_percent"`,
+		`"eligible_sources"`,
+		`"excluded_sources"`,
+		"source not in rematch allowlist",
+		"below %.1f%% policy",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("CVE DB stats rematch policy missing %q: %s", want, fn)
 		}
 	}
 }
@@ -1953,6 +1988,11 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"CVE DB Status",
 		"CVE Matchable",
 		"Weakest CVE Source",
+		"Rematch Eligible Sources",
+		"cveRematchPolicy",
+		"cveRematchEligibleCount",
+		"policy excluded",
+		"s.rematch_eligible === false",
 		"Stale CVE Sources",
 		"oldestCveAgeDays",
 	} {
@@ -1960,8 +2000,10 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	if !strings.Contains(apiBody, "matchable_percent") {
-		t.Fatal("CVE source stat API type must include matchable_percent")
+	for _, want := range []string{"matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy"} {
+		if !strings.Contains(apiBody, want) {
+			t.Fatalf("CVE source stat API type missing %q", want)
+		}
 	}
 }
 
