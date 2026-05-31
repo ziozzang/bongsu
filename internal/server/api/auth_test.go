@@ -1560,10 +1560,39 @@ func TestAgentScanRequestCompletionRequiresClaimedHost(t *testing.T) {
 	for _, want := range []string{
 		`HostID  string ` + "`json:\"host_id\"`",
 		"CompleteClaimedScanRequest",
-		`"host_id": body.HostID`,
+		"scanRequestAuditMeta(req, body.Message, body.HostID)",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("scan request completion ownership check missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestScanRequestAuditMetadataCarriesDBRevision(t *testing.T) {
+	req := &models.ScanRequest{
+		HostID:             "target-host",
+		RequestedBy:        "system",
+		ScanType:           "security-db-update",
+		PackagesOnly:       true,
+		Reason:             "security-db periodic sync",
+		SecurityDBRevision: "rev-123",
+		ClaimedByHostID:    "agent-host",
+	}
+	meta := scanRequestAuditMeta(req, "done", "agent-host")
+	tests := map[string]any{
+		"message":              "done",
+		"host_id":              "agent-host",
+		"target_host_id":       "target-host",
+		"requested_by":         "system",
+		"scan_type":            "security-db-update",
+		"packages_only":        true,
+		"reason":               "security-db periodic sync",
+		"security_db_revision": "rev-123",
+		"claimed_by_host_id":   "agent-host",
+	}
+	for k, want := range tests {
+		if got := meta[k]; got != want {
+			t.Fatalf("meta[%s] = %#v, want %#v", k, got, want)
 		}
 	}
 }

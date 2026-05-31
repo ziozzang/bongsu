@@ -448,6 +448,33 @@ func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
 	}
 }
 
+func TestGetScanRequestReturnsOperationalFields(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetScanRequest")
+	if start < 0 {
+		t.Fatal("GetScanRequest not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) CountScanRequestsByStatus")
+	if end < 0 {
+		t.Fatal("GetScanRequest end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"requested_by, scan_type, packages_only, reason, security_db_revision",
+		"claimed_by_host_id, claimed_at, completed_at",
+		"&r.SecurityDBRevision",
+		"&r.ClaimedByHostID",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("scan request lookup missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestScanRequestSecurityDBRevisionMigration(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/017_scan_request_security_db_revision.sql")
 	if err != nil {

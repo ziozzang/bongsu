@@ -2080,7 +2080,8 @@ func (s *Server) handleCancelScanRequest(w http.ResponseWriter, r *http.Request)
 		http.Error(w, scanRequestErrorMessage(err), scanRequestErrorStatus(err))
 		return
 	}
-	s.audit(r, "scan_request.cancel", "scan_request", id, "cancelled", nil)
+	req, _ := s.db.GetScanRequest(r.Context(), id)
+	s.audit(r, "scan_request.cancel", "scan_request", id, "cancelled", scanRequestAuditMeta(req, "cancelled by admin", ""))
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
@@ -2215,7 +2216,11 @@ func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	s.audit(r, "scan_request.claim", "scan_request", req.ID, "ok", map[string]any{
-		"host_id": hostID,
+		"host_id":              hostID,
+		"target_host_id":       req.HostID,
+		"scan_type":            req.ScanType,
+		"packages_only":        req.PackagesOnly,
+		"security_db_revision": req.SecurityDBRevision,
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"request": req})
 }
@@ -2243,11 +2248,30 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 		http.Error(w, scanRequestErrorMessage(err), scanRequestErrorStatus(err))
 		return
 	}
-	s.audit(r, "scan_request.complete", "scan_request", id, body.Status, map[string]any{
-		"message": body.Message,
-		"host_id": body.HostID,
-	})
+	req, _ := s.db.GetScanRequest(r.Context(), id)
+	s.audit(r, "scan_request.complete", "scan_request", id, body.Status, scanRequestAuditMeta(req, body.Message, body.HostID))
 	writeJSON(w, http.StatusOK, map[string]string{"status": body.Status})
+}
+
+func scanRequestAuditMeta(req *models.ScanRequest, message, completedByHostID string) map[string]any {
+	meta := map[string]any{}
+	if message != "" {
+		meta["message"] = message
+	}
+	if completedByHostID != "" {
+		meta["host_id"] = completedByHostID
+	}
+	if req == nil {
+		return meta
+	}
+	meta["target_host_id"] = req.HostID
+	meta["requested_by"] = req.RequestedBy
+	meta["scan_type"] = req.ScanType
+	meta["packages_only"] = req.PackagesOnly
+	meta["reason"] = req.Reason
+	meta["security_db_revision"] = req.SecurityDBRevision
+	meta["claimed_by_host_id"] = req.ClaimedByHostID
+	return meta
 }
 
 func scanRequestErrorStatus(err error) int {

@@ -1307,6 +1307,17 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	return out, total, nil
 }
 
+func (db *DB) GetScanRequest(ctx context.Context, id string) (*models.ScanRequest, error) {
+	var r models.ScanRequest
+	err := db.QueryRowContext(ctx, `SELECT id, host_id, requested_by, scan_type, packages_only, reason, security_db_revision, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at
+FROM scan_requests
+WHERE id=$1`, id).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.SecurityDBRevision, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
 func (db *DB) CountScanRequestsByStatus(ctx context.Context, hostIDs []string, includeGlobal bool) (map[string]int, error) {
 	q := `SELECT status, count(*) FROM scan_requests`
 	args := []any{}
