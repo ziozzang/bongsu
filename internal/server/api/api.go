@@ -16,6 +16,7 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -1636,15 +1637,43 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	hosts, _ := s.db.ListHosts(ctx)
 	vulnCounts, _ := s.db.GetVulnCountsByHost(ctx)
+	inventory, err := s.db.GetHostInventorySummaries(ctx)
+	if err != nil {
+		log.Printf("stats inventory summaries: %v", err)
+		inventory = map[string]db.HostInventorySummary{}
+	}
 
 	totalVulns := 0
 	sevCounts := map[string]int{}
 	visibleHosts := 0
 	visibleHostIDs := []string{}
+	agentStatusCounts := map[string]int{}
+	inventoryStatusCounts := map[string]int{}
+	totalInventoryPackages := 0
+	totalInventoryVulnerabilities := 0
+	totalInventoryContainers := 0
+	inventoryCoveredHosts := 0
+	inventoryStaleAfter := time.Duration(envInt("BONGSU_INVENTORY_STALE_HOURS", 48)) * time.Hour
+	now := time.Now()
 	for _, h := range hosts {
 		if !scope.CanReadHost(h.ID) {
 			continue
 		}
+		applyAgentStatus(&h, now)
+		agentStatus := h.AgentStatus
+		if agentStatus == "" {
+			agentStatus = "unknown"
+		}
+		agentStatusCounts[agentStatus]++
+		summary := inventory[h.ID]
+		inventoryStatus := hostInventoryStatus(summary, now, inventoryStaleAfter)
+		inventoryStatusCounts[inventoryStatus]++
+		if inventoryStatus == "healthy" || inventoryStatus == "degraded" {
+			inventoryCoveredHosts++
+		}
+		totalInventoryPackages += summary.PackageCount
+		totalInventoryVulnerabilities += summary.VulnCount
+		totalInventoryContainers += summary.ContainerCount
 		visibleHosts++
 		visibleHostIDs = append(visibleHostIDs, h.ID)
 		vc := vulnCounts[h.ID]
@@ -1726,6 +1755,13 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"total_hosts":                       visibleHosts,
 		"total_vulnerabilities":             totalVulns,
 		"severity_counts":                   sevCounts,
+		"agent_status_counts":               agentStatusCounts,
+		"inventory_status_counts":           inventoryStatusCounts,
+		"inventory_covered_hosts":           inventoryCoveredHosts,
+		"inventory_coverage_percent":        percent(inventoryCoveredHosts, visibleHosts),
+		"inventory_latest_packages":         totalInventoryPackages,
+		"inventory_latest_vulnerabilities":  totalInventoryVulnerabilities,
+		"inventory_latest_containers":       totalInventoryContainers,
 		"active_vulnerabilities":            activeTotalVulns,
 		"active_severity_counts":            activeSevCounts,
 		"active_risk_level_counts":          activeRiskCounts,
@@ -3115,6 +3151,13 @@ func metricTimestamp(v any) float64 {
 		return float64(t.Unix())
 	}
 	return 0
+}
+
+func percent(numerator, denominator int) float64 {
+	if denominator <= 0 {
+		return 0
+	}
+	return math.Round(float64(numerator)*1000/float64(denominator)) / 10
 }
 
 func writePromGauge(b *strings.Builder, name string, labels map[string]string, value float64) {

@@ -238,6 +238,13 @@ export interface Stats {
   total_hosts: number;
   total_vulnerabilities: number;
   severity_counts: Record<string, number>;
+  agent_status_counts?: Record<string, number>;
+  inventory_status_counts?: Record<string, number>;
+  inventory_covered_hosts?: number;
+  inventory_coverage_percent?: number;
+  inventory_latest_packages?: number;
+  inventory_latest_vulnerabilities?: number;
+  inventory_latest_containers?: number;
   active_vulnerabilities?: number;
   active_severity_counts?: Record<string, number>;
   active_risk_level_counts?: Record<string, number>;

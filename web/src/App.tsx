@@ -432,6 +432,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
   const suppressedTriageCount = ['accepted_risk', 'false_positive', 'fixed', 'ignored']
     .reduce((sum, status) => sum + (triageActiveCounts[status] || 0), 0);
   const triageExpiringSoonTotal = Object.values(triageExpiringSoonCounts).reduce((sum, count) => sum + count, 0);
+  const effectiveAgentCounts = stats?.agent_status_counts || agentCounts;
+  const effectiveInventoryCounts = stats?.inventory_status_counts || inventoryCounts;
+  const inventoryCoveragePercent = stats?.inventory_coverage_percent ?? 0;
+  const inventoryCoverageColor = inventoryCoveragePercent < 70
+    ? 'var(--critical)'
+    : inventoryCoveragePercent < 90
+      ? 'var(--medium)'
+      : 'var(--low)';
 
   const handleCvssRecalc = async () => {
     setCvssRecalcBusy(true);
@@ -620,22 +628,30 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--low)' }} />
           <div className="label">Agents Online</div>
-          <div className="value" style={{ color: 'var(--low)' }}>{agentCounts.online || 0}</div>
+          <div className="value" style={{ color: 'var(--low)' }}>{effectiveAgentCounts.online || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
           <div className="label">Agents Stale</div>
-          <div className="value" style={{ color: 'var(--medium)' }}>{agentCounts.stale || 0}</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{effectiveAgentCounts.stale || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--critical)' }} />
           <div className="label">Agents Offline</div>
-          <div className="value" style={{ color: 'var(--critical)' }}>{agentCounts.offline || 0}</div>
+          <div className="value" style={{ color: 'var(--critical)' }}>{effectiveAgentCounts.offline || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: inventoryCoverageColor }} />
+          <div className="label">SBOM Coverage</div>
+          <div className="value" style={{ color: inventoryCoverageColor }}>{inventoryCoveragePercent.toFixed(1)}%</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {stats.inventory_covered_hosts || 0} / {stats.total_hosts} hosts
+          </div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
           <div className="label">Tracked Packages</div>
-          <div className="value">{totalPkgs.toLocaleString()}</div>
+          <div className="value">{(stats.inventory_latest_packages ?? totalPkgs).toLocaleString()}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
@@ -652,27 +668,27 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities }: { onOpenSc
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--low)' }} />
           <div className="label">Healthy SBOM</div>
-          <div className="value" style={{ color: 'var(--low)' }}>{inventoryCounts.healthy || 0}</div>
+          <div className="value" style={{ color: 'var(--low)' }}>{effectiveInventoryCounts.healthy || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
           <div className="label">Degraded SBOM</div>
-          <div className="value" style={{ color: 'var(--medium)' }}>{inventoryCounts.degraded || 0}</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{effectiveInventoryCounts.degraded || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
           <div className="label">Stale SBOM</div>
-          <div className="value" style={{ color: 'var(--medium)' }}>{inventoryCounts.stale || 0}</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{effectiveInventoryCounts.stale || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--high)' }} />
           <div className="label">Empty SBOM</div>
-          <div className="value" style={{ color: 'var(--high)' }}>{inventoryCounts.empty || 0}</div>
+          <div className="value" style={{ color: 'var(--high)' }}>{effectiveInventoryCounts.empty || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--critical)' }} />
           <div className="label">No Completed Scan</div>
-          <div className="value" style={{ color: 'var(--critical)' }}>{inventoryCounts.none || 0}</div>
+          <div className="value" style={{ color: 'var(--critical)' }}>{effectiveInventoryCounts.none || 0}</div>
         </div>
       </div>
       <div className="stats-grid" style={{ marginTop: '1rem' }}>
