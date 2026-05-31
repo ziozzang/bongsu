@@ -1538,15 +1538,31 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	info, _ := f.Stat()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		s.audit(r, "installer.download", "binary", "bongsu-agent", "error", map[string]any{
+			"reason": "agent binary is not readable",
+			"path":   agentPath,
+		})
+		http.Error(w, "agent binary not readable", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", "attachment; filename=bongsu-agent")
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("agent binary download failed: %v", err)
+		s.audit(r, "installer.download", "binary", "bongsu-agent", "error", map[string]any{
+			"reason": "copy failed",
+			"path":   agentPath,
+			"error":  err.Error(),
+		})
+		return
+	}
 	s.audit(r, "installer.download", "binary", "bongsu-agent", "ok", map[string]any{
 		"bytes": info.Size(),
 	})
-	io.Copy(w, f)
 }
 
 func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
@@ -1569,15 +1585,31 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	info, _ := f.Stat()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		s.audit(r, "installer.download", "binary", "trivy", "error", map[string]any{
+			"reason": "trivy binary is not readable",
+			"path":   trivyPath,
+		})
+		http.Error(w, "trivy binary not readable", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", info.Size()))
 	w.Header().Set("Content-Disposition", "attachment; filename=trivy")
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("trivy binary download failed: %v", err)
+		s.audit(r, "installer.download", "binary", "trivy", "error", map[string]any{
+			"reason": "copy failed",
+			"path":   trivyPath,
+			"error":  err.Error(),
+		})
+		return
+	}
 	s.audit(r, "installer.download", "binary", "trivy", "ok", map[string]any{
 		"bytes": info.Size(),
 	})
-	io.Copy(w, f)
 }
 
 func (s *Server) handlePackageVulns(w http.ResponseWriter, r *http.Request) {

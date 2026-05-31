@@ -639,9 +639,43 @@ func TestInstallerAndBinaryDownloadsAreAudited(t *testing.T) {
 		`"trivy"`,
 		`"install_token_set"`,
 		`"bytes"`,
+		`info.Mode().IsRegular()`,
+		`"copy failed"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("installer audit missing %q", want)
+		}
+	}
+}
+
+func TestBinaryDownloadAuditsOnlyAfterCopySuccess(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, fnName := range []string{"handleAgentDownload", "handleTrivyDownload"} {
+		start := strings.Index(body, "func (s *Server) "+fnName)
+		if start < 0 {
+			t.Fatalf("%s not found", fnName)
+		}
+		end := strings.Index(body[start+1:], "\nfunc ")
+		if end < 0 {
+			t.Fatalf("%s end not found", fnName)
+		}
+		fn := body[start : start+1+end]
+		copyIdx := strings.Index(fn, "io.Copy(w, f)")
+		okAuditIdx := strings.LastIndex(fn, `"ok"`)
+		if copyIdx < 0 || okAuditIdx < 0 {
+			t.Fatalf("%s missing copy or ok audit: %s", fnName, fn)
+		}
+		if okAuditIdx < copyIdx {
+			t.Fatalf("%s must audit ok only after io.Copy succeeds", fnName)
+		}
+		for _, want := range []string{`info.Mode().IsRegular()`, `"copy failed"`, `"error"`} {
+			if !strings.Contains(fn, want) {
+				t.Fatalf("%s missing download guard %q: %s", fnName, want, fn)
+			}
 		}
 	}
 }
