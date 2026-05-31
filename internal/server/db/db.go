@@ -1739,6 +1739,8 @@ type AuditLogFilter struct {
 	ResourceType string
 	ResourceID   string
 	Status       string
+	CreatedFrom  *time.Time
+	CreatedTo    *time.Time
 }
 
 func (db *DB) RecordAuditLog(ctx context.Context, logEntry *models.AuditLog) error {
@@ -1777,6 +1779,16 @@ func (db *DB) ListAuditLogs(ctx context.Context, f AuditLogFilter, limit, offset
 	add("resource_type", f.ResourceType)
 	add("resource_id", f.ResourceID)
 	add("status", f.Status)
+	if f.CreatedFrom != nil {
+		baseQ += fmt.Sprintf(" AND created_at >= $%d", n)
+		args = append(args, *f.CreatedFrom)
+		n++
+	}
+	if f.CreatedTo != nil {
+		baseQ += fmt.Sprintf(" AND created_at <= $%d", n)
+		args = append(args, *f.CreatedTo)
+		n++
+	}
 
 	var total int
 	if err := db.QueryRowContext(ctx, "SELECT count(*) "+baseQ, args...).Scan(&total); err != nil {

@@ -2529,10 +2529,12 @@ function AuditLogView() {
   const [action, setAction] = useState('');
   const [resourceType, setResourceType] = useState('');
   const [status, setStatus] = useState('');
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
   const [query, setQuery] = useState('');
   const limit = 50;
 
-  const load = useCallback((p: number, at: string, act: string, rt: string, st: string, q: string) => {
+  const load = useCallback((p: number, at: string, act: string, rt: string, st: string, from: string, to: string, q: string) => {
     setLoading(true);
     setError('');
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
@@ -2540,6 +2542,8 @@ function AuditLogView() {
     if (act) params.action = act;
     if (rt) params.resource_type = rt;
     if (st) params.status = st;
+    if (from) params.created_from = from;
+    if (to) params.created_to = to;
     if (q) {
       if (q.includes('/')) {
         const [rType, rID] = q.split('/', 2);
@@ -2554,8 +2558,8 @@ function AuditLogView() {
       .catch(() => { setError('Audit logs require an admin API key'); setLoading(false); });
   }, []);
 
-  useEffect(() => { load(0, actorType, action, resourceType, status, query); }, [load, actorType, action, resourceType, status]);
-  const handleSearch = () => load(0, actorType, action, resourceType, status, query);
+  useEffect(() => { load(0, actorType, action, resourceType, status, createdFrom, createdTo, query); }, [load, actorType, action, resourceType, status, createdFrom, createdTo]);
+  const handleSearch = () => load(0, actorType, action, resourceType, status, createdFrom, createdTo, query);
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   return (
@@ -2623,6 +2627,18 @@ function AuditLogView() {
             onKeyDown={handleKeyDown}
             style={{ minWidth: 260 }}
           />
+          <input
+            type="date"
+            aria-label="Audit created from"
+            value={createdFrom}
+            onChange={(e) => setCreatedFrom(e.target.value)}
+          />
+          <input
+            type="date"
+            aria-label="Audit created to"
+            value={createdTo}
+            onChange={(e) => setCreatedTo(e.target.value)}
+          />
           <button className="filter-btn" onClick={handleSearch}>Search</button>
           <span style={{ color: error ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>{error || `${total} events`}</span>
         </div>
@@ -2650,9 +2666,9 @@ function AuditLogView() {
           </table>
         )}
         <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, actorType, action, resourceType, status, query)}>Prev</button>
+          <button disabled={page === 0} onClick={() => load(page - 1, actorType, action, resourceType, status, createdFrom, createdTo, query)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, actorType, action, resourceType, status, query)}>Next</button>
+          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, actorType, action, resourceType, status, createdFrom, createdTo, query)}>Next</button>
         </div>
       </div>
     </>

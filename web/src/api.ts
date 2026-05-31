@@ -411,7 +411,7 @@ export const api = {
   stats: () => request<Stats>('/stats'),
   rawHealth: () => request<HealthStatus>('/health'),
   deleteScan: (id: string, force = false) => request<{status: string}>(`/scans/${id}`, force ? { force: 'true' } : undefined, 'DELETE'),
-  auditLogs: (params: { actor_type?: string; actor_id?: string; action?: string; resource_type?: string; resource_id?: string; status?: string; limit?: string; offset?: string }) =>
+  auditLogs: (params: { actor_type?: string; actor_id?: string; action?: string; resource_type?: string; resource_id?: string; status?: string; created_from?: string; created_to?: string; limit?: string; offset?: string }) =>
     request<{ items: AuditLog[]; total: number }>('/admin/audit-logs', params),
   rbacSubjects: () => request<{ items: AccessSubject[] }>('/admin/rbac/subjects'),
   rbacPolicies: (params?: { subject_external_id?: string }) =>

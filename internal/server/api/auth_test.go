@@ -2311,6 +2311,55 @@ func TestAuditLogDashboardCoversSecurityStatusesAndActions(t *testing.T) {
 	}
 }
 
+func TestAuditLogTimeRangeFiltersAreExposed(t *testing.T) {
+	apiOut, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiBody := string(apiOut)
+	for _, want := range []string{
+		`auditTimeParam(r, "created_from", false)`,
+		`auditTimeParam(r, "created_to", true)`,
+		`time.Parse(time.RFC3339, raw)`,
+		`time.Parse("2006-01-02", raw)`,
+		`createdFrom.After(*createdTo)`,
+		`http.StatusBadRequest`,
+	} {
+		if !strings.Contains(apiBody, want) {
+			t.Fatalf("audit log API time filtering missing %q", want)
+		}
+	}
+
+	uiOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	uiBody := string(uiOut)
+	for _, want := range []string{
+		`const [createdFrom, setCreatedFrom] = useState('')`,
+		`const [createdTo, setCreatedTo] = useState('')`,
+		`params.created_from = from`,
+		`params.created_to = to`,
+		`aria-label="Audit created from"`,
+		`aria-label="Audit created to"`,
+	} {
+		if !strings.Contains(uiBody, want) {
+			t.Fatalf("audit log UI time filtering missing %q", want)
+		}
+	}
+
+	apiTSOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiTSBody := string(apiTSOut)
+	for _, want := range []string{`created_from?: string`, `created_to?: string`} {
+		if !strings.Contains(apiTSBody, want) {
+			t.Fatalf("audit log API client time filtering missing %q", want)
+		}
+	}
+}
+
 func TestVulnerabilityViewsShowPackageContext(t *testing.T) {
 	out, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {

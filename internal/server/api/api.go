@@ -4150,6 +4150,20 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	createdFrom, err := auditTimeParam(r, "created_from", false)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	createdTo, err := auditTimeParam(r, "created_to", true)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if createdFrom != nil && createdTo != nil && createdFrom.After(*createdTo) {
+		http.Error(w, "created_from must be before created_to", http.StatusBadRequest)
+		return
+	}
 	filter := db.AuditLogFilter{
 		ActorType:    r.URL.Query().Get("actor_type"),
 		ActorID:      r.URL.Query().Get("actor_id"),
@@ -4157,6 +4171,8 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		ResourceType: r.URL.Query().Get("resource_type"),
 		ResourceID:   r.URL.Query().Get("resource_id"),
 		Status:       r.URL.Query().Get("status"),
+		CreatedFrom:  createdFrom,
+		CreatedTo:    createdTo,
 	}
 	items, total, err := s.db.ListAuditLogs(r.Context(), filter, limitParam(r, 100), offsetParam(r))
 	if err != nil {
@@ -4255,6 +4271,24 @@ func offsetParam(r *http.Request) int {
 		return maxOffset
 	}
 	return n
+}
+
+func auditTimeParam(r *http.Request, key string, endOfDay bool) (*time.Time, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(key))
+	if raw == "" {
+		return nil, nil
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return &t, nil
+	}
+	t, err := time.Parse("2006-01-02", raw)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s; use RFC3339 or YYYY-MM-DD", key)
+	}
+	if endOfDay {
+		t = t.Add(24*time.Hour - time.Nanosecond)
+	}
+	return &t, nil
 }
 
 func floatParam(r *http.Request, key string, def float64) float64 {

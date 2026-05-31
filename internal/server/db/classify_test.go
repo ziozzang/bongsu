@@ -55,6 +55,24 @@ func TestDBPoolConfigFallsBackForInvalidValues(t *testing.T) {
 	}
 }
 
+func TestAuditLogFilterSupportsTimeRanges(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`CreatedFrom  *time.Time`,
+		`CreatedTo    *time.Time`,
+		`created_at >=`,
+		`created_at <=`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("audit log DB time filtering missing %q", want)
+		}
+	}
+}
+
 func TestCompatibleSecurityCandidateSeparatesEcosystems(t *testing.T) {
 	affected := `[
 		{"name":"foo","ecosystem":"PyPI","fixed":["1.2.3"]},
