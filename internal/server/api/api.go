@@ -2879,6 +2879,35 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		} else {
 			writePromGauge(&b, "bongsu_agent_metrics_error", nil, 1)
 		}
+		if hosts, err := s.db.ListHosts(ctx); err == nil {
+			inventoryStaleAfter := time.Duration(envInt("BONGSU_INVENTORY_STALE_HOURS", 48)) * time.Hour
+			inventory, err := s.db.GetHostInventorySummaries(ctx)
+			if err == nil {
+				inventoryStatusCounts := map[string]int{}
+				totalPackages := 0
+				totalVulns := 0
+				totalContainers := 0
+				now := time.Now()
+				for _, host := range hosts {
+					summary := inventory[host.ID]
+					status := hostInventoryStatus(summary, now, inventoryStaleAfter)
+					inventoryStatusCounts[status]++
+					totalPackages += summary.PackageCount
+					totalVulns += summary.VulnCount
+					totalContainers += summary.ContainerCount
+				}
+				for _, status := range []string{"healthy", "degraded", "stale", "empty", "none"} {
+					writePromGauge(&b, "bongsu_inventory_hosts", map[string]string{"status": status}, float64(inventoryStatusCounts[status]))
+				}
+				writePromGauge(&b, "bongsu_inventory_latest_packages", nil, float64(totalPackages))
+				writePromGauge(&b, "bongsu_inventory_latest_vulnerabilities", nil, float64(totalVulns))
+				writePromGauge(&b, "bongsu_inventory_latest_containers", nil, float64(totalContainers))
+			} else {
+				writePromGauge(&b, "bongsu_inventory_metrics_error", nil, 1)
+			}
+		} else {
+			writePromGauge(&b, "bongsu_inventory_metrics_error", nil, 1)
+		}
 		triageExpiringSoonDays := envInt("BONGSU_TRIAGE_EXPIRING_SOON_DAYS", 14)
 		if triageExpiringSoonDays <= 0 {
 			triageExpiringSoonDays = 14

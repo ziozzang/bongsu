@@ -250,6 +250,39 @@ func TestAdminMetricsExposeAgentFleetState(t *testing.T) {
 	}
 }
 
+func TestAdminMetricsExposeInventoryQuality(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) adminMetrics")
+	if start < 0 {
+		t.Fatal("adminMetrics not found")
+	}
+	end := strings.Index(body[start:], "func boolMetric")
+	if end < 0 {
+		t.Fatal("boolMetric not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"GetHostInventorySummaries(ctx)",
+		"BONGSU_INVENTORY_STALE_HOURS",
+		"hostInventoryStatus(summary, now, inventoryStaleAfter)",
+		"bongsu_inventory_hosts",
+		`map[string]string{"status": status}`,
+		`[]string{"healthy", "degraded", "stale", "empty", "none"}`,
+		"bongsu_inventory_latest_packages",
+		"bongsu_inventory_latest_vulnerabilities",
+		"bongsu_inventory_latest_containers",
+		"bongsu_inventory_metrics_error",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("admin metrics inventory quality missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestPrometheusLabelValueEscapesUnsafeCharacters(t *testing.T) {
 	var b strings.Builder
 	writePromGauge(&b, "bongsu_test_info", map[string]string{"revision": "rev\"x\\y\nz"}, 1)
