@@ -17,7 +17,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1370,25 +1369,39 @@ func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	}
 	host := r.Host
 	apiKey := s.agentKey
-	tokenQuery := ""
-	if s.installToken != "" {
-		tokenQuery = "?token=" + url.QueryEscape(s.installToken)
-	}
 	serverURL := fmt.Sprintf("%s://%s", scheme, host)
 
 	script := fmt.Sprintf(`#!/bin/bash
 set -euo pipefail
 
 # Bongsu Agent Installer
-# Usage: curl -sL %s://%s/api/install.sh%s | bash
+# Usage: curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" %s://%s/api/install.sh | bash
 
 SERVER=%s
 API_KEY=%s
-INSTALL_TOKEN_QUERY=%s
+INSTALL_TOKEN=%s
 WORK_DIR="${BONGSU_WORK_DIR:-/opt/bongsu}"
 INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
 FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
+
+curl_download() {
+    local url="$1"
+    local output="$2"
+    if [ -n "$INSTALL_TOKEN" ]; then
+        local curl_config
+        curl_config="$(mktemp)"
+        chmod 600 "$curl_config"
+        printf 'header = "X-Install-Token: %%s"\n' "$INSTALL_TOKEN" > "$curl_config"
+        if curl -fsSL --config "$curl_config" "$url" -o "$output"; then
+            rm -f "$curl_config"
+            return 0
+        fi
+        rm -f "$curl_config"
+        return 1
+    fi
+    curl -fsSL "$url" -o "$output"
+}
 
 echo "=== Bongsu Agent Installer ==="
 echo "Server:  $SERVER"
@@ -1399,7 +1412,7 @@ mkdir -p "$WORK_DIR/bin"
 
 # Download agent binary from server
 echo "Downloading bongsu-agent..."
-if ! curl -fsSL "$SERVER/api/downloads/bongsu-agent$INSTALL_TOKEN_QUERY" -o "$WORK_DIR/bin/bongsu-agent"; then
+if ! curl_download "$SERVER/api/downloads/bongsu-agent" "$WORK_DIR/bin/bongsu-agent"; then
     rm -f "$WORK_DIR/bin/bongsu-agent"
     echo "ERROR: Failed to download bongsu-agent"
     exit 1
@@ -1412,7 +1425,7 @@ if [ ! -x "$WORK_DIR/bin/bongsu-agent" ]; then
 fi
 
 echo "Downloading trivy..."
-if curl -fsSL "$SERVER/api/downloads/trivy$INSTALL_TOKEN_QUERY" -o "$WORK_DIR/bin/trivy"; then
+if curl_download "$SERVER/api/downloads/trivy" "$WORK_DIR/bin/trivy"; then
     chmod +x "$WORK_DIR/bin/trivy"
 else
     rm -f "$WORK_DIR/bin/trivy"
@@ -1502,7 +1515,7 @@ echo "=== Done ==="
 echo "  Config:  $WORK_DIR/config.yaml"
 echo "  Manual:  $WORK_DIR/bin/bongsu-agent --config $WORK_DIR/config.yaml --type daily --packages-only"
 echo "  Log:     $WORK_DIR/agent.log"
-`, scheme, host, tokenQuery, shellQuote(serverURL), shellQuote(apiKey), shellQuote(tokenQuery))
+`, scheme, host, shellQuote(serverURL), shellQuote(apiKey), shellQuote(s.installToken))
 
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/x-shellscript")

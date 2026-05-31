@@ -513,14 +513,25 @@ func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
 	for _, want := range []string{
 		"shellQuote(serverURL)",
 		"shellQuote(apiKey)",
-		"shellQuote(tokenQuery)",
-		"url.QueryEscape(s.installToken)",
+		"shellQuote(s.installToken)",
 		`w.Header().Set("Cache-Control", "no-store")`,
-		`curl -fsSL "$SERVER/api/downloads/bongsu-agent$INSTALL_TOKEN_QUERY"`,
+		`printf 'header = "X-Install-Token: %%s"\n' "$INSTALL_TOKEN" > "$curl_config"`,
+		`curl_download "$SERVER/api/downloads/bongsu-agent" "$WORK_DIR/bin/bongsu-agent"`,
+		`curl_download "$SERVER/api/downloads/trivy" "$WORK_DIR/bin/trivy"`,
 		`rm -f "$WORK_DIR/bin/bongsu-agent"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("installer credential rendering missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"INSTALL_TOKEN_QUERY",
+		`$SERVER/api/downloads/bongsu-agent$INSTALL_TOKEN_QUERY`,
+		`$SERVER/api/downloads/trivy$INSTALL_TOKEN_QUERY`,
+		"url.QueryEscape(s.installToken)",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("installer must not use token-bearing download URLs: found %q", forbidden)
 		}
 	}
 }
@@ -618,11 +629,45 @@ func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(out)
-	if !strings.Contains(body, `api/install.sh?token=$BONGSU_INSTALL_TOKEN`) {
-		t.Fatal("dashboard install snippet must include BONGSU_INSTALL_TOKEN placeholder")
+	if !strings.Contains(body, `-H "X-Install-Token: $BONGSU_INSTALL_TOKEN"`) {
+		t.Fatal("dashboard install snippet must include BONGSU_INSTALL_TOKEN header")
+	}
+	if !strings.Contains(body, `/api/install.sh" | sudo bash`) {
+		t.Fatal("dashboard install snippet must point to install.sh")
 	}
 	if strings.Contains(body, `api/install.sh | sudo bash`) {
 		t.Fatal("dashboard install snippet must not show unauthenticated installer URL")
+	}
+	if strings.Contains(body, `api/install.sh?token=$BONGSU_INSTALL_TOKEN`) {
+		t.Fatal("dashboard install snippet must not put install token in URL query")
+	}
+}
+
+func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/install-agent.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`printf 'header = "X-Install-Token: %s"\n' "$INSTALL_TOKEN" > "$curl_config"`,
+		`curl -fsSL --config "$curl_config" "$url" -o "$output"`,
+		`curl_download "${SERVER_URL}/api/downloads/bongsu-agent" "$WORK_DIR/bin/bongsu-agent"`,
+		`curl_download "${SERVER_URL}/api/downloads/trivy" "$WORK_DIR/bin/trivy"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("static installer header download missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"INSTALL_TOKEN_QUERY",
+		`api/downloads/bongsu-agent${INSTALL_TOKEN_QUERY}`,
+		`api/downloads/trivy${INSTALL_TOKEN_QUERY}`,
+		`?token=${INSTALL_TOKEN}`,
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("static installer must not use token-bearing download URLs: found %q", forbidden)
+		}
 	}
 }
 

@@ -12,12 +12,26 @@ CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
 INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
 INSTALL_TOKEN="${BONGSU_INSTALL_TOKEN:-}"
-INSTALL_TOKEN_QUERY=""
-if [ -n "$INSTALL_TOKEN" ]; then
-    INSTALL_TOKEN_QUERY="?token=${INSTALL_TOKEN}"
-fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+curl_download() {
+    local url="$1"
+    local output="$2"
+    if [ -n "$INSTALL_TOKEN" ]; then
+        local curl_config
+        curl_config="$(mktemp)"
+        chmod 600 "$curl_config"
+        printf 'header = "X-Install-Token: %s"\n' "$INSTALL_TOKEN" > "$curl_config"
+        if curl -fsSL --config "$curl_config" "$url" -o "$output"; then
+            rm -f "$curl_config"
+            return 0
+        fi
+        rm -f "$curl_config"
+        return 1
+    fi
+    curl -fsSL "$url" -o "$output"
+}
 
 if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "Usage: $0 <server-url> <api-key>"
@@ -62,7 +76,7 @@ fi
 
 if [ -z "$AGENT_BIN" ]; then
     echo "Downloading bongsu-agent from server..."
-    curl -fsSL "${SERVER_URL}/api/downloads/bongsu-agent${INSTALL_TOKEN_QUERY}" -o "$WORK_DIR/bin/bongsu-agent"
+    curl_download "${SERVER_URL}/api/downloads/bongsu-agent" "$WORK_DIR/bin/bongsu-agent"
     chmod +x "$WORK_DIR/bin/bongsu-agent"
     AGENT_BIN="$WORK_DIR/bin/bongsu-agent"
 fi
@@ -89,7 +103,7 @@ if [ -n "$TRIVY_BIN" ]; then
     cp "$TRIVY_BIN" "$WORK_DIR/bin/trivy"
     chmod +x "$WORK_DIR/bin/trivy"
     echo "Trivy binary installed: $WORK_DIR/bin/trivy"
-elif curl -fsSL "${SERVER_URL}/api/downloads/trivy${INSTALL_TOKEN_QUERY}" -o "$WORK_DIR/bin/trivy"; then
+elif curl_download "${SERVER_URL}/api/downloads/trivy" "$WORK_DIR/bin/trivy"; then
     chmod +x "$WORK_DIR/bin/trivy"
     echo "Trivy binary downloaded: $WORK_DIR/bin/trivy"
 else

@@ -18,7 +18,7 @@ cp deploy/.env.example deploy/.env
 cd deploy && docker compose up -d --build
 
 # 3. 에이전트 설치 (타겟 호스트에서)
-curl -fsSL "http://your-server:8080/api/install.sh?token=$BONGSU_INSTALL_TOKEN" | sudo bash
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://your-server:8080/api/install.sh" | sudo bash
 ```
 
 ## 아키텍처
@@ -74,10 +74,10 @@ BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 웹 대시보드 첫 화면과 `/api/install.sh`에서 같은 one-line 설치를 제공합니다. 이 endpoint는 agent key를 포함하므로 `BONGSU_INSTALL_TOKEN` 설정이 필요합니다.
 
 ```bash
-curl -fsSL "http://server:8080/api/install.sh?token=$BONGSU_INSTALL_TOKEN" | sudo bash
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:8080/api/install.sh" | sudo bash
 ```
 
-설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다. 설치된 에이전트는 admin key가 아니라 `BONGSU_AGENT_API_KEY`를 사용하며, credential이 들어있는 config는 `0600` 권한으로 생성됩니다.
+설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다. 바이너리 다운로드 인증은 URL query가 아니라 `X-Install-Token` 헤더로 처리됩니다. 설치된 에이전트는 admin key가 아니라 `BONGSU_AGENT_API_KEY`를 사용하며, credential이 들어있는 config는 `0600` 권한으로 생성됩니다.
 
 Force scan 요청을 즉시 받아 처리하는 상주 모드는 다음처럼 실행할 수 있습니다.
 
