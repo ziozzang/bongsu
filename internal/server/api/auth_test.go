@@ -893,6 +893,33 @@ func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 	if strings.Contains(fn, "queueSecurityDBRescans") {
 		t.Fatalf("SecurityDatabaseUpdated should not queue rescans before recalculation: %s", fn)
 	}
+	for _, want := range []string{
+		"securityDBChangedMeta(reason)",
+		`"security_db.updated"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("security DB changed event missing %q: %s", want, fn)
+		}
+	}
+
+	start = strings.Index(body, "func (s *Server) securityDBChangedMeta")
+	if start < 0 {
+		t.Fatal("securityDBChangedMeta not found")
+	}
+	end = strings.Index(body[start:], "func (s *Server) SecurityDatabaseSyncFailed")
+	if end < 0 {
+		t.Fatal("securityDBChangedMeta end not found")
+	}
+	fn = body[start : start+end]
+	for _, want := range []string{
+		"GetSecurityDBRevision",
+		`"security_db_revision"`,
+		`"security_db_revision_error"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("security DB change revision metadata missing %q: %s", want, fn)
+		}
+	}
 
 	start = strings.Index(body, "func (s *Server) runSecurityRecalculation")
 	if start < 0 {
@@ -947,6 +974,26 @@ func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("auto-rescan audit accounting missing %q: %s", want, fn)
 		}
+	}
+}
+
+func TestWebhookAuditIncludesSecurityDBRevision(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) auditWebhookResult")
+	if start < 0 {
+		t.Fatal("auditWebhookResult not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) actorType")
+	if end < 0 {
+		t.Fatal("auditWebhookResult end not found")
+	}
+	fn := body[start : start+end]
+	if !strings.Contains(fn, `"security_db_revision"`) {
+		t.Fatalf("webhook audit should carry security_db_revision: %s", fn)
 	}
 }
 

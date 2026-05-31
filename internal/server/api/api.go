@@ -370,7 +370,7 @@ func (s *Server) auditWebhookResult(event string, data map[string]any, status st
 	if errMsg != "" {
 		meta["error"] = errMsg
 	}
-	for _, key := range []string{"host_id", "hostname", "inventory_status", "reason"} {
+	for _, key := range []string{"host_id", "hostname", "inventory_status", "reason", "security_db_revision"} {
 		if v, ok := data[key]; ok {
 			meta[key] = v
 		}
@@ -2841,11 +2841,25 @@ func validateSecurityDBBundleEntry(hdr *tar.Header) error {
 }
 
 func (s *Server) SecurityDatabaseUpdated(reason string) {
-	s.auditSystem("security_db.changed", "security_db", "aggregate", "ok", map[string]any{"reason": reason})
+	meta := s.securityDBChangedMeta(reason)
+	s.auditSystem("security_db.changed", "security_db", "aggregate", "ok", meta)
 	if s.notifier.Enabled() {
-		s.notifier.Send("security_db.updated", map[string]any{"reason": reason})
+		s.notifier.Send("security_db.updated", meta)
 	}
 	s.recalculateSecurityFindings(reason)
+}
+
+func (s *Server) securityDBChangedMeta(reason string) map[string]any {
+	meta := map[string]any{"reason": reason}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	revision, err := s.db.GetSecurityDBRevision(ctx)
+	if err != nil {
+		meta["security_db_revision_error"] = err.Error()
+		return meta
+	}
+	meta["security_db_revision"] = revision
+	return meta
 }
 
 func (s *Server) SecurityDatabaseSyncFailed(reason string, err error) {
