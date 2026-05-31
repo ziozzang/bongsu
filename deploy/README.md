@@ -222,8 +222,8 @@ spec:
 | `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON with host metadata |
 | `GET` | `/api/vuln-summary?group_by=owner` | Group active remediation findings by owner/team/environment/criticality |
 | `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope/expiry |
-| `GET` | `/api/packages` | List packages (supports `sort_by`, `q`, filters, pagination) |
-| `GET` | `/api/packages/{id}/vulnerabilities` | Package vulnerability details |
+| `GET` | `/api/packages` | List latest-scan packages with active finding `max_cvss`/`vuln_count` (supports `sort_by`, `q`, filters, pagination) |
+| `GET` | `/api/packages/{id}/vulnerabilities` | Latest-scan active package vulnerability details |
 | `GET` | `/api/containers` | List latest container/image assets with host-scoped RBAC |
 | `GET` | `/api/scans` | Scan history with inventory counts and package delta |
 | `DELETE` | `/api/scans/{id}` | Delete scan and associated data |

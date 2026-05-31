@@ -505,6 +505,81 @@ func TestListVulnerabilitiesAlwaysUsesLatestScan(t *testing.T) {
 	}
 }
 
+func TestSearchPackagesAlwaysUsesLatestScan(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) SearchPackages")
+	if start < 0 {
+		t.Fatal("SearchPackages not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetPackageHostID")
+	if end < 0 {
+		t.Fatal("GetPackageHostID not found")
+	}
+	fn := body[start : start+end]
+	if !strings.Contains(fn, "JOIN ` + latestScansSub") {
+		t.Fatalf("SearchPackages must join latest scans even with host_id filters: %s", fn)
+	}
+	if strings.Contains(fn, "useLatest :=") {
+		t.Fatalf("SearchPackages must not disable latest-scan filtering for host_id filters: %s", fn)
+	}
+}
+
+func TestPackageVulnJoinUsesActiveFindingFilter(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "var pkgVulnJoin")
+	if start < 0 {
+		t.Fatal("pkgVulnJoin not found")
+	}
+	end := strings.Index(body[start:], "const pkgVulnSelect")
+	if end < 0 {
+		t.Fatal("pkgVulnSelect not found")
+	}
+	src := body[start : start+end]
+	for _, want := range []string{
+		"vulnTriageJoin",
+		"currentActionableVulnSQL()",
+		"MAX(v.cvss_score)",
+		"COUNT(*)",
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("package vuln join active filter missing %q: %s", want, src)
+		}
+	}
+}
+
+func TestGetVulnsByPackageIDUsesLatestActiveFindings(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetVulnsByPackageID")
+	if start < 0 {
+		t.Fatal("GetVulnsByPackageID not found")
+	}
+	end := strings.Index(body[start:], "const CveCols")
+	if end < 0 {
+		t.Fatal("CveCols not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"JOIN ` + latestScansSub",
+		"currentActionableVulnSQL()",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("package vulnerability details must use latest active findings, missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestVulnSummaryUsesActiveFindingFilter(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {

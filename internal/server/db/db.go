@@ -651,12 +651,12 @@ func preReleaseNumber(v, marker string) (int, bool) {
 
 const pkgCols = `p.id, p.scan_id, p.host_id, p.asset_type, p.asset_id, p.source, p.container, p.container_id, p.image_name, p.image_id, p.name, p.version, p.arch, p.pkg_type, p.ecosystem, p.purl, p.src_name, p.file_path, p.layer_id, p.target, p.created_at`
 
-var pkgVulnJoin = ` LEFT JOIN (SELECT package_id, MAX(cvss_score) as max_cvss, COUNT(*) as vuln_count FROM vulnerabilities WHERE NOT (` + fixedVersionSQLCondition("vulnerabilities") + `) AND NOT EXISTS (SELECT 1 FROM packages p2 WHERE p2.id = vulnerabilities.package_id AND p2.pkg_type IN ('python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget') AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','ALPINE','SUSE','ALSA','UBUNTU','RHSA')) AND vulnerability_id NOT LIKE 'CGA-%' AND fixed_version !~ '^[0-9a-f]{40}$'
-			AND NOT (EXISTS (SELECT 1 FROM packages p3 WHERE p3.id = vulnerabilities.package_id AND p3.pkg_type = 'debian') AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('ALPINE','SUSE','ALSA','RHSA','UBUNTU'))
-			AND NOT (EXISTS (SELECT 1 FROM packages p3 WHERE p3.id = vulnerabilities.package_id AND p3.pkg_type IN ('apk','alpine')) AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','SUSE','ALSA','RHSA','UBUNTU'))
-			AND NOT (EXISTS (SELECT 1 FROM packages p3 WHERE p3.id = vulnerabilities.package_id AND p3.pkg_type = 'ubuntu') AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('ALPINE','SUSE','ALSA','RHSA'))
-			AND NOT (EXISTS (SELECT 1 FROM packages p3 WHERE p3.id = vulnerabilities.package_id AND p3.pkg_type = 'wolfi') AND SUBSTRING(vulnerabilities.vulnerability_id FROM '^[A-Z]+') IN ('DEBIAN','DSA','DLA','ALPINE','SUSE','ALSA','RHSA','UBUNTU'))
-			` + cvePackageEcosystemMismatchFilter("vulnerabilities") + ` GROUP BY package_id) vx ON vx.package_id = p.id`
+var pkgVulnJoin = ` LEFT JOIN (
+	SELECT v.package_id, MAX(v.cvss_score) as max_cvss, COUNT(*) as vuln_count
+	FROM vulnerabilities v` + vulnTriageJoin + `
+	WHERE ` + currentActionableVulnSQL() + `
+	GROUP BY v.package_id
+) vx ON vx.package_id = p.id`
 
 const pkgVulnSelect = `, COALESCE(vx.max_cvss, 0), COALESCE(vx.vuln_count, 0)`
 
@@ -2189,14 +2189,11 @@ type PackageFilter struct {
 }
 
 func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Package, int, error) {
-	useLatest := f.HostID == ""
 	baseQ := `FROM packages p` + pkgVulnJoin
 	args := []any{}
 	n := 1
 
-	if useLatest {
-		baseQ += ` JOIN ` + latestScansSub + ` ls ON p.scan_id = ls.id`
-	}
+	baseQ += ` JOIN ` + latestScansSub + ` ls ON p.scan_id = ls.id`
 
 	baseQ += ` WHERE 1=1`
 
@@ -2742,8 +2739,7 @@ func vulnSortExpr(col string, desc bool) string {
 }
 
 func (db *DB) GetVulnsByPackageID(ctx context.Context, packageID string) ([]models.Vulnerability, error) {
-	q := `SELECT ` + vulnSelectCols + vulnTriageCols + ` FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id` + vulnTriageJoin + ` WHERE v.package_id=$1 AND NOT (` + fixedVersionSQLCondition("v") + ` AND v.fixed_version !~ '^[0-9a-f]{40}$') AND v.vulnerability_id NOT LIKE 'CGA-%' AND v.fixed_version !~ '^[0-9a-f]{40}$'
-			` + cvePackageEcosystemMismatchFilter("v") + ` ORDER BY v.cvss_score DESC`
+	q := `SELECT ` + vulnSelectCols + vulnTriageCols + ` FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE v.package_id=$1 AND ` + currentActionableVulnSQL() + ` ORDER BY v.cvss_score DESC`
 	rows, err := db.QueryContext(ctx, q, packageID)
 	if err != nil {
 		return nil, err
