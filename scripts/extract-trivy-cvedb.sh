@@ -8,6 +8,7 @@ set -euo pipefail
 
 OUTPUT="${1:-trivy-cve.jsonl}"
 TRIVY_BIN="${TRIVY_BIN:-}"
+TRIVY_CACHE_DIR="${TRIVY_CACHE_DIR:-${BONGSU_TRIVY_CACHE_DIR:-}}"
 
 # Find trivy binary
 if [ -z "${TRIVY_BIN}" ]; then
@@ -35,21 +36,27 @@ trap "rm -rf ${TMPDIR}" EXIT
 
 echo "Extracting CVE data from Trivy database..."
 
-# Trivy stores its DB in ~/.cache/trivy/db/ or XDG_CACHE_HOME
-# The DB is a BoltDB file. We'll use python to parse it.
-CACHE_DIR=$(${TRIVY_BIN} --cache-dir 2>/dev/null || echo "${HOME}/.cache/trivy")
-if [ ! -f "${HOME}/.cache/trivy/db/trivy.db" ]; then
-    echo "Downloading trivy DB first..."
-    ${TRIVY_BIN} image --download-db-only 2>&1 || true
+if [ -z "${TRIVY_CACHE_DIR}" ]; then
+    if [ -n "${XDG_CACHE_HOME:-}" ]; then
+        TRIVY_CACHE_DIR="${XDG_CACHE_HOME}/trivy"
+    else
+        TRIVY_CACHE_DIR="${HOME}/.cache/trivy"
+    fi
 fi
 
-DB_PATH="${HOME}/.cache/trivy/db/trivy.db"
+DB_PATH="${TRIVY_CACHE_DIR}/db/trivy.db"
+if [ ! -f "${DB_PATH}" ]; then
+    echo "Downloading trivy DB first..."
+    ${TRIVY_BIN} image --download-db-only --cache-dir "${TRIVY_CACHE_DIR}" 2>&1 || true
+fi
+
 if [ ! -f "${DB_PATH}" ]; then
     echo "ERROR: trivy.db not found at ${DB_PATH}"
-    echo "Run: trivy image --download-db-only"
+    echo "Run: trivy image --download-db-only --cache-dir ${TRIVY_CACHE_DIR}"
     exit 1
 fi
 
+echo "Cache: ${TRIVY_CACHE_DIR}"
 echo "DB: ${DB_PATH} ($(du -h "${DB_PATH}" | cut -f1))"
 
 python3 << PYEOF
@@ -82,16 +89,14 @@ print("Using trivy JSON output to extract CVE metadata...", file=sys.stderr)
 
 import subprocess
 result = subprocess.run(
-    ["${TRIVY_BIN}", "image", "--format", "json", "--list-all-pkgs", "--scanners", "vuln",
-     "--skip-update", "alpine:latest"],
+    ["${TRIVY_BIN}", "image", "--cache-dir", "${TRIVY_CACHE_DIR}", "--format", "json",
+     "--list-all-pkgs", "--scanners", "vuln", "--skip-db-update", "alpine:latest"],
     capture_output=True, text=True, timeout=300
 )
 
 if result.returncode != 0:
     print(f"Trivy scan error: {result.stderr[:200]}", file=sys.stderr)
-    # Fallback: try to parse the bolt DB with go bolt library
-    print("Fallback: extracting from trivy db using go...", file=sys.stderr)
-    sys.exit(0)
+    sys.exit(1)
 
 data = json.loads(result.stdout)
 
@@ -183,7 +188,7 @@ IMAGES=(
 
 for img in "${IMAGES[@]}"; do
     echo "  Scanning ${img}..."
-    ${TRIVY_BIN} image --format json --scanners vuln --skip-update "${img}" > "${TMPDIR}/scan-$(echo ${img} | tr '/:' '-').json" 2>/dev/null || echo "  SKIP: ${img}"
+    ${TRIVY_BIN} image --cache-dir "${TRIVY_CACHE_DIR}" --format json --scanners vuln --skip-db-update "${img}" > "${TMPDIR}/scan-$(echo ${img} | tr '/:' '-').json" 2>/dev/null || echo "  SKIP: ${img}"
 done
 
 # Merge all scan results, deduplicating by CVE ID

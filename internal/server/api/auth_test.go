@@ -1755,6 +1755,37 @@ func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
 	}
 }
 
+func TestTrivyCveExtractionUsesConfiguredCacheDir(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/extract-trivy-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`TRIVY_CACHE_DIR="${TRIVY_CACHE_DIR:-${BONGSU_TRIVY_CACHE_DIR:-}}"`,
+		`DB_PATH="${TRIVY_CACHE_DIR}/db/trivy.db"`,
+		`--download-db-only --cache-dir "${TRIVY_CACHE_DIR}"`,
+		`"--cache-dir", "${TRIVY_CACHE_DIR}"`,
+		`--cache-dir "${TRIVY_CACHE_DIR}" --format json`,
+		`--skip-db-update`,
+		`sys.exit(1)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("trivy CVE extraction must use configured cache dir, missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`CACHE_DIR=$(${TRIVY_BIN} --cache-dir`,
+		`${HOME}/.cache/trivy/db/trivy.db`,
+		`--skip-update`,
+		`sys.exit(0)`,
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("trivy CVE extraction must not use stale cache/update behavior %q", forbidden)
+		}
+	}
+}
+
 func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 	for _, path := range []string{
 		"../../../deploy/docker-compose.yml",
