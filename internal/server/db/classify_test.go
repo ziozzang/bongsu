@@ -967,6 +967,35 @@ func TestListVulnerabilitiesAlwaysUsesLatestScan(t *testing.T) {
 	}
 }
 
+func TestListVulnerabilitiesSupportsFindingSourceFilter(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "type VulnFilter")
+	if start < 0 {
+		t.Fatal("VulnFilter not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) ListVulnerabilities")
+	if end < 0 {
+		t.Fatal("ListVulnerabilities not found")
+	}
+	filterDef := body[start : start+end]
+	if !strings.Contains(filterDef, "FindingSource string") {
+		t.Fatalf("VulnFilter missing finding source: %s", filterDef)
+	}
+	fnStart := start + end
+	fnEnd := strings.Index(body[fnStart:], "func (db *DB) GetHostVulnCounts")
+	if fnEnd < 0 {
+		t.Fatal("GetHostVulnCounts not found")
+	}
+	fn := body[fnStart : fnStart+fnEnd]
+	if !strings.Contains(fn, "COALESCE(v.finding_source, 'scanner')=$") {
+		t.Fatalf("finding source filter SQL missing: %s", fn)
+	}
+}
+
 func TestSearchPackagesAlwaysUsesLatestScan(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
@@ -1104,6 +1133,7 @@ func TestFilterOptionsAreHostScopedAndLatestOnly(t *testing.T) {
 				"+latestScansSub+",
 				"SELECT DISTINCT v.host_id",
 				"SELECT DISTINCT COALESCE(NULLIF(v.container",
+				"COALESCE(v.finding_source, 'scanner')",
 			},
 		},
 	}

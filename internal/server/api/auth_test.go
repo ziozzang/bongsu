@@ -822,6 +822,19 @@ func TestHandleReportAppliesScanScopedCveRematch(t *testing.T) {
 	}
 }
 
+func TestVulnFilterFromRequestIncludesFindingSource(t *testing.T) {
+	req := httptest.NewRequest("GET", "/api/vulnerabilities?finding_source=cve-db", nil)
+	req.Header.Set("X-API-Key", "admin")
+	s := &Server{apiKey: "admin", webAuth: true}
+	filter, forbidden, empty := s.vulnFilterFromRequest(req)
+	if forbidden || empty {
+		t.Fatalf("unexpected forbidden=%v empty=%v", forbidden, empty)
+	}
+	if filter.FindingSource != "cve-db" {
+		t.Fatalf("finding source = %q, want cve-db", filter.FindingSource)
+	}
+}
+
 func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {

@@ -925,6 +925,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [page, setPage] = useState(0);
   const [severity, setSeverity] = useState('');
   const [triageStatus, setTriageStatus] = useState('');
+  const [findingSource, setFindingSource] = useState('');
   const [hostId, setHostId] = useState('');
   const [container, setContainer] = useState('');
   const [pkgQuery, setPkgQuery] = useState('');
@@ -935,6 +936,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [hostMeta, setHostMeta] = useState<Record<string, Host>>({});
   const [hostIds, setHostIds] = useState<string[]>([]);
   const [containers, setContainers] = useState<string[]>([]);
+  const [findingSources, setFindingSources] = useState<string[]>([]);
   const [owner, setOwner] = useState('');
   const [team, setTeam] = useState('');
   const [environment, setEnvironment] = useState('');
@@ -945,11 +947,12 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [exportMsg, setExportMsg] = useState('');
   const limit = 50;
 
-  const load = useCallback((p: number, sev: string, triage: string, overdue: boolean, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
+  const load = useCallback((p: number, sev: string, triage: string, source: string, overdue: boolean, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
     setLoading(true);
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
     if (sev) params.severity = sev;
     if (triage) params.triage_status = triage;
+    if (source) params.finding_source = source;
     if (overdue) params.overdue = 'true';
     if (hId) params.host_id = hId;
     if (cont) params.container = cont;
@@ -977,19 +980,20 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     api.vulnFilters().then(f => {
       setHostIds(f.host_ids || []);
       setContainers(f.containers || []);
+      setFindingSources(f.finding_sources || []);
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { load(0, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
+  useEffect(() => { load(0, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
 
-  const handleSearch = () => { load(0, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
+  const handleSearch = () => { load(0, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
     const nextDesc = sortBy === col ? !sortDesc : col === 'cvss_score' || col === 'severity';
     setSortBy(col);
     setSortDesc(nextDesc);
-    load(0, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
+    load(0, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
   };
 
   const sortArrow = (col: string) => {
@@ -1002,6 +1006,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     const params: Record<string, string> = { format };
     if (severity) params.severity = severity;
     if (triageStatus) params.triage_status = triageStatus;
+    if (findingSource) params.finding_source = findingSource;
     if (overdueOnly) params.overdue = 'true';
     if (hostId) params.host_id = hostId;
     if (container) params.container = container;
@@ -1056,6 +1061,12 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
             <option value="false_positive">False Positive</option>
             <option value="fixed">Fixed</option>
             <option value="ignored">Ignored</option>
+          </select>
+          <select value={findingSource} onChange={(e) => setFindingSource(e.target.value)}>
+            <option value="">All Sources</option>
+            {(findingSources.length ? findingSources : ['scanner', 'cve-db']).map(s => (
+              <option key={s} value={s}>{s === 'cve-db' ? 'CVE DB' : 'Scanner'}</option>
+            ))}
           </select>
           <select value={hostId} onChange={(e) => setHostId(e.target.value)}>
             <option value="">All Hosts</option>
@@ -1117,6 +1128,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
               <tr>
                 <th>Host</th>
                 <th>Status</th>
+                <th>Source</th>
                 {cols.map(([key, label]) => (
                   <th key={key} className="clickable" onClick={() => toggleSort(key)} style={{ userSelect: 'none' }}>{label}{sortArrow(key)}</th>
                 ))}
@@ -1127,6 +1139,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                 <tr key={v.id} style={{ cursor: 'pointer' }} onClick={() => onSelectVuln(v)}>
                   <td><span className="host-link">{hostMap[v.host_id] || v.host_id.slice(0, 8)}</span></td>
                   <td><span className="badge">{(v.triage_status || 'open').replace('_', ' ')}</span></td>
+                  <td><span className="badge">{(v.finding_source || 'scanner') === 'cve-db' ? 'CVE DB' : 'Scanner'}</span></td>
                   <td className="mono">
                     <span className="host-link" style={{ color: 'var(--primary)' }}>{v.vulnerability_id}</span>
                   </td>
@@ -1163,9 +1176,9 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
           </table>
         )}
         <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
+          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
+          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, findingSource, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
         </div>
       </div>
     </>
@@ -1242,6 +1255,10 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         <div className="stat-card">
           <div className="label">Container</div>
           <div style={{ fontSize: '0.875rem' }}>{vuln.container || '(host)'}</div>
+        </div>
+        <div className="stat-card">
+          <div className="label">Source</div>
+          <div style={{ fontSize: '0.875rem' }}>{(vuln.finding_source || 'scanner') === 'cve-db' ? 'CVE DB' : 'Scanner'}</div>
         </div>
         <div className="stat-card">
           <div className="label">Triage</div>

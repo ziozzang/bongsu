@@ -2090,23 +2090,24 @@ WHERE id=$1`, id, owner, team, environment, criticality, tags)
 const latestScansSub = `(SELECT DISTINCT ON (host_id) id FROM scans WHERE status IN ('completed','degraded') ORDER BY host_id, created_at DESC)`
 
 type VulnFilter struct {
-	HostID       string
-	HostIDs      []string
-	Severity     string
-	TriageStatus string
-	Overdue      bool
-	PkgName      string
-	Container    string
-	Owner        string
-	Team         string
-	Environment  string
-	Criticality  string
-	MinCVSS      float64
-	SortBy       string
-	SortDesc     bool
-	HideFixed    bool
-	HideNoFix    bool
-	HideMismatch bool
+	HostID        string
+	HostIDs       []string
+	Severity      string
+	TriageStatus  string
+	FindingSource string
+	Overdue       bool
+	PkgName       string
+	Container     string
+	Owner         string
+	Team          string
+	Environment   string
+	Criticality   string
+	MinCVSS       float64
+	SortBy        string
+	SortDesc      bool
+	HideFixed     bool
+	HideNoFix     bool
+	HideMismatch  bool
 }
 
 func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offset int) ([]models.Vulnerability, int, error) {
@@ -2136,6 +2137,11 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	if f.TriageStatus != "" {
 		baseQ += fmt.Sprintf(" AND COALESCE(vt.status, 'open')=$%d", argN)
 		args = append(args, f.TriageStatus)
+		argN++
+	}
+	if f.FindingSource != "" {
+		baseQ += fmt.Sprintf(" AND COALESCE(v.finding_source, 'scanner')=$%d", argN)
+		args = append(args, f.FindingSource)
 		argN++
 	}
 	if f.PkgName != "" {
@@ -2609,10 +2615,11 @@ func (db *DB) GetPackageHostID(ctx context.Context, packageID string) (string, e
 }
 
 type FilterOptions struct {
-	HostIDs    []string `json:"host_ids"`
-	Containers []string `json:"containers"`
-	PkgTypes   []string `json:"pkg_types"`
-	Sources    []string `json:"sources"`
+	HostIDs        []string `json:"host_ids"`
+	Containers     []string `json:"containers"`
+	PkgTypes       []string `json:"pkg_types"`
+	Sources        []string `json:"sources"`
+	FindingSources []string `json:"finding_sources"`
 }
 
 func (db *DB) GetVulnFilterOptions(ctx context.Context, hostIDs []string) (*FilterOptions, error) {
@@ -2642,6 +2649,17 @@ func (db *DB) GetVulnFilterOptions(ctx context.Context, hostIDs []string) (*Filt
 		var v string
 		rows.Scan(&v)
 		opts.Containers = append(opts.Containers, v)
+	}
+	rows.Close()
+
+	rows, err = db.QueryContext(ctx, `SELECT DISTINCT COALESCE(v.finding_source, 'scanner') FROM vulnerabilities v JOIN `+latestScansSub+` ls ON v.scan_id = ls.id WHERE 1=1`+hostFilter+` ORDER BY 1`, args...)
+	if err != nil {
+		return nil, err
+	}
+	for rows.Next() {
+		var v string
+		rows.Scan(&v)
+		opts.FindingSources = append(opts.FindingSources, v)
 	}
 	rows.Close()
 
