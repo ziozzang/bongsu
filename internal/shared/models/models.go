@@ -108,6 +108,10 @@ type Vulnerability struct {
 	PrimaryURL      string     `json:"primary_url,omitempty"`
 	Container       string     `json:"container,omitempty"`
 	LayerID         string     `json:"layer_id,omitempty"`
+	HostOwner       string     `json:"host_owner,omitempty"`
+	HostTeam        string     `json:"host_team,omitempty"`
+	HostEnvironment string     `json:"host_environment,omitempty"`
+	HostCriticality string     `json:"host_criticality,omitempty"`
 	TriageStatus    string     `json:"triage_status"`
 	TriageReason    string     `json:"triage_reason,omitempty"`
 	TriageComment   string     `json:"triage_comment,omitempty"`

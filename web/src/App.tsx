@@ -605,15 +605,20 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   const [sortDesc, setSortDesc] = useState(true);
   const [loading, setLoading] = useState(true);
   const [hostMap, setHostMap] = useState<Record<string, string>>({});
+  const [hostMeta, setHostMeta] = useState<Record<string, Host>>({});
   const [hostIds, setHostIds] = useState<string[]>([]);
   const [containers, setContainers] = useState<string[]>([]);
+  const [owner, setOwner] = useState('');
+  const [team, setTeam] = useState('');
+  const [environment, setEnvironment] = useState('');
+  const [criticality, setCriticality] = useState('');
   const [showNoFix, setShowNoFix] = useState(false);
   const [showMismatch, setShowMismatch] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
   const limit = 50;
 
-  const load = useCallback((p: number, sev: string, triage: string, overdue: boolean, hId: string, cont: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
+  const load = useCallback((p: number, sev: string, triage: string, overdue: boolean, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
     setLoading(true);
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
     if (sev) params.severity = sev;
@@ -621,6 +626,10 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     if (overdue) params.overdue = 'true';
     if (hId) params.host_id = hId;
     if (cont) params.container = cont;
+    if (own) params.owner = own;
+    if (tm) params.team = tm;
+    if (env) params.environment = env;
+    if (crit) params.criticality = crit;
     if (pq) params.pkg_name = pq;
     if (sBy) { params.sort_by = sBy; params.sort_order = sDesc ? 'desc' : 'asc'; }
     if (sNoFix) params.show_no_fix = 'true';
@@ -633,8 +642,10 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
   useEffect(() => {
     api.hosts().then(hs => {
       const m: Record<string, string> = {};
-      (hs || []).forEach(h => { m[h.id] = h.hostname; });
+      const meta: Record<string, Host> = {};
+      (hs || []).forEach(h => { m[h.id] = h.hostname; meta[h.id] = h; });
       setHostMap(m);
+      setHostMeta(meta);
     });
     api.vulnFilters().then(f => {
       setHostIds(f.host_ids || []);
@@ -642,16 +653,16 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { load(0, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, overdueOnly, hostId, container, showNoFix, showMismatch]);
+  useEffect(() => { load(0, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
 
-  const handleSearch = () => { load(0, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
+  const handleSearch = () => { load(0, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
     const nextDesc = sortBy === col ? !sortDesc : col === 'cvss_score' || col === 'severity';
     setSortBy(col);
     setSortDesc(nextDesc);
-    load(0, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, col, nextDesc, showNoFix, showMismatch);
+    load(0, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
   };
 
   const sortArrow = (col: string) => {
@@ -667,6 +678,10 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     if (overdueOnly) params.overdue = 'true';
     if (hostId) params.host_id = hostId;
     if (container) params.container = container;
+    if (owner) params.owner = owner;
+    if (team) params.team = team;
+    if (environment) params.environment = environment;
+    if (criticality) params.criticality = criticality;
     if (pkgQuery) params.pkg_name = pkgQuery;
     if (sortBy) { params.sort_by = sortBy; params.sort_order = sortDesc ? 'desc' : 'asc'; }
     if (showNoFix) params.show_no_fix = 'true';
@@ -683,9 +698,14 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
     }
   };
 
+  const owners = Array.from(new Set(Object.values(hostMeta).map(h => h.owner || '').filter(Boolean))).sort();
+  const teams = Array.from(new Set(Object.values(hostMeta).map(h => h.team || '').filter(Boolean))).sort();
+  const environments = Array.from(new Set(Object.values(hostMeta).map(h => h.environment || '').filter(Boolean))).sort();
+  const criticalities = Array.from(new Set(Object.values(hostMeta).map(h => h.criticality || '').filter(Boolean))).sort();
+
   const cols: [string, string][] = [
     ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
-    ['pkg_name', 'Package'], ['container', 'Container'],
+    ['pkg_name', 'Package'], ['owner', 'Owner'], ['environment', 'Env'], ['container', 'Container'],
     ['installed_version', 'Installed'], ['fixed_version', 'Fixed'], ['due_at', 'Due'],
   ];
 
@@ -721,6 +741,22 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
             {containers.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
+          </select>
+          <select value={owner} onChange={(e) => setOwner(e.target.value)}>
+            <option value="">All Owners</option>
+            {owners.map(o => <option key={o} value={o}>{o}</option>)}
+          </select>
+          <select value={team} onChange={(e) => setTeam(e.target.value)}>
+            <option value="">All Teams</option>
+            {teams.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={environment} onChange={(e) => setEnvironment(e.target.value)}>
+            <option value="">All Environments</option>
+            {environments.map(e => <option key={e} value={e}>{e}</option>)}
+          </select>
+          <select value={criticality} onChange={(e) => setCriticality(e.target.value)}>
+            <option value="">All Criticality</option>
+            {criticalities.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
           <input
             type="text"
@@ -770,6 +806,8 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   <td><span className={badgeClass(v.severity)}>{v.severity}</span></td>
                   <td className="mono" style={{ color: v.cvss_score >= 9 ? 'var(--critical)' : v.cvss_score >= 7 ? 'var(--high)' : v.cvss_score >= 4 ? 'var(--medium)' : 'inherit', fontWeight: 600 }}>{v.cvss_score > 0 ? v.cvss_score.toFixed(1) : '-'}</td>
                   <td className="mono">{v.pkg_name}</td>
+                  <td>{v.host_owner || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                  <td>{v.host_environment || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                   <td className="mono">{v.container || '(host)'}</td>
                   <td className="mono">{v.installed_version}</td>
                   <td className="mono">
@@ -793,14 +831,14 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   </td>
                 </tr>
               ))}
-              {vulns.length === 0 && <tr><td colSpan={11} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
+              {vulns.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
             </tbody>
           </table>
         )}
         <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
+          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
           <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, overdueOnly, hostId, container, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
+          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, overdueOnly, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
         </div>
       </div>
     </>

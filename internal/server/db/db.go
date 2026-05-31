@@ -464,6 +464,8 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,now())`
 
 const vulnCols = `id, package_id, scan_id, host_id, vulnerability_id, severity, title, description, pkg_name, installed_version, fixed_version, cvss_score, cvss_vector, primary_url, pkg_path, layer_id, container, created_at`
 
+const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name, v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, '')`
+
 const vulnTriageJoin = ` LEFT JOIN LATERAL (
 	SELECT status, reason, comment, expires_at, updated_by, updated_at
 	FROM vulnerability_triage
@@ -482,7 +484,8 @@ func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnera
 		&v.VulnerabilityID, &v.Severity, &v.Title, &v.Description,
 		&v.PkgName, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
 		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
-		&v.CreatedAt, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
+		&v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
+		&v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
 }
 
 func (db *DB) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerability) error {
@@ -1179,6 +1182,10 @@ type VulnFilter struct {
 	Overdue      bool
 	PkgName      string
 	Container    string
+	Owner        string
+	Team         string
+	Environment  string
+	Criticality  string
 	MinCVSS      float64
 	SortBy       string
 	SortDesc     bool
@@ -1189,7 +1196,7 @@ type VulnFilter struct {
 
 func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offset int) ([]models.Vulnerability, int, error) {
 	useLatest := f.HostID == ""
-	baseQ := `FROM vulnerabilities v`
+	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id`
 	args := []any{}
 	argN := 1
 
@@ -1227,6 +1234,26 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	if f.Container != "" {
 		baseQ += fmt.Sprintf(" AND v.container=$%d", argN)
 		args = append(args, f.Container)
+		argN++
+	}
+	if f.Owner != "" {
+		baseQ += fmt.Sprintf(" AND h.owner=$%d", argN)
+		args = append(args, f.Owner)
+		argN++
+	}
+	if f.Team != "" {
+		baseQ += fmt.Sprintf(" AND h.team=$%d", argN)
+		args = append(args, f.Team)
+		argN++
+	}
+	if f.Environment != "" {
+		baseQ += fmt.Sprintf(" AND h.environment=$%d", argN)
+		args = append(args, f.Environment)
+		argN++
+	}
+	if f.Criticality != "" {
+		baseQ += fmt.Sprintf(" AND h.criticality=$%d", argN)
+		args = append(args, f.Criticality)
 		argN++
 	}
 	if f.MinCVSS > 0 {
@@ -1274,7 +1301,7 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 	}
 
 	sortExpr := vulnSortExpr(f.SortBy, f.SortDesc)
-	dataQ := fmt.Sprintf(`SELECT v.%s%s `, vulnCols, vulnTriageCols) + baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", sortExpr, argN, argN+1)
+	dataQ := fmt.Sprintf(`SELECT %s%s `, vulnSelectCols, vulnTriageCols) + baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", sortExpr, argN, argN+1)
 	args = append(args, limit, offset)
 
 	rows, err := db.QueryContext(ctx, dataQ, args...)
@@ -1624,7 +1651,7 @@ type CveSearchFilter struct {
 }
 
 func (db *DB) SearchCVEs(ctx context.Context, f CveSearchFilter, limit, offset int) ([]models.Vulnerability, int, error) {
-	baseQ := `FROM vulnerabilities v JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE 1=1`
+	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE 1=1`
 	args := []any{}
 	argN := 1
 
@@ -1662,7 +1689,7 @@ func (db *DB) SearchCVEs(ctx context.Context, f CveSearchFilter, limit, offset i
 	}
 
 	sortExpr := vulnSortExpr(f.SortBy, f.SortDesc)
-	dataQ := fmt.Sprintf(`SELECT v.%s%s `, vulnCols, vulnTriageCols) + baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", sortExpr, argN, argN+1)
+	dataQ := fmt.Sprintf(`SELECT %s%s `, vulnSelectCols, vulnTriageCols) + baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", sortExpr, argN, argN+1)
 	args = append(args, limit, offset)
 
 	rows, err := db.QueryContext(ctx, dataQ, args...)
@@ -1834,6 +1861,7 @@ func vulnSortExpr(col string, desc bool) string {
 		"cvss_score": "v.cvss_score", "pkg_name": "v.pkg_name",
 		"host_id": "v.host_id", "container": "v.container", "installed_version": "v.installed_version",
 		"fixed_version": "v.fixed_version", "created_at": "v.created_at", "due_at": "v.created_at",
+		"owner": "h.owner", "team": "h.team", "environment": "h.environment", "criticality": "h.criticality",
 	}
 	expr, ok := allowed[col]
 	if !ok {
@@ -1847,7 +1875,7 @@ func vulnSortExpr(col string, desc bool) string {
 }
 
 func (db *DB) GetVulnsByPackageID(ctx context.Context, packageID string) ([]models.Vulnerability, error) {
-	q := `SELECT v.` + vulnCols + vulnTriageCols + ` FROM vulnerabilities v` + vulnTriageJoin + ` WHERE v.package_id=$1 AND NOT (v.fixed_version IS NOT NULL AND v.fixed_version != '' AND v.installed_version IS NOT NULL AND v.installed_version != '' AND regexp_replace(regexp_replace(v.installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND regexp_replace(regexp_replace(v.fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND v.fixed_version !~ '^[0-9a-f]{40}$'
+	q := `SELECT ` + vulnSelectCols + vulnTriageCols + ` FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id` + vulnTriageJoin + ` WHERE v.package_id=$1 AND NOT (v.fixed_version IS NOT NULL AND v.fixed_version != '' AND v.installed_version IS NOT NULL AND v.installed_version != '' AND regexp_replace(regexp_replace(v.installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND regexp_replace(regexp_replace(v.fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != '' AND v.fixed_version !~ '^[0-9a-f]{40}$'
 			AND array_remove(string_to_array(regexp_replace(regexp_replace(v.installed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[] >= array_remove(string_to_array(regexp_replace(regexp_replace(v.fixed_version, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]) AND v.vulnerability_id NOT LIKE 'CGA-%' AND v.fixed_version !~ '^[0-9a-f]{40}$'
 			AND NOT EXISTS (
 				SELECT 1 FROM cve_database c

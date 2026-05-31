@@ -115,6 +115,8 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{
 		HostID:          "host-1",
+		HostOwner:       "platform",
+		HostTeam:        "security",
 		Container:       "api",
 		VulnerabilityID: "CVE-2026-0001",
 		Severity:        "HIGH",
@@ -133,7 +135,7 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 	if !strings.Contains(out, "vulnerability_id") {
 		t.Fatal("missing csv header")
 	}
-	if !strings.Contains(out, "CVE-2026-0001") || !strings.Contains(out, "accepted_risk") {
+	if !strings.Contains(out, "CVE-2026-0001") || !strings.Contains(out, "accepted_risk") || !strings.Contains(out, "platform") {
 		t.Fatalf("missing csv values: %s", out)
 	}
 }

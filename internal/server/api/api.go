@@ -781,6 +781,10 @@ func (s *Server) vulnFilterFromRequest(r *http.Request) (db.VulnFilter, bool, bo
 		Overdue:      r.URL.Query().Get("overdue") == "true",
 		PkgName:      r.URL.Query().Get("pkg_name"),
 		Container:    r.URL.Query().Get("container"),
+		Owner:        r.URL.Query().Get("owner"),
+		Team:         r.URL.Query().Get("team"),
+		Environment:  r.URL.Query().Get("environment"),
+		Criticality:  r.URL.Query().Get("criticality"),
 		MinCVSS:      floatParam(r, "min_cvss", 0.1),
 		SortBy:       r.URL.Query().Get("sort_by"),
 		SortDesc:     r.URL.Query().Get("sort_order") == "desc",
@@ -842,7 +846,7 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
-		"host_id", "container", "vulnerability_id", "severity", "cvss_score", "triage_status",
+		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "severity", "cvss_score", "triage_status",
 		"sla_days", "due_at", "overdue", "pkg_name", "installed_version", "fixed_version", "pkg_path", "title", "primary_url",
 		"triage_reason", "triage_comment", "triage_updated_by", "created_at",
 	}); err != nil {
@@ -851,6 +855,10 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	for _, v := range vulns {
 		if err := cw.Write([]string{
 			v.HostID,
+			v.HostOwner,
+			v.HostTeam,
+			v.HostEnvironment,
+			v.HostCriticality,
 			v.Container,
 			v.VulnerabilityID,
 			v.Severity,

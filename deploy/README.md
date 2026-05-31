@@ -204,8 +204,8 @@ spec:
 | `GET` | `/api/hosts` | List hosts |
 | `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
 | `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON |
-| `GET` | `/api/vulnerabilities` | List CVEs (supports `sort_by`, `severity`, pagination) |
-| `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON |
+| `GET` | `/api/vulnerabilities` | List CVEs with host/container/owner/team/environment filters |
+| `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON with host metadata |
 | `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope |
 | `GET` | `/api/packages` | List packages (supports `sort_by`, `q`, filters, pagination) |
 | `GET` | `/api/packages/{id}/vulnerabilities` | Package vulnerability details |

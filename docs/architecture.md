@@ -112,7 +112,7 @@ Each host can export its latest completed package inventory as CycloneDX 1.5 JSO
 
 ## Vulnerability Report Export
 
-Filtered vulnerability views can be exported through `/api/vulnerabilities/export` as CSV by default or JSON with `format=json`. The export reuses the same host, severity, triage status, package, container, sorting, fixed-version, ecosystem-mismatch, and RBAC filters as the interactive vulnerability list. `BONGSU_VULN_EXPORT_MAX_ROWS` limits export size and defaults to 100000 rows. Successful exports are audited as `vulnerability.export`.
+Filtered vulnerability views can be exported through `/api/vulnerabilities/export` as CSV by default or JSON with `format=json`. The export reuses the same host, severity, triage status, package, container, owner, team, environment, criticality, sorting, fixed-version, ecosystem-mismatch, and RBAC filters as the interactive vulnerability list. CSV and JSON rows include the host metadata fields so exported remediation queues can be routed outside bongsu. `BONGSU_VULN_EXPORT_MAX_ROWS` limits export size and defaults to 100000 rows. Successful exports are audited as `vulnerability.export`.
 
 ## Webhook Notifications
 
