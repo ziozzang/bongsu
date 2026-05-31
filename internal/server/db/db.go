@@ -4421,29 +4421,5 @@ func indexOfStr(s, sub string) int {
 }
 
 func (db *DB) RecalcCVSSFromVectors(ctx context.Context) (int, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id, cvss_vector FROM cve_database WHERE cvss_vector != '' AND cvss_score = 0`)
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
-
-	type entry struct{ id, vector string }
-	var entries []entry
-	for rows.Next() {
-		var e entry
-		rows.Scan(&e.id, &e.vector)
-		entries = append(entries, e)
-	}
-
-	count := 0
-	for _, e := range entries {
-		score := calcCvssScore(e.vector)
-		if score > 0 {
-			sev := severityFromScore(score)
-			if _, err := db.ExecContext(ctx, `UPDATE cve_database SET cvss_score=$1, severity=$2 WHERE id=$3`, score, sev, e.id); err == nil {
-				count++
-			}
-		}
-	}
-	return count, nil
+	return db.CalcCvssScores(ctx)
 }

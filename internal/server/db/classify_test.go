@@ -233,6 +233,7 @@ func TestCalcCvssScoreVersions(t *testing.T) {
 	}{
 		{"v2", "AV:N/AC:L/Au:N/C:P/I:P/A:P", 7.5},
 		{"v31", "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", 9.8},
+		{"v40", "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N/E:U", 8.1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -241,6 +242,48 @@ func TestCalcCvssScoreVersions(t *testing.T) {
 				t.Fatalf("score = %.1f, want %.1f", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestManualCVSSRecalcUsesFullRecalculationPath(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) RecalcCVSSFromVectors")
+	if start < 0 {
+		t.Fatal("RecalcCVSSFromVectors not found")
+	}
+	end := strings.Index(body[start:], "}")
+	if end < 0 {
+		t.Fatal("RecalcCVSSFromVectors end not found")
+	}
+	fn := body[start : start+end]
+	if !strings.Contains(fn, "return db.CalcCvssScores(ctx)") {
+		t.Fatalf("manual CVSS recalculation must reuse full CVSS path: %s", fn)
+	}
+	if strings.Contains(fn, "cvss_score = 0") {
+		t.Fatalf("manual CVSS recalculation must not skip existing CVSS 4.0 scores: %s", fn)
+	}
+
+	start = strings.Index(body, "func (db *DB) CalcCvssScores")
+	if start < 0 {
+		t.Fatal("CalcCvssScores not found")
+	}
+	end = strings.Index(body[start:], "func (db *DB) GetCveSources")
+	if end < 0 {
+		t.Fatal("CalcCvssScores end not found")
+	}
+	fn = body[start : start+end]
+	for _, want := range []string{
+		"cvss_vector LIKE 'CVSS:4%'",
+		"cvss_score = 0",
+		"UPDATE cve_database SET cvss_score=$1",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("full CVSS recalculation missing %q: %s", want, fn)
+		}
 	}
 }
 
