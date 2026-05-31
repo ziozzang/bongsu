@@ -2079,7 +2079,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.secMgr != nil {
-		resp["security_db"] = s.secMgr.Status()
+		if s.authenticateAdmin(r) {
+			resp["security_db"] = s.secMgr.Status()
+		} else {
+			resp["security_db"] = s.secMgr.PublicStatus()
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

@@ -50,7 +50,7 @@ Vulnerability inserts drop dangling scanner rows that have no package, scan, hos
 1. Server has `BONGSU_SECURITY_DB_SYNC_CMD` configured, usually:
    `scripts/sync-all-cvedb.sh http://localhost:8080 $BONGSU_API_KEY`
 2. The server runs the command every `BONGSU_SECURITY_DB_INTERVAL_HOURS`, default 6.
-3. Scripts download OSV, NVD, and Trivy-derived metadata, then import JSONL through `/api/admin/cve-db/import`; import HTTP or malformed-response failures are fail-closed so the periodic sync is marked failed instead of silently counting zero imported rows.
+3. Scripts download OSV, NVD, and Trivy-derived metadata, then import JSONL through `/api/admin/cve-db/import`; import HTTP or malformed-response failures are fail-closed so the periodic sync is marked failed instead of silently counting zero imported rows. The manager retains a bounded tail of the latest sync output, controlled by `BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES`, for admin-authenticated health checks and failed update responses; unauthenticated health checks expose only summary sync status.
 4. Each successful DB change, including periodic security DB sync, starts background CVSS recalculation, vulnerability enrichment, CVE rematching, and automatic package-only rescan requests for hosts seen within `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` (default 720). Recalculation runs as a serialized background worker: if OSV, NVD, and Trivy imports arrive while a pass is still running, bongsu queues one follow-up pass instead of running overlapping recalculations.
 5. Operators export `/api/admin/security-db/export` for air-gapped transfer. The bundle contains a manifest, CVE JSONL, source stats, and optionally the current Trivy DB archive.
 

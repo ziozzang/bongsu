@@ -177,6 +177,7 @@ spec:
 | `BONGSU_TRIVY_DB_INTERVAL_HOURS` | `0` | DB update interval (`0`=disabled, `6`=connected) |
 | `BONGSU_SECURITY_DB_SYNC_CMD` | empty | Command for OSV/NVD/Trivy source sync |
 | `BONGSU_SECURITY_DB_INTERVAL_HOURS` | `6` | Security source sync interval |
+| `BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES` | `8192` | Tail bytes of the most recent source sync output retained in admin-authenticated health checks and failed update responses |
 | `BONGSU_AUTO_RESCAN_ON_DB_UPDATE` | `true` | Queue background rescans after security DB changes |
 | `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` | `720` | Only auto-rescan hosts seen within this many hours (`0`=all hosts) |
 | `BONGSU_CVE_MATCH_SOURCES` | empty | Optional comma-separated CVE source allowlist for automatic rematch |

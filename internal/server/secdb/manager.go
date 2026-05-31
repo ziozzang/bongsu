@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -18,6 +20,7 @@ type Manager struct {
 	lastSync   time.Time
 	lastStatus string
 	lastError  string
+	lastOutput string
 	updateHook func(string)
 }
 
@@ -66,6 +69,7 @@ func (m *Manager) UpdateNowWithReason(ctx context.Context, reason string) error 
 	m.running = true
 	m.lastStatus = "running"
 	m.lastError = ""
+	m.lastOutput = ""
 	m.mu.Unlock()
 
 	defer func() {
@@ -77,17 +81,19 @@ func (m *Manager) UpdateNowWithReason(ctx context.Context, reason string) error 
 	syncCtx, cancel := context.WithTimeout(ctx, 2*time.Hour)
 	defer cancel()
 	cmd := exec.CommandContext(syncCtx, "sh", "-c", m.command)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	out, err := cmd.CombinedOutput()
+	output := trimCommandOutput(string(out), maxSyncOutputBytes())
+	if err != nil {
 		m.mu.Lock()
 		m.lastStatus = "failed"
-		m.lastError = err.Error()
+		m.lastError = commandErrorMessage(err, output)
+		m.lastOutput = output
 		m.mu.Unlock()
 		return err
 	}
 	m.mu.Lock()
 	m.lastStatus = "ok"
+	m.lastOutput = output
 	m.lastSync = time.Now()
 	hook := m.updateHook
 	m.mu.Unlock()
@@ -101,11 +107,51 @@ func (m *Manager) Status() map[string]any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return map[string]any{
+		"configured":  m.command != "",
+		"running":     m.running,
+		"last_sync":   m.lastSync,
+		"status":      m.lastStatus,
+		"last_error":  m.lastError,
+		"last_output": m.lastOutput,
+		"interval":    m.interval.String(),
+	}
+}
+
+func (m *Manager) PublicStatus() map[string]any {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return map[string]any{
 		"configured": m.command != "",
 		"running":    m.running,
 		"last_sync":  m.lastSync,
 		"status":     m.lastStatus,
-		"last_error": m.lastError,
 		"interval":   m.interval.String(),
 	}
+}
+
+func commandErrorMessage(err error, output string) string {
+	if output == "" {
+		return err.Error()
+	}
+	return err.Error() + ": " + output
+}
+
+func maxSyncOutputBytes() int {
+	raw := strings.TrimSpace(os.Getenv("BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES"))
+	if raw == "" {
+		return 8192
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return 8192
+	}
+	return n
+}
+
+func trimCommandOutput(output string, limit int) string {
+	output = strings.TrimSpace(output)
+	if limit <= 0 || len(output) <= limit {
+		return output
+	}
+	return output[len(output)-limit:]
 }

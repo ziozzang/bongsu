@@ -693,6 +693,35 @@ func TestHandleReportNormalizesScannerInput(t *testing.T) {
 	}
 }
 
+func TestHealthOnlyShowsSecuritySyncOutputToAdmins(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleHealth")
+	if start < 0 {
+		t.Fatal("handleHealth not found")
+	}
+	end := strings.Index(body[start+1:], "\nfunc ")
+	if end < 0 {
+		t.Fatal("handleHealth end not found")
+	}
+	fn := body[start : start+1+end]
+	for _, want := range []string{
+		"s.authenticateAdmin(r)",
+		"s.secMgr.Status()",
+		"s.secMgr.PublicStatus()",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("health handler missing %q: %s", want, fn)
+		}
+	}
+	if strings.Index(fn, "s.secMgr.PublicStatus()") < strings.Index(fn, "else") {
+		t.Fatalf("public security DB status should be used only for non-admin health: %s", fn)
+	}
+}
+
 func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
 	out, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {
@@ -785,6 +814,7 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"${BONGSU_DB_PASSWORD:?Set BONGSU_DB_PASSWORD in .env}",
 				"${BONGSU_AGENT_API_KEY:?Set BONGSU_AGENT_API_KEY in .env}",
 				"${BONGSU_INSTALL_TOKEN:?Set BONGSU_INSTALL_TOKEN in .env}",
+				"BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES: ${BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES:-8192}",
 				"BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES: ${BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES:-2147483648}",
 				"BONGSU_CVE_DB_IMPORT_MAX_BYTES: ${BONGSU_CVE_DB_IMPORT_MAX_BYTES:-2147483648}",
 				"BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES: ${BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES:-4294967296}",
