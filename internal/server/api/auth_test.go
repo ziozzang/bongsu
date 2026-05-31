@@ -411,6 +411,81 @@ func TestFallbackHostIDUsesStableInventoryIdentity(t *testing.T) {
 	}
 }
 
+func TestNormalizeScanReportValidatesIdentityAndType(t *testing.T) {
+	report := models.ScanReport{
+		ScanID:   " 550e8400-e29b-41d4-a716-446655440000 ",
+		ScanType: " manual ",
+		Host: models.Host{
+			ID:        " host-1 ",
+			Hostname:  " app-01 ",
+			IPAddress: " 10.0.0.5 ",
+		},
+	}
+	if err := normalizeScanReport(&report); err != nil {
+		t.Fatalf("normalize scan report: %v", err)
+	}
+	if report.ScanID != "550e8400-e29b-41d4-a716-446655440000" || report.ScanType != "manual" {
+		t.Fatalf("scan identity was not normalized: %#v", report)
+	}
+	if report.Host.ID != "host-1" || report.Host.Hostname != "app-01" || report.Host.IPAddress != "10.0.0.5" {
+		t.Fatalf("host identity was not normalized: %#v", report.Host)
+	}
+	if report.Timestamp.IsZero() {
+		t.Fatal("missing report timestamp default")
+	}
+}
+
+func TestNormalizeScanReportRejectsInvalidScannerFields(t *testing.T) {
+	for _, report := range []models.ScanReport{
+		{ScanID: "not-a-uuid", ScanType: "manual", Host: models.Host{Hostname: "app-01"}},
+		{ScanType: "completed", Host: models.Host{Hostname: "app-01"}},
+	} {
+		if err := normalizeScanReport(&report); err == nil {
+			t.Fatalf("invalid report should be rejected: %#v", report)
+		}
+	}
+}
+
+func TestNormalizeScanReportDerivesStableHostDefaults(t *testing.T) {
+	report := models.ScanReport{Host: models.Host{Hostname: " App-01 "}}
+	if err := normalizeScanReport(&report); err != nil {
+		t.Fatalf("normalize scan report: %v", err)
+	}
+	if report.ScanID == "" || report.ScanType != "inventory" {
+		t.Fatalf("scan defaults missing: %#v", report)
+	}
+	if report.Host.ID != "hostname:app-01" || report.Host.Hostname != "App-01" {
+		t.Fatalf("stable host fallback missing: %#v", report.Host)
+	}
+}
+
+func TestHandleReportNormalizesScannerInput(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleReport")
+	if start < 0 {
+		t.Fatal("handleReport not found")
+	}
+	end := strings.Index(body[start:], "func reportWebhookPayload")
+	if end < 0 {
+		t.Fatal("reportWebhookPayload not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"normalizeScanReport(&report)",
+		`http.Error(w, err.Error(), http.StatusBadRequest)`,
+		`uuid.Parse(report.ScanID)`,
+		`"invalid scan_type"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("report normalization missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
 	out, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {

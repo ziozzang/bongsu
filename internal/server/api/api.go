@@ -429,25 +429,12 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
+	if err := normalizeScanReport(&report); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	ctx := r.Context()
-
-	if report.ScanID == "" {
-		report.ScanID = uuid.New().String()
-	}
-	if report.ScanType == "" {
-		report.ScanType = "inventory"
-	}
-	if report.Timestamp.IsZero() {
-		report.Timestamp = time.Now().UTC()
-	}
-
-	if report.Host.ID == "" {
-		report.Host.ID = fallbackHostID(report.Host)
-	}
-	if report.Host.Hostname == "" {
-		report.Host.Hostname = report.Host.ID
-	}
 
 	if err := s.db.UpsertHost(ctx, &report.Host); err != nil {
 		log.Printf("upsert host: %v", err)
@@ -617,6 +604,37 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"status":  "ok",
 		"scan_id": report.ScanID,
 	})
+}
+
+func normalizeScanReport(report *models.ScanReport) error {
+	report.ScanID = strings.TrimSpace(report.ScanID)
+	if report.ScanID == "" {
+		report.ScanID = uuid.New().String()
+	} else if _, err := uuid.Parse(report.ScanID); err != nil {
+		return fmt.Errorf("invalid scan_id")
+	}
+	report.ScanType = strings.TrimSpace(report.ScanType)
+	if report.ScanType == "" {
+		report.ScanType = "inventory"
+	}
+	switch report.ScanType {
+	case "inventory", "daily", "manual", "security-db-update":
+	default:
+		return fmt.Errorf("invalid scan_type")
+	}
+	if report.Timestamp.IsZero() {
+		report.Timestamp = time.Now().UTC()
+	}
+	report.Host.ID = strings.TrimSpace(report.Host.ID)
+	report.Host.Hostname = strings.TrimSpace(report.Host.Hostname)
+	report.Host.IPAddress = strings.TrimSpace(report.Host.IPAddress)
+	if report.Host.ID == "" {
+		report.Host.ID = fallbackHostID(report.Host)
+	}
+	if report.Host.Hostname == "" {
+		report.Host.Hostname = report.Host.ID
+	}
+	return nil
 }
 
 func reportAuditStatus(skippedVulns, ingestErrorCount int) string {
