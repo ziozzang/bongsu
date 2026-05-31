@@ -1085,7 +1085,7 @@ func TestRequeueScanRequestOnlyRetriesTerminalRequests(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		"status IN ('failed','cancelled')",
+		"status IN ('failed','degraded','cancelled')",
 		"SET status='pending'",
 		"claimed_at=NULL",
 		"claimed_by_host_id=''",
@@ -1115,7 +1115,7 @@ func TestFilteredRequeueRequiresTerminalRequestsAndFilters(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		"status IN ('failed','cancelled')",
+		"status IN ('failed','degraded','cancelled')",
 		"host_id=$%d",
 		"status=$%d",
 		"scan_type=$%d",
@@ -1188,6 +1188,9 @@ func TestAgentCompletesScanRequestWithHostID(t *testing.T) {
 	}
 	if !strings.Contains(string(agentFile), `CompleteScanRequest(req.ID, host.ID`) {
 		t.Fatal("agent daemon must send host ID when completing scan requests")
+	}
+	if !strings.Contains(string(agentFile), "scanRequestCompletionFromReport") || !strings.Contains(string(agentFile), `"degraded"`) {
+		t.Fatal("agent daemon must propagate degraded report status to scan request completion")
 	}
 }
 

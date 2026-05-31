@@ -2031,7 +2031,7 @@ func TestScanRequestErrorHTTPMapping(t *testing.T) {
 		{db.ErrScanRequestNotFound, 404, "scan request not found"},
 		{db.ErrScanRequestNotActive, 409, "scan request is not pending or claimed"},
 		{db.ErrScanRequestClaimMismatch, 403, "scan request was not claimed by this host"},
-		{db.ErrScanRequestNotRetryable, 409, "scan request is not failed or cancelled"},
+		{db.ErrScanRequestNotRetryable, 409, "scan request is not failed, degraded, or cancelled"},
 	}
 	for _, tt := range tests {
 		if got := scanRequestErrorStatus(tt.err); got != tt.status {
@@ -2074,7 +2074,7 @@ func TestRequeueFilteredScanRequestAPIRequiresSafeFilters(t *testing.T) {
 		"func (s *Server) handleRequeueFilteredScanRequests",
 		"s.authenticateAdmin(r)",
 		`"at least one filter is required"`,
-		`"status must be failed or cancelled"`,
+		`"status must be failed, degraded, or cancelled"`,
 		"s.db.RequeueScanRequestsByFilter",
 		`"scan_request.requeue_filtered"`,
 	} {
@@ -2271,7 +2271,7 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"api.requeueScanRequest",
 		"api.requeueFilteredScanRequests",
 		"Requeue Filtered",
-		"Bulk requeue requires Failed or Cancelled status",
+		"Bulk requeue requires Failed, Degraded, or Cancelled status",
 		"Set a status, type, or DB revision filter before bulk requeue",
 		"canBulkRequeue",
 		"confirm(`Requeue ${totalLabel}",

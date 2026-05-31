@@ -103,7 +103,7 @@ BONGSU_AUTO_RESCAN_ON_DB_UPDATE=true
 BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS=720
 ```
 
-After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Recalculation is serialized and coalesced, so a multi-source sync that imports OSV, NVD, and Trivy data does not run overlapping recalculation jobs. CVE JSONL imports are committed as a single transaction; malformed JSONL or row-level insert failures reject the whole payload and record a failed audit event. Failed manual or periodic security DB sync commands also write `status=error` audit rows with the bounded command error captured by the sync manager. Pending automatic rescan requests are deduplicated per host in the database, so overlapping DB update hooks do not create duplicate pending work. Auto-rescan audit metadata records eligible, queued, and already-pending counts so operators can distinguish no eligible agents from a pending backlog. Dashboard stats show pending, claimed, and failed automatic rescan requests for the current `security_db_revision` separately from manual or daily scan requests; each count opens Scan History with the matching status/type/revision filters, where request age and claim age highlight stuck work using server-side stale flags, and failed/cancelled rows can be requeued individually or in bulk after confirming the active filters without losing revision provenance. If a new CVE DB update lands while a previous automatic rescan is already claimed, bongsu still leaves a follow-up pending rescan for the newer DB contents. Agents running in daemon mode pick those requests up through the normal force-scan polling path; claimed scan requests record the claiming host and can only be completed by that same host.
+After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Recalculation is serialized and coalesced, so a multi-source sync that imports OSV, NVD, and Trivy data does not run overlapping recalculation jobs. CVE JSONL imports are committed as a single transaction; malformed JSONL or row-level insert failures reject the whole payload and record a failed audit event. Failed manual or periodic security DB sync commands also write `status=error` audit rows with the bounded command error captured by the sync manager. Pending automatic rescan requests are deduplicated per host in the database, so overlapping DB update hooks do not create duplicate pending work. Auto-rescan audit metadata records eligible, queued, and already-pending counts so operators can distinguish no eligible agents from a pending backlog. Dashboard stats show pending, claimed, and failed automatic rescan requests for the current `security_db_revision` separately from manual or daily scan requests; each count opens Scan History with the matching status/type/revision filters, where request age and claim age highlight stuck work using server-side stale flags, and failed/degraded/cancelled rows can be requeued individually or in bulk after confirming the active filters without losing revision provenance. If a new CVE DB update lands while a previous automatic rescan is already claimed, bongsu still leaves a follow-up pending rescan for the newer DB contents. Agents running in daemon mode pick those requests up through the normal force-scan polling path; claimed scan requests record the claiming host and can only be completed by that same host.
 
 ### Air-Gapped Environment
 
@@ -217,7 +217,7 @@ spec:
 | `BONGSU_AGENT_OFFLINE_MINUTES` | `4320` | Last-seen age treated as offline after this threshold |
 | `BONGSU_INVENTORY_STALE_HOURS` | `48` | Latest completed inventory older than this is `stale` in host filters |
 | `BONGSU_RETENTION_SCAN_DAYS` | `180` | Default scan history retention for admin prune action |
-| `BONGSU_RETENTION_SCAN_REQUEST_DAYS` | `90` | Default completed/failed/cancelled scan request retention |
+| `BONGSU_RETENTION_SCAN_REQUEST_DAYS` | `90` | Default completed/degraded/failed/cancelled scan request retention |
 | `BONGSU_RETENTION_AUDIT_DAYS` | `365` | Default audit log retention for admin prune action |
 | `BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES` | `60` | Requeue claimed force-scan requests after this age |
 | `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login for private lab networks only) |
@@ -274,8 +274,8 @@ spec:
 | `POST` | `/api/scan-requests` | Request force scan for host/all |
 | `GET` | `/api/scan-requests` | List force scan requests with host-scoped RBAC; filter by `status`, `scan_type`, and `security_db_revision` |
 | `POST` | `/api/scan-requests/{id}/cancel` | Cancel pending or claimed force scan request |
-| `POST` | `/api/scan-requests/{id}/requeue` | Requeue failed or cancelled force scan request |
-| `POST` | `/api/scan-requests/requeue-filtered` | Bulk requeue failed/cancelled force scan requests matching at least one filter |
+| `POST` | `/api/scan-requests/{id}/requeue` | Requeue failed, degraded, or cancelled force scan request |
+| `POST` | `/api/scan-requests/requeue-filtered` | Bulk requeue failed/degraded/cancelled force scan requests matching at least one filter |
 | `POST` | `/api/scan-requests/requeue-stale` | Requeue claimed force-scan requests older than timeout |
 | `POST` | `/api/agent/scan-requests/claim` | Agent claims a pending force scan |
 | `POST` | `/api/agent/scan-requests/{id}/complete` | Agent completes/fails a force scan |

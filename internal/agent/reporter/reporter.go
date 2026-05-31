@@ -19,6 +19,15 @@ type Reporter struct {
 	client     *http.Client
 }
 
+type ReportResult struct {
+	Status           string `json:"status"`
+	ScanID           string `json:"scan_id"`
+	ScanStatus       string `json:"scan_status"`
+	InventoryStatus  string `json:"inventory_status"`
+	IngestErrorCount int    `json:"ingest_error_count"`
+	SkippedVulnCount int    `json:"skipped_vuln_count"`
+}
+
 func (r *Reporter) ClaimScanRequest(hostID string) (*models.ScanRequest, error) {
 	req, err := http.NewRequest("POST", r.serverURL+"/api/agent/scan-requests/claim?host_id="+url.QueryEscape(hostID), nil)
 	if err != nil {
@@ -86,15 +95,15 @@ func (r *Reporter) setAgentIdentityHeaders(req *http.Request, hostID string) {
 	req.Header.Set("X-Bongsu-Host-ID", hostID)
 }
 
-func (r *Reporter) Send(report *models.ScanReport) error {
+func (r *Reporter) Send(report *models.ScanReport) (*ReportResult, error) {
 	body, err := json.Marshal(report)
 	if err != nil {
-		return fmt.Errorf("marshal report: %w", err)
+		return nil, fmt.Errorf("marshal report: %w", err)
 	}
 
 	req, err := http.NewRequest("POST", r.serverURL+"/api/report", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", r.apiKey)
@@ -102,14 +111,21 @@ func (r *Reporter) Send(report *models.ScanReport) error {
 
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("send report: %w", err)
+		return nil, fmt.Errorf("send report: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("server returned %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	return nil
+	var result ReportResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode report response: %w", err)
+	}
+	if result.ScanStatus == "" {
+		result.ScanStatus = "completed"
+	}
+	return &result, nil
 }

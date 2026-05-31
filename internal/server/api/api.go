@@ -674,9 +674,13 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, ingestErrors))
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"status":  "ok",
-		"scan_id": report.ScanID,
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":             "ok",
+		"scan_id":            report.ScanID,
+		"scan_status":        scanStatus,
+		"inventory_status":   inventoryStatus,
+		"ingest_error_count": len(ingestErrors),
+		"skipped_vuln_count": skippedVulns,
 	})
 }
 
@@ -2406,8 +2410,8 @@ func (s *Server) handleRequeueFilteredScanRequests(w http.ResponseWriter, r *htt
 		http.Error(w, "at least one filter is required", http.StatusBadRequest)
 		return
 	}
-	if body.Status != "" && body.Status != "failed" && body.Status != "cancelled" {
-		http.Error(w, "status must be failed or cancelled", http.StatusBadRequest)
+	if body.Status != "" && body.Status != "failed" && body.Status != "degraded" && body.Status != "cancelled" {
+		http.Error(w, "status must be failed, degraded, or cancelled", http.StatusBadRequest)
 		return
 	}
 	if body.ScanType != "" && !validScanRequestType(body.ScanType) {
@@ -2633,7 +2637,7 @@ func scanRequestErrorMessage(err error) string {
 	case errors.Is(err, db.ErrScanRequestClaimMismatch):
 		return "scan request was not claimed by this host"
 	case errors.Is(err, db.ErrScanRequestNotRetryable):
-		return "scan request is not failed or cancelled"
+		return "scan request is not failed, degraded, or cancelled"
 	default:
 		return "db error"
 	}
@@ -2713,7 +2717,7 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
 			writePromGauge(&b, "bongsu_security_db_revision_info", map[string]string{"revision": revision}, 1)
 			if counts, err := s.db.CountSecurityDBRescanRequestsByStatus(ctx, nil, true, revision); err == nil {
-				for _, status := range []string{"pending", "claimed", "completed", "failed", "cancelled"} {
+				for _, status := range []string{"pending", "claimed", "completed", "degraded", "failed", "cancelled"} {
 					writePromGauge(&b, "bongsu_security_db_rescan_requests", map[string]string{"status": status}, float64(counts[status]))
 				}
 			} else {

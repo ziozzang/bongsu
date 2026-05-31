@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/ziozzang/bongsu/internal/agent/reporter"
 )
 
 func TestAppendCollectionErrorBoundsReportErrors(t *testing.T) {
@@ -44,6 +46,28 @@ func TestAppendCollectionErrorBoundsReportErrors(t *testing.T) {
 	}
 	if errs[maxCollectionErrors-1] != "additional collection errors omitted" {
 		t.Fatalf("overflow marker missing: %q", errs[maxCollectionErrors-1])
+	}
+}
+
+func TestScanRequestCompletionFromReportPreservesDegradedScans(t *testing.T) {
+	status, message := scanRequestCompletionFromReport(&reporter.ReportResult{
+		ScanStatus:       "degraded",
+		InventoryStatus:  "degraded",
+		IngestErrorCount: 2,
+		SkippedVulnCount: 3,
+	})
+	if status != "degraded" {
+		t.Fatalf("status = %q, want degraded", status)
+	}
+	for _, want := range []string{"inventory_status=degraded", "ingest_errors=2", "skipped_vulns=3"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("degraded completion message missing %q: %q", want, message)
+		}
+	}
+
+	status, message = scanRequestCompletionFromReport(&reporter.ReportResult{ScanStatus: "completed"})
+	if status != "completed" || message != "" {
+		t.Fatalf("clean completion = (%q, %q), want completed empty message", status, message)
 	}
 }
 

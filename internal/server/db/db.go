@@ -31,7 +31,7 @@ var ErrInvalidScanRequestStatus = errors.New("invalid scan request status")
 var ErrScanRequestNotFound = errors.New("scan request not found")
 var ErrScanRequestNotActive = errors.New("scan request is not pending or claimed")
 var ErrScanRequestClaimMismatch = errors.New("scan request was not claimed by this host")
-var ErrScanRequestNotRetryable = errors.New("scan request is not failed or cancelled")
+var ErrScanRequestNotRetryable = errors.New("scan request is not failed, degraded, or cancelled")
 var ErrAgentHostTokenMismatch = errors.New("agent token does not match host binding")
 
 type RetentionPruneResult struct {
@@ -435,7 +435,7 @@ func (db *DB) PruneOperationalData(ctx context.Context, scanDays, requestDays, a
 	if err := tx.QueryRowContext(ctx, oldScans+` SELECT count(*) FROM old_scans`, scanCutoff).Scan(&result.Scans); err != nil {
 		return nil, err
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM scan_requests WHERE created_at < $1 AND status IN ('completed','failed','cancelled')`, requestCutoff).Scan(&result.Requests); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM scan_requests WHERE created_at < $1 AND status IN ('completed','degraded','failed','cancelled')`, requestCutoff).Scan(&result.Requests); err != nil {
 		return nil, err
 	}
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM audit_logs WHERE created_at < $1`, auditCutoff).Scan(&result.AuditLogs); err != nil {
@@ -457,7 +457,7 @@ func (db *DB) PruneOperationalData(ctx context.Context, scanDays, requestDays, a
 	if _, err := tx.ExecContext(ctx, oldScans+` DELETE FROM scans WHERE id IN (SELECT id FROM old_scans)`, scanCutoff); err != nil {
 		return nil, fmt.Errorf("delete old scans: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM scan_requests WHERE created_at < $1 AND status IN ('completed','failed','cancelled')`, requestCutoff); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM scan_requests WHERE created_at < $1 AND status IN ('completed','degraded','failed','cancelled')`, requestCutoff); err != nil {
 		return nil, fmt.Errorf("delete old scan requests: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM audit_logs WHERE created_at < $1`, auditCutoff); err != nil {
@@ -1580,7 +1580,7 @@ WHERE sr.id=stale.id
 }
 
 func (db *DB) CompleteScanRequest(ctx context.Context, id, status, message string) error {
-	if status != "completed" && status != "failed" && status != "cancelled" {
+	if status != "completed" && status != "degraded" && status != "failed" && status != "cancelled" {
 		return fmt.Errorf("%w: %s", ErrInvalidScanRequestStatus, status)
 	}
 	res, err := db.ExecContext(ctx, `UPDATE scan_requests
@@ -1613,7 +1613,7 @@ func (db *DB) RequeueScanRequest(ctx context.Context, id, message string) error 
 	res, err := db.ExecContext(ctx, `UPDATE scan_requests
 SET status='pending', error_message=$2, claimed_at=NULL, claimed_by_host_id='', completed_at=NULL
 WHERE id=$1
-  AND status IN ('failed','cancelled')
+  AND status IN ('failed','degraded','cancelled')
   AND NOT EXISTS (
 	SELECT 1 FROM scan_requests pending
 	WHERE pending.id <> scan_requests.id
@@ -1647,7 +1647,7 @@ func (db *DB) RequeueScanRequestsByFilter(ctx context.Context, hostID string, st
 	if message == "" {
 		message = "bulk requeued by admin"
 	}
-	where := []string{"status IN ('failed','cancelled')"}
+	where := []string{"status IN ('failed','degraded','cancelled')"}
 	args := []any{message}
 	n := 2
 	if hostID != "" {
@@ -1696,7 +1696,7 @@ func (db *DB) CompleteClaimedScanRequest(ctx context.Context, id, hostID, status
 	if hostID == "" {
 		return ErrScanRequestClaimMismatch
 	}
-	if status != "completed" && status != "failed" {
+	if status != "completed" && status != "degraded" && status != "failed" {
 		return fmt.Errorf("%w: %s", ErrInvalidScanRequestStatus, status)
 	}
 	res, err := db.ExecContext(ctx, `UPDATE scan_requests

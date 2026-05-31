@@ -2188,8 +2188,8 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
   };
   const requeueFiltered = async () => {
     setRequestMsg('');
-    if (requestStatus && !['failed', 'cancelled'].includes(requestStatus)) {
-      setRequestMsg('Bulk requeue requires Failed or Cancelled status');
+    if (requestStatus && !['failed', 'degraded', 'cancelled'].includes(requestStatus)) {
+      setRequestMsg('Bulk requeue requires Failed, Degraded, or Cancelled status');
       return;
     }
     if (!requestStatus && !requestType && !requestRevision) {
@@ -2197,11 +2197,11 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
       return;
     }
     const filterLabel = [
-      requestStatus ? `status=${requestStatus}` : 'status=failed/cancelled',
+      requestStatus ? `status=${requestStatus}` : 'status=failed/degraded/cancelled',
       requestType ? `type=${requestType}` : '',
       requestRevision.trim() ? `DB rev=${requestRevision.trim()}` : '',
     ].filter(Boolean).join(', ');
-    const totalLabel = requestStatus ? `${requestTotal} matching requests` : 'all failed/cancelled requests matching these filters';
+    const totalLabel = requestStatus ? `${requestTotal} matching requests` : 'all failed/degraded/cancelled requests matching these filters';
     if (!confirm(`Requeue ${totalLabel} (${filterLabel})?`)) return;
     try {
       const r = await api.requeueFilteredScanRequests({
@@ -2216,7 +2216,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
       setRequestMsg('Bulk requeue failed');
     }
   };
-  const canBulkRequeue = (!requestStatus || ['failed', 'cancelled'].includes(requestStatus)) && Boolean(requestStatus || requestType || requestRevision.trim());
+  const canBulkRequeue = (!requestStatus || ['failed', 'degraded', 'cancelled'].includes(requestStatus)) && Boolean(requestStatus || requestType || requestRevision.trim());
 
   return (
     <>
@@ -2230,7 +2230,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
               className="update-btn"
               onClick={requeueFiltered}
               disabled={!canBulkRequeue}
-              title="Requeue failed or cancelled requests matching the current filters"
+              title="Requeue failed, degraded, or cancelled requests matching the current filters"
             >
               Requeue Filtered
             </button>
@@ -2239,6 +2239,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
               <option value="pending">Pending</option>
               <option value="claimed">Claimed</option>
               <option value="completed">Completed</option>
+              <option value="degraded">Degraded</option>
               <option value="failed">Failed</option>
               <option value="cancelled">Cancelled</option>
             </select>
@@ -2282,7 +2283,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{req.completed_at ? new Date(req.completed_at).toLocaleString() : '-'}</td>
                   <td>
                     {['pending', 'claimed'].includes(req.status) && <button className="delete-btn" onClick={() => cancelRequest(req.id)}>Cancel</button>}
-                    {['failed', 'cancelled'].includes(req.status) && <button className="update-btn" onClick={() => requeueRequest(req)}>Requeue</button>}
+                    {['failed', 'degraded', 'cancelled'].includes(req.status) && <button className="update-btn" onClick={() => requeueRequest(req)}>Requeue</button>}
                   </td>
                 </tr>
               ))}

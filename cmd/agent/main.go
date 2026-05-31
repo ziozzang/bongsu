@@ -81,7 +81,7 @@ func main() {
 		return
 	}
 
-	if err := run(*serverURL, *apiKey, agentToken, *workDir, *scanType, *packagesOnly); err != nil {
+	if _, err := run(*serverURL, *apiKey, agentToken, *workDir, *scanType, *packagesOnly); err != nil {
 		log.Fatalf("scan failed: %v", err)
 	}
 }
@@ -178,18 +178,20 @@ func runDaemon(serverURL, apiKey, agentToken, workDir string, pollInterval time.
 			continue
 		}
 		log.Printf("claimed scan request %s type=%s packages_only=%v", req.ID, req.ScanType, req.PackagesOnly)
-		if err := run(serverURL, apiKey, agentToken, workDir, req.ScanType, req.PackagesOnly); err != nil {
+		result, err := run(serverURL, apiKey, agentToken, workDir, req.ScanType, req.PackagesOnly)
+		if err != nil {
 			log.Printf("scan request %s failed: %v", req.ID, err)
 			_ = rep.CompleteScanRequest(req.ID, host.ID, "failed", err.Error())
 			continue
 		}
-		if err := rep.CompleteScanRequest(req.ID, host.ID, "completed", ""); err != nil {
+		status, message := scanRequestCompletionFromReport(result)
+		if err := rep.CompleteScanRequest(req.ID, host.ID, status, message); err != nil {
 			log.Printf("complete scan request %s failed: %v", req.ID, err)
 		}
 	}
 }
 
-func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly bool) error {
+func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly bool) (*reporter.ReportResult, error) {
 	log.Println("=== Bongsu Agent Starting ===")
 	log.Printf("Server: %s", serverURL)
 	log.Printf("Work dir: %s", workDir)
@@ -203,7 +205,7 @@ func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly b
 	log.Println("Collecting system info...")
 	host, err := system.CollectHostInfo()
 	if err != nil {
-		return fmt.Errorf("system info: %w", err)
+		return nil, fmt.Errorf("system info: %w", err)
 	}
 	host.AgentVersion = "0.1.0"
 	log.Printf("Host: %s (%s %s)", host.Hostname, host.OSName, host.OSVersion)
@@ -329,12 +331,24 @@ func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly b
 
 	log.Println("Sending report to server...")
 	rep := reporter.New(serverURL, apiKey, agentToken)
-	if err := rep.Send(report); err != nil {
-		return fmt.Errorf("send report: %w", err)
+	result, err := rep.Send(report)
+	if err != nil {
+		return nil, fmt.Errorf("send report: %w", err)
 	}
 
-	log.Println("=== Scan complete ===")
-	return nil
+	if result.ScanStatus == "degraded" {
+		log.Printf("=== Scan degraded: inventory=%s ingest_errors=%d skipped_vulns=%d ===", result.InventoryStatus, result.IngestErrorCount, result.SkippedVulnCount)
+	} else {
+		log.Println("=== Scan complete ===")
+	}
+	return result, nil
+}
+
+func scanRequestCompletionFromReport(result *reporter.ReportResult) (string, string) {
+	if result == nil || result.ScanStatus != "degraded" {
+		return "completed", ""
+	}
+	return "degraded", fmt.Sprintf("scan degraded: inventory_status=%s ingest_errors=%d skipped_vulns=%d", result.InventoryStatus, result.IngestErrorCount, result.SkippedVulnCount)
 }
 
 func appendCollectionError(errs []string, area string, err error) []string {
