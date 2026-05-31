@@ -1830,6 +1830,25 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 	}
 }
 
+func TestVulnerabilityViewsShowPackageContext(t *testing.T) {
+	out, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"v.pkg_type || v.ecosystem",
+		"Package Type",
+		"vuln.pkg_type",
+		"Ecosystem",
+		"vuln.ecosystem",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("vulnerability UI package context missing %q", want)
+		}
+	}
+}
+
 func TestScanRequestStalenessUsesConfiguredTimeout(t *testing.T) {
 	items := []models.ScanRequest{
 		{Status: "pending", RequestAgeS: 3601},

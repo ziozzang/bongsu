@@ -1180,6 +1180,26 @@ func TestCvePackageEcosystemMismatchFilterChecksAllAffectedProducts(t *testing.T
 	}
 }
 
+func TestVulnerabilityRowsExposePackageContext(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"(SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id)",
+		"(SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id)",
+		"&v.PkgType",
+		"&v.Ecosystem",
+		`"pkg_type"`,
+		`"ecosystem"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("vulnerability package context missing %q", want)
+		}
+	}
+}
+
 func TestFixedVersionSQLConditionDoesNotHidePrereleases(t *testing.T) {
 	got := fixedVersionSQLCondition("v")
 	for _, want := range []string{

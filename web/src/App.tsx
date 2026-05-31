@@ -1145,7 +1145,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
 
   const cols: [string, string][] = [
     ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
-    ['pkg_name', 'Package'], ['owner', 'Owner'], ['environment', 'Env'], ['container', 'Container'],
+    ['pkg_name', 'Package'], ['owner', 'Owner'], ['environment', 'Env'], ['container', 'Container'], ['pkg_type', 'Pkg Type'],
     ['installed_version', 'Installed'], ['fixed_version', 'Fixed'], ['due_at', 'Due'],
   ];
 
@@ -1257,6 +1257,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   <td>{v.host_owner || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                   <td>{v.host_environment || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                   <td className="mono">{v.container || '(host)'}</td>
+                  <td className="mono">{v.pkg_type || v.ecosystem || '-'}</td>
                   <td className="mono">{v.installed_version}</td>
                   <td className="mono">
                     {v.fixed_version
@@ -1279,7 +1280,7 @@ function VulnsView({ onSelectVuln }: { onSelectVuln: (v: Vuln) => void }) {
                   </td>
                 </tr>
               ))}
-              {vulns.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
+              {vulns.length === 0 && <tr><td colSpan={14} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
             </tbody>
           </table>
         )}
@@ -1433,6 +1434,8 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         <table>
           <tbody>
             <tr><td style={{ color: 'var(--text-muted)', width: 140 }}>Package</td><td className="mono">{vuln.pkg_name}</td></tr>
+            <tr><td style={{ color: 'var(--text-muted)' }}>Package Type</td><td className="mono">{vuln.pkg_type || '-'}</td></tr>
+            <tr><td style={{ color: 'var(--text-muted)' }}>Ecosystem</td><td className="mono">{vuln.ecosystem || '-'}</td></tr>
             <tr><td style={{ color: 'var(--text-muted)' }}>Installed Version</td><td className="mono">{vuln.installed_version}</td></tr>
             <tr><td style={{ color: 'var(--text-muted)' }}>Fixed Version</td><td className="mono" style={{ color: vuln.fixed_version ? 'var(--low)' : 'var(--critical)', fontWeight: 600 }}>{vuln.fixed_version || 'No fix available'}</td></tr>
             {vuln.pkg_path && <tr><td style={{ color: 'var(--text-muted)' }}>Path</td><td className="mono" style={{ fontSize: '0.8125rem' }}>{vuln.pkg_path}</td></tr>}

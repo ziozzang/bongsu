@@ -134,6 +134,8 @@ type Vulnerability struct {
 	Title           string     `json:"title,omitempty"`
 	Description     string     `json:"description,omitempty"`
 	PkgName         string     `json:"pkg_name"`
+	PkgType         string     `json:"pkg_type,omitempty"`
+	Ecosystem       string     `json:"ecosystem,omitempty"`
 	PkgPath         string     `json:"pkg_path,omitempty"`
 	InstalledVer    string     `json:"installed_version"`
 	FixedVersion    string     `json:"fixed_version,omitempty"`

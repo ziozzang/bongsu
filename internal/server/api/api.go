@@ -1169,7 +1169,7 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
 		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "severity", "cvss_score", "triage_status",
-		"sla_days", "due_at", "overdue", "pkg_name", "installed_version", "fixed_version", "finding_source", "pkg_path", "title", "primary_url",
+		"sla_days", "due_at", "overdue", "pkg_name", "pkg_type", "ecosystem", "installed_version", "fixed_version", "finding_source", "pkg_path", "title", "primary_url",
 		"triage_reason", "triage_comment", "triage_expires_at", "triage_updated_by", "created_at",
 	}); err != nil {
 		return err
@@ -1190,6 +1190,8 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 			formatTimePtr(v.DueAt),
 			strconv.FormatBool(v.Overdue),
 			v.PkgName,
+			v.PkgType,
+			v.Ecosystem,
 			v.InstalledVer,
 			v.FixedVersion,
 			v.FindingSource,
