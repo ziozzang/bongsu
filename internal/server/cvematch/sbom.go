@@ -144,6 +144,10 @@ type spdxPackage struct {
 	VersionInfo      string            `json:"versionInfo,omitempty"`
 	DownloadLocation string            `json:"downloadLocation"`
 	FilesAnalyzed    bool              `json:"filesAnalyzed"`
+	LicenseConcluded string            `json:"licenseConcluded"`
+	LicenseDeclared  string            `json:"licenseDeclared"`
+	CopyrightText    string            `json:"copyrightText"`
+	Supplier         string            `json:"supplier"`
 	PackageURL       string            `json:"packageUrl,omitempty"`
 	ExternalRefs     []spdxExternalRef `json:"externalRefs,omitempty"`
 	Comment          string            `json:"comment,omitempty"`
@@ -251,6 +255,10 @@ func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 		VersionInfo:      strings.TrimSpace(host.OSName + " " + host.OSVersion),
 		DownloadLocation: "NOASSERTION",
 		FilesAnalyzed:    false,
+		LicenseConcluded: "NOASSERTION",
+		LicenseDeclared:  "NOASSERTION",
+		CopyrightText:    "NOASSERTION",
+		Supplier:         "Organization: bongsu",
 		Comment:          fmt.Sprintf("bongsu host_id=%s ip_address=%s owner=%s team=%s environment=%s criticality=%s", host.ID, host.IPAddress, host.Owner, host.Team, host.Environment, host.Criticality),
 	})
 	doc.Relationships = append(doc.Relationships, spdxRelationship{SPDXElementID: docID, RelationshipType: "DESCRIBES", RelatedSPDXElement: rootID})
@@ -273,6 +281,10 @@ func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 			VersionInfo:      pkg.Version,
 			DownloadLocation: "NOASSERTION",
 			FilesAnalyzed:    false,
+			LicenseConcluded: "NOASSERTION",
+			LicenseDeclared:  "NOASSERTION",
+			CopyrightText:    "NOASSERTION",
+			Supplier:         "NOASSERTION",
 			PackageURL:       purl,
 			ExternalRefs: []spdxExternalRef{{
 				ReferenceCategory: "PACKAGE-MANAGER",

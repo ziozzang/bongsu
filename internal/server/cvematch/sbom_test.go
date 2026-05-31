@@ -118,6 +118,11 @@ func TestGenerateSPDXIncludesPackagePURLAndRelationships(t *testing.T) {
 	if pkg["packageUrl"] == "" {
 		t.Fatal("SPDX packageUrl is empty")
 	}
+	for _, field := range []string{"licenseConcluded", "licenseDeclared", "copyrightText", "supplier"} {
+		if pkg[field] == "" {
+			t.Fatalf("SPDX package field %s is empty", field)
+		}
+	}
 	refs := pkg["externalRefs"].([]any)
 	if len(refs) != 1 || refs[0].(map[string]any)["referenceType"] != "purl" {
 		t.Fatalf("missing purl external ref: %#v", refs)
