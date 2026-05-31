@@ -1760,6 +1760,36 @@ func TestNvdDownloaderFailsClosedAndWritesAtomically(t *testing.T) {
 	}
 }
 
+func TestOsvDownloaderFailsClosedAndWritesAtomically(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/download-osv.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`OUTPUT_TMP="${OUTPUT}.tmp.$$"`,
+		`FAILED_ECOSYSTEMS=()`,
+		`curl -fsSL`,
+		`FAILED_ECOSYSTEMS+=("${eco}:download")`,
+		`FAILED_ECOSYSTEMS+=("${eco}:empty-zip")`,
+		`FAILED_ECOSYSTEMS+=("${eco}:unzip")`,
+		`FAILED_ECOSYSTEMS+=("${eco}:no-entries")`,
+		`ERROR: incomplete OSV download`,
+		`OSV download produced no CVE entries`,
+		`mv "${OUTPUT_TMP}" "${OUTPUT}"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("download-osv must fail closed and write atomically, missing %q", want)
+		}
+	}
+	if strings.Contains(body, `> "${OUTPUT}"`) || strings.Contains(body, `with open("${OUTPUT}", "a")`) {
+		t.Fatal("download-osv must not write partial data directly to the final output")
+	}
+	if strings.Contains(body, "WARNING: ${eco} download failed, skipping") {
+		t.Fatal("download-osv must not silently skip failed ecosystems")
+	}
+}
+
 func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
 	if err != nil {

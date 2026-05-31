@@ -8,14 +8,16 @@ set -euo pipefail
 
 OUTPUT="${1:-osv-cve.jsonl}"
 ECOSYSTEMS="${2:-PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,Alpine,Debian,SUSE,AlmaLinux,Chainguard}"
+OUTPUT_TMP="${OUTPUT}.tmp.$$"
 
 TMPDIR=$(mktemp -d)
-trap "rm -rf ${TMPDIR}" EXIT
+trap 'rm -rf "${TMPDIR}"; rm -f "${OUTPUT_TMP}"' EXIT
 
 echo "Downloading OSV.dev data for: ${ECOSYSTEMS}"
 
 TOTAL=0
-> "${OUTPUT}"
+FAILED_ECOSYSTEMS=()
+> "${OUTPUT_TMP}"
 
 IFS=',' read -ra ECO_ARRAY <<< "${ECOSYSTEMS}"
 for eco in "${ECO_ARRAY[@]}"; do
@@ -23,21 +25,30 @@ for eco in "${ECO_ARRAY[@]}"; do
     echo "  Downloading ${eco}..."
     # URL-encode spaces for curl
     encoded_eco=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${eco}'))")
-    curl -sL "https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip" -o "${TMPDIR}/${eco}.zip"
+    if ! curl -fsSL "https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip" -o "${TMPDIR}/${eco}.zip"; then
+        echo "  ERROR: ${eco} download failed"
+        FAILED_ECOSYSTEMS+=("${eco}:download")
+        continue
+    fi
     if [ ! -s "${TMPDIR}/${eco}.zip" ]; then
-        echo "  WARNING: ${eco} download failed, skipping"
+        echo "  ERROR: ${eco} download was empty"
+        FAILED_ECOSYSTEMS+=("${eco}:empty-zip")
         continue
     fi
 
     mkdir -p "${TMPDIR}/${eco}"
-    unzip -q -o "${TMPDIR}/${eco}.zip" -d "${TMPDIR}/${eco}"
+    if ! unzip -q -o "${TMPDIR}/${eco}.zip" -d "${TMPDIR}/${eco}"; then
+        echo "  ERROR: ${eco} zip extraction failed"
+        FAILED_ECOSYSTEMS+=("${eco}:unzip")
+        continue
+    fi
 
     COUNT=$(python3 << PYEOF
 import json, os, glob, re
 
 eco_dir = "${TMPDIR}/${eco}"
 count = 0
-with open("${OUTPUT}", "a") as out:
+with open("${OUTPUT_TMP}", "a") as out:
     for f in sorted(glob.glob(os.path.join(eco_dir, "*.json"))):
         try:
             data = json.load(open(f))
@@ -151,7 +162,22 @@ PYEOF
 )
     echo "  ${eco}: ${COUNT} entries"
     TOTAL=$((TOTAL + COUNT))
+    if [ "${COUNT}" -eq 0 ]; then
+        FAILED_ECOSYSTEMS+=("${eco}:no-entries")
+    fi
 done
 
+if [ "${#FAILED_ECOSYSTEMS[@]}" -gt 0 ]; then
+    echo "ERROR: incomplete OSV download: ${FAILED_ECOSYSTEMS[*]}" >&2
+    exit 1
+fi
+if [ "${TOTAL}" -eq 0 ]; then
+    echo "ERROR: OSV download produced no CVE entries" >&2
+    exit 1
+fi
+
+mv "${OUTPUT_TMP}" "${OUTPUT}"
+trap - EXIT
+rm -rf "${TMPDIR}"
 echo "Total: ${TOTAL} CVE entries written to ${OUTPUT}"
 echo "Import: curl -F 'file=@${OUTPUT}' -F 'source=osv' -H 'X-API-Key: YOUR_KEY' http://YOUR_SERVER:8080/api/admin/cve-db/import"
