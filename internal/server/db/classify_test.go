@@ -154,3 +154,12 @@ func TestAppendUnique(t *testing.T) {
 		t.Fatalf("appendUnique produced %#v", items)
 	}
 }
+
+func TestVulnSummaryGroupExprAllowlist(t *testing.T) {
+	if got := vulnSummaryGroupExpr("team"); got != "COALESCE(NULLIF(h.team, ''), '(unassigned)')" {
+		t.Fatalf("team group expr = %q", got)
+	}
+	if got := vulnSummaryGroupExpr("owner; DROP TABLE hosts"); got != "COALESCE(NULLIF(h.owner, ''), '(unassigned)')" {
+		t.Fatalf("unsafe group expr should fall back to owner, got %q", got)
+	}
+}

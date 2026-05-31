@@ -1365,6 +1365,80 @@ func (db *DB) GetVulnCountsByHost(ctx context.Context) (map[string]map[string]in
 	return result, nil
 }
 
+type VulnerabilitySummaryRow struct {
+	Group    string         `json:"group"`
+	Total    int            `json:"total"`
+	Overdue  int            `json:"overdue"`
+	Severity map[string]int `json:"severity"`
+}
+
+func (db *DB) GetVulnSummaryByMetadata(ctx context.Context, groupBy string, hostIDs []string) ([]VulnerabilitySummaryRow, error) {
+	groupExpr := vulnSummaryGroupExpr(groupBy)
+	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE 1=1`
+	args := []any{}
+	if len(hostIDs) > 0 {
+		baseQ += ` AND v.host_id = ANY($1)`
+		args = append(args, pqStringArray(hostIDs))
+	}
+	q := fmt.Sprintf(`SELECT %s AS group_value,
+		count(*)::int AS total,
+		count(*) FILTER (WHERE v.severity='CRITICAL')::int AS critical,
+		count(*) FILTER (WHERE v.severity='HIGH')::int AS high,
+		count(*) FILTER (WHERE v.severity='MEDIUM')::int AS medium,
+		count(*) FILTER (WHERE v.severity='LOW')::int AS low,
+		count(*) FILTER (WHERE COALESCE(vt.status, 'open') IN ('open', 'in_progress') AND (
+			(v.severity='CRITICAL' AND v.created_at < now() - interval '%d days') OR
+			(v.severity='HIGH' AND v.created_at < now() - interval '%d days') OR
+			(v.severity='MEDIUM' AND v.created_at < now() - interval '%d days') OR
+			(v.severity='LOW' AND v.created_at < now() - interval '%d days')
+		))::int AS overdue
+		%s
+		GROUP BY group_value
+		ORDER BY critical DESC, high DESC, total DESC, group_value`,
+		groupExpr,
+		SLADaysForSeverity("CRITICAL"),
+		SLADaysForSeverity("HIGH"),
+		SLADaysForSeverity("MEDIUM"),
+		SLADaysForSeverity("LOW"),
+		baseQ,
+	)
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []VulnerabilitySummaryRow{}
+	for rows.Next() {
+		var row VulnerabilitySummaryRow
+		var critical, high, medium, low int
+		if err := rows.Scan(&row.Group, &row.Total, &critical, &high, &medium, &low, &row.Overdue); err != nil {
+			return nil, err
+		}
+		row.Severity = map[string]int{
+			"CRITICAL": critical,
+			"HIGH":     high,
+			"MEDIUM":   medium,
+			"LOW":      low,
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+func vulnSummaryGroupExpr(groupBy string) string {
+	switch groupBy {
+	case "team":
+		return "COALESCE(NULLIF(h.team, ''), '(unassigned)')"
+	case "environment":
+		return "COALESCE(NULLIF(h.environment, ''), '(unassigned)')"
+	case "criticality":
+		return "COALESCE(NULLIF(h.criticality, ''), '(unassigned)')"
+	default:
+		return "COALESCE(NULLIF(h.owner, ''), '(unassigned)')"
+	}
+}
+
 func (db *DB) GetVulnCountsByScan(ctx context.Context, scanID string) (map[string]int, int, error) {
 	rows, err := db.QueryContext(ctx, `SELECT severity, count(*) FROM vulnerabilities WHERE scan_id=$1 GROUP BY severity`, scanID)
 	if err != nil {

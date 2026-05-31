@@ -1010,12 +1010,45 @@ func (s *Server) handleVulnSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		if r.URL.Query().Get("group_by") != "" {
+			writeJSON(w, http.StatusOK, map[string]any{"group_by": r.URL.Query().Get("group_by"), "items": []db.VulnerabilitySummaryRow{}})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]map[string]int{})
+		return
+	}
+
+	groupBy := r.URL.Query().Get("group_by")
+	if groupBy != "" {
+		rows, err := s.db.GetVulnSummaryByMetadata(ctx, groupBy, scope.HostIDs)
+		if err != nil {
+			log.Printf("vuln summary metadata: %v", err)
+			http.Error(w, "db error", http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"group_by": groupBy,
+			"items":    rows,
+		})
+		return
+	}
 
 	counts, err := s.db.GetVulnCountsByHost(ctx)
 	if err != nil {
 		log.Printf("vuln summary: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
+	}
+	if !scope.All {
+		filtered := map[string]map[string]int{}
+		for hostID, row := range counts {
+			if scope.CanReadHost(hostID) {
+				filtered[hostID] = row
+			}
+		}
+		counts = filtered
 	}
 	writeJSON(w, http.StatusOK, counts)
 }

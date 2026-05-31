@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type ContainerAsset, type VulnSummaryRow } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = a.replace(/^v?/, '').split(/[._-]/);
@@ -157,6 +157,8 @@ function DashboardView() {
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
   const [cveSources, setCveSources] = useState<CveSourceStat[]>([]);
   const [totalPkgs, setTotalPkgs] = useState(0);
+  const [ownerSummary, setOwnerSummary] = useState<VulnSummaryRow[]>([]);
+  const [environmentSummary, setEnvironmentSummary] = useState<VulnSummaryRow[]>([]);
   const [updating, setUpdating] = useState(false);
   const [updateMsg, setUpdateMsg] = useState('');
   const [rematching, setRematching] = useState(false);
@@ -172,6 +174,8 @@ function DashboardView() {
   useEffect(() => {
     api.cveDbStats().then(r => setCveSources(r.sources || [])).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
+    api.vulnSummary({ group_by: 'owner' }).then(r => setOwnerSummary(r.items || [])).catch(() => {});
+    api.vulnSummary({ group_by: 'environment' }).then(r => setEnvironmentSummary(r.items || [])).catch(() => {});
   }, []);
 
   const handleUpdate = async () => {
@@ -317,6 +321,12 @@ function DashboardView() {
       </div>
       {updateMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: updateMsg.includes('fail') ? 'var(--critical)' : 'var(--low)' }}>{updateMsg}</div>}
       {rematchMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: rematchMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{rematchMsg}</div>}
+      {(ownerSummary.length > 0 || environmentSummary.length > 0) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
+          <SummaryTable title="Owner Remediation Queue" rows={ownerSummary} />
+          <SummaryTable title="Environment Risk Queue" rows={environmentSummary} />
+        </div>
+      )}
       {cveSources.length > 0 && (
         <div className="card" style={{ marginTop: '1rem' }}>
           <div className="card-header"><h2>CVE Database Sources</h2></div>
@@ -361,6 +371,32 @@ function DashboardView() {
         </a>
       </div>
     </>
+  );
+}
+
+function SummaryTable({ title, rows }: { title: string; rows: VulnSummaryRow[] }) {
+  const topRows = rows.slice(0, 8);
+  return (
+    <div className="card">
+      <div className="card-header"><h2>{title}</h2></div>
+      <table>
+        <thead>
+          <tr><th>Group</th><th>Total</th><th>Critical</th><th>High</th><th>Overdue</th></tr>
+        </thead>
+        <tbody>
+          {topRows.map(row => (
+            <tr key={row.group}>
+              <td>{row.group}</td>
+              <td className="mono">{row.total.toLocaleString()}</td>
+              <td className="mono" style={{ color: 'var(--critical)', fontWeight: row.severity.CRITICAL ? 700 : 400 }}>{row.severity.CRITICAL || 0}</td>
+              <td className="mono" style={{ color: 'var(--high)', fontWeight: row.severity.HIGH ? 700 : 400 }}>{row.severity.HIGH || 0}</td>
+              <td className="mono" style={{ color: row.overdue ? 'var(--critical)' : 'var(--text-muted)', fontWeight: row.overdue ? 700 : 400 }}>{row.overdue || 0}</td>
+            </tr>
+          ))}
+          {topRows.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No findings</td></tr>}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

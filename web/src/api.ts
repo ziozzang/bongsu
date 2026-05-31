@@ -178,6 +178,13 @@ export interface Stats {
   severity_counts: Record<string, number>;
 }
 
+export interface VulnSummaryRow {
+  group: string;
+  total: number;
+  overdue: number;
+  severity: Record<string, number>;
+}
+
 export interface HealthStatus {
   status: string;
   trivy_db_ready: boolean;
@@ -251,6 +258,8 @@ export const api = {
   exportVulnerabilities: (params: { host_id?: string; severity?: string; triage_status?: string; overdue?: string; pkg_name?: string; container?: string; owner?: string; team?: string; environment?: string; criticality?: string; sort_by?: string; sort_order?: string; show_no_fix?: string; show_mismatch?: string; format?: string }) =>
     download('/vulnerabilities/export', `bongsu-vulnerabilities.${params.format === 'json' ? 'json' : 'csv'}`, params),
   vulnFilters: () => request<{ host_ids: string[]; containers: string[] }>('/vulnerabilities/filters'),
+  vulnSummary: (params: { group_by?: string }) =>
+    request<{ group_by?: string; items: VulnSummaryRow[] }>('/vuln-summary', params),
   cveSearch: (params: { q?: string; pkg_name?: string; severity?: string; min_cvss?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Vuln[]; total: number }>('/cve-search', params),
   cveDbSearch: (params: { q?: string; severity?: string; source?: string; min_cvss?: string; limit?: string; offset?: string }) =>
