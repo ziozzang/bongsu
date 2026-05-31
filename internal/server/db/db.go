@@ -1681,6 +1681,7 @@ func (db *DB) ListHosts(ctx context.Context) ([]models.Host, error) {
 
 type HostInventorySummary struct {
 	ScanID         string     `json:"latest_scan_id,omitempty"`
+	ScanStatus     string     `json:"latest_scan_status,omitempty"`
 	ScannedAt      *time.Time `json:"latest_scan_at,omitempty"`
 	PackageCount   int        `json:"latest_package_count"`
 	VulnCount      int        `json:"latest_vulnerability_count"`
@@ -1691,6 +1692,7 @@ func (db *DB) GetHostInventorySummaries(ctx context.Context) (map[string]HostInv
 	q := `SELECT
 		s.host_id,
 		s.id,
+		s.status,
 		s.finished_at,
 		(SELECT count(*) FROM packages p WHERE p.scan_id=s.id)::int AS package_count,
 		(SELECT count(*) FROM vulnerabilities v WHERE v.scan_id=s.id)::int AS vulnerability_count,
@@ -1707,7 +1709,7 @@ func (db *DB) GetHostInventorySummaries(ctx context.Context) (map[string]HostInv
 	for rows.Next() {
 		var hostID string
 		var s HostInventorySummary
-		if err := rows.Scan(&hostID, &s.ScanID, &s.ScannedAt, &s.PackageCount, &s.VulnCount, &s.ContainerCount); err != nil {
+		if err := rows.Scan(&hostID, &s.ScanID, &s.ScanStatus, &s.ScannedAt, &s.PackageCount, &s.VulnCount, &s.ContainerCount); err != nil {
 			return nil, err
 		}
 		out[hostID] = s

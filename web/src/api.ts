@@ -118,6 +118,7 @@ export interface Host {
   vuln_counts?: Record<string, number>;
   latest_inventory?: {
     latest_scan_id?: string;
+    latest_scan_status?: string;
     latest_scan_at?: string | null;
     latest_package_count: number;
     latest_vulnerability_count: number;

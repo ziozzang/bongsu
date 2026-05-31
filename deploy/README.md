@@ -211,7 +211,7 @@ spec:
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/report` | Agent scan report submission |
-| `GET` | `/api/hosts` | List hosts with `agent_status` and `inventory_status` filters, RBAC scope, vulnerability counts, and latest inventory summary |
+| `GET` | `/api/hosts` | List hosts with `agent_status` and `inventory_status` filters (`healthy`,`degraded`,`stale`,`empty`,`none`), RBAC scope, vulnerability counts, and latest inventory summary |
 | `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
 | `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON or SPDX JSON with `format=spdx` |
 | `GET` | `/api/vulnerabilities` | List CVEs with host/container/owner/team/environment filters |

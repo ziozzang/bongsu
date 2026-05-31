@@ -268,11 +268,13 @@ function DashboardView() {
     }).catch(() => {});
     Promise.all([
       api.hosts({ inventory_status: 'healthy' }),
+      api.hosts({ inventory_status: 'degraded' }),
       api.hosts({ inventory_status: 'stale' }),
       api.hosts({ inventory_status: 'empty' }),
       api.hosts({ inventory_status: 'none' }),
-    ]).then(([healthy, stale, empty, none]) => setInventoryCounts({
+    ]).then(([healthy, degraded, stale, empty, none]) => setInventoryCounts({
       healthy: healthy.length,
+      degraded: degraded.length,
       stale: stale.length,
       empty: empty.length,
       none: none.length,
@@ -422,6 +424,11 @@ function DashboardView() {
           <div className="accent-bar" style={{ background: 'var(--low)' }} />
           <div className="label">Healthy SBOM</div>
           <div className="value" style={{ color: 'var(--low)' }}>{inventoryCounts.healthy || 0}</div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+          <div className="label">Degraded SBOM</div>
+          <div className="value" style={{ color: 'var(--medium)' }}>{inventoryCounts.degraded || 0}</div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--medium)' }} />
@@ -635,6 +642,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
           <select value={inventoryStatus} onChange={(e) => setInventoryStatus(e.target.value)}>
             <option value="">All Inventory</option>
             <option value="healthy">Healthy SBOM</option>
+            <option value="degraded">Degraded SBOM</option>
             <option value="stale">Stale SBOM</option>
             <option value="empty">Empty SBOM</option>
             <option value="none">No Completed Scan</option>
@@ -682,6 +690,7 @@ function HostsView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
                   {h.latest_inventory?.latest_scan_id ? (
                     <>
                       {h.latest_inventory.latest_package_count || 0} pkgs / {h.latest_inventory.latest_vulnerability_count || 0} vulns / {h.latest_inventory.latest_container_count || 0} ctrs
+                      {h.latest_inventory.latest_scan_status === 'degraded' && <span className="badge" style={{ color: 'var(--medium)', marginLeft: 6 }}>degraded</span>}
                       <div style={{ color: 'var(--text-muted)' }}>{h.latest_inventory.latest_scan_at ? new Date(h.latest_inventory.latest_scan_at).toLocaleString() : '-'}</div>
                     </>
                   ) : <span style={{ color: 'var(--text-muted)' }}>No completed or degraded scan</span>}

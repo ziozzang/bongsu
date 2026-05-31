@@ -655,6 +655,9 @@ func hostInventoryStatus(inv db.HostInventorySummary, now time.Time, staleAfter 
 	if inv.PackageCount == 0 {
 		return "empty"
 	}
+	if inv.ScanStatus == "degraded" {
+		return "degraded"
+	}
 	if staleAfter > 0 && inv.ScannedAt != nil && now.Sub(*inv.ScannedAt) > staleAfter {
 		return "stale"
 	}
