@@ -270,7 +270,7 @@ spec:
 | `GET` | `/api/admin/rbac/policies` | List RBAC policies, optionally filtered by `subject_external_id` such as `user:alice` or `group:platform` |
 | `POST` | `/api/admin/rbac/policies` | Create RBAC policy by `subject_id` or `subject_external_id` |
 | `DELETE` | `/api/admin/rbac/policies/{id}` | Delete RBAC policy |
-| `GET` | `/api/admin/audit-logs` | Query audit log events by actor/action/resource/status; also available in Audit Log UI |
+| `GET` | `/api/admin/audit-logs` | Query audit log events by actor/action/resource/status; Audit Log UI includes security/export/agent-token action presets |
 | `POST` | `/api/scan-requests` | Request force scan for host/all |
 | `GET` | `/api/scan-requests` | List force scan requests with host-scoped RBAC; filter by `status`, `scan_type`, and `security_db_revision` |
 | `POST` | `/api/scan-requests/{id}/cancel` | Cancel pending or claimed force scan request |

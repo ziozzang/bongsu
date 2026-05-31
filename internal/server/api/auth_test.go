@@ -2287,6 +2287,30 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 	}
 }
 
+func TestAuditLogDashboardCoversSecurityStatusesAndActions(t *testing.T) {
+	out, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`<option value="forbidden">Forbidden</option>`,
+		`<option value="error">Error</option>`,
+		`<option value="started">Started</option>`,
+		`<option value="completed">Completed</option>`,
+		`id="audit-actions"`,
+		`list="audit-actions"`,
+		`value="host.agent_token.reset"`,
+		`value="agent.report"`,
+		`value="sbom.export"`,
+		`value="vulnerability.export"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("audit dashboard filter missing %q", want)
+		}
+	}
+}
+
 func TestVulnerabilityViewsShowPackageContext(t *testing.T) {
 	out, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {

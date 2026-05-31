@@ -2583,11 +2583,31 @@ function AuditLogView() {
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
             <option value="">All Status</option>
             <option value="ok">OK</option>
+            <option value="started">Started</option>
+            <option value="error">Error</option>
+            <option value="forbidden">Forbidden</option>
             <option value="degraded">Degraded</option>
+            <option value="completed">Completed</option>
             <option value="failed">Failed</option>
             <option value="cancelled">Cancelled</option>
           </select>
+          <datalist id="audit-actions">
+            <option value="agent.report" />
+            <option value="host.agent_token.reset" />
+            <option value="host.metadata.update" />
+            <option value="security_db.auto_rescan" />
+            <option value="security_db.recalculation" />
+            <option value="security_db.update" />
+            <option value="security_db.import" />
+            <option value="sbom.export" />
+            <option value="vulnerability.export" />
+            <option value="scan_request.claim" />
+            <option value="scan_request.complete" />
+            <option value="scan_request.requeue_stale" />
+            <option value="webhook.send" />
+          </datalist>
           <input
+            list="audit-actions"
             type="text"
             placeholder="Action"
             value={action}
