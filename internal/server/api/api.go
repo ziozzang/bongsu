@@ -814,8 +814,17 @@ func (s *Server) handleUpdateHostMetadata(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := s.db.UpdateHostMetadata(r.Context(), hostID, body.Owner, body.Team, body.Environment, body.Criticality, body.Tags); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "host not found", http.StatusNotFound)
+			return
+		}
 		log.Printf("update host metadata: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	host, err := s.db.GetHost(r.Context(), hostID)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	s.audit(r, "host.metadata.update", "host", hostID, "ok", map[string]any{
@@ -824,11 +833,6 @@ func (s *Server) handleUpdateHostMetadata(w http.ResponseWriter, r *http.Request
 		"environment": body.Environment,
 		"criticality": body.Criticality,
 	})
-	host, err := s.db.GetHost(r.Context(), hostID)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
 	writeJSON(w, http.StatusOK, host)
 }
 

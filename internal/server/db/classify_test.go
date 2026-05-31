@@ -652,6 +652,32 @@ func TestVulnerabilityFindingsAreUniquePerPackageScanAndCVE(t *testing.T) {
 	}
 }
 
+func TestUpdateHostMetadataReportsMissingHosts(t *testing.T) {
+	dbFile, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(dbFile)
+	start := strings.Index(body, "func (db *DB) UpdateHostMetadata")
+	if start < 0 {
+		t.Fatal("UpdateHostMetadata not found")
+	}
+	end := strings.Index(body[start:], "const latestScansSub")
+	if end < 0 {
+		t.Fatal("UpdateHostMetadata end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"res.RowsAffected()",
+		"if n == 0",
+		"return sql.ErrNoRows",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("UpdateHostMetadata must report missing hosts with %q: %s", want, fn)
+		}
+	}
+}
+
 func TestRematchVulnerabilityDedupPrefersStrongerCandidate(t *testing.T) {
 	current := models.Vulnerability{
 		PackageID:       "pkg-1",

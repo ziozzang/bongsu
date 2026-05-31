@@ -2060,10 +2060,20 @@ func (db *DB) UpdateHostMetadata(ctx context.Context, id, owner, team, environme
 	if tags == "" {
 		tags = "{}"
 	}
-	_, err := db.ExecContext(ctx, `UPDATE hosts
+	res, err := db.ExecContext(ctx, `UPDATE hosts
 SET owner=$2, team=$3, environment=$4, criticality=$5, tags=$6::jsonb, updated_at=now()
 WHERE id=$1`, id, owner, team, environment, criticality, tags)
-	return err
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 const latestScansSub = `(SELECT DISTINCT ON (host_id) id FROM scans WHERE status IN ('completed','degraded') ORDER BY host_id, created_at DESC)`

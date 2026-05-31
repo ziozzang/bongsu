@@ -849,6 +849,38 @@ func TestBinaryDownloadAuditsOnlyAfterCopySuccess(t *testing.T) {
 	}
 }
 
+func TestHostMetadataUpdateAuditsOnlyAfterHostReload(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleUpdateHostMetadata")
+	if start < 0 {
+		t.Fatal("handleUpdateHostMetadata not found")
+	}
+	end := strings.Index(body[start+1:], "\nfunc ")
+	if end < 0 {
+		t.Fatal("handleUpdateHostMetadata end not found")
+	}
+	fn := body[start : start+1+end]
+	for _, want := range []string{
+		"errors.Is(err, sql.ErrNoRows)",
+		`http.Error(w, "host not found", http.StatusNotFound)`,
+		`s.db.GetHost(r.Context(), hostID)`,
+		`"host.metadata.update"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("metadata update missing %q: %s", want, fn)
+		}
+	}
+	reloadIdx := strings.Index(fn, "s.db.GetHost(r.Context(), hostID)")
+	auditIdx := strings.Index(fn, `"host.metadata.update"`)
+	if reloadIdx < 0 || auditIdx < 0 || auditIdx < reloadIdx {
+		t.Fatalf("metadata update must audit success only after host reload succeeds: %s", fn)
+	}
+}
+
 func TestHostInventoryStatus(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	recent := now.Add(-1 * time.Hour)
