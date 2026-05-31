@@ -324,7 +324,8 @@ function DashboardView() {
       const body = Number.isFinite(minQuality) && minQuality > 0 ? { min_source_matchable_percent: minQuality } : {};
       const r = await api.rematchCVEs(body);
       const qualityMsg = minQuality > 0 ? ` with source quality >= ${minQuality}%` : '';
-      setRematchMsg(`Matched ${r.matched.toLocaleString()} packages${qualityMsg}, found ${r.new_vulns.toLocaleString()} new vulnerabilities (${r.skipped} skipped)`);
+      const limitedMsg = r.limited ? `, limited at ${r.candidate_limit.toLocaleString()} candidates` : '';
+      setRematchMsg(`Matched ${r.matched.toLocaleString()} packages${qualityMsg}, found ${r.new_vulns.toLocaleString()} new vulnerabilities (${r.skipped} skipped${limitedMsg})`);
       api.stats().then(setStats).catch(() => {});
     } catch {
       setRematchMsg('Rematch failed (check server logs)');

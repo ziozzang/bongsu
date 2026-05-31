@@ -3700,17 +3700,25 @@ func (db *DB) GetSecurityDBRevision(ctx context.Context) (string, error) {
 }
 
 type RematchResult struct {
-	Matched  int `json:"matched"`
-	NewVulns int `json:"new_vulns"`
-	Updated  int `json:"updated"`
-	Skipped  int `json:"skipped"`
+	Matched        int  `json:"matched"`
+	NewVulns       int  `json:"new_vulns"`
+	Updated        int  `json:"updated"`
+	Skipped        int  `json:"skipped"`
+	CandidateLimit int  `json:"candidate_limit"`
+	Limited        bool `json:"limited"`
 }
 
 type RematchOptions struct {
 	Sources                   []string
 	MinSourceMatchablePercent float64
 	ScanID                    string
+	CandidateLimit            int
 }
+
+const (
+	DefaultRematchCandidateLimit = 50000
+	MaxRematchCandidateLimit     = 1000000
+)
 
 func cveSourceFixedPredicateSQL() string {
 	return `(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
@@ -3728,6 +3736,12 @@ func cveSourceMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr string) 
 }
 
 func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchResult, error) {
+	if opts.CandidateLimit <= 0 {
+		opts.CandidateLimit = DefaultRematchCandidateLimit
+	}
+	if opts.CandidateLimit > MaxRematchCandidateLimit {
+		opts.CandidateLimit = MaxRematchCandidateLimit
+	}
 	args := []any{}
 	filters := ""
 	if len(opts.Sources) > 0 {
@@ -3744,6 +3758,8 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		filters += fmt.Sprintf(" AND p.scan_id = $%d", len(args))
 		scanJoin = ""
 	}
+	args = append(args, opts.CandidateLimit+1)
+	limitPlaceholder := fmt.Sprintf("$%d", len(args))
 
 	affectedProducts := `CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END`
 	query := fmt.Sprintf(`
@@ -3767,8 +3783,8 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		JOIN cve_database c ON c.affected_products @> jsonb_build_array(jsonb_build_object('name', p.name))
 		JOIN source_quality sq ON sq.source = c.source
 		WHERE 1=1%s
-		LIMIT 50000
-	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), scanJoin, filters)
+		LIMIT %s
+	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), scanJoin, filters, limitPlaceholder)
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -3797,7 +3813,12 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		matches = append(matches, m)
 	}
 
-	result := &RematchResult{Matched: len(matches)}
+	result := &RematchResult{Matched: len(matches), CandidateLimit: opts.CandidateLimit}
+	if len(matches) > opts.CandidateLimit {
+		result.Limited = true
+		matches = matches[:opts.CandidateLimit]
+		result.Matched = opts.CandidateLimit
+	}
 	var newVulns []models.Vulnerability
 	pending := map[string]int{}
 

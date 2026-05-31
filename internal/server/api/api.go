@@ -545,9 +545,14 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		if result, err := s.db.RematchCVEs(ctx, opts); err != nil {
 			log.Printf("scan CVE DB rematch failed: %v", err)
 			ingestErrors = append(ingestErrors, "cve_db_rematch: "+err.Error())
-		} else if result.NewVulns > 0 {
-			log.Printf("CVE DB rematched %d vulnerabilities for scan %s", result.NewVulns, report.ScanID)
-			insertedVulns += result.NewVulns
+		} else {
+			if result.Limited {
+				ingestErrors = append(ingestErrors, fmt.Sprintf("cve_db_rematch: candidate limit %d reached", result.CandidateLimit))
+			}
+			if result.NewVulns > 0 {
+				log.Printf("CVE DB rematched %d vulnerabilities for scan %s", result.NewVulns, report.ScanID)
+				insertedVulns += result.NewVulns
+			}
 		}
 	}
 
@@ -2814,10 +2819,12 @@ func (s *Server) runSecurityRecalculation(reason string) {
 		log.Printf("security recalculation rematch failed: %v", err)
 		failures = append(failures, "rematch: "+err.Error())
 	} else {
-		log.Printf("security recalculation rematched candidates=%d new=%d skipped=%d", r.Matched, r.NewVulns, r.Skipped)
+		log.Printf("security recalculation rematched candidates=%d new=%d skipped=%d limited=%v limit=%d", r.Matched, r.NewVulns, r.Skipped, r.Limited, r.CandidateLimit)
 		meta["rematch_candidates"] = r.Matched
 		meta["rematch_new_vulns"] = r.NewVulns
 		meta["rematch_skipped"] = r.Skipped
+		meta["rematch_limited"] = r.Limited
+		meta["rematch_candidate_limit"] = r.CandidateLimit
 	}
 	if n, err := s.db.NormalizeVulnSeverity(ctx); err != nil {
 		log.Printf("security recalculation severity normalization failed: %v", err)
@@ -3078,6 +3085,7 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 			Sources                   []string `json:"sources"`
 			MinSourceMatchablePercent float64  `json:"min_source_matchable_percent"`
 			ScanID                    string   `json:"scan_id"`
+			CandidateLimit            int      `json:"candidate_limit"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
 			http.Error(w, "invalid json", http.StatusBadRequest)
@@ -3090,6 +3098,9 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 			opts.MinSourceMatchablePercent = body.MinSourceMatchablePercent
 		}
 		opts.ScanID = strings.TrimSpace(body.ScanID)
+		if body.CandidateLimit > 0 {
+			opts.CandidateLimit = body.CandidateLimit
+		}
 	}
 	opts = normalizeRematchOptions(opts)
 	result, err := s.db.RematchCVEs(r.Context(), opts)
@@ -3103,6 +3114,8 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		"matched":                      result.Matched,
 		"new_vulns":                    result.NewVulns,
 		"skipped":                      result.Skipped,
+		"candidate_limit":              result.CandidateLimit,
+		"limited":                      result.Limited,
 		"sources":                      opts.Sources,
 		"min_source_matchable_percent": opts.MinSourceMatchablePercent,
 		"scan_id":                      opts.ScanID,
@@ -3115,6 +3128,7 @@ func rematchOptionsFromEnv() db.RematchOptions {
 	return normalizeRematchOptions(db.RematchOptions{
 		Sources:                   splitCSV(os.Getenv("BONGSU_CVE_MATCH_SOURCES")),
 		MinSourceMatchablePercent: envFloat("BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT", 0),
+		CandidateLimit:            envInt("BONGSU_CVE_MATCH_CANDIDATE_LIMIT", db.DefaultRematchCandidateLimit),
 	})
 }
 
@@ -3126,6 +3140,12 @@ func normalizeRematchOptions(opts db.RematchOptions) db.RematchOptions {
 	}
 	if opts.MinSourceMatchablePercent > 100 {
 		opts.MinSourceMatchablePercent = 100
+	}
+	if opts.CandidateLimit <= 0 {
+		opts.CandidateLimit = db.DefaultRematchCandidateLimit
+	}
+	if opts.CandidateLimit > db.MaxRematchCandidateLimit {
+		opts.CandidateLimit = db.MaxRematchCandidateLimit
 	}
 	return opts
 }

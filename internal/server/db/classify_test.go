@@ -425,9 +425,13 @@ func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"opts.ScanID",
+		"opts.CandidateLimit+1",
+		"result.Limited = true",
+		"matches = matches[:opts.CandidateLimit]",
 		"AND p.scan_id =",
 		"scanJoin = \"\"",
 		"JOIN (%s) ls ON p.scan_id = ls.id",
+		"LIMIT %s",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("scan-scoped rematch missing %q: %s", want, fn)

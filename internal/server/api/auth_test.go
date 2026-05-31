@@ -381,6 +381,7 @@ func TestApplyAgentStatus(t *testing.T) {
 func TestRematchOptionsFromEnv(t *testing.T) {
 	t.Setenv("BONGSU_CVE_MATCH_SOURCES", "osv, nvd,osv, ")
 	t.Setenv("BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT", "175.5")
+	t.Setenv("BONGSU_CVE_MATCH_CANDIDATE_LIMIT", "123")
 
 	opts := rematchOptionsFromEnv()
 	if len(opts.Sources) != 2 || opts.Sources[0] != "osv" || opts.Sources[1] != "nvd" {
@@ -389,10 +390,20 @@ func TestRematchOptionsFromEnv(t *testing.T) {
 	if opts.MinSourceMatchablePercent != 100 {
 		t.Fatalf("min quality = %.1f", opts.MinSourceMatchablePercent)
 	}
+	if opts.CandidateLimit != 123 {
+		t.Fatalf("candidate limit = %d, want 123", opts.CandidateLimit)
+	}
 
-	opts = normalizeRematchOptions(db.RematchOptions{ScanID: " scan-1 "})
+	opts = normalizeRematchOptions(db.RematchOptions{ScanID: " scan-1 ", CandidateLimit: -1})
 	if opts.ScanID != "scan-1" {
 		t.Fatalf("scan id = %q, want trimmed scan-1", opts.ScanID)
+	}
+	if opts.CandidateLimit != 50000 {
+		t.Fatalf("default candidate limit = %d, want 50000", opts.CandidateLimit)
+	}
+	opts = normalizeRematchOptions(db.RematchOptions{CandidateLimit: 2000000})
+	if opts.CandidateLimit != 1000000 {
+		t.Fatalf("max candidate limit = %d, want 1000000", opts.CandidateLimit)
 	}
 }
 
