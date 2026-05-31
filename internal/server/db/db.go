@@ -68,6 +68,10 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("read migrations dir: %w", err)
 	}
+	legacyInitialized, err := db.tableExists(ctx, "hosts")
+	if err != nil {
+		return err
+	}
 	if _, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		filename TEXT PRIMARY KEY,
 		checksum TEXT NOT NULL,
@@ -78,6 +82,9 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 	applied, err := db.appliedMigrations(ctx)
 	if err != nil {
 		return err
+	}
+	if len(applied) == 0 && legacyInitialized {
+		return db.baselineMigrations(ctx, files)
 	}
 	for _, f := range files {
 		if f.IsDir() || !(len(f.Name()) > 4 && f.Name()[len(f.Name())-4:] == ".sql") {
@@ -111,6 +118,43 @@ func (db *DB) RunMigrations(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (db *DB) baselineMigrations(ctx context.Context, files []os.DirEntry) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin migration baseline: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO schema_migrations (filename, checksum, applied_at) VALUES ($1,$2,now()) ON CONFLICT (filename) DO NOTHING`)
+	if err != nil {
+		return fmt.Errorf("prepare migration baseline: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, f := range files {
+		if f.IsDir() || !(len(f.Name()) > 4 && f.Name()[len(f.Name())-4:] == ".sql") {
+			continue
+		}
+		data, err := os.ReadFile("migrations/" + f.Name())
+		if err != nil {
+			return fmt.Errorf("read migration %s: %w", f.Name(), err)
+		}
+		if _, err := stmt.ExecContext(ctx, f.Name(), migrationChecksum(data)); err != nil {
+			return fmt.Errorf("baseline migration %s: %w", f.Name(), err)
+		}
+	}
+	return tx.Commit()
+}
+
+func (db *DB) tableExists(ctx context.Context, table string) (bool, error) {
+	var exists bool
+	err := db.QueryRowContext(ctx, `SELECT to_regclass($1) IS NOT NULL`, "public."+table).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("check table %s: %w", table, err)
+	}
+	return exists, nil
 }
 
 func (db *DB) appliedMigrations(ctx context.Context) (map[string]string, error) {

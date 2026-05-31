@@ -333,8 +333,11 @@ func TestRunMigrationsRecordsAppliedFiles(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
+		`db.tableExists(ctx, "hosts")`,
 		"CREATE TABLE IF NOT EXISTS schema_migrations",
 		"db.appliedMigrations(ctx)",
+		"len(applied) == 0 && legacyInitialized",
+		"db.baselineMigrations(ctx, files)",
 		"migrationChecksum(data)",
 		"checksum mismatch",
 		"db.BeginTx(ctx, nil)",
@@ -347,6 +350,37 @@ func TestRunMigrationsRecordsAppliedFiles(t *testing.T) {
 	}
 	if strings.Contains(fn, "log.Printf(\"rematch scan row") {
 		t.Fatal("RunMigrations must not log unrelated messages for skipped files")
+	}
+}
+
+func TestMigrationBaselineRecordsLegacyDatabasesWithoutRerun(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) baselineMigrations")
+	if start < 0 {
+		t.Fatal("baselineMigrations not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) tableExists")
+	if end < 0 {
+		t.Fatal("tableExists not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"INSERT INTO schema_migrations",
+		"ON CONFLICT (filename) DO NOTHING",
+		"migrationChecksum(data)",
+		"stmt.ExecContext",
+		"tx.Commit()",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("baselineMigrations missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "tx.ExecContext(ctx, string(data))") {
+		t.Fatal("baselineMigrations must not execute migration SQL")
 	}
 }
 
