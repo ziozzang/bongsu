@@ -480,13 +480,21 @@ func compareVersions(a, b string) (int, bool) {
 	if !aPre && bPre {
 		return 1, true
 	}
+	if aPre && bPre {
+		if cmp := comparePreRelease(a, b); cmp != 0 {
+			return cmp, true
+		}
+	}
 	return 0, true
 }
 
 func isPreReleaseVersion(v string) bool {
 	v = strings.ToLower(strings.TrimSpace(v))
-	if idx := strings.IndexAny(v, "+~"); idx >= 0 {
+	if idx := strings.Index(v, "+"); idx >= 0 {
 		v = v[:idx]
+	}
+	if strings.Contains(v, "~") {
+		return true
 	}
 	for _, marker := range preReleaseMarkers() {
 		if strings.Contains(v, marker) {
@@ -534,7 +542,75 @@ func stripPreReleaseSuffix(v string) string {
 }
 
 func preReleaseMarkers() []string {
-	return []string{"alpha", "beta", "rc", "pre", "preview", "dev", "snapshot"}
+	return []string{"dev", "snapshot", "preview", "pre", "alpha", "beta", "rc"}
+}
+
+func comparePreRelease(a, b string) int {
+	aRank, aNum := preReleaseRank(a)
+	bRank, bNum := preReleaseRank(b)
+	if aRank < bRank {
+		return -1
+	}
+	if aRank > bRank {
+		return 1
+	}
+	if aNum < bNum {
+		return -1
+	}
+	if aNum > bNum {
+		return 1
+	}
+	return 0
+}
+
+func preReleaseRank(v string) (int, int) {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if idx := strings.Index(v, "+"); idx >= 0 {
+		v = v[:idx]
+	}
+	for rank, marker := range preReleaseMarkers() {
+		if strings.Contains(v, marker) {
+			n, _ := preReleaseNumber(v, marker)
+			return rank + 1, n
+		}
+	}
+	if strings.Contains(v, "~") {
+		if n, ok := preReleaseNumber(v, "~"); ok {
+			return 0, n
+		}
+		return 0, 0
+	}
+	return len(preReleaseMarkers()) + 1, 0
+}
+
+func preReleaseNumber(v, marker string) (int, bool) {
+	idx := strings.Index(v, marker)
+	if idx < 0 {
+		return 0, false
+	}
+	rest := v[idx+len(marker):]
+	start := -1
+	end := -1
+	for i, r := range rest {
+		if r >= '0' && r <= '9' {
+			if start < 0 {
+				start = i
+			}
+			end = i + 1
+			continue
+		}
+		if start >= 0 {
+			break
+		}
+	}
+	if start < 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(rest[start:end])
+	if err != nil {
+		return 0, false
+	}
+	return n, true
 }
 
 const pkgCols = `p.id, p.scan_id, p.host_id, p.asset_type, p.asset_id, p.source, p.container, p.container_id, p.image_name, p.image_id, p.name, p.version, p.arch, p.pkg_type, p.ecosystem, p.purl, p.src_name, p.file_path, p.layer_id, p.target, p.created_at`

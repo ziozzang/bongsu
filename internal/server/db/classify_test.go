@@ -145,7 +145,11 @@ func TestCompareVersionsTreatsPrereleaseBelowRelease(t *testing.T) {
 		want int
 	}{
 		{"1.0.0-alpha.1", "1.0.0", -1},
+		{"1.0.0-alpha.1", "1.0.0-beta.1", -1},
+		{"1.0.0-beta.2", "1.0.0-beta.1", 1},
 		{"2.0.0-rc.1", "2.0.0", -1},
+		{"2.0.0~rc1", "2.0.0", -1},
+		{"2.0.0~beta1", "2.0.0~rc1", -1},
 		{"1.0.0", "1.0.0-beta.1", 1},
 		{"1.0.0", "1.0.0", 0},
 	}
@@ -164,6 +168,9 @@ func TestCompareVersionsTreatsPrereleaseBelowRelease(t *testing.T) {
 	}
 	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "1.0.0", "code-library", "", `[{"name":"foo","ecosystem":"npm","fixed":["1.0.0"]}]`); ok {
 		t.Fatal("final fixed release should not remain affected")
+	}
+	if _, ok := compatibleSecurityCandidate("openssl", "ubuntu", "Ubuntu", "3.0.13-0ubuntu3.6~rc1", "os-package", "Ubuntu", `[{"name":"openssl","ecosystem":"Ubuntu","fixed":["3.0.13-0ubuntu3.6"]}]`); !ok {
+		t.Fatal("distribution pre-release build should remain affected until the final fixed package")
 	}
 }
 
