@@ -42,8 +42,8 @@ func (r *Reporter) ClaimScanRequest(hostID string) (*models.ScanRequest, error) 
 	return out.Request, nil
 }
 
-func (r *Reporter) CompleteScanRequest(id, status, message string) error {
-	body, _ := json.Marshal(map[string]string{"status": status, "message": message})
+func (r *Reporter) CompleteScanRequest(id, hostID, status, message string) error {
+	body, _ := json.Marshal(map[string]string{"host_id": hostID, "status": status, "message": message})
 	req, err := http.NewRequest("POST", r.serverURL+"/api/agent/scan-requests/"+id+"/complete", bytes.NewReader(body))
 	if err != nil {
 		return err

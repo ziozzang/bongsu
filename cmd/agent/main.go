@@ -139,10 +139,10 @@ func runDaemon(serverURL, apiKey, workDir string, pollInterval time.Duration) er
 		log.Printf("claimed scan request %s type=%s packages_only=%v", req.ID, req.ScanType, req.PackagesOnly)
 		if err := run(serverURL, apiKey, workDir, req.ScanType, req.PackagesOnly); err != nil {
 			log.Printf("scan request %s failed: %v", req.ID, err)
-			_ = rep.CompleteScanRequest(req.ID, "failed", err.Error())
+			_ = rep.CompleteScanRequest(req.ID, host.ID, "failed", err.Error())
 			continue
 		}
-		if err := rep.CompleteScanRequest(req.ID, "completed", ""); err != nil {
+		if err := rep.CompleteScanRequest(req.ID, host.ID, "completed", ""); err != nil {
 			log.Printf("complete scan request %s failed: %v", req.ID, err)
 		}
 	}

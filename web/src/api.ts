@@ -262,6 +262,7 @@ export interface ScanRequest {
   reason?: string;
   status: string;
   error_message?: string;
+  claimed_by_host_id?: string;
   claimed_at?: string | null;
   completed_at?: string | null;
   created_at: string;

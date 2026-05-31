@@ -1856,6 +1856,7 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 	var body struct {
 		Status  string `json:"status"`
 		Message string `json:"message"`
+		HostID  string `json:"host_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -1864,13 +1865,14 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 	if body.Status == "" {
 		body.Status = "completed"
 	}
-	if err := s.db.CompleteScanRequest(r.Context(), id, body.Status, body.Message); err != nil {
+	if err := s.db.CompleteClaimedScanRequest(r.Context(), id, body.HostID, body.Status, body.Message); err != nil {
 		log.Printf("complete scan request: %v", err)
 		http.Error(w, scanRequestErrorMessage(err), scanRequestErrorStatus(err))
 		return
 	}
 	s.audit(r, "scan_request.complete", "scan_request", id, body.Status, map[string]any{
 		"message": body.Message,
+		"host_id": body.HostID,
 	})
 	writeJSON(w, http.StatusOK, map[string]string{"status": body.Status})
 }
@@ -1883,6 +1885,8 @@ func scanRequestErrorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, db.ErrScanRequestNotActive):
 		return http.StatusConflict
+	case errors.Is(err, db.ErrScanRequestClaimMismatch):
+		return http.StatusForbidden
 	default:
 		return http.StatusInternalServerError
 	}
@@ -1896,6 +1900,8 @@ func scanRequestErrorMessage(err error) string {
 		return "scan request not found"
 	case errors.Is(err, db.ErrScanRequestNotActive):
 		return "scan request is not pending or claimed"
+	case errors.Is(err, db.ErrScanRequestClaimMismatch):
+		return "scan request was not claimed by this host"
 	default:
 		return "db error"
 	}

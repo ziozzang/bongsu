@@ -28,6 +28,7 @@ var ErrScanNotFound = errors.New("scan not found")
 var ErrInvalidScanRequestStatus = errors.New("invalid scan request status")
 var ErrScanRequestNotFound = errors.New("scan request not found")
 var ErrScanRequestNotActive = errors.New("scan request is not pending or claimed")
+var ErrScanRequestClaimMismatch = errors.New("scan request was not claimed by this host")
 
 type RetentionPruneResult struct {
 	DryRun      bool `json:"dry_run"`
@@ -1108,7 +1109,7 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	if err := db.QueryRowContext(ctx, "SELECT count(*) "+baseQ, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	q := `SELECT id, host_id, requested_by, scan_type, packages_only, reason, status, error_message, claimed_at, completed_at, created_at ` + baseQ + fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", n, n+1)
+	q := `SELECT id, host_id, requested_by, scan_type, packages_only, reason, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at ` + baseQ + fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", n, n+1)
 	args = append(args, limit, offset)
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -1118,7 +1119,7 @@ func (db *DB) ListScanRequests(ctx context.Context, hostID string, hostIDs []str
 	var out []models.ScanRequest
 	for rows.Next() {
 		var r models.ScanRequest
-		if err := rows.Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ErrorMessage, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, r)
@@ -1168,7 +1169,7 @@ func (db *DB) RequeueStaleScanRequests(ctx context.Context, timeout time.Duratio
 	}
 	cutoff := time.Now().Add(-timeout)
 	res, err := db.ExecContext(ctx, `UPDATE scan_requests
-SET status='pending', claimed_at=NULL, error_message='requeued after claim timeout'
+SET status='pending', claimed_at=NULL, claimed_by_host_id='', error_message='requeued after claim timeout'
 WHERE status='claimed' AND claimed_at < $1`, cutoff)
 	if err != nil {
 		return 0, err
@@ -1192,7 +1193,7 @@ func (db *DB) ClaimScanRequest(ctx context.Context, hostID string, timeout time.
 
 	cutoff := time.Now().Add(-timeout)
 	requeued, err := tx.ExecContext(ctx, `UPDATE scan_requests
-SET status='pending', claimed_at=NULL, error_message='requeued after claim timeout'
+SET status='pending', claimed_at=NULL, claimed_by_host_id='', error_message='requeued after claim timeout'
 WHERE status='claimed' AND claimed_at < $1`, cutoff)
 	if err != nil {
 		return nil, 0, err
@@ -1203,7 +1204,7 @@ WHERE status='claimed' AND claimed_at < $1`, cutoff)
 	}
 
 	q := `UPDATE scan_requests
-SET status='claimed', claimed_at=now(), error_message=''
+SET status='claimed', claimed_at=now(), claimed_by_host_id=$1, error_message=''
 WHERE id = (
 	SELECT id FROM scan_requests
 	WHERE status='pending' AND (host_id='' OR host_id=$1)
@@ -1211,9 +1212,9 @@ WHERE id = (
 	FOR UPDATE SKIP LOCKED
 	LIMIT 1
 )
-RETURNING id, host_id, requested_by, scan_type, packages_only, reason, status, error_message, claimed_at, completed_at, created_at`
+RETURNING id, host_id, requested_by, scan_type, packages_only, reason, status, error_message, claimed_by_host_id, claimed_at, completed_at, created_at`
 	var r models.ScanRequest
-	err = tx.QueryRowContext(ctx, q, hostID).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ErrorMessage, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt)
+	err = tx.QueryRowContext(ctx, q, hostID).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, int(requeuedCount), tx.Commit()
 	}
@@ -1246,6 +1247,46 @@ WHERE id=$1 AND status IN ('pending','claimed')`, id, status, message)
 	}
 	if !exists {
 		return ErrScanRequestNotFound
+	}
+	return ErrScanRequestNotActive
+}
+
+func (db *DB) CompleteClaimedScanRequest(ctx context.Context, id, hostID, status, message string) error {
+	if hostID == "" {
+		return ErrScanRequestClaimMismatch
+	}
+	if status != "completed" && status != "failed" {
+		return fmt.Errorf("%w: %s", ErrInvalidScanRequestStatus, status)
+	}
+	res, err := db.ExecContext(ctx, `UPDATE scan_requests
+SET status=$2, error_message=$3, completed_at=now()
+WHERE id=$1 AND status='claimed' AND claimed_by_host_id=$4`, id, status, message, hostID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected > 0 {
+		return nil
+	}
+	var exists, active bool
+	var claimedBy string
+	if err := db.QueryRowContext(ctx, `SELECT true, status='claimed', claimed_by_host_id FROM scan_requests WHERE id=$1`, id).Scan(&exists, &active, &claimedBy); err != nil {
+		if err == sql.ErrNoRows {
+			return ErrScanRequestNotFound
+		}
+		return err
+	}
+	if !exists {
+		return ErrScanRequestNotFound
+	}
+	if !active {
+		return ErrScanRequestNotActive
+	}
+	if claimedBy != hostID {
+		return ErrScanRequestClaimMismatch
 	}
 	return ErrScanRequestNotActive
 }

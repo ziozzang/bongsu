@@ -484,6 +484,7 @@ func TestScanRequestErrorHTTPMapping(t *testing.T) {
 		{db.ErrInvalidScanRequestStatus, 400, "invalid scan request status"},
 		{db.ErrScanRequestNotFound, 404, "scan request not found"},
 		{db.ErrScanRequestNotActive, 409, "scan request is not pending or claimed"},
+		{db.ErrScanRequestClaimMismatch, 403, "scan request was not claimed by this host"},
 	}
 	for _, tt := range tests {
 		if got := scanRequestErrorStatus(tt.err); got != tt.status {
@@ -491,6 +492,32 @@ func TestScanRequestErrorHTTPMapping(t *testing.T) {
 		}
 		if got := scanRequestErrorMessage(tt.err); got != tt.message {
 			t.Fatalf("scanRequestErrorMessage(%v) = %q, want %q", tt.err, got, tt.message)
+		}
+	}
+}
+
+func TestAgentScanRequestCompletionRequiresClaimedHost(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleCompleteScanRequest")
+	if start < 0 {
+		t.Fatal("handleCompleteScanRequest not found")
+	}
+	end := strings.Index(body[start:], "func scanRequestErrorStatus")
+	if end < 0 {
+		t.Fatal("scanRequestErrorStatus not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`HostID  string ` + "`json:\"host_id\"`",
+		"CompleteClaimedScanRequest",
+		`"host_id": body.HostID`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("scan request completion ownership check missing %q: %s", want, fn)
 		}
 	}
 }

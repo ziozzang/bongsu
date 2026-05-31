@@ -337,8 +337,75 @@ func TestDeleteScanErrorsAreDistinct(t *testing.T) {
 }
 
 func TestScanRequestErrorsAreDistinct(t *testing.T) {
-	if ErrInvalidScanRequestStatus == ErrScanRequestNotFound || ErrInvalidScanRequestStatus == ErrScanRequestNotActive || ErrScanRequestNotFound == ErrScanRequestNotActive {
-		t.Fatal("scan request completion errors must be distinct")
+	errs := []error{ErrInvalidScanRequestStatus, ErrScanRequestNotFound, ErrScanRequestNotActive, ErrScanRequestClaimMismatch}
+	for i := range errs {
+		for j := i + 1; j < len(errs); j++ {
+			if errs[i] == errs[j] {
+				t.Fatal("scan request completion errors must be distinct")
+			}
+		}
+	}
+}
+
+func TestScanRequestClaimOwnershipIsTracked(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/014_scan_request_claim_owner.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationBody := string(migration)
+	for _, want := range []string{
+		"claimed_by_host_id TEXT NOT NULL DEFAULT ''",
+		"claimed_by_host_id = host_id",
+		"requeued during claimed host ownership migration",
+		"idx_scan_requests_claimed_by_host",
+	} {
+		if !strings.Contains(migrationBody, want) {
+			t.Fatalf("scan request claim owner migration missing %q: %s", want, migrationBody)
+		}
+	}
+
+	dbFile, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(dbFile)
+	for _, want := range []string{
+		"claimed_by_host_id=$1",
+		"claimed_by_host_id=''",
+		"CompleteClaimedScanRequest",
+		"status='claimed' AND claimed_by_host_id=$4",
+		"ErrScanRequestClaimMismatch",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("scan request claim ownership handling missing %q", want)
+		}
+	}
+	if !strings.Contains(body, "claimed_by_host_id, claimed_at") {
+		t.Fatal("scan request list/claim responses must expose claimed_by_host_id")
+	}
+}
+
+func TestAgentCompletesScanRequestWithHostID(t *testing.T) {
+	reporterFile, err := os.ReadFile("../../agent/reporter/reporter.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reporterBody := string(reporterFile)
+	for _, want := range []string{
+		"CompleteScanRequest(id, hostID, status, message string)",
+		`"host_id": hostID`,
+	} {
+		if !strings.Contains(reporterBody, want) {
+			t.Fatalf("agent reporter completion missing %q", want)
+		}
+	}
+
+	agentFile, err := os.ReadFile("../../../cmd/agent/main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(agentFile), `CompleteScanRequest(req.ID, host.ID`) {
+		t.Fatal("agent daemon must send host ID when completing scan requests")
 	}
 }
 
