@@ -223,6 +223,7 @@ spec:
 | `POST` | `/api/admin/security-db/update` | Run configured source sync command |
 | `GET` | `/api/admin/security-db/export` | Export CVE DB + optional Trivy DB bundle |
 | `POST` | `/api/admin/security-db/import` | Import exported security DB bundle |
+| `GET` | `/api/cve-db/stats` | Source counts and quality counters for matchable/fixed/range/CVSS data |
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL |
 | `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs |

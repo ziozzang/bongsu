@@ -217,6 +217,11 @@ export interface HealthStatus {
 export interface CveSourceStat {
   source: string;
   count: number;
+  matchable: number;
+  with_ecosystem: number;
+  with_fixed: number;
+  with_ranges: number;
+  with_cvss: number;
   last_update: string | null;
 }
 

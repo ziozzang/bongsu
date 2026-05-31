@@ -408,12 +408,17 @@ function DashboardView() {
         <div className="card" style={{ marginTop: '1rem' }}>
           <div className="card-header"><h2>CVE Database Sources</h2></div>
           <table>
-            <thead><tr><th>Source</th><th>Records</th><th>Last Update</th></tr></thead>
+            <thead><tr><th>Source</th><th>Records</th><th>Matchable</th><th>Ecosystem</th><th>Fixed</th><th>Ranges</th><th>CVSS</th><th>Last Update</th></tr></thead>
             <tbody>
               {cveSources.map(s => (
                 <tr key={s.source}>
                   <td><span style={{ fontWeight: 600 }}>{s.source.toUpperCase()}</span></td>
                   <td className="mono">{s.count.toLocaleString()}</td>
+                  <td className="mono">{(s.matchable || 0).toLocaleString()}</td>
+                  <td className="mono">{(s.with_ecosystem || 0).toLocaleString()}</td>
+                  <td className="mono">{(s.with_fixed || 0).toLocaleString()}</td>
+                  <td className="mono">{(s.with_ranges || 0).toLocaleString()}</td>
+                  <td className="mono">{(s.with_cvss || 0).toLocaleString()}</td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.last_update ? new Date(s.last_update).toLocaleString() : '-'}</td>
                 </tr>
               ))}

@@ -36,6 +36,7 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 - CVSS 기반 취약점 정렬 및 필터링
 - OS 패키지와 코드 라이브러리 생태계 분류
 - OSV, NVD, Trivy DB 기반 보안 데이터 수집/import/export
+- 보안 DB 소스별 matchable/fixed/range/CVSS 품질 지표
 - 온라인 환경 6시간 주기 업데이트와 air-gapped 환경 수동 import
 - 호스트/동작 중인 컨테이너 SBOM 수집 및 이미지/컨테이너 연관정보 저장
 - 패키지별 CVE 상세 정보 (air-gapped 환경 지원)

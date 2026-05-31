@@ -2793,13 +2793,70 @@ func (db *DB) GetCveSources(ctx context.Context) ([]string, error) {
 }
 
 type CveSourceStats struct {
-	Source     string     `json:"source"`
-	Count      int        `json:"count"`
-	LastUpdate *time.Time `json:"last_update"`
+	Source        string     `json:"source"`
+	Count         int        `json:"count"`
+	Matchable     int        `json:"matchable"`
+	WithEcosystem int        `json:"with_ecosystem"`
+	WithFixed     int        `json:"with_fixed"`
+	WithRanges    int        `json:"with_ranges"`
+	WithCVSS      int        `json:"with_cvss"`
+	LastUpdate    *time.Time `json:"last_update"`
 }
 
 func (db *DB) GetCveSourceStats(ctx context.Context) ([]CveSourceStats, error) {
-	rows, err := db.QueryContext(ctx, `SELECT source, COUNT(*), MAX(updated_at) FROM cve_database WHERE source != '' GROUP BY source ORDER BY source`)
+	rows, err := db.QueryContext(ctx, `
+WITH normalized AS (
+	SELECT
+		source,
+		updated_at,
+		COALESCE(category, '') AS category,
+		COALESCE(ecosystem, '') AS ecosystem,
+		cvss_score,
+		COALESCE(cvss_vector, '') AS cvss_vector,
+		CASE
+			WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products
+			ELSE '[]'::jsonb
+		END AS affected_products
+	FROM cve_database
+	WHERE source != ''
+)
+SELECT
+	source,
+	COUNT(*) AS count,
+	COUNT(*) FILTER (
+		WHERE EXISTS (
+			SELECT 1 FROM jsonb_array_elements(affected_products) ap
+			WHERE COALESCE(ap->>'name', '') != ''
+			  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(ecosystem, '')) IS NOT NULL
+			  AND (
+				(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0)
+				OR (jsonb_typeof(ap->'ranges') = 'array' AND jsonb_array_length(ap->'ranges') > 0)
+			  )
+		)
+	) AS matchable,
+	COUNT(*) FILTER (
+		WHERE ecosystem != '' OR EXISTS (
+			SELECT 1 FROM jsonb_array_elements(affected_products) ap
+			WHERE COALESCE(ap->>'ecosystem', '') != ''
+		)
+	) AS with_ecosystem,
+	COUNT(*) FILTER (
+		WHERE EXISTS (
+			SELECT 1 FROM jsonb_array_elements(affected_products) ap
+			WHERE jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') > 0
+		)
+	) AS with_fixed,
+	COUNT(*) FILTER (
+		WHERE EXISTS (
+			SELECT 1 FROM jsonb_array_elements(affected_products) ap
+			WHERE jsonb_typeof(ap->'ranges') = 'array' AND jsonb_array_length(ap->'ranges') > 0
+		)
+	) AS with_ranges,
+	COUNT(*) FILTER (WHERE cvss_score > 0 OR cvss_vector != '') AS with_cvss,
+	MAX(updated_at) AS last_update
+FROM normalized
+GROUP BY source
+ORDER BY source`)
 	if err != nil {
 		return nil, err
 	}
@@ -2807,7 +2864,9 @@ func (db *DB) GetCveSourceStats(ctx context.Context) ([]CveSourceStats, error) {
 	var stats []CveSourceStats
 	for rows.Next() {
 		var s CveSourceStats
-		rows.Scan(&s.Source, &s.Count, &s.LastUpdate)
+		if err := rows.Scan(&s.Source, &s.Count, &s.Matchable, &s.WithEcosystem, &s.WithFixed, &s.WithRanges, &s.WithCVSS, &s.LastUpdate); err != nil {
+			return nil, err
+		}
 		stats = append(stats, s)
 	}
 	return stats, nil
