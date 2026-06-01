@@ -62,6 +62,10 @@ type Server struct {
 	referenceIndexRunning   bool
 	referenceIndexStartedAt time.Time
 	referenceIndexLast      map[string]any
+
+	cveStatsCacheMu    sync.Mutex
+	cveStatsCacheUntil time.Time
+	cveStatsCacheJSON  []byte
 }
 
 const (
@@ -4234,6 +4238,7 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		"security_db_revision": manifest.SecurityDBRevision,
 	})
 	s.SecurityDatabaseUpdated("security-db bundle import")
+	s.clearCveStatsCache()
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "imported": imported, "trivy_db_loaded": trivyLoaded, "security_db_revision": manifest.SecurityDBRevision})
 }
 
@@ -4591,6 +4596,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	revisionMeta := s.securityDBRevisionMeta(ctx)
+	s.clearCveStatsCache()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":               "ok",
 		"imported":             count,
@@ -4933,6 +4939,7 @@ func (s *Server) handleCveDbAffectedIndexRebuild(w http.ResponseWriter, r *http.
 	}
 	stats, _ := s.db.GetCveAffectedPackageIndexStats(r.Context())
 	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	s.clearCveStatsCache()
 	out := map[string]any{"status": "ok", "indexed": count, "duration_ms": durationMS, "index": stats}
 	for k, v := range revisionMeta {
 		out[k] = v
@@ -4975,6 +4982,7 @@ func (s *Server) handleCveDbReferenceIndexRebuild(w http.ResponseWriter, r *http
 		return
 	}
 	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	s.clearCveStatsCache()
 	out := map[string]any{"status": "ok", "indexed": count, "duration_ms": durationMS}
 	for k, v := range revisionMeta {
 		out[k] = v
@@ -5032,6 +5040,9 @@ func (s *Server) runReferenceIndexRebuild() {
 	s.referenceIndexStartedAt = time.Time{}
 	s.referenceIndexLast = result
 	s.referenceIndexMu.Unlock()
+	if err == nil {
+		s.clearCveStatsCache()
+	}
 }
 
 func rematchOptionsFromEnv() db.RematchOptions {
@@ -5581,6 +5592,15 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	if r.URL.Query().Get("refresh") != "true" {
+		if cached, ok := s.getCveStatsCache(); ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Bongsu-Cache", "hit")
+			w.WriteHeader(http.StatusOK)
+			w.Write(cached)
+			return
+		}
+	}
 	started := time.Now()
 	durations := map[string]int64{}
 	stepStarted := time.Now()
@@ -5663,7 +5683,49 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	durations["security_db_revision"] = time.Since(stepStarted).Milliseconds()
 	durations["total"] = time.Since(started).Milliseconds()
 	resp["durations_ms"] = durations
-	writeJSON(w, http.StatusOK, resp)
+	body, err := json.Marshal(resp)
+	if err != nil {
+		http.Error(w, "json error", http.StatusInternalServerError)
+		return
+	}
+	s.setCveStatsCache(body)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Bongsu-Cache", "miss")
+	w.WriteHeader(http.StatusOK)
+	w.Write(body)
+}
+
+func (s *Server) getCveStatsCache() ([]byte, bool) {
+	ttl := envInt("BONGSU_CVE_STATS_CACHE_SECONDS", 15)
+	if ttl <= 0 {
+		return nil, false
+	}
+	s.cveStatsCacheMu.Lock()
+	defer s.cveStatsCacheMu.Unlock()
+	if time.Now().After(s.cveStatsCacheUntil) || len(s.cveStatsCacheJSON) == 0 {
+		return nil, false
+	}
+	out := make([]byte, len(s.cveStatsCacheJSON))
+	copy(out, s.cveStatsCacheJSON)
+	return out, true
+}
+
+func (s *Server) setCveStatsCache(body []byte) {
+	ttl := envInt("BONGSU_CVE_STATS_CACHE_SECONDS", 15)
+	if ttl <= 0 {
+		return
+	}
+	s.cveStatsCacheMu.Lock()
+	defer s.cveStatsCacheMu.Unlock()
+	s.cveStatsCacheUntil = time.Now().Add(time.Duration(ttl) * time.Second)
+	s.cveStatsCacheJSON = append(s.cveStatsCacheJSON[:0], body...)
+}
+
+func (s *Server) clearCveStatsCache() {
+	s.cveStatsCacheMu.Lock()
+	defer s.cveStatsCacheMu.Unlock()
+	s.cveStatsCacheUntil = time.Time{}
+	s.cveStatsCacheJSON = nil
 }
 
 func rematchSourcePolicy(stats []db.CveSourceStats, opts db.RematchOptions) map[string]map[string]any {
