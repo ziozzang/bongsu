@@ -4147,22 +4147,23 @@ func (db *DB) RebuildCveReferenceKeys(ctx context.Context) (int, error) {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM cve_reference_keys`); err != nil {
 		return 0, err
 	}
-	stmt, err := tx.PrepareContext(ctx, `
-INSERT INTO cve_reference_keys (cve_id, reference_key, updated_at)
-VALUES ($1, $2, now())
-ON CONFLICT (cve_id, reference_key) DO UPDATE SET updated_at=now()`)
+	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("cve_reference_keys", "cve_id", "reference_key", "updated_at"))
 	if err != nil {
 		return 0, err
 	}
 	defer stmt.Close()
 	count := 0
+	now := time.Now().UTC()
 	for _, entry := range entries {
 		for _, key := range entry.keys {
-			if _, err := stmt.ExecContext(ctx, entry.cveID, key); err != nil {
+			if _, err := stmt.ExecContext(ctx, entry.cveID, key, now); err != nil {
 				return 0, err
 			}
 			count++
 		}
+	}
+	if _, err := stmt.ExecContext(ctx); err != nil {
+		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err

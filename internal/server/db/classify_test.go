@@ -1848,6 +1848,7 @@ func TestCveReferenceKeyIndexIsMaintainedAndIndexed(t *testing.T) {
 		"GetCveReferenceKeyIndexStats",
 		"SELECT id, vulnerability_id, title, description, refs::text FROM cve_database",
 		"DELETE FROM cve_reference_keys",
+		`pq.CopyIn("cve_reference_keys"`,
 		"INSERT INTO cve_reference_keys",
 		"cveReferenceKeys(e)",
 		"JOIN cve_reference_keys crk",
