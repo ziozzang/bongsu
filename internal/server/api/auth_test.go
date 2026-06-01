@@ -3303,8 +3303,13 @@ func TestDashboardShowsRiskLevelSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cssOut, err := os.ReadFile("../../../web/src/index.css")
+	if err != nil {
+		t.Fatal(err)
+	}
 	appBody := string(appOut)
 	apiBody := string(apiOut)
+	cssBody := string(cssOut)
 	for _, want := range []string{
 		"active_risk_level_counts",
 		"overdue_sla_count",
@@ -3330,6 +3335,14 @@ func TestDashboardShowsRiskLevelSummary(t *testing.T) {
 		"initialFilters?.team || ''",
 		"initialFilters?.environment || ''",
 		"initialFilters?.criticality || ''",
+		"activeFilters",
+		"filter-chip",
+		"Clear Filters",
+		"clearFilters",
+		"Owner: ${owner}",
+		"Team: ${team}",
+		"Environment: ${environment}",
+		"Criticality: ${criticality}",
 		"group_by: 'owner'",
 		"group_by: 'team'",
 		"group_by: 'environment'",
@@ -3348,6 +3361,11 @@ func TestDashboardShowsRiskLevelSummary(t *testing.T) {
 		!strings.Contains(apiBody, "overdue_sla_risk_counts?: Record<string, number>") ||
 		!strings.Contains(apiBody, "risk?: Record<string, number>") {
 		t.Fatal("web API types must expose risk-level summary fields")
+	}
+	for _, want := range []string{".active-filters", ".filter-chip", ".filter-clear", ".filter-clear:hover"} {
+		if !strings.Contains(cssBody, want) {
+			t.Fatalf("active vulnerability filter styling missing %q", want)
+		}
 	}
 }
 

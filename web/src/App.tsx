@@ -1598,6 +1598,42 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const teams = Array.from(new Set(Object.values(hostMeta).map(h => h.team || '').filter(Boolean))).sort();
   const environments = Array.from(new Set(Object.values(hostMeta).map(h => h.environment || '').filter(Boolean))).sort();
   const criticalities = Array.from(new Set(Object.values(hostMeta).map(h => h.criticality || '').filter(Boolean))).sort();
+  const clearFilters = () => {
+    setSeverity('');
+    setTriageStatus('');
+    setFindingSource('');
+    setRiskLevel('');
+    setHostId('');
+    setContainer('');
+    setOwner('');
+    setTeam('');
+    setEnvironment('');
+    setCriticality('');
+    setPkgQuery('');
+    setShowNoFix(false);
+    setShowMismatch(false);
+    setOverdueOnly(false);
+    setExploitedOnly(false);
+    setMinEpss('');
+  };
+  const activeFilters = [
+    severity && `Severity: ${severity}`,
+    triageStatus && `Status: ${triageStatus.replace('_', ' ')}`,
+    findingSource && `Source: ${findingSourceLabel(findingSource)}`,
+    riskLevel && `Risk: ${riskLevel}`,
+    overdueOnly && 'Overdue',
+    exploitedOnly && 'CISA KEV',
+    minEpss && `EPSS >= ${minEpss}%`,
+    hostId && `Host: ${hostMap[hostId] || hostId}`,
+    container && `Container: ${container}`,
+    owner && `Owner: ${owner}`,
+    team && `Team: ${team}`,
+    environment && `Environment: ${environment}`,
+    criticality && `Criticality: ${criticality}`,
+    pkgQuery && `Package: ${pkgQuery}`,
+    showNoFix && 'No fix info',
+    showMismatch && 'Wrong ecosystem',
+  ].filter(Boolean) as string[];
 
   const cols: [string, string][] = [
     ['risk_score', 'Risk'], ['exploited', 'KEV'], ['epss_score', 'EPSS'], ['vulnerability_id', 'CVE'], ['severity', 'Severity'], ['cvss_score', 'CVSS'],
@@ -1705,6 +1741,12 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
           <button className="filter-btn" onClick={() => exportVulns('json')}>JSON</button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{exportMsg || `${total} results`}</span>
         </div>
+        {activeFilters.length > 0 && (
+          <div className="active-filters">
+            {activeFilters.map(f => <span key={f} className="filter-chip">{f}</span>)}
+            <button type="button" className="filter-clear" onClick={clearFilters}>Clear Filters</button>
+          </div>
+        )}
       </div>
       <div className="card">
         {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (

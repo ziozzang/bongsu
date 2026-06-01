@@ -405,6 +405,40 @@ tbody tr:hover td {
   color: var(--text-muted);
 }
 
+.active-filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.filter-clear {
+  padding: 0.25rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--primary);
+  font-size: 0.75rem;
+}
+
+.filter-clear:hover {
+  border-color: var(--primary);
+  color: var(--primary-hover);
+}
+
 .compact-input {
   padding: 0.4375rem 0.75rem;
   background: var(--bg);
