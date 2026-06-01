@@ -1502,6 +1502,10 @@ func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 		"RemoveStaleRematchedVulnerabilities",
 		`"stale_rematch_removed"`,
 		`"rematch_scanned_candidates"`,
+		"rematchSourcePolicySummary(stats, rematchOpts)",
+		`"rematch_eligible_sources"`,
+		`"rematch_excluded_sources"`,
+		`"rematch_source_policy"`,
 		"s.queueSecurityDBRescans(reason, status)",
 	} {
 		if !strings.Contains(fn, want) {
@@ -1931,8 +1935,12 @@ func TestSecurityRecalculationLastResultUsesAuditLog(t *testing.T) {
 		`"stale_rematch_removed"`,
 		`"rematch_new_vulns"`,
 		`"scanned_candidates"`,
+		`"rematch_eligible_sources"`,
+		`"rematch_excluded_sources"`,
+		`"rematch_source_policy"`,
 		`if includeDetails`,
 		`out["errors"] = errors`,
+		`out["rematch_source_policy"] = policy`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("security recalculation last result missing %q: %s", want, fn)
@@ -1966,6 +1974,8 @@ func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
 		"bongsu_security_recalculation_last_rematch_candidates",
 		"bongsu_security_recalculation_last_rematch_scanned_candidates",
 		"bongsu_security_recalculation_last_rematch_candidate_limit",
+		"bongsu_security_recalculation_last_rematch_eligible_sources",
+		"bongsu_security_recalculation_last_rematch_excluded_sources",
 		"cveDBRematchLastResult(ctx, true)",
 		"bongsu_cve_db_last_manual_rematch_timestamp_seconds",
 		"bongsu_cve_db_last_manual_rematch_limited",

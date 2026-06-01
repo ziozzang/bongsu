@@ -1086,7 +1086,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             {lastRecalc?.finished_at
               ? lastRecalcLimited
                 ? `limited at ${(lastRecalc.rematch_candidates || 0).toLocaleString()} matches, ${(lastRecalc.rematch_scanned_candidates || 0).toLocaleString()} scanned`
-                : `${new Date(lastRecalc.finished_at).toLocaleString()} · ${lastRecalc.rematch_new_vulns || 0} new`
+                : `${new Date(lastRecalc.finished_at).toLocaleString()} · ${lastRecalc.rematch_new_vulns || 0} new${lastRecalc.rematch_eligible_sources !== undefined ? ` · ${lastRecalc.rematch_eligible_sources} src` : ''}`
               : 'waiting for audit result'}
           </div>
         </div>

@@ -330,6 +330,9 @@ export interface HealthStatus {
       rematch_skipped?: number;
       rematch_limited?: boolean;
       rematch_candidate_limit?: number;
+      rematch_eligible_sources?: number;
+      rematch_excluded_sources?: number;
+      rematch_source_policy?: Record<string, { eligible?: boolean; reason?: string }>;
       severity_normalized?: number;
       errors?: string[];
     };
@@ -344,6 +347,9 @@ export interface HealthStatus {
       scanned_candidates?: number;
       candidate_limit?: number;
       limited?: boolean;
+      eligible_sources?: number;
+      excluded_sources?: number;
+      source_policy?: Record<string, { eligible?: boolean; reason?: string }>;
       security_db_revision?: string;
       security_db_revision_error?: string;
     };

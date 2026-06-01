@@ -3124,6 +3124,8 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_candidates", nil, metricNumber(last["rematch_candidates"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_scanned_candidates", nil, metricNumber(last["rematch_scanned_candidates"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_candidate_limit", nil, metricNumber(last["rematch_candidate_limit"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_eligible_sources", nil, metricNumber(last["rematch_eligible_sources"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_excluded_sources", nil, metricNumber(last["rematch_excluded_sources"]))
 	}
 	if last := s.cveDBRematchLastResult(ctx, true); last != nil {
 		if ts, ok := last["finished_at_unix"].(float64); ok {
@@ -3462,6 +3464,8 @@ func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDet
 		"rematch_skipped",
 		"rematch_limited",
 		"rematch_candidate_limit",
+		"rematch_eligible_sources",
+		"rematch_excluded_sources",
 		"severity_normalized",
 	} {
 		if v, ok := meta[key]; ok {
@@ -3471,6 +3475,9 @@ func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDet
 	if includeDetails {
 		if errors, ok := meta["errors"]; ok {
 			out["errors"] = errors
+		}
+		if policy, ok := meta["rematch_source_policy"]; ok {
+			out["rematch_source_policy"] = policy
 		}
 	}
 	return out
@@ -4182,7 +4189,8 @@ func (s *Server) runSecurityRecalculation(reason string) {
 	} else {
 		meta["stale_rematch_removed"] = n
 	}
-	if r, err := s.db.RematchCVEs(ctx, rematchOptionsFromEnv()); err != nil {
+	rematchOpts := rematchOptionsFromEnv()
+	if r, err := s.db.RematchCVEs(ctx, rematchOpts); err != nil {
 		log.Printf("security recalculation rematch failed: %v", err)
 		failures = append(failures, "rematch: "+err.Error())
 	} else {
@@ -4193,6 +4201,14 @@ func (s *Server) runSecurityRecalculation(reason string) {
 		meta["rematch_skipped"] = r.Skipped
 		meta["rematch_limited"] = r.Limited
 		meta["rematch_candidate_limit"] = r.CandidateLimit
+		if stats, err := s.db.GetCveSourceStats(ctx); err == nil {
+			policy, eligible, excluded := rematchSourcePolicySummary(stats, rematchOpts)
+			meta["rematch_source_policy"] = policy
+			meta["rematch_eligible_sources"] = eligible
+			meta["rematch_excluded_sources"] = excluded
+		} else {
+			failures = append(failures, "rematch_source_policy: "+err.Error())
+		}
 	}
 	if n, err := s.db.NormalizeVulnSeverity(ctx); err != nil {
 		log.Printf("security recalculation severity normalization failed: %v", err)
