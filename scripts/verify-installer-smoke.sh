@@ -135,3 +135,147 @@ if grep -Fq "17 4 * * *" "$TMP_DIR/crontab.installed"; then
 fi
 
 echo "Installer smoke verification passed"
+
+DOWNLOAD_INSTALLER_DIR="$TMP_DIR/download-installer"
+DOWNLOAD_WORK_DIR="$TMP_DIR/download-work"
+DOWNLOAD_STUB_DIR="$TMP_DIR/download-stubs"
+DOWNLOAD_LOG="$TMP_DIR/curl-download.log"
+INSTALL_TOKEN="installer-token-for-header-only-download"
+
+mkdir -p "$DOWNLOAD_INSTALLER_DIR" "$DOWNLOAD_STUB_DIR"
+cp "$ROOT_DIR/scripts/install-agent.sh" "$DOWNLOAD_INSTALLER_DIR/install-agent.sh"
+cp "$STUB_DIR/openssl" "$DOWNLOAD_STUB_DIR/openssl"
+cp "$STUB_DIR/crontab" "$DOWNLOAD_STUB_DIR/crontab"
+
+cat > "$DOWNLOAD_STUB_DIR/curl" <<'CURL'
+#!/bin/sh
+set -eu
+
+header_file=""
+output_file=""
+config_file=""
+url=""
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --config)
+            config_file="$2"
+            shift 2
+            ;;
+        -D)
+            header_file="$2"
+            shift 2
+            ;;
+        -o)
+            output_file="$2"
+            shift 2
+            ;;
+        http://*|https://*)
+            url="$1"
+            shift
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+{
+    printf 'url=%s\n' "$url"
+    if [ -n "$config_file" ]; then
+        printf 'config=%s\n' "$(cat "$config_file")"
+    else
+        printf 'config=\n'
+    fi
+} >> "$BONGSU_TEST_CURL_LOG"
+
+if [ -z "$header_file" ] || [ -z "$output_file" ] || [ -z "$url" ]; then
+    exit 22
+fi
+if printf '%s' "$url" | grep -Fq "$BONGSU_TEST_INSTALL_TOKEN"; then
+    echo "install token leaked into URL" >&2
+    exit 23
+fi
+
+case "$url" in
+    */api/downloads/bongsu-agent)
+        cat > "$output_file" <<'AGENT'
+#!/bin/sh
+echo "downloaded bongsu-agent smoke run: $*"
+exit 0
+AGENT
+        ;;
+    */api/downloads/trivy)
+        cat > "$output_file" <<'TRIVY'
+#!/bin/sh
+echo "downloaded trivy smoke"
+exit 0
+TRIVY
+        ;;
+    *)
+        exit 24
+        ;;
+esac
+
+sha="$(sha256sum "$output_file" | awk '{print $1}')"
+if [ "${BONGSU_TEST_BAD_SHA:-false}" = "true" ]; then
+    sha="0000000000000000000000000000000000000000000000000000000000000000"
+fi
+{
+    printf 'HTTP/1.1 200 OK\r\n'
+    printf 'X-Bongsu-SHA256: %s\r\n' "$sha"
+    printf '\r\n'
+} > "$header_file"
+CURL
+chmod +x "$DOWNLOAD_STUB_DIR/curl"
+
+PATH="$DOWNLOAD_STUB_DIR:/usr/bin:/bin" \
+BONGSU_WORK_DIR="$DOWNLOAD_WORK_DIR" \
+BONGSU_PACKAGES_ONLY=true \
+BONGSU_CRON="31 6 * * *" \
+BONGSU_INSTALL_MODE=cron \
+BONGSU_FORCE_SCAN_DAEMON=false \
+BONGSU_INSTALL_TOKEN="$INSTALL_TOKEN" \
+BONGSU_TEST_INSTALL_TOKEN="$INSTALL_TOKEN" \
+BONGSU_TEST_AGENT_TOKEN="$TOKEN" \
+BONGSU_TEST_CRONTAB="$TMP_DIR/download-crontab.installed" \
+BONGSU_TEST_CURL_LOG="$DOWNLOAD_LOG" \
+bash "$DOWNLOAD_INSTALLER_DIR/install-agent.sh" "$SERVER_URL" "$API_KEY" > "$TMP_DIR/download-install.out"
+
+assert_executable "$DOWNLOAD_WORK_DIR/bin/bongsu-agent"
+assert_executable "$DOWNLOAD_WORK_DIR/bin/trivy"
+assert_contains "$TMP_DIR/download-install.out" "Downloading bongsu-agent from server"
+assert_contains "$TMP_DIR/download-install.out" "Trivy binary downloaded"
+assert_contains "$TMP_DIR/download-install.out" "downloaded bongsu-agent smoke run:"
+assert_contains "$DOWNLOAD_LOG" "url=$SERVER_URL/api/downloads/bongsu-agent"
+assert_contains "$DOWNLOAD_LOG" "url=$SERVER_URL/api/downloads/trivy"
+assert_contains "$DOWNLOAD_LOG" "config=header = \"X-Install-Token: $INSTALL_TOKEN\""
+if grep -Fq "$INSTALL_TOKEN" "$DOWNLOAD_LOG" && grep -F "$INSTALL_TOKEN" "$DOWNLOAD_LOG" | grep -Fq "url="; then
+    echo "ERROR: install token appeared in a download URL" >&2
+    exit 1
+fi
+
+BAD_SHA_WORK_DIR="$TMP_DIR/bad-sha-work"
+if PATH="$DOWNLOAD_STUB_DIR:/usr/bin:/bin" \
+    BONGSU_WORK_DIR="$BAD_SHA_WORK_DIR" \
+    BONGSU_PACKAGES_ONLY=true \
+    BONGSU_CRON="37 7 * * *" \
+    BONGSU_INSTALL_MODE=cron \
+    BONGSU_FORCE_SCAN_DAEMON=false \
+    BONGSU_INSTALL_TOKEN="$INSTALL_TOKEN" \
+    BONGSU_TEST_INSTALL_TOKEN="$INSTALL_TOKEN" \
+    BONGSU_TEST_AGENT_TOKEN="$TOKEN" \
+    BONGSU_TEST_CRONTAB="$TMP_DIR/bad-sha-crontab.installed" \
+    BONGSU_TEST_CURL_LOG="$TMP_DIR/bad-sha-curl.log" \
+    BONGSU_TEST_BAD_SHA=true \
+    bash "$DOWNLOAD_INSTALLER_DIR/install-agent.sh" "$SERVER_URL" "$API_KEY" > "$TMP_DIR/bad-sha.out" 2>&1; then
+    echo "ERROR: installer accepted a checksum-mismatched agent download" >&2
+    exit 1
+fi
+assert_contains "$TMP_DIR/bad-sha.out" "checksum mismatch"
+if [ -e "$BAD_SHA_WORK_DIR/bin/bongsu-agent" ]; then
+    echo "ERROR: checksum-mismatched agent binary was left on disk" >&2
+    exit 1
+fi
+
+echo "Installer download verification passed"
