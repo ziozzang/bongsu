@@ -3601,32 +3601,43 @@ func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
 	return int(n1) + int(n2), nil
 }
 
-func (db *DB) RemoveStaleRematchedVulnerabilities(ctx context.Context) (int, error) {
+type StaleRematchCleanupResult struct {
+	Scanned   int `json:"scanned"`
+	Removed   int `json:"removed"`
+	Batches   int `json:"batches"`
+	BatchSize int `json:"batch_size"`
+}
+
+func (db *DB) RemoveStaleRematchedVulnerabilities(ctx context.Context) (StaleRematchCleanupResult, error) {
 	batchSize := envPositiveInt("BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE", 10000)
 	if batchSize > 100000 {
 		batchSize = 100000
 	}
-	total := 0
+	result := StaleRematchCleanupResult{BatchSize: batchSize}
 	afterID := ""
 	for {
 		staleIDs, lastID, scanned, err := db.staleRematchedVulnerabilityIDs(ctx, afterID, batchSize)
 		if err != nil {
-			return total, err
+			return result, err
+		}
+		result.Scanned += scanned
+		if scanned > 0 {
+			result.Batches++
 		}
 		if len(staleIDs) > 0 {
 			res, err := db.ExecContext(ctx, `DELETE FROM vulnerabilities WHERE id = ANY($1)`, pq.Array(staleIDs))
 			if err != nil {
-				return total, err
+				return result, err
 			}
 			n, _ := res.RowsAffected()
-			total += int(n)
+			result.Removed += int(n)
 		}
 		if scanned < batchSize || lastID == "" {
 			break
 		}
 		afterID = lastID
 	}
-	return total, nil
+	return result, nil
 }
 
 func (db *DB) staleRematchedVulnerabilityIDs(ctx context.Context, afterID string, limit int) ([]string, string, int, error) {

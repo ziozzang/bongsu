@@ -3395,6 +3395,10 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_security_recalculation_last_error", nil, boolMetric(last["status"] == "error"))
 		writePromGauge(&b, "bongsu_security_recalculation_last_cvss_updated", nil, metricNumber(last["cvss_updated"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_findings_enriched", nil, metricNumber(last["findings_enriched"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_stale_rematch_removed", nil, metricNumber(last["stale_rematch_removed"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_stale_rematch_scanned", nil, metricNumber(last["stale_rematch_scanned"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_stale_rematch_batches", nil, metricNumber(last["stale_rematch_batches"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_stale_rematch_batch_size", nil, metricNumber(last["stale_rematch_batch_size"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_new_vulns", nil, metricNumber(last["rematch_new_vulns"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_limited", nil, boolMetric(last["rematch_limited"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_candidates", nil, metricNumber(last["rematch_candidates"]))
@@ -3823,6 +3827,9 @@ func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDet
 		"cvss_updated",
 		"findings_enriched",
 		"stale_rematch_removed",
+		"stale_rematch_scanned",
+		"stale_rematch_batches",
+		"stale_rematch_batch_size",
 		"rematch_candidates",
 		"rematch_scanned_candidates",
 		"rematch_new_vulns",
@@ -4643,14 +4650,15 @@ func (s *Server) runSecurityRecalculation(reason string) {
 	} else {
 		meta["findings_enriched"] = n
 	}
-	if n, err := s.db.RemoveStaleRematchedVulnerabilities(ctx); err != nil {
+	if cleanup, err := s.db.RemoveStaleRematchedVulnerabilities(ctx); err != nil {
 		log.Printf("security recalculation stale rematch cleanup failed: %v", err)
 		failures = append(failures, "stale_rematch_cleanup: "+err.Error())
-	} else if n > 0 {
-		log.Printf("security recalculation removed %d stale CVE DB rematch findings", n)
-		meta["stale_rematch_removed"] = n
 	} else {
-		meta["stale_rematch_removed"] = n
+		log.Printf("security recalculation stale rematch cleanup scanned=%d removed=%d batches=%d batch_size=%d", cleanup.Scanned, cleanup.Removed, cleanup.Batches, cleanup.BatchSize)
+		meta["stale_rematch_removed"] = cleanup.Removed
+		meta["stale_rematch_scanned"] = cleanup.Scanned
+		meta["stale_rematch_batches"] = cleanup.Batches
+		meta["stale_rematch_batch_size"] = cleanup.BatchSize
 	}
 	rematchOpts := rematchOptionsFromEnv()
 	if r, err := s.db.RematchCVEs(ctx, rematchOpts); err != nil {

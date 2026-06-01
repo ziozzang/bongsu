@@ -347,6 +347,9 @@ export interface HealthStatus {
       cvss_updated?: number;
       findings_enriched?: number;
       stale_rematch_removed?: number;
+      stale_rematch_scanned?: number;
+      stale_rematch_batches?: number;
+      stale_rematch_batch_size?: number;
       rematch_candidates?: number;
       rematch_scanned_candidates?: number;
       rematch_new_vulns?: number;
