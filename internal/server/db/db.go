@@ -3602,29 +3602,76 @@ func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
 }
 
 func (db *DB) RemoveStaleRematchedVulnerabilities(ctx context.Context) (int, error) {
-	res, err := db.ExecContext(ctx, fmt.Sprintf(`
-DELETE FROM vulnerabilities v
-USING packages p
-WHERE v.package_id = p.id
-  AND v.finding_source = 'cve-db'
-  AND NOT EXISTS (
-	SELECT 1
-	FROM cve_database c
-	JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap ON true
-	WHERE c.vulnerability_id = v.vulnerability_id
-	  AND COALESCE(ap->>'name', '') != ''
-	  AND lower(ap->>'name') = lower(COALESCE(NULLIF(p.name, ''), NULLIF(v.pkg_name, '')))
-	  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
-	  AND %s = %s
-	  AND (
-		%s
-	  )
-  )`, affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("p"), cveSourceFixedPredicateSQL()))
+	staleIDs, err := db.staleRematchedVulnerabilityIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if len(staleIDs) == 0 {
+		return 0, nil
+	}
+	res, err := db.ExecContext(ctx, `DELETE FROM vulnerabilities WHERE id = ANY($1)`, pq.Array(staleIDs))
 	if err != nil {
 		return 0, err
 	}
 	n, _ := res.RowsAffected()
 	return int(n), nil
+}
+
+func (db *DB) staleRematchedVulnerabilityIDs(ctx context.Context) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT v.id,
+       COALESCE(NULLIF(p.name, ''), NULLIF(v.pkg_name, '')) AS package_name,
+       COALESCE(p.pkg_type, '') AS pkg_type,
+       COALESCE(p.ecosystem, '') AS package_ecosystem,
+       COALESCE(NULLIF(v.installed_version, ''), p.version) AS installed_version,
+       COALESCE(c.category, '') AS cve_category,
+       COALESCE(c.ecosystem, '') AS cve_ecosystem,
+       COALESCE(c.affected_products::text, '') AS affected_products
+FROM vulnerabilities v
+JOIN packages p ON p.id = v.package_id
+LEFT JOIN cve_database c ON c.vulnerability_id = v.vulnerability_id
+WHERE v.finding_source = 'cve-db'
+ORDER BY v.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	type state struct {
+		seen       bool
+		compatible bool
+	}
+	states := map[string]*state{}
+	order := []string{}
+	for rows.Next() {
+		var id, pkgName, pkgType, pkgEco, installed, cveCategory, cveEco, affectedProducts string
+		if err := rows.Scan(&id, &pkgName, &pkgType, &pkgEco, &installed, &cveCategory, &cveEco, &affectedProducts); err != nil {
+			return nil, err
+		}
+		st, ok := states[id]
+		if !ok {
+			st = &state{}
+			states[id] = st
+			order = append(order, id)
+		}
+		st.seen = true
+		if st.compatible {
+			continue
+		}
+		if _, ok := compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installed, cveCategory, cveEco, affectedProducts); ok {
+			st.compatible = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	stale := make([]string, 0, len(order))
+	for _, id := range order {
+		if st := states[id]; st.seen && !st.compatible {
+			stale = append(stale, id)
+		}
+	}
+	return stale, nil
 }
 
 func cveEnrichmentFixedVersionSQL(cveAlias, vulnAlias string) string {

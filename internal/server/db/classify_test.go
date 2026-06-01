@@ -1509,7 +1509,7 @@ func TestCveAffectedPackageIndexStatsUsesSingleMatchableSourcePass(t *testing.T)
 	}
 }
 
-func TestRemoveStaleRematchedVulnerabilitiesUsesSourceQualityFixedPredicate(t *testing.T) {
+func TestRemoveStaleRematchedVulnerabilitiesUsesCompatibleCandidateCheck(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
 		t.Fatal(err)
@@ -1524,8 +1524,16 @@ func TestRemoveStaleRematchedVulnerabilitiesUsesSourceQualityFixedPredicate(t *t
 		t.Fatal("RemoveStaleRematchedVulnerabilities end not found")
 	}
 	fn := body[start : start+end]
-	if !strings.Contains(fn, "cveSourceFixedPredicateSQL()") {
-		t.Fatalf("stale rematch cleanup must reuse source fixed-quality predicate: %s", fn)
+	for _, want := range []string{
+		"staleRematchedVulnerabilityIDs",
+		"compatibleSecurityCandidate",
+		"installed_version",
+		"affected_products",
+		"DELETE FROM vulnerabilities WHERE id = ANY($1)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("stale rematch cleanup missing %q: %s", want, fn)
+		}
 	}
 	if strings.Contains(fn, "jsonb_array_length(ap->'fixed') > 0") {
 		t.Fatalf("stale rematch cleanup must not keep ambiguous multi-fixed entries: %s", fn)
@@ -1790,12 +1798,11 @@ func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		"DELETE FROM vulnerabilities v",
+		"DELETE FROM vulnerabilities WHERE id = ANY($1)",
 		"v.finding_source = 'cve-db'",
-		"NOT EXISTS",
-		"cve_database c",
-		"jsonb_array_elements",
-		"COALESCE(ap->>'name', '') != ''",
+		"JOIN packages p ON p.id = v.package_id",
+		"LEFT JOIN cve_database c ON c.vulnerability_id = v.vulnerability_id",
+		"compatibleSecurityCandidate",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("stale rematch cleanup missing %q: %s", want, fn)
