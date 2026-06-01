@@ -2,11 +2,13 @@ ARG BONGSU_VERSION=0.1.0
 
 FROM golang:1.24-alpine AS builder
 ARG BONGSU_VERSION
+ARG BONGSU_COMMIT=unknown
+ARG BONGSU_BUILD_DATE=unknown
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${BONGSU_VERSION}" -o bongsu-agent ./cmd/agent
+RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${BONGSU_VERSION} -X main.commit=${BONGSU_COMMIT} -X main.buildDate=${BONGSU_BUILD_DATE}" -o bongsu-agent ./cmd/agent
 
 FROM alpine:3.20
 RUN apk --no-cache add ca-certificates tzdata

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -22,6 +23,12 @@ const (
 	maxCollectionErrorBytes = 2048
 )
 
+var (
+	version   = "dev"
+	commit    = ""
+	buildDate = ""
+)
+
 func main() {
 	serverURL := flag.String("server", "", "Bongsu API URL (e.g. http://bongsu:5677)")
 	apiKey := flag.String("api-key", "", "API key for authentication")
@@ -31,8 +38,14 @@ func main() {
 	daemon := flag.Bool("daemon", false, "Poll server for force scan requests")
 	pollInterval := flag.Duration("poll-interval", 60*time.Second, "Force scan polling interval")
 	configFile := flag.String("config", "", "Config file path (YAML)")
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 	agentToken := ""
+
+	if *showVersion {
+		fmt.Println(agentVersionString())
+		return
+	}
 
 	if *configFile != "" {
 		cfg, err := loadConfig(*configFile)
@@ -207,7 +220,7 @@ func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly b
 	if err != nil {
 		return nil, fmt.Errorf("system info: %w", err)
 	}
-	host.AgentVersion = "0.1.0"
+	host.AgentVersion = agentVersionString()
 	log.Printf("Host: %s (%s %s)", host.Hostname, host.OSName, host.OSVersion)
 	collectionErrors := []string{}
 
@@ -342,6 +355,23 @@ func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly b
 		log.Println("=== Scan complete ===")
 	}
 	return result, nil
+}
+
+func agentVersionString() string {
+	parts := []string{strings.TrimSpace(version)}
+	if parts[0] == "" {
+		parts[0] = "dev"
+	}
+	if c := strings.TrimSpace(commit); c != "" {
+		if len(c) > 12 {
+			c = c[:12]
+		}
+		parts = append(parts, c)
+	}
+	if d := strings.TrimSpace(buildDate); d != "" {
+		parts = append(parts, d)
+	}
+	return strings.Join(parts, "+")
 }
 
 func scanRequestCompletionFromReport(result *reporter.ReportResult) (string, string) {

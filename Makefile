@@ -1,5 +1,7 @@
 BONGSU_VERSION ?= 0.1.0
-LDFLAGS := -s -w -X main.version=$(BONGSU_VERSION)
+BONGSU_COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+BONGSU_BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w -X main.version=$(BONGSU_VERSION) -X main.commit=$(BONGSU_COMMIT) -X main.buildDate=$(BONGSU_BUILD_DATE)
 
 .PHONY: build build-agent build-server tidy dev dev-up dev-down docker docker-agent docker-server package clean
 

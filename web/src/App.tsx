@@ -609,7 +609,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
                 installer {installerStatus.ready ? 'ready' : 'not ready'}
               </span>
               <span className="badge" style={{ color: installerStatus.agent.ready ? 'var(--low)' : 'var(--critical)' }}>
-                agent {installerStatus.agent.ready ? `${Math.round((installerStatus.agent.bytes || 0) / 1024 / 1024)}MB` : installerStatus.agent.error || 'missing'}
+                agent {installerStatus.agent.ready ? (installerStatus.agent.version || `${Math.round((installerStatus.agent.bytes || 0) / 1024 / 1024)}MB`) : installerStatus.agent.error || 'missing'}
               </span>
               <span className="badge" style={{ color: installerStatus.trivy.ready ? 'var(--low)' : 'var(--medium)' }}>
                 trivy {installerStatus.trivy.ready ? `${Math.round((installerStatus.trivy.bytes || 0) / 1024 / 1024)}MB` : installerStatus.trivy.error || 'optional'}
@@ -1359,6 +1359,7 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
               <th>Hostname</th>
               <th>Agent</th>
               <th>Trust</th>
+              <th>Version</th>
               <th>OS</th>
               <th>Owner</th>
               <th>Env</th>
@@ -1388,6 +1389,7 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
                       {h.agent_token_set ? 'bound' : 'pending'}
                     </span>
                   </td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{h.agent_version || '-'}</td>
                   <td>{h.os_name} {h.os_version}</td>
                   <td>{h.owner || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
                   <td>{h.environment || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
@@ -1427,7 +1429,7 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
                 </tr>
               );
             })}
-            {hosts.length === 0 && <tr><td colSpan={14} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
+            {hosts.length === 0 && <tr><td colSpan={15} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
           </tbody>
         </table>
       </div>
@@ -1538,6 +1540,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
           <div style={{ fontSize: '0.875rem', color: agentStatusColor(host.agent_status), fontWeight: 700, textTransform: 'uppercase' }}>{host.agent_status || 'unknown'}</div>
           <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>{formatAge(host.last_seen_age_seconds)} since check-in</div>
         </div>
+        <div className="stat-card"><div className="label">Agent Version</div><div className="mono" style={{ fontSize: '0.875rem' }}>{host.agent_version || '-'}</div></div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: host.agent_token_set ? 'var(--low)' : 'var(--medium)' }} />
           <div className="label">Agent Trust</div>

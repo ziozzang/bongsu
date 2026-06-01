@@ -584,6 +584,7 @@ export interface InstallerBinaryStatus {
   name: string;
   ready: boolean;
   path?: string;
+  version?: string;
   bytes?: number;
   sha256?: string;
   error?: string;

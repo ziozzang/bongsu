@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -2323,12 +2324,13 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 type installerBinaryStatus struct {
-	Name   string `json:"name"`
-	Ready  bool   `json:"ready"`
-	Path   string `json:"path,omitempty"`
-	Bytes  int64  `json:"bytes,omitempty"`
-	SHA256 string `json:"sha256,omitempty"`
-	Error  string `json:"error,omitempty"`
+	Name    string `json:"name"`
+	Ready   bool   `json:"ready"`
+	Path    string `json:"path,omitempty"`
+	Version string `json:"version,omitempty"`
+	Bytes   int64  `json:"bytes,omitempty"`
+	SHA256  string `json:"sha256,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 func (s *Server) handleInstallerStatus(w http.ResponseWriter, r *http.Request) {
@@ -2388,7 +2390,18 @@ func installerBinaryReadiness(name, path string) installerBinaryStatus {
 	status.Ready = true
 	status.Bytes = info.Size()
 	status.SHA256 = digest
+	status.Version = binaryVersion(path)
 	return status
+}
+
+func binaryVersion(path string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, path, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func fileSHA256Hex(f *os.File) (string, error) {

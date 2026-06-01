@@ -11,6 +11,68 @@ import (
 	"github.com/ziozzang/bongsu/internal/agent/reporter"
 )
 
+func TestAgentVersionStringIncludesBuildMetadata(t *testing.T) {
+	oldVersion, oldCommit, oldBuildDate := version, commit, buildDate
+	t.Cleanup(func() {
+		version, commit, buildDate = oldVersion, oldCommit, oldBuildDate
+	})
+	version = "1.2.3"
+	commit = "abcdef1234567890"
+	buildDate = "2026-06-01T00:00:00Z"
+	got := agentVersionString()
+	want := "1.2.3+abcdef123456+2026-06-01T00:00:00Z"
+	if got != want {
+		t.Fatalf("agent version = %q, want %q", got, want)
+	}
+	version, commit, buildDate = "", "", ""
+	if got := agentVersionString(); got != "dev" {
+		t.Fatalf("empty build metadata = %q, want dev", got)
+	}
+}
+
+func TestReleaseBuildsInjectAgentMetadata(t *testing.T) {
+	files := map[string][]string{
+		"../../Makefile": {
+			"BONGSU_COMMIT",
+			"BONGSU_BUILD_DATE",
+			"-X main.version=$(BONGSU_VERSION)",
+			"-X main.commit=$(BONGSU_COMMIT)",
+			"-X main.buildDate=$(BONGSU_BUILD_DATE)",
+		},
+		"../../scripts/package.sh": {
+			"COMMIT=",
+			"BUILD_DATE=",
+			"-X main.version=${VERSION}",
+			"-X main.commit=${COMMIT}",
+			"-X main.buildDate=${BUILD_DATE}",
+		},
+		"../../deploy/Dockerfile.agent": {
+			"ARG BONGSU_COMMIT",
+			"ARG BONGSU_BUILD_DATE",
+			"-X main.commit=${BONGSU_COMMIT}",
+			"-X main.buildDate=${BONGSU_BUILD_DATE}",
+		},
+		"../../deploy/Dockerfile.server": {
+			"ARG BONGSU_COMMIT",
+			"ARG BONGSU_BUILD_DATE",
+			"-X main.commit=${BONGSU_COMMIT}",
+			"-X main.buildDate=${BONGSU_BUILD_DATE}",
+		},
+	}
+	for path, wants := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(data)
+		for _, want := range wants {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s missing build metadata %q", path, want)
+			}
+		}
+	}
+}
+
 func TestAppendCollectionErrorBoundsReportErrors(t *testing.T) {
 	errs := []string{}
 	longErr := strings.Repeat("x", maxCollectionErrorBytes+20)

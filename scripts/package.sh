@@ -8,6 +8,8 @@ set -euo pipefail
 # For air-gapped: use scripts/download-trivy-db.sh + scripts/update-trivy-db.sh
 
 VERSION="${1:-${BONGSU_VERSION:-0.1.0}}"
+COMMIT="${BONGSU_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
+BUILD_DATE="${BONGSU_BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 PACKAGE_NAME="bongsu-${VERSION}"
 STAGING="/tmp/${PACKAGE_NAME}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -21,14 +23,16 @@ trap cleanup EXIT
 
 echo "=== Bongsu Air-Gapped Packaging ==="
 echo "Version: $VERSION"
+echo "Commit:  $COMMIT"
 
 cd "$ROOT"
 
 # Step 1: Build binaries
 echo ""
 echo "[1/6] Building binaries..."
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o bin/bongsu-agent-linux-amd64 ./cmd/agent
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.version=${VERSION}" -o bin/bongsu-server-linux-amd64 ./cmd/server
+LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/bongsu-agent-linux-amd64 ./cmd/agent
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/bongsu-server-linux-amd64 ./cmd/server
 echo "  bin/bongsu-agent-linux-amd64 ($(du -h bin/bongsu-agent-linux-amd64 | cut -f1))"
 echo "  bin/bongsu-server-linux-amd64 ($(du -h bin/bongsu-server-linux-amd64 | cut -f1))"
 
@@ -43,10 +47,14 @@ echo ""
 echo "[3/6] Building Docker images..."
 docker build -t "bongsu-server:${VERSION}" -t "bongsu-server:latest" \
     --build-arg "BONGSU_VERSION=${VERSION}" \
+    --build-arg "BONGSU_COMMIT=${COMMIT}" \
+    --build-arg "BONGSU_BUILD_DATE=${BUILD_DATE}" \
     -f deploy/Dockerfile.server . 2>&1 | tail -3
 
 docker build -t "bongsu-agent:${VERSION}" -t "bongsu-agent:latest" \
     --build-arg "BONGSU_VERSION=${VERSION}" \
+    --build-arg "BONGSU_COMMIT=${COMMIT}" \
+    --build-arg "BONGSU_BUILD_DATE=${BUILD_DATE}" \
     -f deploy/Dockerfile.agent . 2>&1 | tail -3
 
 # Step 4: Create staging directory

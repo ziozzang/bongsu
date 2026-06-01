@@ -1225,8 +1225,11 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 		"installerBinaryReadiness(\"bongsu-agent\", agentBinaryPath())",
 		"installerBinaryReadiness(\"trivy\", trivyBinaryPath())",
 		"type installerBinaryStatus struct",
-		`SHA256 string ` + "`json:\"sha256,omitempty\"`",
+		`Version string ` + "`json:\"version,omitempty\"`",
+		`SHA256  string ` + "`json:\"sha256,omitempty\"`",
 		"fileSHA256Hex(f)",
+		"binaryVersion(path)",
+		"exec.CommandContext(ctx, path, \"--version\")",
 		"agentBinaryPath()",
 		"trivyBinaryPath()",
 	} {
@@ -1245,6 +1248,7 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 	for _, want := range []string{
 		"InstallerStatus",
 		"InstallerBinaryStatus",
+		"version?: string",
 		"installerStatus: () => request<InstallerStatus>('/admin/installer/status')",
 	} {
 		if !strings.Contains(string(webAPI), want) {
@@ -1255,7 +1259,9 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 		"api.installerStatus().then(setInstallerStatus)",
 		"installerStatus.ready",
 		"installerStatus.agent.ready",
+		"installerStatus.agent.version",
 		"installerStatus.trivy.ready",
+		"Agent Version",
 	} {
 		if !strings.Contains(string(webApp), want) {
 			t.Fatalf("dashboard installer status missing %q", want)
