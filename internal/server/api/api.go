@@ -1436,7 +1436,7 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{
 		"host_id", "host_owner", "host_team", "host_environment", "host_criticality", "container", "vulnerability_id", "risk_score", "risk_level", "exploited", "epss_score", "epss_percentile", "severity", "cvss_score", "triage_status",
-		"sla_days", "due_at", "overdue", "pkg_name", "asset_type", "pkg_type", "ecosystem", "container_id", "image_name", "image_id", "target", "installed_version", "fixed_version", "finding_source", "advisory_sources", "pkg_path", "title", "primary_url",
+		"sla_days", "due_at", "overdue", "pkg_name", "asset_type", "pkg_type", "ecosystem", "container_id", "image_name", "image_id", "target", "installed_version", "fixed_version", "finding_source", "advisory_sources", "advisory_evidence", "pkg_path", "title", "primary_url",
 		"triage_reason", "triage_comment", "triage_expires_at", "triage_updated_by", "created_at",
 	}); err != nil {
 		return err
@@ -1473,6 +1473,7 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 			csvSafeCell(v.FixedVersion),
 			csvSafeCell(v.FindingSource),
 			csvSafeCell(strings.Join(v.AdvisorySources, ";")),
+			csvSafeCell(advisoryEvidenceCSV(v.AdvisoryEvidence)),
 			csvSafeCell(v.PkgPath),
 			csvSafeCell(v.Title),
 			csvSafeCell(v.PrimaryURL),
@@ -1487,6 +1488,30 @@ func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+func advisoryEvidenceCSV(evidence []models.AdvisoryEvidence) string {
+	if len(evidence) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(evidence))
+	for _, e := range evidence {
+		fields := []string{e.Source}
+		if e.Ecosystem != "" {
+			fields = append(fields, "eco="+e.Ecosystem)
+		}
+		if e.FixedVersion != "" {
+			fields = append(fields, "fixed="+e.FixedVersion)
+		}
+		if e.CVSSScore > 0 {
+			fields = append(fields, fmt.Sprintf("cvss=%.1f", e.CVSSScore))
+		}
+		if e.EPSSScore > 0 {
+			fields = append(fields, fmt.Sprintf("epss=%.5f", e.EPSSScore))
+		}
+		parts = append(parts, strings.Join(fields, "|"))
+	}
+	return strings.Join(parts, ";")
 }
 
 func csvSafeCell(s string) string {

@@ -4120,10 +4120,17 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 		FixedVersion:    "1.0.1",
 		FindingSource:   "cve-db",
 		AdvisorySources: []string{"osv", "nvd"},
-		RiskScore:       72.3,
-		RiskLevel:       "high",
-		Title:           "csv title",
-		CreatedAt:       time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
+		AdvisoryEvidence: []models.AdvisoryEvidence{{
+			Source:       "osv",
+			Ecosystem:    "Packagist",
+			FixedVersion: "1.0.1",
+			CVSSScore:    8.1,
+			EPSSScore:    0.12345,
+		}},
+		RiskScore: 72.3,
+		RiskLevel: "high",
+		Title:     "csv title",
+		CreatedAt: time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
 	}})
 	if err != nil {
 		t.Fatalf("write csv: %v", err)
@@ -4140,6 +4147,9 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 	}
 	if !strings.Contains(out, "advisory_sources") || !strings.Contains(out, "osv;nvd") {
 		t.Fatalf("missing advisory sources: %s", out)
+	}
+	if !strings.Contains(out, "advisory_evidence") || !strings.Contains(out, "osv|eco=Packagist|fixed=1.0.1|cvss=8.1|epss=0.12345") {
+		t.Fatalf("missing advisory evidence: %s", out)
 	}
 	if !strings.Contains(out, "risk_level") || !strings.Contains(out, "high") || !strings.Contains(out, "72.3") {
 		t.Fatalf("missing risk fields: %s", out)
