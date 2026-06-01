@@ -3034,7 +3034,7 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 		resp["stale"] = true
 		return resp
 	}
-	stats, err := s.db.GetCveSourceStats(ctx)
+	stats, err := s.db.GetCveSourceFreshnessStats(ctx)
 	if err != nil {
 		resp["status"] = "error"
 		resp["stale"] = true

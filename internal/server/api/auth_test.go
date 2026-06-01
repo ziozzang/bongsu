@@ -2171,7 +2171,7 @@ func TestSecurityDBFreshnessHealthAndMetricsAreExposed(t *testing.T) {
 		`BONGSU_SECURITY_DB_REQUIRED_SOURCES`,
 		`defaultSecurityDBMaxSourceAgeHours`,
 		`requiredSecurityDBSources()`,
-		`GetCveSourceStats(ctx)`,
+		`GetCveSourceFreshnessStats(ctx)`,
 		`resp["status"] = "stale"`,
 		`resp["status"] = "missing_sources"`,
 		`"oldest_source"`,

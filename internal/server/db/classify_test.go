@@ -1146,6 +1146,42 @@ func TestCveSourceStatsExposeMatchablePercent(t *testing.T) {
 	}
 }
 
+func TestCveSourceFreshnessStatsAvoidHeavyQualityScan(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetCveSourceFreshnessStats")
+	if start < 0 {
+		t.Fatal("GetCveSourceFreshnessStats not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetSecurityDBRevision")
+	if end < 0 {
+		t.Fatal("GetSecurityDBRevision not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"SELECT source, count(*) AS count, MAX(updated_at) AS last_update",
+		"FROM cve_database",
+		"GROUP BY source",
+		"type CveSourceFreshnessStats struct",
+	} {
+		if !strings.Contains(body, want) && !strings.Contains(fn, want) {
+			t.Fatalf("source freshness stats missing %q", want)
+		}
+	}
+	for _, disallowed := range []string{
+		"jsonb_array_elements",
+		"cveSourceMatchablePredicateSQL",
+		"affected_products",
+	} {
+		if strings.Contains(fn, disallowed) {
+			t.Fatalf("source freshness stats must avoid heavy quality scan %q: %s", disallowed, fn)
+		}
+	}
+}
+
 func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
 	for name, got := range map[string]string{
 		"contextual": cveContextualFixedVersionSQL("c", "v"),
