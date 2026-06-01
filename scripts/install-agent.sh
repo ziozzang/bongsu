@@ -12,6 +12,7 @@ CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
 INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
 INSTALL_TOKEN="${BONGSU_INSTALL_TOKEN:-}"
+AGENT_TOKEN="${BONGSU_AGENT_TOKEN:-}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -87,6 +88,16 @@ verify_download_sha256() {
     fi
 }
 
+generate_agent_token() {
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex 32
+    elif command -v uuidgen >/dev/null 2>&1; then
+        printf '%s%s\n' "$(uuidgen)" "$(uuidgen)" | tr -d '-'
+    else
+        date +%s%N | sha256sum | awk '{print $1}'
+    fi
+}
+
 if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "Usage: $0 <server-url> <api-key>"
     echo ""
@@ -97,6 +108,7 @@ if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "  BONGSU_INSTALL_MODE   cron or systemd (default: cron)"
     echo "  BONGSU_FORCE_SCAN_DAEMON  Install force scan daemon in systemd mode (default: true)"
     echo "  BONGSU_INSTALL_TOKEN  Optional server install/download token"
+    echo "  BONGSU_AGENT_TOKEN    Optional persistent per-host token"
     exit 1
 fi
 
@@ -115,6 +127,16 @@ esac
 
 # Create directories
 mkdir -p "$WORK_DIR/bin"
+
+if [ -z "$AGENT_TOKEN" ]; then
+    if [ -s "$WORK_DIR/agent.token" ]; then
+        AGENT_TOKEN="$(tr -d '\r\n' < "$WORK_DIR/agent.token")"
+    else
+        AGENT_TOKEN="$(generate_agent_token)"
+        umask 077
+        printf '%s\n' "$AGENT_TOKEN" > "$WORK_DIR/agent.token"
+    fi
+fi
 
 # Locate agent binary
 AGENT_BIN=""
@@ -170,9 +192,11 @@ umask 077
 cat > "$WORK_DIR/config.yaml" << EOF
 server_url: ${SERVER_URL}
 api_key: ${API_KEY}
+agent_token: ${AGENT_TOKEN}
 work_dir: ${WORK_DIR}
 EOF
 chmod 600 "$WORK_DIR/config.yaml"
+chmod 600 "$WORK_DIR/agent.token" 2>/dev/null || true
 echo "Config written: $WORK_DIR/config.yaml"
 
 # Build agent command

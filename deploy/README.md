@@ -123,7 +123,8 @@ Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and o
 ### On Bare-Metal/VM Host
 
 ```bash
-# Copy bongsu-agent binary and install-agent.sh to target host
+# Copy bongsu-agent binary and install-agent.sh to target host.
+# The installer creates/reuses /opt/bongsu/agent.token unless BONGSU_AGENT_TOKEN is supplied.
 ./install-agent.sh http://server:8080 your-api-key
 ```
 
@@ -236,7 +237,7 @@ spec:
 |----------|------|-------------|
 | `BONGSU_SERVER_URL` | `--server` | Server URL |
 | `BONGSU_API_KEY` | `--api-key` | Agent API key, preferably `BONGSU_AGENT_API_KEY` from server config |
-| `BONGSU_AGENT_TOKEN` | config `agent_token` | Optional persistent per-host token; generated automatically by the installer/agent if omitted |
+| `BONGSU_AGENT_TOKEN` | config `agent_token` | Optional persistent per-host token; generated automatically by one-line and packaged installers if omitted |
 | - | `--work-dir` | Working directory (default: `/opt/bongsu`) |
 | - | `--packages-only` | Server-side CVE matching |
 | - | `--type` | Scan type: `daily` or `manual` |

@@ -2252,6 +2252,11 @@ func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
 		`checksum mismatch for $output`,
 		`curl_download "${SERVER_URL}/api/downloads/bongsu-agent" "$WORK_DIR/bin/bongsu-agent"`,
 		`curl_download "${SERVER_URL}/api/downloads/trivy" "$WORK_DIR/bin/trivy"`,
+		"AGENT_TOKEN=",
+		"generate_agent_token()",
+		`agent_token: ${AGENT_TOKEN}`,
+		`chmod 600 "$WORK_DIR/agent.token"`,
+		"Optional persistent per-host token",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("static installer header download missing %q", want)
