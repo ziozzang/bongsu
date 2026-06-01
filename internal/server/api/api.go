@@ -3476,6 +3476,12 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_security_db_sync_last_success_timestamp_seconds", nil, metricTimestamp(status["last_sync"]))
 		writePromGauge(&b, "bongsu_security_db_sync_next_timestamp_seconds", nil, metricTimestamp(status["next_sync"]))
 	}
+	agentInstaller := installerBinaryReadiness("bongsu-agent", agentBinaryPath())
+	trivyInstaller := installerBinaryReadiness("trivy", trivyBinaryPath())
+	writePromGauge(&b, "bongsu_installer_ready", nil, boolMetric(s.installToken != "" && agentInstaller.Ready))
+	writePromGauge(&b, "bongsu_installer_install_token_configured", nil, boolMetric(s.installToken != ""))
+	writeInstallerBinaryMetrics(&b, agentInstaller)
+	writeInstallerBinaryMetrics(&b, trivyInstaller)
 	if s.db != nil {
 		if hosts, err := s.db.ListHosts(ctx); err == nil {
 			agentStatusCounts := map[string]int{}
@@ -3715,6 +3721,23 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		}
 	}
 	return b.String()
+}
+
+func writeInstallerBinaryMetrics(b *strings.Builder, status installerBinaryStatus) {
+	labels := map[string]string{"binary": status.Name}
+	writePromGauge(b, "bongsu_installer_binary_ready", labels, boolMetric(status.Ready))
+	writePromGauge(b, "bongsu_installer_binary_bytes", labels, float64(status.Bytes))
+	if status.Ready {
+		infoLabels := map[string]string{
+			"binary":  status.Name,
+			"version": status.Version,
+			"sha256":  status.SHA256,
+		}
+		writePromGauge(b, "bongsu_installer_binary_info", infoLabels, 1)
+	}
+	if status.Error != "" {
+		writePromGauge(b, "bongsu_installer_binary_error", map[string]string{"binary": status.Name, "error": status.Error}, 1)
+	}
 }
 
 func boolMetric(v any) float64 {
