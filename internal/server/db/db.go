@@ -1013,20 +1013,24 @@ const vulnEPSSPercentileExpr = `COALESCE((SELECT epss.epss_percentile FROM cve_d
 const vulnRiskScoreExpr = `LEAST(100, GREATEST(0, (v.cvss_score * 5) + (` + vulnEPSSScoreExpr + ` * 30) + CASE WHEN ` + vulnExploitedExpr + ` THEN 20 ELSE 0 END + CASE lower(COALESCE(h.criticality, '')) WHEN 'critical' THEN 10 WHEN 'high' THEN 5 ELSE 0 END))`
 const vulnRiskLevelExpr = `CASE WHEN ` + vulnRiskScoreExpr + ` >= 80 THEN 'critical' WHEN ` + vulnRiskScoreExpr + ` >= 60 THEN 'high' WHEN ` + vulnRiskScoreExpr + ` >= 40 THEN 'medium' ELSE 'low' END`
 
-const vulnAdvisorySourcesExpr = `COALESCE(ARRAY(
+var vulnAdvisorySourcesExpr = fmt.Sprintf(`COALESCE(ARRAY(
 	SELECT DISTINCT c.source
 	FROM cve_database c
+	JOIN packages source_pkg ON source_pkg.id = v.package_id
 	WHERE c.vulnerability_id = v.vulnerability_id
 	  AND c.source NOT IN ('cisa-kev', 'epss')
 	  AND EXISTS (
 		SELECT 1
 		FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
 		WHERE lower(COALESCE(ap->>'name', '')) = lower(v.pkg_name)
+		  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
+		  AND %s = %s
+		  AND (%s)
 	  )
 	ORDER BY c.source
-), ARRAY[]::text[])`
+), ARRAY[]::text[])`, affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("source_pkg"), cveSourceFixedPredicateSQL())
 
-const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name,
+var vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name,
 COALESCE((SELECT p.asset_type FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id = v.package_id), ''),
