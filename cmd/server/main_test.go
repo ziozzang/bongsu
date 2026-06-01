@@ -117,6 +117,8 @@ func TestMainStartsHTTPListenerBeforeBackgroundSecuritySync(t *testing.T) {
 		`BONGSU_SECURITY_DB_SYNC_ON_START`,
 		`BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS`,
 		`database.EnsureCveAffectedPackages(indexCtx)`,
+		`BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS`,
+		`database.EnrichVulnerabilities(recalcCtx)`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("startup ordering missing %q", want)

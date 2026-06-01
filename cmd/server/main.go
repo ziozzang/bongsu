@@ -90,21 +90,23 @@ func main() {
 
 	server := api.New(database, matcher, dbMgr, secMgr)
 	secMgr.SetFailureHook(server.SecurityDatabaseSyncFailed)
-	if n, err := database.CalcCvssScores(ctx); err == nil && n > 0 {
+	recalcCtx, recalcCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS", 120))*time.Second)
+	if n, err := database.CalcCvssScores(recalcCtx); err == nil && n > 0 {
 		log.Printf("Calculated CVSS scores for %d entries", n)
 	} else if err != nil {
 		log.Printf("CVSS score calculation: %v", err)
 	}
-	if n, err := database.EnrichVulnerabilities(ctx); err == nil && n > 0 {
+	if n, err := database.EnrichVulnerabilities(recalcCtx); err == nil && n > 0 {
 		log.Printf("Enriched %d vulnerabilities with CVE DB info", n)
 	} else if err != nil {
 		log.Printf("CVE enrichment: %v", err)
 	}
-	if n, err := database.NormalizeVulnSeverity(ctx); err == nil && n > 0 {
+	if n, err := database.NormalizeVulnSeverity(recalcCtx); err == nil && n > 0 {
 		log.Printf("Normalized severity for %d vulnerabilities", n)
 	} else if err != nil {
 		log.Printf("Severity normalization: %v", err)
 	}
+	recalcCancel()
 	key := server.APIKey()
 	if len(key) > 8 {
 		log.Printf("API Key: %s...%s", key[:4], key[len(key)-4:])
