@@ -1845,12 +1845,17 @@ func TestCveReferenceKeyIndexIsMaintainedAndIndexed(t *testing.T) {
 		"RefreshCveReferenceKeysForCveTx",
 		"RebuildCveReferenceKeys",
 		"EnsureCveReferenceKeys",
+		"GetCveReferenceKeyIndexStats",
 		"SELECT id, vulnerability_id, title, description, refs::text FROM cve_database",
 		"DELETE FROM cve_reference_keys",
 		"INSERT INTO cve_reference_keys",
 		"cveReferenceKeys(e)",
 		"JOIN cve_reference_keys crk",
 		"crk.reference_key = ('cve:' || k.cve)",
+		"CoveragePercent",
+		"LatestCVEUpdate",
+		"reference_key LIKE 'cve:%'",
+		"reference_key LIKE 'vendor:%'",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("CVE reference key index support missing %q", want)

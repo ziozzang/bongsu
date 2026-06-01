@@ -3465,6 +3465,25 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		} else {
 			writePromGauge(&b, "bongsu_cve_affected_package_index_metrics_error", nil, 1)
 		}
+		if referenceIndexStats, err := s.db.GetCveReferenceKeyIndexStats(ctx); err == nil {
+			writePromGauge(&b, "bongsu_cve_reference_key_index_records", nil, float64(referenceIndexStats.Count))
+			writePromGauge(&b, "bongsu_cve_reference_key_index_indexed_cves", nil, float64(referenceIndexStats.IndexedCVEs))
+			writePromGauge(&b, "bongsu_cve_reference_key_index_total_cves", nil, float64(referenceIndexStats.TotalCVEs))
+			writePromGauge(&b, "bongsu_cve_reference_key_index_canonical_cves", nil, float64(referenceIndexStats.CanonicalCVEs))
+			writePromGauge(&b, "bongsu_cve_reference_key_index_vendor_keys", nil, float64(referenceIndexStats.VendorKeys))
+			writePromGauge(&b, "bongsu_cve_reference_key_index_repository_keys", nil, float64(referenceIndexStats.RepositoryKeys))
+			writePromGauge(&b, "bongsu_cve_reference_key_index_coverage_percent", nil, referenceIndexStats.CoveragePercent)
+			writePromGauge(&b, "bongsu_cve_reference_key_index_orphans", nil, float64(referenceIndexStats.Orphans))
+			writePromGauge(&b, "bongsu_cve_reference_key_index_stale", nil, boolMetric(referenceIndexStats.Stale))
+			if referenceIndexStats.LastUpdate != nil {
+				writePromGauge(&b, "bongsu_cve_reference_key_index_last_update_timestamp_seconds", nil, float64(referenceIndexStats.LastUpdate.Unix()))
+			}
+			if referenceIndexStats.LatestCVEUpdate != nil {
+				writePromGauge(&b, "bongsu_cve_reference_key_index_latest_cve_update_timestamp_seconds", nil, float64(referenceIndexStats.LatestCVEUpdate.Unix()))
+			}
+		} else {
+			writePromGauge(&b, "bongsu_cve_reference_key_index_metrics_error", nil, 1)
+		}
 		if epssStats, err := s.db.GetCveEPSSMergeStats(ctx); err == nil {
 			writePromGauge(&b, "bongsu_cve_epss_records", nil, float64(epssStats.EPSSRecords))
 			writePromGauge(&b, "bongsu_cve_epss_cves", nil, float64(epssStats.EPSSCVEs))
@@ -5492,6 +5511,7 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		totalMatchablePercent = float64(totalMatchable) / float64(totalRecords) * 100
 	}
 	indexStats, indexErr := s.db.GetCveAffectedPackageIndexStats(r.Context())
+	referenceIndexStats, referenceIndexErr := s.db.GetCveReferenceKeyIndexStats(r.Context())
 	epssStats, epssErr := s.db.GetCveEPSSMergeStats(r.Context())
 	resp := map[string]any{
 		"generated_at":            time.Now().UTC().Format(time.RFC3339),
@@ -5512,6 +5532,11 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		resp["affected_package_index"] = indexStats
 	} else {
 		resp["affected_package_index_error"] = indexErr.Error()
+	}
+	if referenceIndexErr == nil {
+		resp["reference_key_index"] = referenceIndexStats
+	} else {
+		resp["reference_key_index_error"] = referenceIndexErr.Error()
 	}
 	if epssErr == nil {
 		resp["epss_merge"] = epssStats

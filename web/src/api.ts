@@ -436,6 +436,20 @@ export interface CveDbStatsResponse {
     orphans: number;
   };
   affected_package_index_error?: string;
+  reference_key_index?: {
+    count: number;
+    indexed_cves?: number;
+    total_cves?: number;
+    canonical_cves?: number;
+    vendor_keys?: number;
+    repository_keys?: number;
+    coverage_percent?: number;
+    last_update?: string;
+    latest_cve_update?: string;
+    stale?: boolean;
+    orphans: number;
+  };
+  reference_key_index_error?: string;
   epss_merge?: CveEpssMergeStats;
   epss_merge_error?: string;
   sources: CveSourceStat[];

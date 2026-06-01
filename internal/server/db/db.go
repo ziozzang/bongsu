@@ -5050,6 +5050,20 @@ type CveAffectedPackageIndexStats struct {
 	Orphans                 int        `json:"orphans"`
 }
 
+type CveReferenceKeyIndexStats struct {
+	Count           int        `json:"count"`
+	IndexedCVEs     int        `json:"indexed_cves"`
+	TotalCVEs       int        `json:"total_cves"`
+	CanonicalCVEs   int        `json:"canonical_cves"`
+	VendorKeys      int        `json:"vendor_keys"`
+	RepositoryKeys  int        `json:"repository_keys"`
+	CoveragePercent float64    `json:"coverage_percent"`
+	LastUpdate      *time.Time `json:"last_update"`
+	LatestCVEUpdate *time.Time `json:"latest_cve_update"`
+	Stale           bool       `json:"stale"`
+	Orphans         int        `json:"orphans"`
+}
+
 type CveAffectedPackage struct {
 	CveID           string    `json:"cve_id"`
 	VulnerabilityID string    `json:"vulnerability_id"`
@@ -5117,6 +5131,31 @@ ORDER BY source`, matchablePredicate))
 	if stats.MissingMatchableSources == nil {
 		stats.MissingMatchableSources = []string{}
 	}
+	return &stats, nil
+}
+
+func (db *DB) GetCveReferenceKeyIndexStats(ctx context.Context) (*CveReferenceKeyIndexStats, error) {
+	var stats CveReferenceKeyIndexStats
+	err := db.QueryRowContext(ctx, `
+SELECT
+	(SELECT count(*) FROM cve_reference_keys),
+	(SELECT count(DISTINCT cve_id) FROM cve_reference_keys),
+	(SELECT count(*) FROM cve_database),
+	(SELECT count(DISTINCT cve_id) FROM cve_reference_keys WHERE reference_key LIKE 'cve:%'),
+	(SELECT count(*) FROM cve_reference_keys WHERE reference_key LIKE 'vendor:%'),
+	(SELECT count(*) FROM cve_reference_keys WHERE reference_key LIKE 'repo:%'),
+	(SELECT max(updated_at) FROM cve_reference_keys),
+	(SELECT max(updated_at) FROM cve_database),
+	(SELECT count(*) FROM cve_reference_keys crk WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = crk.cve_id))`).Scan(
+		&stats.Count, &stats.IndexedCVEs, &stats.TotalCVEs, &stats.CanonicalCVEs, &stats.VendorKeys, &stats.RepositoryKeys,
+		&stats.LastUpdate, &stats.LatestCVEUpdate, &stats.Orphans)
+	if err != nil {
+		return nil, err
+	}
+	if stats.TotalCVEs > 0 {
+		stats.CoveragePercent = math.Round(float64(stats.IndexedCVEs)*1000/float64(stats.TotalCVEs)) / 10
+	}
+	stats.Stale = stats.TotalCVEs > 0 && (stats.LastUpdate == nil || stats.LatestCVEUpdate == nil || stats.LastUpdate.Before(*stats.LatestCVEUpdate))
 	return &stats, nil
 }
 
