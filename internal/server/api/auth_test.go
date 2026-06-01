@@ -2429,6 +2429,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"handleReferenceIndexRebuild",
 		"Rebuild Reference Index",
 		"Reference key index rebuilt",
+		"duration_ms",
 		"missing_matchable_sources",
 		"Reference Index",
 		"cveReferenceIndex",

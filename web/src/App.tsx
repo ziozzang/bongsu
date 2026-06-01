@@ -385,7 +385,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     try {
       const r = await api.rebuildCveAffectedIndex();
       setCveAffectedIndex(r.index || null);
-      setUpdateMsg(`Affected package index rebuilt: ${r.indexed.toLocaleString()} entries`);
+      const duration = r.duration_ms ? ` in ${(r.duration_ms / 1000).toFixed(1)}s` : '';
+      setUpdateMsg(`Affected package index rebuilt: ${r.indexed.toLocaleString()} entries${duration}`);
       api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); }).catch(() => {});
     } catch {
       setUpdateMsg('Affected package index rebuild failed');
@@ -398,7 +399,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setUpdateMsg('');
     try {
       const r = await api.rebuildCveReferenceIndex();
-      setUpdateMsg(`Reference key index rebuilt: ${r.indexed.toLocaleString()} keys`);
+      const duration = r.duration_ms ? ` in ${(r.duration_ms / 1000).toFixed(1)}s` : '';
+      setUpdateMsg(`Reference key index rebuilt: ${r.indexed.toLocaleString()} keys${duration}`);
       api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); }).catch(() => {});
     } catch {
       setUpdateMsg('Reference key index rebuild failed');

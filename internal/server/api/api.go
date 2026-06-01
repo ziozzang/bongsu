@@ -4887,20 +4887,22 @@ func (s *Server) handleCveDbAffectedIndexRebuild(w http.ResponseWriter, r *http.
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	started := time.Now()
 	count, err := s.db.RebuildCveAffectedPackages(r.Context())
+	durationMS := time.Since(started).Milliseconds()
 	if err != nil {
-		log.Printf("cve affected package index rebuild: %v", err)
+		log.Printf("cve affected package index rebuild failed after %dms: %v", durationMS, err)
 		http.Error(w, "rebuild failed", http.StatusInternalServerError)
 		return
 	}
 	stats, _ := s.db.GetCveAffectedPackageIndexStats(r.Context())
 	revisionMeta := s.securityDBRevisionMeta(r.Context())
-	out := map[string]any{"status": "ok", "indexed": count, "index": stats}
+	out := map[string]any{"status": "ok", "indexed": count, "duration_ms": durationMS, "index": stats}
 	for k, v := range revisionMeta {
 		out[k] = v
 	}
 	writeJSON(w, http.StatusOK, out)
-	auditMeta := map[string]any{"indexed": count}
+	auditMeta := map[string]any{"indexed": count, "duration_ms": durationMS}
 	if stats != nil {
 		auditMeta["index_count"] = stats.Count
 		auditMeta["index_sources"] = stats.SourceCount
@@ -4919,19 +4921,21 @@ func (s *Server) handleCveDbReferenceIndexRebuild(w http.ResponseWriter, r *http
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	started := time.Now()
 	count, err := s.db.RebuildCveReferenceKeys(r.Context())
+	durationMS := time.Since(started).Milliseconds()
 	if err != nil {
-		log.Printf("cve reference key index rebuild: %v", err)
+		log.Printf("cve reference key index rebuild failed after %dms: %v", durationMS, err)
 		http.Error(w, "rebuild failed", http.StatusInternalServerError)
 		return
 	}
 	revisionMeta := s.securityDBRevisionMeta(r.Context())
-	out := map[string]any{"status": "ok", "indexed": count}
+	out := map[string]any{"status": "ok", "indexed": count, "duration_ms": durationMS}
 	for k, v := range revisionMeta {
 		out[k] = v
 	}
 	writeJSON(w, http.StatusOK, out)
-	auditMeta := map[string]any{"indexed": count}
+	auditMeta := map[string]any{"indexed": count, "duration_ms": durationMS}
 	for k, v := range revisionMeta {
 		auditMeta[k] = v
 	}
