@@ -1013,6 +1013,19 @@ const vulnEPSSPercentileExpr = `COALESCE((SELECT epss.epss_percentile FROM cve_d
 const vulnRiskScoreExpr = `LEAST(100, GREATEST(0, (v.cvss_score * 5) + (` + vulnEPSSScoreExpr + ` * 30) + CASE WHEN ` + vulnExploitedExpr + ` THEN 20 ELSE 0 END + CASE lower(COALESCE(h.criticality, '')) WHEN 'critical' THEN 10 WHEN 'high' THEN 5 ELSE 0 END))`
 const vulnRiskLevelExpr = `CASE WHEN ` + vulnRiskScoreExpr + ` >= 80 THEN 'critical' WHEN ` + vulnRiskScoreExpr + ` >= 60 THEN 'high' WHEN ` + vulnRiskScoreExpr + ` >= 40 THEN 'medium' ELSE 'low' END`
 
+const vulnAdvisorySourcesExpr = `COALESCE(ARRAY(
+	SELECT DISTINCT c.source
+	FROM cve_database c
+	WHERE c.vulnerability_id = v.vulnerability_id
+	  AND c.source NOT IN ('cisa-kev', 'epss')
+	  AND EXISTS (
+		SELECT 1
+		FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
+		WHERE lower(COALESCE(ap->>'name', '')) = lower(v.pkg_name)
+	  )
+	ORDER BY c.source
+), ARRAY[]::text[])`
+
 const vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name,
 COALESCE((SELECT p.asset_type FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), ''),
@@ -1021,7 +1034,7 @@ COALESCE((SELECT p.container_id FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.image_name FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.image_id FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.target FROM packages p WHERE p.id = v.package_id), ''),
-v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, ''),
+v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), ` + vulnAdvisorySourcesExpr + `, v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, ''),
 ` + vulnExploitedExpr + `,
 ` + vulnEPSSScoreExpr + `,
 ` + vulnEPSSPercentileExpr + `,
@@ -1046,7 +1059,7 @@ func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnera
 		&v.VulnerabilityID, &v.Severity, &v.Title, &v.Description,
 		&v.PkgName, &v.AssetType, &v.PkgType, &v.Ecosystem, &v.ContainerID, &v.ImageName, &v.ImageID, &v.Target, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
 		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
-		&v.FindingSource, &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
+		&v.FindingSource, pq.Array(&v.AdvisorySources), &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
 		&v.Exploited, &v.EPSSScore, &v.EPSSPercentile, &v.RiskScore, &v.RiskLevel, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
 }
 

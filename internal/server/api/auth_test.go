@@ -2013,6 +2013,9 @@ func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
 		"Known exploited",
 		"v.epss_score",
 		"v.exploited",
+		"Advisory Sources",
+		"v.advisory_sources",
+		"Advisory:",
 	} {
 		if !strings.Contains(appBody, want) {
 			t.Fatalf("dashboard KEV prioritization missing %q", want)
@@ -2020,7 +2023,8 @@ func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
 	}
 	if !strings.Contains(apiBody, "exploited: boolean") || !strings.Contains(apiBody, "exploited?: string") ||
 		!strings.Contains(apiBody, "epss_score?: number") || !strings.Contains(apiBody, "risk_score?: number") ||
-		!strings.Contains(apiBody, "risk_level?: string") || !strings.Contains(apiBody, "min_epss?: string") {
+		!strings.Contains(apiBody, "risk_level?: string") || !strings.Contains(apiBody, "advisory_sources?: string[]") ||
+		!strings.Contains(apiBody, "min_epss?: string") {
 		t.Fatal("web API types must expose exploited and EPSS vulnerability fields and filters")
 	}
 }
@@ -3928,6 +3932,7 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 		InstalledVer:    "1.0.0",
 		FixedVersion:    "1.0.1",
 		FindingSource:   "cve-db",
+		AdvisorySources: []string{"osv", "nvd"},
 		RiskScore:       72.3,
 		RiskLevel:       "high",
 		Title:           "csv title",
@@ -3945,6 +3950,9 @@ func TestWriteVulnerabilityCSV(t *testing.T) {
 	}
 	if !strings.Contains(out, "finding_source") || !strings.Contains(out, "cve-db") {
 		t.Fatalf("missing finding source: %s", out)
+	}
+	if !strings.Contains(out, "advisory_sources") || !strings.Contains(out, "osv;nvd") {
+		t.Fatalf("missing advisory sources: %s", out)
 	}
 	if !strings.Contains(out, "risk_level") || !strings.Contains(out, "high") || !strings.Contains(out, "72.3") {
 		t.Fatalf("missing risk fields: %s", out)

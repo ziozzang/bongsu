@@ -1603,6 +1603,9 @@ func TestVulnerabilityRowsExposePackageContext(t *testing.T) {
 		"(SELECT p.image_name FROM packages p WHERE p.id = v.package_id)",
 		"(SELECT p.image_id FROM packages p WHERE p.id = v.package_id)",
 		"(SELECT p.target FROM packages p WHERE p.id = v.package_id)",
+		"const vulnAdvisorySourcesExpr",
+		"c.source NOT IN ('cisa-kev', 'epss')",
+		"jsonb_array_elements",
 		"&v.AssetType",
 		"&v.PkgType",
 		"&v.Ecosystem",
@@ -1610,6 +1613,7 @@ func TestVulnerabilityRowsExposePackageContext(t *testing.T) {
 		"&v.ImageName",
 		"&v.ImageID",
 		"&v.Target",
+		"pq.Array(&v.AdvisorySources)",
 		`json:"asset_type`,
 		`json:"pkg_type`,
 		`json:"ecosystem`,
@@ -1617,6 +1621,7 @@ func TestVulnerabilityRowsExposePackageContext(t *testing.T) {
 		`json:"image_name`,
 		`json:"image_id`,
 		`json:"target`,
+		`json:"advisory_sources`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("vulnerability package context missing %q", want)

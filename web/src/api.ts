@@ -167,6 +167,7 @@ export interface Vuln {
   cvss_vector: string;
   primary_url: string;
   finding_source?: string;
+  advisory_sources?: string[];
   host_id: string;
   host_owner?: string;
   host_team?: string;

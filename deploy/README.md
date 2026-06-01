@@ -251,9 +251,9 @@ spec:
 | `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
 | `POST` | `/api/hosts/{id}/agent-token/reset` | Admin-only reset of a host's bound agent token for reinstall or token-loss recovery |
 | `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON with stable `bom-ref` dependencies or SPDX JSON with `format=spdx` |
-| `GET` | `/api/vulnerabilities` | List latest-scan CVEs with risk score/level, host/container/owner/team/environment/finding-source/CISA-KEV/EPSS filters, and package type/ecosystem context |
+| `GET` | `/api/vulnerabilities` | List latest-scan CVEs with risk score/level, host/container/owner/team/environment/finding-source/CISA-KEV/EPSS filters, advisory source provenance, and package type/ecosystem context |
 | `GET` | `/api/vulnerabilities/filters` | List vulnerability filter options scoped to the caller's latest-scan RBAC visibility |
-| `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON with host metadata |
+| `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON with host metadata and advisory source provenance |
 | `GET` | `/api/vuln-summary?group_by=owner` | Group active remediation findings and risk-level counts by owner/team/environment/criticality |
 | `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope/expiry |
 | `GET` | `/api/packages` | List latest-scan packages with active finding `max_cvss`/`vuln_count` (supports `sort_by`, `q`, filters, pagination) |
