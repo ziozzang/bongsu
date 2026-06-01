@@ -1776,6 +1776,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	visibleHosts := 0
 	visibleHostIDs := []string{}
 	agentStatusCounts := map[string]int{}
+	agentVersionCounts := map[string]int{}
 	inventoryStatusCounts := map[string]int{}
 	totalInventoryPackages := 0
 	totalInventoryVulnerabilities := 0
@@ -1794,6 +1795,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			agentStatus = "unknown"
 		}
 		agentStatusCounts[agentStatus]++
+		version := strings.TrimSpace(h.AgentVersion)
+		if version == "" {
+			version = "unknown"
+		}
+		agentVersionCounts[version]++
 		summary := inventory[h.ID]
 		inventoryStatus := hostInventoryStatus(summary, now, inventoryStaleAfter)
 		inventoryStatusCounts[inventoryStatus]++
@@ -1888,6 +1894,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"total_vulnerabilities":             totalVulns,
 		"severity_counts":                   sevCounts,
 		"agent_status_counts":               agentStatusCounts,
+		"agent_version_counts":              agentVersionCounts,
+		"latest_agent_version":              binaryVersion(agentBinaryPath()),
 		"inventory_status_counts":           inventoryStatusCounts,
 		"inventory_covered_hosts":           inventoryCoveredHosts,
 		"inventory_coverage_percent":        percent(inventoryCoveredHosts, visibleHosts),
@@ -1906,6 +1914,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"security_db_revision":              securityDBRevision,
 		"security_db_rescan_request_counts": securityDBRescanCounts,
 	}
+	resp["agent_version_drift_counts"] = agentVersionDriftCounts(agentVersionCounts, fmt.Sprint(resp["latest_agent_version"]))
 	if s.authenticateAdmin(r) || !s.webAuth {
 		triageActiveCounts := map[string]int{}
 		triageExpiredCounts := map[string]int{}
@@ -2402,6 +2411,24 @@ func binaryVersion(path string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(out))
+}
+
+func agentVersionDriftCounts(versionCounts map[string]int, latestVersion string) map[string]int {
+	out := map[string]int{"current": 0, "outdated": 0, "unknown": 0}
+	latestVersion = strings.TrimSpace(latestVersion)
+	for version, count := range versionCounts {
+		version = strings.TrimSpace(version)
+		if version == "" || version == "unknown" {
+			out["unknown"] += count
+			continue
+		}
+		if latestVersion != "" && version == latestVersion {
+			out["current"] += count
+		} else {
+			out["outdated"] += count
+		}
+	}
+	return out
 }
 
 func fileSHA256Hex(f *os.File) (string, error) {
@@ -3296,6 +3323,10 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			}
 			for version, count := range agentVersionCounts {
 				writePromGauge(&b, "bongsu_agent_version_hosts", map[string]string{"version": version}, float64(count))
+			}
+			latestVersion := binaryVersion(agentBinaryPath())
+			for state, count := range agentVersionDriftCounts(agentVersionCounts, latestVersion) {
+				writePromGauge(&b, "bongsu_agent_version_drift_hosts", map[string]string{"state": state}, float64(count))
 			}
 		} else {
 			writePromGauge(&b, "bongsu_agent_metrics_error", nil, 1)

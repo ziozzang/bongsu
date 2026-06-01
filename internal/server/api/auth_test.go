@@ -273,6 +273,9 @@ func TestAdminMetricsExposeAgentFleetState(t *testing.T) {
 		`[]string{"online", "stale", "offline", "unknown"}`,
 		"bongsu_agent_version_hosts",
 		`map[string]string{"version": version}`,
+		"bongsu_agent_version_drift_hosts",
+		`map[string]string{"state": state}`,
+		"agentVersionDriftCounts(agentVersionCounts, latestVersion)",
 		"bongsu_agent_metrics_error",
 	} {
 		if !strings.Contains(fn, want) {
@@ -1249,6 +1252,9 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 		"InstallerStatus",
 		"InstallerBinaryStatus",
 		"version?: string",
+		"agent_version_counts?: Record<string, number>",
+		"agent_version_drift_counts?: Record<string, number>",
+		"latest_agent_version?: string",
 		"installerStatus: () => request<InstallerStatus>('/admin/installer/status')",
 	} {
 		if !strings.Contains(string(webAPI), want) {
@@ -1263,6 +1269,7 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 		"installerStatus.trivy.ready",
 		"Agent Version",
 		"Agent Version Drift",
+		"stats?.agent_version_drift_counts?.outdated",
 		"outdatedAgentCount",
 		"unknownAgentVersionCount",
 		"dashboardHosts.filter",
@@ -1270,6 +1277,22 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 		if !strings.Contains(string(webApp), want) {
 			t.Fatalf("dashboard installer status missing %q", want)
 		}
+	}
+}
+
+func TestAgentVersionDriftCountsClassifyFleet(t *testing.T) {
+	got := agentVersionDriftCounts(map[string]int{
+		"1.0.0+abc": 2,
+		"0.9.0+old": 3,
+		"":          1,
+		"unknown":   4,
+	}, "1.0.0+abc")
+	if got["current"] != 2 || got["outdated"] != 3 || got["unknown"] != 5 {
+		t.Fatalf("drift counts = %#v", got)
+	}
+	got = agentVersionDriftCounts(map[string]int{"1.0.0": 1}, "")
+	if got["current"] != 0 || got["outdated"] != 1 || got["unknown"] != 0 {
+		t.Fatalf("missing latest version should classify known agents as outdated: %#v", got)
 	}
 }
 
@@ -3474,6 +3497,10 @@ func TestStatsExposeActiveFindingCounts(t *testing.T) {
 		"active_vulnerabilities",
 		"active_severity_counts",
 		"agent_status_counts",
+		"agent_version_counts",
+		"latest_agent_version",
+		"agent_version_drift_counts",
+		"agentVersionDriftCounts(agentVersionCounts",
 		"inventory_status_counts",
 		`if summary.ScanID != ""`,
 		"inventory_coverage_percent",

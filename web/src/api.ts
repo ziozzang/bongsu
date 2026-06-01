@@ -252,6 +252,9 @@ export interface Stats {
   total_vulnerabilities: number;
   severity_counts: Record<string, number>;
   agent_status_counts?: Record<string, number>;
+  agent_version_counts?: Record<string, number>;
+  agent_version_drift_counts?: Record<string, number>;
+  latest_agent_version?: string;
   inventory_status_counts?: Record<string, number>;
   inventory_covered_hosts?: number;
   inventory_coverage_percent?: number;

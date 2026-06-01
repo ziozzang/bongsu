@@ -501,10 +501,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const effectiveInventoryCounts = stats?.inventory_status_counts || inventoryCounts;
   const inventoryCoveragePercent = stats?.inventory_coverage_percent ?? 0;
   const inventoryFreshPercent = stats?.inventory_fresh_percent ?? 0;
-  const latestAgentVersion = installerStatus?.agent?.version || '';
-  const currentAgentCount = latestAgentVersion ? dashboardHosts.filter(h => h.agent_version === latestAgentVersion).length : 0;
-  const outdatedAgentCount = latestAgentVersion ? dashboardHosts.filter(h => h.agent_version && h.agent_version !== latestAgentVersion).length : 0;
-  const unknownAgentVersionCount = dashboardHosts.filter(h => !h.agent_version).length;
+  const latestAgentVersion = stats?.latest_agent_version || installerStatus?.agent?.version || '';
+  const currentAgentCount = stats?.agent_version_drift_counts?.current ?? (latestAgentVersion ? dashboardHosts.filter(h => h.agent_version === latestAgentVersion).length : 0);
+  const outdatedAgentCount = stats?.agent_version_drift_counts?.outdated ?? (latestAgentVersion ? dashboardHosts.filter(h => h.agent_version && h.agent_version !== latestAgentVersion).length : 0);
+  const unknownAgentVersionCount = stats?.agent_version_drift_counts?.unknown ?? dashboardHosts.filter(h => !h.agent_version).length;
   const inventoryCoverageColor = inventoryCoveragePercent < 70
     ? 'var(--critical)'
     : inventoryCoveragePercent < 90
