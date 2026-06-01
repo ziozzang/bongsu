@@ -1071,6 +1071,7 @@ func TestCveAffectedPackageIndexRowsAreListable(t *testing.T) {
 		"FROM cve_affected_packages",
 		"WHERE cve_id=$1",
 		"ORDER BY package_name, ecosystem, fixed_version",
+		"LIMIT $2 OFFSET $3",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("affected package index listing missing %q", want)

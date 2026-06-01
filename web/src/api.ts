@@ -586,8 +586,8 @@ export const api = {
     request<{ items: Vuln[]; total: number }>('/cve-search', params),
   cveDbSearch: (params: { q?: string; severity?: string; source?: string; min_cvss?: string; min_epss?: string; min_epss_percentile?: string; matchable?: string; include_priority_sources?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: CveDbEntry[]; total: number }>('/cve-db/search', params),
-  cveDbAffectedPackages: (id: string, params?: { limit?: string }) =>
-    request<{ items: CveAffectedPackage[]; total: number }>(`/cve-db/${id}/affected-packages`, params),
+  cveDbAffectedPackages: (id: string, params?: { limit?: string; offset?: string }) =>
+    request<{ items: CveAffectedPackage[]; total: number; limit?: number; offset?: number }>(`/cve-db/${id}/affected-packages`, params),
   cveDbSources: () => request<{ sources: string[] }>('/cve-db/sources'),
   cveDbStats: () => request<CveDbStatsResponse>('/cve-db/stats'),
   packages: (params: { host_id?: string; container?: string; pkg_type?: string; source?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>

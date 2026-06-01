@@ -4176,8 +4176,10 @@ func TestCveDbAffectedPackageEvidenceEndpoint(t *testing.T) {
 		"func (s *Server) handleCveDbAffectedPackages",
 		"s.authenticateWeb(r)",
 		`r.PathValue("id")`,
+		"offsetParam(r)",
 		"s.db.ListCveAffectedPackages",
 		`"items": items`,
+		`"offset": offset`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("CVE affected package evidence endpoint missing %q", want)
@@ -4206,6 +4208,7 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"affected",
 		"cveDbAffectedPackages",
 		"Indexed Match Evidence",
+		"Load More",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard CVE search auto-load/error UI missing %q", want)

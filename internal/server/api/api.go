@@ -5414,15 +5414,18 @@ func (s *Server) handleCveDbAffectedPackages(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	limit := limitParam(r, 100)
-	items, total, err := s.db.ListCveAffectedPackages(r.Context(), id, limit)
+	offset := offsetParam(r)
+	items, total, err := s.db.ListCveAffectedPackages(r.Context(), id, limit, offset)
 	if err != nil {
 		log.Printf("cve-db affected packages: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items": items,
-		"total": total,
+		"items":  items,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
 	})
 }
 

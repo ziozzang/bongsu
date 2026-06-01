@@ -4656,9 +4656,12 @@ ORDER BY source`, matchablePredicate))
 	return &stats, nil
 }
 
-func (db *DB) ListCveAffectedPackages(ctx context.Context, cveID string, limit int) ([]CveAffectedPackage, int, error) {
+func (db *DB) ListCveAffectedPackages(ctx context.Context, cveID string, limit, offset int) ([]CveAffectedPackage, int, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	var total int
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM cve_affected_packages WHERE cve_id=$1`, cveID).Scan(&total); err != nil {
@@ -4669,7 +4672,7 @@ SELECT cve_id, vulnerability_id, source, package_name, ecosystem, fixed_version,
 FROM cve_affected_packages
 WHERE cve_id=$1
 ORDER BY package_name, ecosystem, fixed_version
-LIMIT $2`, cveID, limit)
+LIMIT $2 OFFSET $3`, cveID, limit, offset)
 	if err != nil {
 		return nil, 0, err
 	}

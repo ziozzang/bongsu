@@ -2597,7 +2597,7 @@ function CveSearchView() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [indexedAffected, setIndexedAffected] = useState<Record<string, { loading?: boolean; error?: string; items?: CveAffectedPackage[] }>>({});
+  const [indexedAffected, setIndexedAffected] = useState<Record<string, { loading?: boolean; error?: string; items?: CveAffectedPackage[]; total?: number }>>({});
   const [sortBy, setSortBy] = useState('published_date');
   const [sortDesc, setSortDesc] = useState(true);
   const initialSearchStarted = useRef(false);
@@ -2651,13 +2651,23 @@ function CveSearchView() {
   const badge = (s: string) => "badge badge-" + (s || "unknown").toLowerCase();
   const cvssClr = (n: number) => n >= 9 ? "var(--critical)" : n >= 7 ? "var(--high)" : n >= 4 ? "var(--medium)" : "inherit";
 
+  const loadIndexedAffected = (entry: CveDbEntry, offset = 0) => {
+    setIndexedAffected(prev => ({ ...prev, [entry.id]: { ...(prev[entry.id] || {}), loading: true, error: '' } }));
+    api.cveDbAffectedPackages(entry.id, { limit: '200', offset: String(offset) })
+      .then(r => setIndexedAffected(prev => ({
+        ...prev,
+        [entry.id]: {
+          items: offset > 0 ? [...(prev[entry.id]?.items || []), ...(r.items || [])] : (r.items || []),
+          total: r.total,
+        },
+      })))
+      .catch(err => setIndexedAffected(prev => ({ ...prev, [entry.id]: { ...(prev[entry.id] || {}), loading: false, error: err?.message || 'Indexed affected packages failed' } })));
+  };
+
   const toggleExpand = (entry: CveDbEntry) => {
     setExpanded(prev => prev === entry.id ? null : entry.id);
     if ((entry.matchable_affected_count || 0) > 0 && !indexedAffected[entry.id]) {
-      setIndexedAffected(prev => ({ ...prev, [entry.id]: { loading: true } }));
-      api.cveDbAffectedPackages(entry.id, { limit: '200' })
-        .then(r => setIndexedAffected(prev => ({ ...prev, [entry.id]: { items: r.items || [] } })))
-        .catch(err => setIndexedAffected(prev => ({ ...prev, [entry.id]: { error: err?.message || 'Indexed affected packages failed' } })));
+      loadIndexedAffected(entry, 0);
     }
   };
 
@@ -2879,6 +2889,9 @@ function CveSearchView() {
                           {(entry.matchable_affected_count || 0) > 0 && (
                             <div style={{ marginBottom: '0.75rem' }}>
                               <strong style={{ fontSize: '0.8125rem' }}>Indexed Match Evidence</strong>
+                              <span className="mono" style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                                showing {(indexedAffected[entry.id]?.items || []).length.toLocaleString()} of {((indexedAffected[entry.id]?.total ?? entry.matchable_affected_count) || 0).toLocaleString()}
+                              </span>
                               <div style={{ marginTop: '0.25rem' }}>
                                 {indexedAffected[entry.id]?.loading && <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>Loading...</div>}
                                 {indexedAffected[entry.id]?.error && <div style={{ color: 'var(--critical)', fontSize: '0.8125rem' }}>{indexedAffected[entry.id]?.error}</div>}
@@ -2889,6 +2902,18 @@ function CveSearchView() {
                                     <span style={{ fontSize: '0.6875rem', color: '#22c55e', background: 'rgba(34,197,94,0.1)', padding: '1px 6px', borderRadius: 3, fontWeight: 600, marginLeft: '0.5rem' }}>Fixed: {item.fixed_version}</span>
                                   </div>
                                 ))}
+                                {((indexedAffected[entry.id]?.items || []).length < (indexedAffected[entry.id]?.total || 0)) && (
+                                  <button
+                                    style={{ marginTop: '0.25rem' }}
+                                    disabled={indexedAffected[entry.id]?.loading}
+                                    onClick={e => {
+                                      e.stopPropagation();
+                                      loadIndexedAffected(entry, (indexedAffected[entry.id]?.items || []).length);
+                                    }}
+                                  >
+                                    Load More
+                                  </button>
+                                )}
                               </div>
                             </div>
                           )}
