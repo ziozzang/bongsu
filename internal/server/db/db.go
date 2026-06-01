@@ -5265,26 +5265,32 @@ func (db *DB) GetCveEPSSMergeStats(ctx context.Context) (*CveEPSSMergeStats, err
 	var stats CveEPSSMergeStats
 	err := db.QueryRowContext(ctx, `
 WITH epss AS (
-	SELECT DISTINCT vulnerability_id
+	SELECT vulnerability_id, count(*) AS records
 	FROM cve_database
 	WHERE source = 'epss'
 	  AND vulnerability_id != ''
 	  AND (epss_score > 0 OR epss_percentile > 0)
+	GROUP BY vulnerability_id
 ),
 non_epss AS (
-	SELECT vulnerability_id, source, epss_score, epss_percentile
+	SELECT
+		vulnerability_id,
+		count(*) FILTER (WHERE epss_score > 0 OR epss_percentile > 0) AS enriched_records
 	FROM cve_database
 	WHERE source != 'epss'
 	  AND vulnerability_id != ''
+	GROUP BY vulnerability_id
 )
 SELECT
-	(SELECT count(*) FROM cve_database WHERE source = 'epss' AND (epss_score > 0 OR epss_percentile > 0)),
+	COALESCE((SELECT sum(records) FROM epss), 0),
 	(SELECT count(*) FROM epss),
-	(SELECT count(*) FROM epss e WHERE EXISTS (SELECT 1 FROM non_epss n WHERE n.vulnerability_id = e.vulnerability_id)),
-	(SELECT count(*) FROM epss e WHERE NOT EXISTS (SELECT 1 FROM non_epss n WHERE n.vulnerability_id = e.vulnerability_id)),
-	(SELECT count(*) FROM non_epss WHERE epss_score > 0 OR epss_percentile > 0),
-	(SELECT count(DISTINCT vulnerability_id) FROM non_epss WHERE epss_score > 0 OR epss_percentile > 0),
-	(SELECT count(DISTINCT source) FROM non_epss WHERE epss_score > 0 OR epss_percentile > 0)`).Scan(
+	count(n.vulnerability_id),
+	count(*) - count(n.vulnerability_id),
+	COALESCE(sum(n.enriched_records), 0),
+	count(n.vulnerability_id) FILTER (WHERE n.enriched_records > 0),
+	COALESCE((SELECT count(DISTINCT source) FROM cve_database WHERE source != 'epss' AND vulnerability_id != '' AND (epss_score > 0 OR epss_percentile > 0)), 0)
+FROM epss e
+LEFT JOIN non_epss n ON n.vulnerability_id = e.vulnerability_id`).Scan(
 		&stats.EPSSRecords, &stats.EPSSCVEs, &stats.MatchedCVEs, &stats.UnmatchedCVEs,
 		&stats.EnrichedRecords, &stats.EnrichedCVEs, &stats.EnrichedSourceCount)
 	if err != nil {

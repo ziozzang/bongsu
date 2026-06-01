@@ -2344,6 +2344,8 @@ func TestCveDatabaseStoresEPSSPriorityColumns(t *testing.T) {
 		"MergeCoveragePercent",
 		"source = 'epss'",
 		"c.source != 'epss'",
+		"GROUP BY vulnerability_id",
+		"LEFT JOIN non_epss",
 		"latest_epss",
 	} {
 		if !strings.Contains(body, want) {
