@@ -1012,11 +1012,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           </div>
         </div>
         <div className="stat-card">
-          <div className="accent-bar" style={{ background: (cveAffectedIndex?.orphans || 0) > 0 ? 'var(--high)' : 'var(--low)' }} />
+          <div className="accent-bar" style={{ background: (cveAffectedIndex?.orphans || 0) > 0 || (cveAffectedIndex?.missing_matchable_sources?.length || 0) > 0 ? 'var(--high)' : 'var(--low)' }} />
           <div className="label">Affected Index</div>
-          <div className="value" style={{ color: (cveAffectedIndex?.orphans || 0) > 0 ? 'var(--high)' : 'var(--low)' }}>{(cveAffectedIndex?.count || 0).toLocaleString()}</div>
+          <div className="value" style={{ color: (cveAffectedIndex?.orphans || 0) > 0 || (cveAffectedIndex?.missing_matchable_sources?.length || 0) > 0 ? 'var(--high)' : 'var(--low)' }}>{(cveAffectedIndex?.coverage_percent ?? 0).toFixed(1)}%</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            {(cveAffectedIndex?.source_count || 0).toLocaleString()} sources, {(cveAffectedIndex?.orphans || 0).toLocaleString()} orphans
+            {(cveAffectedIndex?.indexed_cves || 0).toLocaleString()} / {(cveAffectedIndex?.matchable_cves || 0).toLocaleString()} CVEs, {(cveAffectedIndex?.orphans || 0).toLocaleString()} orphans
           </div>
         </div>
         <div className="stat-card">
@@ -1070,6 +1070,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {health?.security_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security sources: {health.security_db.last_error}</div>}
       {health?.security_db_revision_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB revision: {health.security_db_revision_error}</div>}
       {health?.security_db_freshness?.error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB freshness: {health.security_db_freshness.error}</div>}
+      {(cveAffectedIndex?.missing_matchable_sources?.length || 0) > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>Affected index missing matchable sources: {cveAffectedIndex?.missing_matchable_sources?.join(', ')}</div>}
+      {(cveAffectedIndex?.orphans || 0) > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>Affected index orphan rows: {(cveAffectedIndex?.orphans || 0).toLocaleString()}</div>}
       {lastRecalcLimited && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>CVE rematch hit candidate limit: {(lastRecalc?.rematch_candidates || 0).toLocaleString()} / {(lastRecalc?.rematch_candidate_limit || 0).toLocaleString()} matches, {(lastRecalc?.rematch_scanned_candidates || 0).toLocaleString()} raw candidates scanned</div>}
       {lastManualRematchLimited && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>Manual CVE rematch hit candidate limit: {(lastManualRematch?.matched || 0).toLocaleString()} / {(lastManualRematch?.candidate_limit || 0).toLocaleString()} matches, {(lastManualRematch?.scanned_candidates || 0).toLocaleString()} raw candidates scanned</div>}
       {missingCveSources.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Missing CVE sources: {missingCveSources.join(', ')}</div>}

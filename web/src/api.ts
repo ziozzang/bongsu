@@ -351,6 +351,10 @@ export interface HealthStatus {
   cve_affected_package_index?: {
     count?: number;
     source_count?: number;
+    indexed_cves?: number;
+    matchable_cves?: number;
+    coverage_percent?: number;
+    missing_matchable_sources?: string[];
     last_update?: string;
     orphans?: number;
     error?: string;
@@ -400,6 +404,10 @@ export interface CveDbStatsResponse {
   affected_package_index?: {
     count: number;
     source_count: number;
+    indexed_cves?: number;
+    matchable_cves?: number;
+    coverage_percent?: number;
+    missing_matchable_sources?: string[];
     last_update?: string;
     orphans: number;
   };

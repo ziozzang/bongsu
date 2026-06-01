@@ -2132,6 +2132,8 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_security_db_source_rematch_eligible",
 		"GetCveAffectedPackageIndexStats(ctx)",
 		"bongsu_cve_affected_package_index_records",
+		"bongsu_cve_affected_package_index_coverage_percent",
+		"bongsu_cve_affected_package_index_missing_matchable_sources",
 		"bongsu_cve_affected_package_index_orphans",
 		"bongsu_security_db_source_quality_metrics_error",
 	} {
@@ -2206,6 +2208,8 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"Affected Index",
 		"handleAffectedIndexRebuild",
 		"Rebuild Index",
+		"missing_matchable_sources",
+		"coverage_percent",
 		"Weakest CVE Source",
 		"Rematch Eligible Sources",
 		"cveRematchPolicy",

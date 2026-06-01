@@ -3280,6 +3280,10 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(ctx); err == nil {
 			writePromGauge(&b, "bongsu_cve_affected_package_index_records", nil, float64(indexStats.Count))
 			writePromGauge(&b, "bongsu_cve_affected_package_index_sources", nil, float64(indexStats.SourceCount))
+			writePromGauge(&b, "bongsu_cve_affected_package_index_indexed_cves", nil, float64(indexStats.IndexedCVEs))
+			writePromGauge(&b, "bongsu_cve_affected_package_index_matchable_cves", nil, float64(indexStats.MatchableCVEs))
+			writePromGauge(&b, "bongsu_cve_affected_package_index_coverage_percent", nil, indexStats.CoveragePercent)
+			writePromGauge(&b, "bongsu_cve_affected_package_index_missing_matchable_sources", nil, float64(len(indexStats.MissingMatchableSources)))
 			writePromGauge(&b, "bongsu_cve_affected_package_index_orphans", nil, float64(indexStats.Orphans))
 			if indexStats.LastUpdate != nil {
 				writePromGauge(&b, "bongsu_cve_affected_package_index_last_update_timestamp_seconds", nil, float64(indexStats.LastUpdate.Unix()))
@@ -4629,6 +4633,8 @@ func (s *Server) handleCveDbAffectedIndexRebuild(w http.ResponseWriter, r *http.
 	if stats != nil {
 		auditMeta["index_count"] = stats.Count
 		auditMeta["index_sources"] = stats.SourceCount
+		auditMeta["index_coverage_percent"] = stats.CoveragePercent
+		auditMeta["index_missing_matchable_sources"] = stats.MissingMatchableSources
 		auditMeta["index_orphans"] = stats.Orphans
 	}
 	for k, v := range revisionMeta {
