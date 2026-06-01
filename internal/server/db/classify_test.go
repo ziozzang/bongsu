@@ -21,6 +21,8 @@ func TestClassifySecuritySource(t *testing.T) {
 	}{
 		{"osv pypi", "osv", `[{"name":"django","ecosystem":"PyPI"}]`, "code-library", "PyPI"},
 		{"osv debian", "osv", `[{"name":"openssl","ecosystem":"Debian"}]`, "os-package", "Debian"},
+		{"osv debian release", "osv", `[{"name":"openssl","ecosystem":"Debian:11"}]`, "os-package", "Debian:11"},
+		{"osv suse release", "osv", `[{"name":"openssl","ecosystem":"SUSE:Linux Enterprise Server 15"}]`, "os-package", "SUSE:Linux Enterprise Server 15"},
 		{"nvd fallback", "nvd", `[]`, "general-cve", ""},
 		{"cisa kev fallback", "cisa-kev", `[]`, "general-cve", ""},
 		{"epss fallback", "epss", `[]`, "general-cve", ""},

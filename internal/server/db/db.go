@@ -517,12 +517,10 @@ func ClassifySecuritySource(source, affectedProducts string) (string, string) {
 		ecosystem = products[0].Ecosystem
 	}
 	if ecosystem != "" {
-		switch strings.ToLower(ecosystem) {
-		case "debian", "ubuntu", "alpine", "red hat", "rhel", "suse", "almalinux", "amazon linux", "wolfi", "chainguard":
+		if isOSEcosystem(ecosystem) {
 			return "os-package", ecosystem
-		default:
-			return "code-library", ecosystem
 		}
+		return "code-library", ecosystem
 	}
 	switch strings.ToLower(source) {
 	case "osv":
@@ -556,11 +554,12 @@ type affectedRangeEvent struct {
 }
 
 func packageCategory(pkgType, ecosystem string) string {
-	eco := strings.ToLower(ecosystem)
+	eco := strings.ToLower(strings.TrimSpace(ecosystem))
 	pt := strings.ToLower(pkgType)
-	switch eco {
-	case "debian", "ubuntu", "alpine", "red hat", "rhel", "suse", "almalinux", "amazon linux", "wolfi", "chainguard":
+	if isOSEcosystem(eco) {
 		return "os-package"
+	}
+	switch eco {
 	case "pypi", "npm", "go", "maven", "crates.io", "nuget", "rubygems", "packagist", "hex", "pub":
 		return "code-library"
 	}
@@ -571,6 +570,19 @@ func packageCategory(pkgType, ecosystem string) string {
 		return "code-library"
 	default:
 		return ""
+	}
+}
+
+func isOSEcosystem(ecosystem string) bool {
+	eco := strings.ToLower(strings.TrimSpace(ecosystem))
+	if idx := strings.Index(eco, ":"); idx >= 0 {
+		eco = strings.TrimSpace(eco[:idx])
+	}
+	switch eco {
+	case "debian", "ubuntu", "alpine", "red hat", "rhel", "suse", "almalinux", "amazon linux", "wolfi", "chainguard", "rocky linux", "oracle linux":
+		return true
+	default:
+		return false
 	}
 }
 
