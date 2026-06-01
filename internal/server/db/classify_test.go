@@ -2630,12 +2630,14 @@ func TestCveEnrichmentFixedVersionSQLIsPackageAware(t *testing.T) {
 func TestCvePackageEcosystemMismatchFilterChecksAllAffectedProducts(t *testing.T) {
 	got := cvePackageEcosystemMismatchFilter("v")
 	for _, want := range []string{
-		"jsonb_array_elements",
+		"cve_affected_packages cap_any",
+		"cve_affected_packages cap_match",
 		"NOT EXISTS",
 		"p.id = v.package_id",
-		"c.vulnerability_id = v.vulnerability_id",
-		"ap->>'ecosystem'",
-		"lower(ap->>'name')",
+		"cap_any.vulnerability_id = v.vulnerability_id",
+		"cap_match.vulnerability_id = v.vulnerability_id",
+		"cap_match.package_name = lower(COALESCE(NULLIF(p.name, ''), NULLIF(v.pkg_name, '')))",
+		"cap_match.ecosystem = ",
 		"p.ecosystem",
 		"'ubuntu'",
 		"'alpine'",
@@ -2647,6 +2649,9 @@ func TestCvePackageEcosystemMismatchFilterChecksAllAffectedProducts(t *testing.T
 	}
 	if strings.Contains(got, "affected_products->0") {
 		t.Fatalf("ecosystem mismatch filter must not inspect only first affected product: %s", got)
+	}
+	if strings.Contains(got, "jsonb_array_elements") {
+		t.Fatalf("ecosystem mismatch filter must use cve_affected_packages index: %s", got)
 	}
 }
 
@@ -2672,12 +2677,14 @@ func TestVulnerabilityRowsExposePackageContext(t *testing.T) {
 		"var vulnAdvisoryEvidenceExpr",
 		"jsonb_agg(jsonb_build_object",
 		"'fixed_version'",
-		"c.source NOT IN ('cisa-kev', 'epss')",
-		"jsonb_array_elements",
+		"cap.source NOT IN ('cisa-kev', 'epss')",
+		"FROM cve_affected_packages cap",
+		"JOIN cve_database c ON c.id = cap.cve_id",
 		"JOIN packages source_pkg",
-		"affectedProductEcosystemSQL(\"c\", \"ap\")",
+		"cap.package_name = lower(v.pkg_name)",
+		"cap.ecosystem = ",
+		"cap.fixed_version",
 		"packageEcosystemSQL(\"source_pkg\")",
-		"cveSourceFixedPredicateSQL()",
 		"&v.AssetType",
 		"&v.PkgType",
 		"&v.Ecosystem",
@@ -2700,6 +2707,38 @@ func TestVulnerabilityRowsExposePackageContext(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("vulnerability package context missing %q", want)
 		}
+	}
+}
+
+func TestVulnerabilityAdvisoryEvidenceUsesMatchableAffectedIndex(t *testing.T) {
+	for name, expr := range map[string]string{
+		"sources":  vulnAdvisorySourcesExpr,
+		"evidence": vulnAdvisoryEvidenceExpr,
+	} {
+		for _, want := range []string{
+			"FROM cve_affected_packages cap",
+			"JOIN cve_database c ON c.id = cap.cve_id",
+			"cap.package_name = lower(v.pkg_name)",
+			"cap.ecosystem = ",
+			"source_pkg.ecosystem",
+		} {
+			if !strings.Contains(expr, want) {
+				t.Fatalf("%s advisory expression missing %q: %s", name, want, expr)
+			}
+		}
+		for _, reject := range []string{
+			"jsonb_array_elements",
+			"jsonb_path_query_first",
+			"cveSourceFixedPredicateSQL()",
+			"affectedProductEcosystemSQL",
+		} {
+			if strings.Contains(expr, reject) {
+				t.Fatalf("%s advisory expression should use matchable affected index, found %q: %s", name, reject, expr)
+			}
+		}
+	}
+	if !strings.Contains(vulnAdvisoryEvidenceExpr, "cap.fixed_version") {
+		t.Fatalf("advisory evidence must report fixed versions from cve_affected_packages: %s", vulnAdvisoryEvidenceExpr)
 	}
 }
 
@@ -2729,7 +2768,7 @@ func TestCurrentActionableVulnSQLUsesRemediationFilters(t *testing.T) {
 		"v.fixed_version !~ '^[0-9a-f]{40}$'",
 		"v.fixed_version IS NOT NULL",
 		"SUBSTRING(v.vulnerability_id FROM '^[A-Z]+')",
-		"cve_database c",
+		"cve_affected_packages cap_any",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("current actionable SQL missing %q: %s", want, got)

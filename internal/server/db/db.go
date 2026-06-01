@@ -1073,24 +1073,19 @@ const vulnEPSSPercentileExpr = `COALESCE((SELECT MAX(cve.epss_percentile) FROM c
 const vulnRiskScoreExpr = `LEAST(100, GREATEST(0, (v.cvss_score * 5) + (` + vulnEPSSScoreExpr + ` * 30) + CASE WHEN ` + vulnExploitedExpr + ` THEN 20 ELSE 0 END + CASE lower(COALESCE(h.criticality, '')) WHEN 'critical' THEN 10 WHEN 'high' THEN 5 ELSE 0 END))`
 const vulnRiskLevelExpr = `CASE WHEN ` + vulnRiskScoreExpr + ` >= 80 THEN 'critical' WHEN ` + vulnRiskScoreExpr + ` >= 60 THEN 'high' WHEN ` + vulnRiskScoreExpr + ` >= 40 THEN 'medium' ELSE 'low' END`
 
-var vulnAdvisorySourcesExpr = fmt.Sprintf(`COALESCE(ARRAY(
-	SELECT DISTINCT c.source
-	FROM cve_database c
+var vulnAdvisorySourcesExpr = `COALESCE(ARRAY(
+	SELECT DISTINCT cap.source
+	FROM cve_affected_packages cap
+	JOIN cve_database c ON c.id = cap.cve_id
 	JOIN packages source_pkg ON source_pkg.id = v.package_id
-	WHERE c.vulnerability_id = v.vulnerability_id
-	  AND c.source NOT IN ('cisa-kev', 'epss')
-	  AND EXISTS (
-		SELECT 1
-		FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
-		WHERE lower(COALESCE(ap->>'name', '')) = lower(v.pkg_name)
-		  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
-		  AND %s = %s
-		  AND (%s)
-	  )
-	ORDER BY c.source
-), ARRAY[]::text[])`, affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("source_pkg"), cveSourceFixedPredicateSQL())
+	WHERE cap.vulnerability_id = v.vulnerability_id
+	  AND cap.source NOT IN ('cisa-kev', 'epss')
+	  AND cap.package_name = lower(v.pkg_name)
+	  AND cap.ecosystem = ` + packageEcosystemSQL("source_pkg") + `
+	ORDER BY cap.source
+), ARRAY[]::text[])`
 
-var vulnAdvisoryEvidenceExpr = fmt.Sprintf(`COALESCE((
+var vulnAdvisoryEvidenceExpr = `COALESCE((
 	SELECT jsonb_agg(jsonb_build_object(
 		'source', source,
 		'category', category,
@@ -1102,27 +1097,25 @@ var vulnAdvisoryEvidenceExpr = fmt.Sprintf(`COALESCE((
 		'title', title
 	) ORDER BY source)::text
 	FROM (
-		SELECT DISTINCT ON (c.source)
-		       c.source,
+		SELECT DISTINCT ON (cap.source)
+		       cap.source,
 		       c.category,
-		       COALESCE(NULLIF(ap->>'ecosystem', ''), c.ecosystem) AS ecosystem,
+		       cap.ecosystem,
 		       c.severity,
 		       c.cvss_score,
 		       c.epss_score,
-		       COALESCE(%s, NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')) AS fixed_version,
+		       cap.fixed_version,
 		       c.title
-		FROM cve_database c
+		FROM cve_affected_packages cap
+		JOIN cve_database c ON c.id = cap.cve_id
 		JOIN packages source_pkg ON source_pkg.id = v.package_id
-		JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap ON true
-		WHERE c.vulnerability_id = v.vulnerability_id
-		  AND c.source NOT IN ('cisa-kev', 'epss')
-		  AND lower(COALESCE(ap->>'name', '')) = lower(v.pkg_name)
-		  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
-		  AND %s = %s
-		  AND (%s)
-		ORDER BY c.source, c.cvss_score DESC, c.updated_at DESC
+		WHERE cap.vulnerability_id = v.vulnerability_id
+		  AND cap.source NOT IN ('cisa-kev', 'epss')
+		  AND cap.package_name = lower(v.pkg_name)
+		  AND cap.ecosystem = ` + packageEcosystemSQL("source_pkg") + `
+		ORDER BY cap.source, c.cvss_score DESC, c.updated_at DESC
 	) evidence
-), '[]')`, safeAffectedFixedVersionSQL("ap"), affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("source_pkg"), cveSourceFixedPredicateSQL())
+), '[]')`
 
 var vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name,
 COALESCE((SELECT p.asset_type FROM packages p WHERE p.id = v.package_id), ''),
@@ -3827,28 +3820,20 @@ func packageEcosystemSQL(alias string) string {
 }
 
 func cvePackageEcosystemMismatchFilter(vulnAlias string) string {
-	affectedProducts := `CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END`
 	return fmt.Sprintf(` AND NOT EXISTS (
 		SELECT 1
-		FROM cve_database c
-		JOIN packages p ON p.id = %s.package_id
-		WHERE c.vulnerability_id = %s.vulnerability_id
+		FROM cve_affected_packages cap_any
+		JOIN packages p ON p.id = %[1]s.package_id
+		WHERE cap_any.vulnerability_id = %[1]s.vulnerability_id
 		  AND p.pkg_type IN ('debian','ubuntu','deb','alpine','apk','redhat','centos','rocky','alma','amazon','rpm','suse','wolfi','python-pkg','pip','node-pkg','npm','gomod','go','gobinary','cargo','rustbinary','jar','maven','composer','gem','nuget')
-		  AND EXISTS (
-			SELECT 1
-			FROM jsonb_array_elements(%s) ap
-			WHERE COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
-		  )
 		  AND NOT EXISTS (
 			SELECT 1
-			FROM jsonb_array_elements(%s) ap
-			WHERE %s = %s
-			  AND (
-				COALESCE(ap->>'name', '') = ''
-				OR lower(ap->>'name') = lower(COALESCE(NULLIF(p.name, ''), NULLIF(%s.pkg_name, '')))
-			  )
+			FROM cve_affected_packages cap_match
+			WHERE cap_match.vulnerability_id = %[1]s.vulnerability_id
+			  AND cap_match.package_name = lower(COALESCE(NULLIF(p.name, ''), NULLIF(%[1]s.pkg_name, '')))
+			  AND cap_match.ecosystem = %[2]s
 		  )
-	)`, vulnAlias, vulnAlias, affectedProducts, affectedProducts, affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("p"), vulnAlias)
+	)`, vulnAlias, packageEcosystemSQL("p"))
 }
 
 func defaultVulnMismatchFilterSQL(vulnAlias string) string {
