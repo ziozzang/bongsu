@@ -5212,6 +5212,26 @@ type CveEPSSMergeStats struct {
 	MergeCoveragePercent float64 `json:"merge_coverage_percent"`
 }
 
+type CvePlaceholderStats struct {
+	TemporaryPlaceholders int `json:"temporary_placeholders"`
+	EmptyVulnerabilityIDs int `json:"empty_vulnerability_ids"`
+	EmptySources          int `json:"empty_sources"`
+}
+
+func (db *DB) GetCvePlaceholderStats(ctx context.Context) (*CvePlaceholderStats, error) {
+	var stats CvePlaceholderStats
+	err := db.QueryRowContext(ctx, `
+SELECT
+	count(*) FILTER (WHERE upper(trim(vulnerability_id)) ~ '^TEMP-[0-9A-F-]+$' OR upper(trim(id)) ~ '^TEMP-[0-9A-F-]+$'),
+	count(*) FILTER (WHERE trim(vulnerability_id) = ''),
+	count(*) FILTER (WHERE trim(source) = '')
+FROM cve_database`).Scan(&stats.TemporaryPlaceholders, &stats.EmptyVulnerabilityIDs, &stats.EmptySources)
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
 func (db *DB) GetCveAffectedPackageIndexStats(ctx context.Context) (*CveAffectedPackageIndexStats, error) {
 	var stats CveAffectedPackageIndexStats
 	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")

@@ -1970,6 +1970,8 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		"fallback_error",
 		`resp["cve_reference_key_index"]`,
 		`resp["cve_reference_index_rebuild"]`,
+		`resp["cve_db_quality"]`,
+		"cveDBQualitySummary",
 		"GetCveReferenceKeyIndexStats",
 		"referenceIndexRebuildStatus",
 		`"security_recalculation": recalcStatus`,
@@ -2370,6 +2372,10 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_cve_epss_merge_coverage_percent",
 		"bongsu_cve_epss_loaded_without_enrichment",
 		"bongsu_cve_epss_merge_metrics_error",
+		"bongsu_cve_db_quality_status",
+		"bongsu_cve_db_quality_warning_count",
+		"bongsu_cve_db_temporary_placeholders",
+		"bongsu_cve_db_empty_vulnerability_ids",
 		"bongsu_security_db_source_quality_metrics_error",
 	} {
 		if !strings.Contains(fn, want) {
@@ -2412,6 +2418,7 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		`durations["affected_package_index"]`,
 		`durations["reference_key_index"]`,
 		`durations["epss_merge"]`,
+		`durations["placeholder_quality"]`,
 		`durations["security_db_revision"]`,
 		`durations["total"]`,
 		`"source_count"`,
@@ -2425,6 +2432,9 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		"GetCveEPSSMergeStats",
 		`"epss_merge"`,
 		`"epss_merge_error"`,
+		`"cve_db_quality"`,
+		"GetCvePlaceholderStats",
+		"buildCveDBQualitySummary",
 		"s.securityDBRevisionMeta(r.Context())",
 		`"rematch_eligible"`,
 		`"rematch_exclusion"`,
@@ -2460,6 +2470,10 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"minQualityForDisplay",
 		"cveDbStatus",
 		"CVE DB Status",
+		"CVE DB Quality",
+		"cveQualityStatus",
+		"temporary_placeholders",
+		"CVE DB quality:",
 		"CVE Matchable",
 		"Affected Index",
 		"cveAffectedIndexUnhealthy",
@@ -2500,7 +2514,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "durations_ms?: Record<string, number>", "merge_coverage_percent", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}

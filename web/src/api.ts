@@ -436,6 +436,7 @@ export interface HealthStatus {
     orphans?: number;
     error?: string;
   };
+  cve_db_quality?: CveDbQuality;
   security_db?: {
     configured: boolean;
     running: boolean;
@@ -481,6 +482,30 @@ export interface CveEpssMergeStats {
   merge_coverage_percent: number;
 }
 
+export interface CveDbQuality {
+  status?: string;
+  warnings?: string[];
+  warning_count?: number;
+  total_records?: number;
+  total_matchable?: number;
+  eligible_sources?: number;
+  excluded_sources?: number;
+  temporary_placeholders?: number;
+  empty_vulnerability_ids?: number;
+  empty_sources?: number;
+  affected_index_coverage_percent?: number;
+  affected_index_orphans?: number;
+  affected_index_stale?: boolean;
+  reference_index_coverage_percent?: number;
+  reference_index_orphans?: number;
+  reference_index_stale?: boolean;
+  epss_merge_coverage_percent?: number;
+  placeholder_stats_error?: string;
+  affected_index_error?: string;
+  reference_index_error?: string;
+  epss_merge_error?: string;
+}
+
 export interface CveDbStatsResponse {
   generated_at?: string;
   security_db_revision?: string;
@@ -518,6 +543,8 @@ export interface CveDbStatsResponse {
   reference_key_index_error?: string;
   epss_merge?: CveEpssMergeStats;
   epss_merge_error?: string;
+  cve_db_quality?: CveDbQuality;
+  cve_db_quality_error?: string;
   durations_ms?: Record<string, number>;
   sources: CveSourceStat[];
   rematch_policy?: CveRematchPolicy;

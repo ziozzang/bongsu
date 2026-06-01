@@ -3165,6 +3165,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			resp["cve_reference_key_index"] = map[string]any{"error": err.Error()}
 		}
 		cancel()
+		dbCtx, cancel = withHealthDBTimeout()
+		if quality := s.cveDBQualitySummary(dbCtx, cveDBQualityInput{}); quality != nil {
+			resp["cve_db_quality"] = quality
+			if status, _ := quality["status"].(string); status == "degraded" {
+				resp["status"] = "degraded"
+			}
+		}
+		cancel()
 		resp["cve_reference_index_rebuild"] = s.referenceIndexRebuildStatus()
 	}
 	dbCtx, cancel := withHealthDBTimeout()
@@ -3595,6 +3603,16 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			writePromGauge(&b, "bongsu_cve_epss_loaded_without_enrichment", nil, boolMetric(epssStats.EPSSCVEs > 0 && epssStats.EnrichedRecords == 0))
 		} else {
 			writePromGauge(&b, "bongsu_cve_epss_merge_metrics_error", nil, 1)
+		}
+		if quality := s.cveDBQualitySummary(ctx, cveDBQualityInput{}); quality != nil {
+			writePromGauge(&b, "bongsu_cve_db_quality_status", map[string]string{"status": "ok"}, boolMetric(quality["status"] == "ok"))
+			writePromGauge(&b, "bongsu_cve_db_quality_status", map[string]string{"status": "warning"}, boolMetric(quality["status"] == "warning"))
+			writePromGauge(&b, "bongsu_cve_db_quality_status", map[string]string{"status": "degraded"}, boolMetric(quality["status"] == "degraded"))
+			writePromGauge(&b, "bongsu_cve_db_quality_warning_count", nil, metricNumber(quality["warning_count"]))
+			writePromGauge(&b, "bongsu_cve_db_temporary_placeholders", nil, metricNumber(quality["temporary_placeholders"]))
+			writePromGauge(&b, "bongsu_cve_db_empty_vulnerability_ids", nil, metricNumber(quality["empty_vulnerability_ids"]))
+		} else {
+			writePromGauge(&b, "bongsu_cve_db_quality_metrics_error", nil, 1)
 		}
 		if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
 			writePromGauge(&b, "bongsu_security_db_revision_info", map[string]string{"revision": revision}, 1)
@@ -5863,6 +5881,9 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	stepStarted = time.Now()
 	epssStats, epssErr := s.db.GetCveEPSSMergeStats(r.Context())
 	durations["epss_merge"] = time.Since(stepStarted).Milliseconds()
+	stepStarted = time.Now()
+	placeholderStats, placeholderErr := s.db.GetCvePlaceholderStats(r.Context())
+	durations["placeholder_quality"] = time.Since(stepStarted).Milliseconds()
 	resp := map[string]any{
 		"generated_at":            time.Now().UTC().Format(time.RFC3339),
 		"source_count":            len(stats),
@@ -5892,6 +5913,24 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		resp["epss_merge"] = epssStats
 	} else {
 		resp["epss_merge_error"] = epssErr.Error()
+	}
+	if placeholderErr == nil {
+		resp["cve_db_quality"] = buildCveDBQualitySummary(cveDBQualityInput{
+			TotalRecords:          totalRecords,
+			TotalMatchable:        totalMatchable,
+			EligibleSources:       eligible,
+			ExcludedSources:       excluded,
+			Placeholders:          placeholderStats,
+			AffectedIndex:         indexStats,
+			ReferenceIndex:        referenceIndexStats,
+			EPSS:                  epssStats,
+			AffectedIndexError:    indexErr,
+			ReferenceIndexError:   referenceIndexErr,
+			EPSSMergeError:        epssErr,
+			PlaceholderStatsError: placeholderErr,
+		})
+	} else {
+		resp["cve_db_quality_error"] = placeholderErr.Error()
 	}
 	stepStarted = time.Now()
 	for k, v := range s.securityDBRevisionMeta(r.Context()) {
@@ -6010,6 +6049,141 @@ func rematchSourcePolicySummary(stats []db.CveSourceStats, opts db.RematchOption
 		out[stat.Source] = map[string]any{"eligible": eligible, "reason": reason}
 	}
 	return out, eligibleCount, len(stats) - eligibleCount
+}
+
+type cveDBQualityInput struct {
+	TotalRecords          int
+	TotalMatchable        int
+	EligibleSources       int
+	ExcludedSources       int
+	Placeholders          *db.CvePlaceholderStats
+	AffectedIndex         *db.CveAffectedPackageIndexStats
+	ReferenceIndex        *db.CveReferenceKeyIndexStats
+	EPSS                  *db.CveEPSSMergeStats
+	AffectedIndexError    error
+	ReferenceIndexError   error
+	EPSSMergeError        error
+	PlaceholderStatsError error
+}
+
+func (s *Server) cveDBQualitySummary(ctx context.Context, input cveDBQualityInput) map[string]any {
+	if input.Placeholders == nil && input.PlaceholderStatsError == nil {
+		input.Placeholders, input.PlaceholderStatsError = s.db.GetCvePlaceholderStats(ctx)
+	}
+	if input.AffectedIndex == nil && input.AffectedIndexError == nil {
+		input.AffectedIndex, input.AffectedIndexError = s.db.GetCveAffectedPackageIndexStats(ctx)
+	}
+	if input.ReferenceIndex == nil && input.ReferenceIndexError == nil {
+		input.ReferenceIndex, input.ReferenceIndexError = s.db.GetCveReferenceKeyIndexStats(ctx)
+	}
+	if input.EPSS == nil && input.EPSSMergeError == nil {
+		input.EPSS, input.EPSSMergeError = s.db.GetCveEPSSMergeStats(ctx)
+	}
+	if ctx.Err() != nil && input.Placeholders == nil && input.AffectedIndex == nil && input.ReferenceIndex == nil && input.EPSS == nil {
+		return nil
+	}
+	return buildCveDBQualitySummary(input)
+}
+
+func buildCveDBQualitySummary(input cveDBQualityInput) map[string]any {
+	warnings := []string{}
+	severity := 0
+	addWarning := func(level int, msg string) {
+		if msg == "" {
+			return
+		}
+		warnings = append(warnings, msg)
+		if level > severity {
+			severity = level
+		}
+	}
+	out := map[string]any{
+		"status":                  "ok",
+		"warnings":                warnings,
+		"warning_count":           0,
+		"total_records":           input.TotalRecords,
+		"total_matchable":         input.TotalMatchable,
+		"eligible_sources":        input.EligibleSources,
+		"excluded_sources":        input.ExcludedSources,
+		"temporary_placeholders":  0,
+		"empty_vulnerability_ids": 0,
+		"empty_sources":           0,
+	}
+	if input.Placeholders != nil {
+		out["temporary_placeholders"] = input.Placeholders.TemporaryPlaceholders
+		out["empty_vulnerability_ids"] = input.Placeholders.EmptyVulnerabilityIDs
+		out["empty_sources"] = input.Placeholders.EmptySources
+		if input.Placeholders.TemporaryPlaceholders > 0 {
+			addWarning(2, "temporary CVE placeholders present")
+		}
+		if input.Placeholders.EmptyVulnerabilityIDs > 0 {
+			addWarning(2, "empty vulnerability IDs present")
+		}
+		if input.Placeholders.EmptySources > 0 {
+			addWarning(1, "CVE records with empty source present")
+		}
+	} else if input.PlaceholderStatsError != nil {
+		out["placeholder_stats_error"] = input.PlaceholderStatsError.Error()
+		addWarning(1, "placeholder quality check unavailable")
+	}
+	if input.AffectedIndex != nil {
+		out["affected_index_coverage_percent"] = input.AffectedIndex.CoveragePercent
+		out["affected_index_orphans"] = input.AffectedIndex.Orphans
+		out["affected_index_stale"] = input.AffectedIndex.Stale
+		if input.AffectedIndex.Orphans > 0 {
+			addWarning(2, "affected package index has orphan rows")
+		}
+		if input.AffectedIndex.Stale {
+			addWarning(2, "affected package index is stale")
+		}
+		if len(input.AffectedIndex.MissingMatchableSources) > 0 {
+			addWarning(2, "affected package index missing matchable sources")
+		}
+	} else if input.AffectedIndexError != nil {
+		out["affected_index_error"] = input.AffectedIndexError.Error()
+		addWarning(1, "affected package index quality unavailable")
+	}
+	if input.ReferenceIndex != nil {
+		out["reference_index_coverage_percent"] = input.ReferenceIndex.CoveragePercent
+		out["reference_index_orphans"] = input.ReferenceIndex.Orphans
+		out["reference_index_stale"] = input.ReferenceIndex.Stale
+		if input.ReferenceIndex.Orphans > 0 {
+			addWarning(2, "reference key index has orphan rows")
+		}
+		if input.ReferenceIndex.Stale {
+			addWarning(2, "reference key index is stale")
+		}
+		if input.ReferenceIndex.TotalCVEs > 0 && input.ReferenceIndex.CoveragePercent < 90 {
+			addWarning(1, "reference key coverage below 90%")
+		}
+	} else if input.ReferenceIndexError != nil {
+		out["reference_index_error"] = input.ReferenceIndexError.Error()
+		addWarning(1, "reference key index quality unavailable")
+	}
+	if input.EPSS != nil {
+		out["epss_merge_coverage_percent"] = input.EPSS.MergeCoveragePercent
+		if input.EPSS.EPSSCVEs > 0 && input.EPSS.EnrichedRecords == 0 {
+			addWarning(2, "EPSS records loaded without CVE enrichment")
+		} else if input.EPSS.EPSSCVEs > 0 && input.EPSS.MergeCoveragePercent < 50 {
+			addWarning(1, "EPSS merge coverage below 50%")
+		}
+	} else if input.EPSSMergeError != nil {
+		out["epss_merge_error"] = input.EPSSMergeError.Error()
+		addWarning(1, "EPSS merge quality unavailable")
+	}
+	if input.TotalRecords > 0 && input.EligibleSources == 0 {
+		addWarning(2, "no rematch eligible CVE sources")
+	}
+	status := "ok"
+	if severity >= 2 {
+		status = "degraded"
+	} else if severity == 1 {
+		status = "warning"
+	}
+	out["status"] = status
+	out["warnings"] = warnings
+	out["warning_count"] = len(warnings)
+	return out
 }
 
 func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {

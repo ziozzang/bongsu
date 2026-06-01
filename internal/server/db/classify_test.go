@@ -2045,6 +2045,27 @@ func TestTempCvePlaceholdersAreRemovedByMigration(t *testing.T) {
 	}
 }
 
+func TestCvePlaceholderStatsTrackInvalidAdvisoryRows(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"type CvePlaceholderStats struct",
+		"GetCvePlaceholderStats",
+		"TemporaryPlaceholders",
+		"EmptyVulnerabilityIDs",
+		"EmptySources",
+		"^TEMP-[0-9A-F-]+$",
+		"count(*) FILTER",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE placeholder quality stats missing %q", want)
+		}
+	}
+}
+
 func TestVulnerabilityFindingsAreUniquePerPackageScanAndCVE(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/013_unique_vulnerability_findings.sql")
 	if err != nil {
