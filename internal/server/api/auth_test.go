@@ -4080,6 +4080,7 @@ func TestCveJSONLImportNormalizesEntryIdentity(t *testing.T) {
 	input := strings.NewReader(strings.Join([]string{
 		`{"id":" row-1 ","vulnerability_id":" CVE-2026-0001 ","source":" OSV ","category":" code-library ","ecosystem":" PyPI ","severity":" moderate ","cvss_vector":" CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H ","title":" title ","description":" desc ","published_date":"2026-01-02T03:04:05.123","modified_date":"2026-01-03"}`,
 		`{"vulnerability_id":" cga-2026-0002 ","source":"osv","severity":"high"}`,
+		`{"vulnerability_id":" TEMP-0000000-F7A20F ","source":"trivy","severity":"low"}`,
 	}, "\n"))
 	count, err := (&Server{}).importCveJSONLWithUpsert(context.Background(), input, "", func(ctx context.Context, batch []models.CveEntry) (int, error) {
 		seen = append(seen, batch...)
@@ -4089,7 +4090,7 @@ func TestCveJSONLImportNormalizesEntryIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	if count != 1 || len(seen) != 1 {
-		t.Fatalf("count=%d seen=%#v, want one non-CGA entry", count, seen)
+		t.Fatalf("count=%d seen=%#v, want one non-placeholder entry", count, seen)
 	}
 	got := seen[0]
 	if got.ID != "row-1" ||
@@ -4106,6 +4107,24 @@ func TestCveJSONLImportNormalizesEntryIdentity(t *testing.T) {
 		got.ModifiedDate == nil ||
 		got.ModifiedDate.Location() != time.UTC {
 		t.Fatalf("normalized entry = %#v", got)
+	}
+}
+
+func TestTemporaryCvePlaceholder(t *testing.T) {
+	tests := []struct {
+		id   string
+		want bool
+	}{
+		{id: "TEMP-0000000-F7A20F", want: true},
+		{id: " temp-0841856-b18baf ", want: true},
+		{id: "TEMP-", want: false},
+		{id: "TEMP-NOTHEX", want: false},
+		{id: "CVE-2026-0001", want: false},
+	}
+	for _, tt := range tests {
+		if got := temporaryCvePlaceholder(tt.id); got != tt.want {
+			t.Fatalf("temporaryCvePlaceholder(%q)=%v, want %v", tt.id, got, tt.want)
+		}
 	}
 }
 

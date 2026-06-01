@@ -810,6 +810,9 @@ func normalizeScanReport(report *models.ScanReport) error {
 	report.Host.ID = strings.TrimSpace(report.Host.ID)
 	report.Host.Hostname = strings.TrimSpace(report.Host.Hostname)
 	report.Host.IPAddress = strings.TrimSpace(report.Host.IPAddress)
+	if temporaryHostIdentity(report.Host.ID) && strings.EqualFold(report.Host.ID, report.Host.Hostname) {
+		report.Host.ID = ""
+	}
 	if report.Host.ID == "" {
 		report.Host.ID = fallbackHostID(report.Host)
 	}
@@ -2010,6 +2013,9 @@ func shellQuote(s string) string {
 }
 
 func fallbackHostID(host models.Host) string {
+	if temporaryHostIdentity(host.Hostname) && strings.TrimSpace(host.IPAddress) != "" {
+		return "ip:" + strings.TrimSpace(host.IPAddress)
+	}
 	if host.Hostname != "" {
 		return "hostname:" + strings.ToLower(strings.TrimSpace(host.Hostname))
 	}
@@ -2017,6 +2023,23 @@ func fallbackHostID(host models.Host) string {
 		return "ip:" + strings.TrimSpace(host.IPAddress)
 	}
 	return uuid.New().String()
+}
+
+func temporaryHostIdentity(hostname string) bool {
+	name := strings.ToUpper(strings.TrimSpace(hostname))
+	if !strings.HasPrefix(name, "TEMP-") {
+		return false
+	}
+	rest := strings.TrimPrefix(name, "TEMP-")
+	if rest == "" {
+		return false
+	}
+	for _, r := range rest {
+		if (r < '0' || r > '9') && (r < 'A' || r > 'F') && r != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
@@ -4832,7 +4855,7 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 		}
 		e := input.toModel()
 		normalizeCveEntry(&e)
-		if e.VulnerabilityID == "" || strings.HasPrefix(strings.ToUpper(e.VulnerabilityID), "CGA-") {
+		if e.VulnerabilityID == "" || strings.HasPrefix(strings.ToUpper(e.VulnerabilityID), "CGA-") || temporaryCvePlaceholder(e.VulnerabilityID) {
 			continue
 		}
 		if source != "" {
@@ -4954,6 +4977,23 @@ func normalizeCveEntry(e *models.CveEntry) {
 	e.CVSSVector = strings.TrimSpace(e.CVSSVector)
 	e.Title = strings.TrimSpace(e.Title)
 	e.Description = strings.TrimSpace(e.Description)
+}
+
+func temporaryCvePlaceholder(id string) bool {
+	vulnID := strings.ToUpper(strings.TrimSpace(id))
+	if !strings.HasPrefix(vulnID, "TEMP-") {
+		return false
+	}
+	rest := strings.TrimPrefix(vulnID, "TEMP-")
+	if rest == "" {
+		return false
+	}
+	for _, r := range rest {
+		if (r < '0' || r > '9') && (r < 'A' || r > 'F') && r != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func normalizeCveSource(source, fallback string) (string, error) {

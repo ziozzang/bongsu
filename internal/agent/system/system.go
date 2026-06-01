@@ -37,8 +37,34 @@ func deriveHostID() string {
 	if err == nil && len(bytes.TrimSpace(machineID)) > 0 {
 		return strings.TrimSpace(string(machineID))
 	}
+	dbusMachineID, err := os.ReadFile("/var/lib/dbus/machine-id")
+	if err == nil && len(bytes.TrimSpace(dbusMachineID)) > 0 {
+		return strings.TrimSpace(string(dbusMachineID))
+	}
 	hostname, _ := os.Hostname()
+	if isTemporaryHostname(hostname) {
+		if ip := getIPAddress(); ip != "" {
+			return "ip:" + ip
+		}
+	}
 	return hostname
+}
+
+func isTemporaryHostname(hostname string) bool {
+	name := strings.ToUpper(strings.TrimSpace(hostname))
+	if !strings.HasPrefix(name, "TEMP-") {
+		return false
+	}
+	rest := strings.TrimPrefix(name, "TEMP-")
+	if rest == "" {
+		return false
+	}
+	for _, r := range rest {
+		if (r < '0' || r > '9') && (r < 'A' || r > 'F') && r != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 func getOSInfo() (string, string) {

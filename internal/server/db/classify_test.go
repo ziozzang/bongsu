@@ -2013,6 +2013,23 @@ func TestCveReplacementDeleteHelpersAreTransactional(t *testing.T) {
 	}
 }
 
+func TestTempCvePlaceholdersAreRemovedByMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/027_remove_temp_cve_placeholders.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DELETE FROM cve_database",
+		"vulnerability_id",
+		"^TEMP-[0-9A-F-]+$",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("TEMP placeholder cleanup migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestVulnerabilityFindingsAreUniquePerPackageScanAndCVE(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/013_unique_vulnerability_findings.sql")
 	if err != nil {
