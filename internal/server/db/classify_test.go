@@ -1787,6 +1787,31 @@ func TestVulnerabilityFindingSourceMigration(t *testing.T) {
 	}
 }
 
+func TestScanAndFindingSourceConstraintsMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/032_scan_and_finding_source_constraints.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"UPDATE vulnerabilities",
+		"finding_source='scanner'",
+		"vulnerabilities_finding_source_check",
+		"CHECK (finding_source IN ('scanner', 'cve-db'))",
+		"UPDATE scans",
+		"scan_type='inventory'",
+		"status='failed'",
+		"scans_status_check",
+		"CHECK (status IN ('running', 'completed', 'degraded', 'failed'))",
+		"scans_scan_type_check",
+		"CHECK (scan_type IN ('inventory', 'daily', 'manual', 'security-db-update'))",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("scan/finding source constraint migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
