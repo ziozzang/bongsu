@@ -234,6 +234,8 @@ spec:
 | `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT` | `0` | Skip CVE sources below this matchable-record percentage during automatic rematch; matchable records require name, ecosystem, and fixed-version data |
 | `BONGSU_CVE_MATCH_CANDIDATE_LIMIT` | `50000` | Maximum candidate package/advisory pairs evaluated per rematch pass, clamped at 1000000; responses and audit logs mark `limited=true` when reached |
 | `BONGSU_CVE_STATS_CACHE_SECONDS` | `15` | Short in-process cache TTL for `/api/cve-db/stats`; use `refresh=true` to bypass |
+| `BONGSU_CVE_STATS_STALE_SECONDS` | `300` | Serve an expired CVE DB stats cache immediately while one background refresh rebuilds the cache (`0` disables stale responses) |
+| `BONGSU_CVE_STATS_BACKGROUND_TIMEOUT_SECONDS` | `30` | Timeout for background CVE DB stats refreshes triggered by stale-cache responses |
 | `BONGSU_CVE_SEARCH_TIMEOUT_SECONDS` | `15` | Maximum runtime for one CVE Search request before returning `504 search timeout` |
 | `BONGSU_CVE_REFERENCE_GROUP_TIMEOUT_SECONDS` | `10` | Maximum runtime for one expanded CVE reference-group lookup before returning `504 reference group timeout` |
 | `BONGSU_CVE_AFFECTED_PACKAGES_TIMEOUT_SECONDS` | `10` | Maximum runtime for one indexed affected-package evidence lookup before returning `504 affected packages timeout` |

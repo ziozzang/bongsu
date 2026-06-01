@@ -5948,6 +5948,16 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 			w.Write(cached)
 			return
 		}
+		if stale, ok := s.getCveStatsStaleCache(); ok {
+			if _, staleGen, wait := s.beginCveStatsBuild(); !wait {
+				s.startCveStatsBackgroundBuild(staleGen)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("X-Bongsu-Cache", "stale")
+			w.WriteHeader(http.StatusOK)
+			w.Write(stale)
+			return
+		}
 		var ch <-chan cveStatsBuildResult
 		var wait bool
 		ch, cacheGen, wait = s.beginCveStatsBuild()
@@ -5975,6 +5985,49 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 			}
 		}()
 	}
+	result := s.buildCveDbStatsBody(r.Context())
+	if result.status != http.StatusOK {
+		if r.URL.Query().Get("refresh") != "true" {
+			s.finishCveStatsBuild(result)
+		}
+		http.Error(w, result.msg, result.status)
+		return
+	}
+	if r.URL.Query().Get("refresh") != "true" {
+		s.setCveStatsCache(result.body, cacheGen)
+		s.finishCveStatsBuild(result)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Bongsu-Cache", "miss")
+	w.WriteHeader(http.StatusOK)
+	w.Write(result.body)
+}
+
+func (s *Server) beginCveStatsBuild() (<-chan cveStatsBuildResult, int64, bool) {
+	s.cveStatsCacheMu.Lock()
+	defer s.cveStatsCacheMu.Unlock()
+	if s.cveStatsInflight {
+		ch := make(chan cveStatsBuildResult, 1)
+		s.cveStatsWaiters = append(s.cveStatsWaiters, ch)
+		return ch, 0, true
+	}
+	s.cveStatsInflight = true
+	return nil, s.cveStatsCacheGen, false
+}
+
+func (s *Server) finishCveStatsBuild(result cveStatsBuildResult) {
+	s.cveStatsCacheMu.Lock()
+	waiters := s.cveStatsWaiters
+	s.cveStatsWaiters = nil
+	s.cveStatsInflight = false
+	s.cveStatsCacheMu.Unlock()
+	for _, ch := range waiters {
+		ch <- result
+		close(ch)
+	}
+}
+
+func (s *Server) buildCveDbStatsBody(ctx context.Context) cveStatsBuildResult {
 	started := time.Now()
 	durations := map[string]int64{}
 
@@ -5999,12 +6052,12 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		*dst = time.Since(stepStarted).Milliseconds()
 	}
 	wg.Add(6)
-	go measure(&sourceStatsMS, func() { stats, statsErr = s.db.GetCveSourceStats(r.Context()) })
-	go measure(&affectedIndexMS, func() { indexStats, indexErr = s.db.GetCveAffectedPackageIndexStats(r.Context()) })
-	go measure(&referenceIndexMS, func() { referenceIndexStats, referenceIndexErr = s.db.GetCveReferenceKeyIndexStats(r.Context()) })
-	go measure(&epssMS, func() { epssStats, epssErr = s.db.GetCveEPSSMergeStats(r.Context()) })
-	go measure(&placeholderMS, func() { placeholderStats, placeholderErr = s.db.GetCvePlaceholderStats(r.Context()) })
-	go measure(&securityRevisionMS, func() { securityMeta = s.securityDBRevisionMeta(r.Context()) })
+	go measure(&sourceStatsMS, func() { stats, statsErr = s.db.GetCveSourceStats(ctx) })
+	go measure(&affectedIndexMS, func() { indexStats, indexErr = s.db.GetCveAffectedPackageIndexStats(ctx) })
+	go measure(&referenceIndexMS, func() { referenceIndexStats, referenceIndexErr = s.db.GetCveReferenceKeyIndexStats(ctx) })
+	go measure(&epssMS, func() { epssStats, epssErr = s.db.GetCveEPSSMergeStats(ctx) })
+	go measure(&placeholderMS, func() { placeholderStats, placeholderErr = s.db.GetCvePlaceholderStats(ctx) })
+	go measure(&securityRevisionMS, func() { securityMeta = s.securityDBRevisionMeta(ctx) })
 	wg.Wait()
 	durations["source_stats"] = sourceStatsMS
 	durations["affected_package_index"] = affectedIndexMS
@@ -6014,11 +6067,7 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	durations["security_db_revision"] = securityRevisionMS
 
 	if statsErr != nil {
-		if r.URL.Query().Get("refresh") != "true" {
-			s.finishCveStatsBuild(cveStatsBuildResult{status: http.StatusInternalServerError, msg: "db error"})
-		}
-		http.Error(w, "db error", http.StatusInternalServerError)
-		return
+		return cveStatsBuildResult{status: http.StatusInternalServerError, msg: "db error"}
 	}
 	opts := rematchOptionsFromEnv()
 	policy, eligible, excluded := rematchSourcePolicySummary(stats, opts)
@@ -6102,44 +6151,31 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	resp["durations_ms"] = durations
 	body, err := json.Marshal(resp)
 	if err != nil {
-		if r.URL.Query().Get("refresh") != "true" {
-			s.finishCveStatsBuild(cveStatsBuildResult{status: http.StatusInternalServerError, msg: "json error"})
+		return cveStatsBuildResult{status: http.StatusInternalServerError, msg: "json error"}
+	}
+	return cveStatsBuildResult{body: body, status: http.StatusOK}
+}
+
+func (s *Server) startCveStatsBackgroundBuild(cacheGen int64) {
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic building CVE stats in background: %v", rec)
+				s.finishCveStatsBuild(cveStatsBuildResult{status: http.StatusInternalServerError, msg: "panic building CVE stats"})
+			}
+		}()
+		timeout := envInt("BONGSU_CVE_STATS_BACKGROUND_TIMEOUT_SECONDS", 30)
+		if timeout <= 0 {
+			timeout = 30
 		}
-		http.Error(w, "json error", http.StatusInternalServerError)
-		return
-	}
-	if r.URL.Query().Get("refresh") != "true" {
-		s.setCveStatsCache(body, cacheGen)
-		s.finishCveStatsBuild(cveStatsBuildResult{body: body, status: http.StatusOK})
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Bongsu-Cache", "miss")
-	w.WriteHeader(http.StatusOK)
-	w.Write(body)
-}
-
-func (s *Server) beginCveStatsBuild() (<-chan cveStatsBuildResult, int64, bool) {
-	s.cveStatsCacheMu.Lock()
-	defer s.cveStatsCacheMu.Unlock()
-	if s.cveStatsInflight {
-		ch := make(chan cveStatsBuildResult, 1)
-		s.cveStatsWaiters = append(s.cveStatsWaiters, ch)
-		return ch, 0, true
-	}
-	s.cveStatsInflight = true
-	return nil, s.cveStatsCacheGen, false
-}
-
-func (s *Server) finishCveStatsBuild(result cveStatsBuildResult) {
-	s.cveStatsCacheMu.Lock()
-	waiters := s.cveStatsWaiters
-	s.cveStatsWaiters = nil
-	s.cveStatsInflight = false
-	s.cveStatsCacheMu.Unlock()
-	for _, ch := range waiters {
-		ch <- result
-		close(ch)
-	}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+		defer cancel()
+		result := s.buildCveDbStatsBody(ctx)
+		if result.status == http.StatusOK {
+			s.setCveStatsCache(result.body, cacheGen)
+		}
+		s.finishCveStatsBuild(result)
+	}()
 }
 
 func (s *Server) getCveStatsCache() ([]byte, bool) {
@@ -6150,6 +6186,25 @@ func (s *Server) getCveStatsCache() ([]byte, bool) {
 	s.cveStatsCacheMu.Lock()
 	defer s.cveStatsCacheMu.Unlock()
 	if time.Now().After(s.cveStatsCacheUntil) || len(s.cveStatsCacheJSON) == 0 {
+		return nil, false
+	}
+	out := make([]byte, len(s.cveStatsCacheJSON))
+	copy(out, s.cveStatsCacheJSON)
+	return out, true
+}
+
+func (s *Server) getCveStatsStaleCache() ([]byte, bool) {
+	staleSeconds := envInt("BONGSU_CVE_STATS_STALE_SECONDS", 300)
+	if staleSeconds <= 0 {
+		return nil, false
+	}
+	s.cveStatsCacheMu.Lock()
+	defer s.cveStatsCacheMu.Unlock()
+	if len(s.cveStatsCacheJSON) == 0 || s.cveStatsCacheUntil.IsZero() {
+		return nil, false
+	}
+	now := time.Now()
+	if now.Before(s.cveStatsCacheUntil) || now.After(s.cveStatsCacheUntil.Add(time.Duration(staleSeconds)*time.Second)) {
 		return nil, false
 	}
 	out := make([]byte, len(s.cveStatsCacheJSON))
