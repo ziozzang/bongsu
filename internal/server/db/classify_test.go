@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -902,6 +903,8 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"matchableOnly, includePrioritySources bool",
+		"referenceKey",
+		"cveReferenceKeyFilter(referenceKey)",
 		"minEPSS",
 		"minEPSSPercentile",
 		"includePrioritySources",
@@ -918,6 +921,51 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search missing %q: %s", want, fn)
 		}
+	}
+}
+
+func TestCveReferenceKeyFilterSupportsCanonicalGroups(t *testing.T) {
+	tests := []struct {
+		name       string
+		key        string
+		wantFilter string
+		wantVals   []string
+	}{
+		{
+			name:       "canonical cve",
+			key:        "cve:CVE-2026-48840",
+			wantFilter: "vulnerability_id ILIKE $%d",
+			wantVals:   []string{"%CVE-2026-48840%", "%CVE-2026-48840%", "%CVE-2026-48840%", "%CVE-2026-48840%"},
+		},
+		{
+			name:       "debian vendor",
+			key:        "vendor:debian",
+			wantFilter: "vulnerability_id ILIKE $%d",
+			wantVals:   []string{"%debian.org%", "%DEBIAN-CVE-%"},
+		},
+		{
+			name:       "github repo",
+			key:        "repo:github.com/mervinpraison/praisonai",
+			wantFilter: "refs::text ILIKE $%d",
+			wantVals:   []string{"%github.com/mervinpraison/praisonai%"},
+		},
+		{
+			name:       "invalid",
+			key:        "cve:not-a-cve",
+			wantFilter: "",
+			wantVals:   nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter, vals := cveReferenceKeyFilter(tt.key)
+			if !strings.Contains(filter, tt.wantFilter) {
+				t.Fatalf("filter = %q, want to contain %q", filter, tt.wantFilter)
+			}
+			if !reflect.DeepEqual(vals, tt.wantVals) {
+				t.Fatalf("vals = %#v, want %#v", vals, tt.wantVals)
+			}
+		})
 	}
 }
 

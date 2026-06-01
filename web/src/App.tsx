@@ -2584,6 +2584,7 @@ function ContainersView() {
 function CveSearchView() {
   const [results, setResults] = useState<{items: CveDbEntry[]; total: number}>({items: [], total: 0});
   const [query, setQuery] = useState('');
+  const [referenceKey, setReferenceKey] = useState('');
   const [severity, setSeverity] = useState('');
   const [source, setSource] = useState('');
   const [sources, setSources] = useState<string[]>([]);
@@ -2603,16 +2604,18 @@ function CveSearchView() {
   const initialSearchStarted = useRef(false);
   const limit = 50;
 
-  const doSearch = useCallback((p: number, sBy?: string, sDesc?: boolean) => {
+  const doSearch = useCallback((p: number, sBy?: string, sDesc?: boolean, refKeyOverride?: string) => {
     setLoading(true);
     setError('');
     const sb = sBy ?? sortBy;
     const sd = sDesc ?? sortDesc;
+    const refKey = refKeyOverride ?? referenceKey;
     const params: Record<string, string> = {
       limit: String(limit),
       offset: String(p * limit),
     };
     if (query.trim()) params.q = query.trim();
+    if (refKey.trim()) params.reference_key = refKey.trim();
     if (severity) params.severity = severity;
     if (source) params.source = source;
     if (minCvss) params.min_cvss = minCvss;
@@ -2634,7 +2637,7 @@ function CveSearchView() {
         setSearched(true);
         setLoading(false);
       });
-  }, [query, severity, source, minCvss, minEpss, minEpssPercentile, matchableOnly, includePrioritySources, sortBy, sortDesc]);
+  }, [query, referenceKey, severity, source, minCvss, minEpss, minEpssPercentile, matchableOnly, includePrioritySources, sortBy, sortDesc]);
 
   useEffect(() => {
     api.cveDbSources().then(data => {
@@ -2687,6 +2690,10 @@ function CveSearchView() {
     if (sortBy !== col) return ' ↕';
     return sortDesc ? ' ▼' : ' ▲';
   };
+  const searchReferenceGroup = (key: string) => {
+    setReferenceKey(key);
+    doSearch(0, sortBy, sortDesc, key);
+  };
 
   const parseJson = (raw: string | null | undefined): any[] => {
     if (!raw) return [];
@@ -2733,6 +2740,14 @@ function CveSearchView() {
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') doSearch(0); }}
             style={{ minWidth: 220 }}
+          />
+          <input
+            type="text"
+            placeholder="Reference group"
+            value={referenceKey}
+            onChange={e => setReferenceKey(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') doSearch(0); }}
+            style={{ minWidth: 190 }}
           />
           <select value={severity} onChange={e => setSeverity(e.target.value)}>
             <option value="">All Severities</option>
@@ -2891,9 +2906,18 @@ function CveSearchView() {
                               <strong style={{ fontSize: '0.8125rem' }}>Reference Groups</strong>
                               <div style={{ marginTop: '0.25rem' }}>
                                 {(entry.reference_keys || []).slice(0, 20).map(key => (
-                                  <span key={key} className="badge" style={{ marginRight: '0.375rem', marginBottom: '0.25rem', color: key.startsWith('cve:') ? '#22c55e' : 'var(--text-muted)' }}>
+                                  <button
+                                    key={key}
+                                    className="badge"
+                                    style={{ marginRight: '0.375rem', marginBottom: '0.25rem', color: key.startsWith('cve:') ? '#22c55e' : 'var(--text-muted)', cursor: 'pointer' }}
+                                    onClick={e => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      searchReferenceGroup(key);
+                                    }}
+                                  >
                                     {key}
-                                  </span>
+                                  </button>
                                 ))}
                               </div>
                             </div>

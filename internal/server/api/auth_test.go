@@ -4169,13 +4169,14 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		`normalizeCveSource(r.URL.Query().Get("source"), "")`,
+		`strings.TrimSpace(r.URL.Query().Get("reference_key"))`,
 		`http.Error(w, "invalid source", http.StatusBadRequest)`,
 		`floatParam(r, "min_cvss", 0)`,
 		`floatParam(r, "min_epss", 0)`,
 		`floatParam(r, "min_epss_percentile", 0)`,
 		`boolQuery(r, "matchable")`,
 		`boolQuery(r, "include_priority_sources")`,
-		"s.db.SearchCveDatabase(ctx, query, severity, source",
+		"s.db.SearchCveDatabase(ctx, query, referenceKey, severity, source",
 		"minCVSS, minEPSS, minEPSSPercentile, matchableOnly, includePrioritySources",
 	} {
 		if !strings.Contains(fn, want) {
@@ -4216,6 +4217,8 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"useRef",
 		"initialSearchStarted",
 		"doSearch(0, 'published_date', true)",
+		"reference_key",
+		"Reference group",
 		"setError(err?.message || 'CVE database search failed')",
 		"setError(err?.message || 'CVE source list failed')",
 		"disabled={loading}",
@@ -4230,6 +4233,7 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"Load More",
 		"Reference Groups",
 		"reference_keys",
+		"searchReferenceGroup",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard CVE search auto-load/error UI missing %q", want)

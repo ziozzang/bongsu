@@ -4136,7 +4136,7 @@ func (db *DB) SyncEPSSPriorityColumnsTx(ctx context.Context, tx *sql.Tx) (int, e
 	return int(clearN + setN), nil
 }
 
-func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source string, minCVSS, minEPSS, minEPSSPercentile float64, matchableOnly, includePrioritySources bool, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {
+func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severity, source string, minCVSS, minEPSS, minEPSSPercentile float64, matchableOnly, includePrioritySources bool, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {
 	baseQ := `FROM cve_database WHERE 1=1`
 	args := []any{}
 	argN := 1
@@ -4154,6 +4154,18 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source str
 		)`, argN, argN, argN, argN, argN, argN)
 		args = append(args, "%"+query+"%")
 		argN++
+	}
+	if referenceKey != "" {
+		filter, vals := cveReferenceKeyFilter(referenceKey)
+		if filter != "" {
+			placeholders := make([]any, 0, len(vals))
+			for _, val := range vals {
+				placeholders = append(placeholders, val)
+			}
+			baseQ += fmt.Sprintf(" AND "+filter, placeholderRange(argN, len(placeholders))...)
+			args = append(args, placeholders...)
+			argN += len(placeholders)
+		}
 	}
 	if severity != "" {
 		baseQ += fmt.Sprintf(" AND severity=$%d", argN)
@@ -4272,6 +4284,73 @@ func cveReferenceKeys(e models.CveEntry) []string {
 		}
 	}
 	return keys
+}
+
+func cveReferenceKeyFilter(referenceKey string) (string, []string) {
+	key := strings.TrimSpace(referenceKey)
+	if key == "" {
+		return "", nil
+	}
+	lower := strings.ToLower(key)
+	textFilter := `(vulnerability_id ILIKE $%d OR title ILIKE $%d OR description ILIKE $%d OR refs::text ILIKE $%d)`
+	textVals := func(value string) []string {
+		pat := "%" + value + "%"
+		return []string{pat, pat, pat, pat}
+	}
+	switch {
+	case strings.HasPrefix(lower, "cve:"):
+		cve := strings.ToUpper(strings.TrimSpace(key[len("cve:"):]))
+		if !cveReferenceKeyRe.MatchString(cve) {
+			return "", nil
+		}
+		return textFilter, textVals(cve)
+	case strings.HasPrefix(lower, "ghsa:"):
+		ghsa := strings.TrimSpace(key[len("ghsa:"):])
+		if !ghsaReferenceKeyRe.MatchString(ghsa) {
+			return "", nil
+		}
+		return textFilter, textVals(ghsa)
+	case strings.HasPrefix(lower, "rustsec:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("rustsec:"):]))
+		if !rustsecReferenceKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return textFilter, textVals(id)
+	case strings.HasPrefix(lower, "pysec:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("pysec:"):]))
+		if !pysecReferenceKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return textFilter, textVals(id)
+	case strings.HasPrefix(lower, "go:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("go:"):]))
+		if !goReferenceKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return textFilter, textVals(id)
+	case strings.HasPrefix(lower, "repo:"):
+		repo := strings.TrimSpace(strings.TrimPrefix(lower, "repo:"))
+		if !strings.HasPrefix(repo, "github.com/") || strings.Count(repo, "/") < 2 {
+			return "", nil
+		}
+		return `refs::text ILIKE $%d`, []string{"%" + repo + "%"}
+	case lower == "vendor:debian":
+		return `(refs::text ILIKE $%d OR vulnerability_id ILIKE $%d)`, []string{"%debian.org%", "%DEBIAN-CVE-%"}
+	case lower == "vendor:ubuntu":
+		return `refs::text ILIKE $%d`, []string{"%ubuntu.com%"}
+	case lower == "vendor:redhat":
+		return `refs::text ILIKE $%d`, []string{"%redhat.com%"}
+	default:
+		return "", nil
+	}
+}
+
+func placeholderRange(start, count int) []any {
+	out := make([]any, 0, count)
+	for i := 0; i < count; i++ {
+		out = append(out, start+i)
+	}
+	return out
 }
 
 func referenceURLs(refs string) []string {
