@@ -2709,6 +2709,10 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	if status != "" && !validScanRequestStatus(status) {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
 	scanType := strings.TrimSpace(r.URL.Query().Get("scan_type"))
 	if scanType != "" && !validScanRequestType(scanType) {
 		http.Error(w, "invalid scan_type", http.StatusBadRequest)
@@ -2963,6 +2967,24 @@ func validScanRequestType(scanType string) bool {
 	}
 }
 
+func validScanRequestStatus(status string) bool {
+	switch status {
+	case "pending", "claimed", "completed", "degraded", "failed", "cancelled":
+		return true
+	default:
+		return false
+	}
+}
+
+func validAgentScanRequestCompletionStatus(status string) bool {
+	switch status {
+	case "completed", "degraded", "failed":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAgent(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -3027,6 +3049,10 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 	body.Message = normalizeScanRequestMessage(body.Message)
 	if body.Status == "" {
 		body.Status = "completed"
+	}
+	if !validAgentScanRequestCompletionStatus(body.Status) {
+		http.Error(w, "invalid scan request status", http.StatusBadRequest)
+		return
 	}
 	if err := s.verifyAgentHostBinding(r, body.HostID); err != nil {
 		s.audit(r, "scan_request.complete", "host", body.HostID, "forbidden", map[string]any{"reason": err.Error()})

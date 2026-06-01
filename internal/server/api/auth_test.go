@@ -3444,6 +3444,9 @@ func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
+		`strings.TrimSpace(r.URL.Query().Get("status"))`,
+		`!validScanRequestStatus(status)`,
+		`http.Error(w, "invalid status", http.StatusBadRequest)`,
 		`strings.TrimSpace(r.URL.Query().Get("scan_type"))`,
 		`http.Error(w, "invalid scan_type", http.StatusBadRequest)`,
 		`strings.TrimSpace(r.URL.Query().Get("security_db_revision"))`,
@@ -3535,6 +3538,8 @@ func TestAgentScanRequestCompletionRequiresClaimedHost(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		`HostID  string ` + "`json:\"host_id\"`",
+		"validAgentScanRequestCompletionStatus",
+		`http.Error(w, "invalid scan request status", http.StatusBadRequest)`,
 		"verifyAgentHostBinding",
 		"body.Message = normalizeScanRequestMessage(body.Message)",
 		"CompleteClaimedScanRequest",
