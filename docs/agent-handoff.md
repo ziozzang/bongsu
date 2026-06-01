@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-01 19:14:06 KST
+Updated: 2026-06-01 19:41:50 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -21,29 +21,35 @@ This document is the handoff point for the next agent session. Continue from the
 
 ## Current Git State
 
-Expected committed head before this handoff work:
+Expected committed head before this continuation:
 
 ```text
-48015b1 (master, origin/main) Serve stale CVE stats during refresh
+b168e2b (master, origin/main) Verify deployment safety defaults
 ```
 
 Important recent commits:
 
 ```text
+b168e2b Verify deployment safety defaults
+9361764 Expose installer readiness metrics
+6905acf Add migration quality verification
+ebacaf2 Harden airgap package contents
+3625c5c Verify static release binaries in CI
+b6b717c Add CI quality gates
+dec2ee6 Reject placeholder CVE identifiers
+7948ed4 Add CVE dashboard browser smoke tests
+a1a4ba4 Document agent handoff state
 48015b1 Serve stale CVE stats during refresh
 b7e7361 Reduce CVE stats cold path latency
 993cb03 Optimize vulnerability mismatch filtering
-f53d9a2 Use matchable CVE index for vulnerability evidence
-8b86461 Bound vulnerability list requests
-9310f6b Bound CVE affected package lookups
-c86ee65 Bound CVE reference group lookups
-24b4251 Bound CVE search request runtime
 ```
 
 This handoff commit should include:
 
 - `docs/agent-handoff.md`
-- Dashboard/API client change showing `/api/cve-db/stats` cache status, generated time, and duration in the CVE DB dashboard card.
+- `scripts/verify-installer-smoke.sh`
+- `.github/workflows/ci.yml`
+- A cron-mode one-line installer smoke verification that installs local packaged agent/Trivy binaries into a temporary work directory, generates and reuses a persistent agent token, writes `0600` config/token files, replaces the bongsu cron entry on reinstall, and runs the first agent scan without requiring root, systemd, network access, or Caddy changes.
 
 ## Live Runtime
 
@@ -133,6 +139,7 @@ git status --short --branch
 go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
+./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
 BONGSU_DB_PASSWORD=bongsu docker compose -f deploy/docker-compose.yml config >/tmp/bongsu-compose.out

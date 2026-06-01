@@ -33,6 +33,9 @@ jobs:
       - name: Verify deployment configuration defaults
         run: ./scripts/verify-deploy-config.sh
 
+      - name: Verify one-line installer smoke path
+        run: ./scripts/verify-installer-smoke.sh
+
       - name: Verify static release binaries
         run: ./scripts/verify-static-binaries.sh
 
