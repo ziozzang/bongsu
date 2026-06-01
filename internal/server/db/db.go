@@ -5405,7 +5405,7 @@ func (db *DB) GetCvePlaceholderStats(ctx context.Context) (*CvePlaceholderStats,
 	var stats CvePlaceholderStats
 	err := db.QueryRowContext(ctx, `
 SELECT
-	count(*) FILTER (WHERE upper(trim(vulnerability_id)) ~ '^TEMP-[0-9A-F-]+$' OR upper(trim(id)) ~ '^TEMP-[0-9A-F-]+$'),
+	count(*) FILTER (WHERE upper(trim(vulnerability_id)) LIKE 'TEMP-%' OR upper(trim(id)) LIKE 'TEMP-%'),
 	count(*) FILTER (WHERE trim(vulnerability_id) = ''),
 	count(*) FILTER (WHERE trim(source) = '')
 FROM cve_database`).Scan(&stats.TemporaryPlaceholders, &stats.EmptyVulnerabilityIDs, &stats.EmptySources)

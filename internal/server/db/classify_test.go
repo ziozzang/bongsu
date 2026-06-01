@@ -2130,7 +2130,7 @@ func TestTempCvePlaceholdersAreRemovedByMigration(t *testing.T) {
 	for _, want := range []string{
 		"DELETE FROM cve_database",
 		"vulnerability_id",
-		"^TEMP-[0-9A-F-]+$",
+		"LIKE 'TEMP-%'",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("TEMP placeholder cleanup migration missing %q: %s", want, body)
@@ -2182,7 +2182,7 @@ func TestCvePlaceholderStatsTrackInvalidAdvisoryRows(t *testing.T) {
 		"TemporaryPlaceholders",
 		"EmptyVulnerabilityIDs",
 		"EmptySources",
-		"^TEMP-[0-9A-F-]+$",
+		"LIKE 'TEMP-%'",
 		"count(*) FILTER",
 	} {
 		if !strings.Contains(body, want) {

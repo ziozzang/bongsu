@@ -4922,7 +4922,7 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 		}
 		e := input.toModel()
 		normalizeCveEntry(&e)
-		if e.VulnerabilityID == "" || strings.HasPrefix(strings.ToUpper(e.VulnerabilityID), "CGA-") || temporaryCvePlaceholder(e.VulnerabilityID) {
+		if e.VulnerabilityID == "" || strings.HasPrefix(strings.ToUpper(e.VulnerabilityID), "CGA-") || temporaryCvePlaceholder(e.VulnerabilityID) || temporaryCvePlaceholder(e.ID) {
 			continue
 		}
 		if source != "" {
@@ -5052,15 +5052,7 @@ func temporaryCvePlaceholder(id string) bool {
 		return false
 	}
 	rest := strings.TrimPrefix(vulnID, "TEMP-")
-	if rest == "" {
-		return false
-	}
-	for _, r := range rest {
-		if (r < '0' || r > '9') && (r < 'A' || r > 'F') && r != '-' {
-			return false
-		}
-	}
-	return true
+	return strings.TrimSpace(rest) != ""
 }
 
 func normalizeCveSource(source, fallback string) (string, error) {
