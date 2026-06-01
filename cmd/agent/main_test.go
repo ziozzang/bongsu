@@ -45,6 +45,13 @@ func TestReleaseBuildsInjectAgentMetadata(t *testing.T) {
 			"-X main.version=${VERSION}",
 			"-X main.commit=${COMMIT}",
 			"-X main.buildDate=${BUILD_DATE}",
+			`cp bin/bongsu-server-linux-amd64 "$STAGING/bin/bongsu-server"`,
+			"download-nvd.sh",
+			"download-osv.sh",
+			"extract-trivy-cvedb.sh",
+			"sync-all-cvedb.sh",
+			"SHA256SUMS",
+			"sha256sum -c SHA256SUMS",
 		},
 		"../../deploy/Dockerfile.agent": {
 			"ARG BONGSU_COMMIT",

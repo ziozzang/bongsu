@@ -155,6 +155,12 @@ Air-gapped packages and one-line installers depend on static Linux binaries. Bef
 ./scripts/verify-static-binaries.sh
 ```
 
+The release archive produced by `scripts/package.sh` includes static server and agent binaries, connected-source sync scripts, import/export tools, Docker images, migrations, web assets, and a `SHA256SUMS` manifest. After unpacking an archive in the target environment, run:
+
+```bash
+sha256sum -c SHA256SUMS
+```
+
 ## Agent Installation
 
 ### On Bare-Metal/VM Host

@@ -70,16 +70,27 @@ docker save "bongsu-agent:${VERSION}" | gzip > "$STAGING/images/bongsu-agent.tar
 
 # Copy binaries
 cp bin/bongsu-agent-linux-amd64 "$STAGING/bin/bongsu-agent"
+cp bin/bongsu-server-linux-amd64 "$STAGING/bin/bongsu-server"
 chmod +x "$STAGING/bin/bongsu-agent"
+chmod +x "$STAGING/bin/bongsu-server"
 
 # Copy scripts
-cp scripts/install-agent.sh "$STAGING/scripts/"
-cp scripts/update-trivy-db.sh "$STAGING/scripts/"
-cp scripts/download-trivy-db.sh "$STAGING/scripts/"
-cp scripts/download-cisa-kev.sh "$STAGING/scripts/"
-cp scripts/download-epss.sh "$STAGING/scripts/"
-cp scripts/export-security-db-bundle.sh "$STAGING/scripts/"
-cp scripts/import-security-db-bundle.sh "$STAGING/scripts/"
+for script in \
+    install-agent.sh \
+    update-trivy-db.sh \
+    download-trivy-db.sh \
+    download-cisa-kev.sh \
+    download-epss.sh \
+    download-nvd.sh \
+    download-osv.sh \
+    extract-trivy-cvedb.sh \
+    sync-all-cvedb.sh \
+    export-security-db-bundle.sh \
+    import-security-db-bundle.sh \
+    verify-static-binaries.sh
+do
+    cp "scripts/${script}" "$STAGING/scripts/"
+done
 chmod +x "$STAGING/scripts/"*.sh
 
 # Copy deploy configs
@@ -104,6 +115,9 @@ echo "Done. Run: cd deploy && docker compose up -d"
 EOF
 chmod +x "$STAGING/load-images.sh"
 
+# Create package manifest before the outer archive is built.
+(cd "$STAGING" && find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS)
+
 # Step 6: Create archive
 echo ""
 echo "[5/6] Creating archive..."
@@ -121,19 +135,21 @@ echo "SHA256: ${SHA}"
 echo ""
 echo "Contents:"
 echo "  images/              Docker images (server with trivy, agent)"
-echo "  bin/                 Agent binary for direct host install"
-echo "  scripts/             installer and security DB bundle import/export tools"
+echo "  bin/                 Static server and agent binaries"
+echo "  scripts/             installer, source sync, and security DB bundle tools"
 echo "  deploy/              docker-compose.yml, .env.example"
 echo "  migrations/          Database migrations"
+echo "  SHA256SUMS           Integrity manifest for packaged files"
 echo "  load-images.sh       Load Docker images on target"
 echo ""
 echo "Air-gapped deployment:"
 echo "  1. Transfer ${PACKAGE_NAME}.tar.gz to target"
 echo "  2. tar xzf ${PACKAGE_NAME}.tar.gz"
-echo "  3. cd ${PACKAGE_NAME} && ./load-images.sh"
-echo "  4. cp deploy/.env.example deploy/.env && edit .env"
-echo "  5. cd deploy && docker compose -f docker-compose.airgap.yml up -d"
-echo "  6. Import security DB bundle:"
+echo "  3. cd ${PACKAGE_NAME} && sha256sum -c SHA256SUMS"
+echo "  4. ./load-images.sh"
+echo "  5. cp deploy/.env.example deploy/.env && edit .env"
+echo "  6. cd deploy && docker compose -f docker-compose.airgap.yml up -d"
+echo "  7. Import security DB bundle:"
 echo "     ./scripts/import-security-db-bundle.sh http://localhost:5677 <api-key> bongsu-security-db-bundle.tar.gz"
 
 # Cleanup

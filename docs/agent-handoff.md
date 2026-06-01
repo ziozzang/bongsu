@@ -14,6 +14,7 @@ This document is the handoff point for the next agent session. Continue from the
 - Do not touch or reconfigure Caddy.
 - Docker Compose deployment must remain available for the management server.
 - Air-gapped deployment is required: update outside, export bundle, import inside.
+- Air-gapped release archives must include static server/agent binaries, source sync scripts, import/export scripts, Docker images, migrations, web assets, and a package `SHA256SUMS` manifest.
 - CVE matching must use only matchable affected package evidence: package name, ecosystem/target such as `Packagist`, and fixed-version/range data. Name-only or priority-only records must remain searchable but must not create rematch/rescan findings.
 - `TEMP-*` and `CVD-*` placeholder vulnerabilities are invalid for the CVE DB and should not appear in `cve_database`, `cve_affected_packages`, reference keys, or rematch candidates.
 - EPSS belongs on matching CVE/advisory rows as columns, not only as separate EPSS source records.
