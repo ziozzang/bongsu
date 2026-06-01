@@ -928,7 +928,9 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 		"BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS",
 		"markCveReferenceGroupStatus(entries, \"unavailable\")",
 		"JOIN cve_reference_keys crk",
-		"pq.Array(cves)",
+		"preferredReferenceGroupKey",
+		"pq.Array(keys)",
+		"crk.reference_key = k.reference_key",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search missing %q: %s", want, fn)
@@ -939,6 +941,15 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 	}
 	if strings.Contains(fn, "c.refs::text ILIKE ('%%' || k.cve") {
 		t.Fatalf("CVE group count enrichment must avoid broad reference text scans until reference keys are indexed: %s", fn)
+	}
+}
+
+func TestPreferredReferenceGroupKeyUsesCanonicalThenVendorAdvisory(t *testing.T) {
+	if got := preferredReferenceGroupKey([]string{"vendor:debian", "debian:DLA-214-1"}); got != "debian:DLA-214-1" {
+		t.Fatalf("preferred key = %q, want debian advisory", got)
+	}
+	if got := preferredReferenceGroupKey([]string{"vendor:debian", "debian:DLA-214-1", "cve:CVE-2026-48840"}); got != "cve:CVE-2026-48840" {
+		t.Fatalf("preferred key = %q, want canonical CVE", got)
 	}
 }
 
@@ -1884,7 +1895,7 @@ func TestCveReferenceKeyIndexIsMaintainedAndIndexed(t *testing.T) {
 		"INSERT INTO cve_reference_keys",
 		"cveReferenceKeys(e)",
 		"JOIN cve_reference_keys crk",
-		"crk.reference_key = ('cve:' || k.cve)",
+		"crk.reference_key = k.reference_key",
 		"CoveragePercent",
 		"LatestCVEUpdate",
 		"reference_key LIKE 'cve:%'",

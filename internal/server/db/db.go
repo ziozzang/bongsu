@@ -4367,21 +4367,16 @@ type cveReferenceGroupCounts struct {
 }
 
 func (db *DB) enrichCveReferenceGroupCounts(ctx context.Context, entries []models.CveEntry) error {
-	cves := []string{}
 	entryKeys := make([]string, len(entries))
+	keys := []string{}
 	for i := range entries {
-		for _, key := range entries[i].ReferenceKeys {
-			if strings.HasPrefix(key, "cve:") {
-				cve := strings.TrimSpace(strings.TrimPrefix(key, "cve:"))
-				if cveReferenceKeyRe.MatchString(cve) {
-					entryKeys[i] = strings.ToUpper(cve)
-					cves = appendUnique(cves, strings.ToUpper(cve))
-				}
-				break
-			}
+		key := preferredReferenceGroupKey(entries[i].ReferenceKeys)
+		if key != "" {
+			entryKeys[i] = key
+			keys = appendUnique(keys, key)
 		}
 	}
-	if len(cves) == 0 {
+	if len(keys) == 0 {
 		return nil
 	}
 	timeout := time.Duration(envPositiveInt("BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS", 1500)) * time.Millisecond
@@ -4389,15 +4384,15 @@ func (db *DB) enrichCveReferenceGroupCounts(ctx context.Context, entries []model
 	defer cancel()
 	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")
 	rows, err := db.QueryContext(groupCtx, fmt.Sprintf(`
-WITH keys AS (SELECT unnest($1::text[]) AS cve)
-SELECT k.cve,
+WITH keys AS (SELECT unnest($1::text[]) AS reference_key)
+SELECT k.reference_key,
 	count(c.id),
 	count(c.id) FILTER (WHERE %s),
 	count(DISTINCT NULLIF(c.source, ''))
 FROM keys k
-JOIN cve_reference_keys crk ON crk.reference_key = ('cve:' || k.cve)
+JOIN cve_reference_keys crk ON crk.reference_key = k.reference_key
 JOIN cve_database c ON c.id = crk.cve_id
-GROUP BY k.cve`, matchablePredicate), pq.Array(cves))
+GROUP BY k.reference_key`, matchablePredicate), pq.Array(keys))
 	if err != nil {
 		return err
 	}
@@ -4409,7 +4404,7 @@ GROUP BY k.cve`, matchablePredicate), pq.Array(cves))
 		if err := rows.Scan(&key, &c.Total, &c.Matchable, &c.Sources); err != nil {
 			return err
 		}
-		counts[strings.ToUpper(key)] = c
+		counts[key] = c
 	}
 	if err := rows.Err(); err != nil {
 		return err
@@ -4427,13 +4422,21 @@ GROUP BY k.cve`, matchablePredicate), pq.Array(cves))
 	return nil
 }
 
+func preferredReferenceGroupKey(keys []string) string {
+	for _, prefix := range []string{"cve:", "debian:", "ghsa:", "rustsec:", "pysec:", "go:", "repo:", "vendor:"} {
+		for _, key := range keys {
+			if strings.HasPrefix(key, prefix) {
+				return key
+			}
+		}
+	}
+	return ""
+}
+
 func markCveReferenceGroupStatus(entries []models.CveEntry, status string) {
 	for i := range entries {
-		for _, key := range entries[i].ReferenceKeys {
-			if strings.HasPrefix(key, "cve:") {
-				entries[i].ReferenceGroupStatus = status
-				break
-			}
+		if preferredReferenceGroupKey(entries[i].ReferenceKeys) != "" {
+			entries[i].ReferenceGroupStatus = status
 		}
 	}
 }
