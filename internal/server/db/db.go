@@ -43,6 +43,7 @@ var (
 	rustsecReferenceKeyRe = regexp.MustCompile(`(?i)\bRUSTSEC-\d{4}-\d{4,}\b`)
 	pysecReferenceKeyRe   = regexp.MustCompile(`(?i)\bPYSEC-\d{4}-\d{1,}\b`)
 	goReferenceKeyRe      = regexp.MustCompile(`(?i)\bGO-\d{4}-\d{4,}\b`)
+	debianAdvisoryKeyRe   = regexp.MustCompile(`(?i)\bD(?:SA|LA)-\d{1,6}-\d+\b`)
 )
 
 type RetentionPruneResult struct {
@@ -4509,7 +4510,7 @@ func (db *DB) cveReferenceGroupBuckets(ctx context.Context, expr, baseQ string, 
 
 func cveReferenceKeys(e models.CveEntry) []string {
 	keys := []string{}
-	text := strings.Join([]string{e.VulnerabilityID, e.Title, e.Description, e.References}, "\n")
+	text := strings.Join([]string{e.VulnerabilityID, e.Title, e.Description, e.References, e.RawData}, "\n")
 	addRegexKeys := func(prefix string, re *regexp.Regexp, upper bool) {
 		for _, match := range re.FindAllString(text, -1) {
 			match = strings.TrimSpace(match)
@@ -4524,6 +4525,10 @@ func cveReferenceKeys(e models.CveEntry) []string {
 	addRegexKeys("rustsec:", rustsecReferenceKeyRe, true)
 	addRegexKeys("pysec:", pysecReferenceKeyRe, true)
 	addRegexKeys("go:", goReferenceKeyRe, true)
+	addRegexKeys("debian:", debianAdvisoryKeyRe, true)
+	if isDebianSecurityEntry(e) {
+		keys = appendUnique(keys, "vendor:debian")
+	}
 
 	for _, raw := range referenceURLs(e.References) {
 		u, err := url.Parse(raw)
@@ -4550,6 +4555,15 @@ func cveReferenceKeys(e models.CveEntry) []string {
 		}
 	}
 	return keys
+}
+
+func isDebianSecurityEntry(e models.CveEntry) bool {
+	eco := strings.ToLower(strings.TrimSpace(e.Ecosystem))
+	if eco == "debian" || strings.HasPrefix(eco, "debian:") {
+		return true
+	}
+	vulnID := strings.ToUpper(strings.TrimSpace(e.VulnerabilityID))
+	return strings.HasPrefix(vulnID, "DEBIAN-CVE-") || debianAdvisoryKeyRe.MatchString(vulnID)
 }
 
 func cveReferenceKeyFilter(referenceKey string) (string, []string) {
@@ -4590,6 +4604,12 @@ func cveReferenceKeyFilter(referenceKey string) (string, []string) {
 			return "", nil
 		}
 		return indexFilter, []string{"go:" + id}
+	case strings.HasPrefix(lower, "debian:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("debian:"):]))
+		if !debianAdvisoryKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return indexFilter, []string{"debian:" + id}
 	case strings.HasPrefix(lower, "repo:"):
 		repo := strings.TrimSpace(strings.TrimPrefix(lower, "repo:"))
 		if !strings.HasPrefix(repo, "github.com/") || strings.Count(repo, "/") < 2 {

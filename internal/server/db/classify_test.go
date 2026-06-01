@@ -962,6 +962,12 @@ func TestCveReferenceKeyFilterSupportsCanonicalGroups(t *testing.T) {
 			wantVals:   []string{"vendor:debian"},
 		},
 		{
+			name:       "debian advisory",
+			key:        "debian:DLA-214-1",
+			wantFilter: "cve_reference_keys",
+			wantVals:   []string{"debian:DLA-214-1"},
+		},
+		{
 			name:       "github repo",
 			key:        "repo:github.com/mervinpraison/praisonai",
 			wantFilter: "cve_reference_keys",
@@ -1034,15 +1040,39 @@ func TestCveReferenceKeysGroupVendorCVEAndAdvisories(t *testing.T) {
 	entry := models.CveEntry{
 		VulnerabilityID: "DEBIAN-CVE-2026-48840",
 		Title:           "Debian tracker item",
-		References:      `[{"url":"https://security-tracker.debian.org/tracker/CVE-2026-48840","type":"ADVISORY"},{"url":"https://github.com/MervinPraison/PraisonAI/security/advisories/GHSA-c2m8-4gcg-v22g","type":"WEB"},{"url":"https://github.com/MervinPraison/PraisonAI","type":"PACKAGE"}]`,
+		Ecosystem:       "Debian:12",
+		References:      `[{"url":"https://security-tracker.debian.org/tracker/CVE-2026-48840","type":"ADVISORY"},{"url":"https://github.com/MervinPraison/PraisonAI","type":"PACKAGE"}]`,
+		RawData:         `{"aliases":["GHSA-c2m8-4gcg-v22g","DLA-1234-1"]}`,
 	}
 	got := cveReferenceKeys(entry)
 	for _, want := range []string{
 		"cve:CVE-2026-48840",
 		"vendor:debian",
 		"ghsa:GHSA-c2m8-4gcg-v22g",
+		"debian:DLA-1234-1",
 		"repo:github.com/mervinpraison/praisonai",
 	} {
+		found := false
+		for _, key := range got {
+			if key == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("reference keys missing %q in %#v", want, got)
+		}
+	}
+}
+
+func TestCveReferenceKeysTagDebianAdvisoriesWithoutCVEAlias(t *testing.T) {
+	entry := models.CveEntry{
+		VulnerabilityID: "DLA-214-1",
+		Ecosystem:       "Debian:6.0",
+		RawData:         `{"id":"DLA-214-1","aliases":[]}`,
+	}
+	got := cveReferenceKeys(entry)
+	for _, want := range []string{"debian:DLA-214-1", "vendor:debian"} {
 		found := false
 		for _, key := range got {
 			if key == want {
