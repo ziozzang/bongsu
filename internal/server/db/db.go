@@ -674,6 +674,20 @@ func fixedVersions(p affectedProduct) []string {
 	return out
 }
 
+func hasSafeFixedEvidence(p affectedProduct) bool {
+	if len(uniqueFixedVersions(p.Fixed)) == 1 {
+		return true
+	}
+	for _, r := range p.Ranges {
+		for _, ev := range r.Events {
+			if strings.TrimSpace(ev.Fixed) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func uniqueFixedVersions(in []string) []string {
 	out := make([]string, 0, len(in))
 	seen := map[string]bool{}
@@ -4826,7 +4840,7 @@ func cveEntryMatchableAffectedCount(affectedProducts, ecosystem string) int {
 		if effectiveEco == "" {
 			continue
 		}
-		if len(fixedVersions(p)) == 0 {
+		if !hasSafeFixedEvidence(p) {
 			continue
 		}
 		count++

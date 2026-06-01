@@ -937,6 +937,18 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 			wantCount:        2,
 		},
 		{
+			name:             "ambiguous multi fixed without ranges",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0.5.2","1.0.0"]}]`,
+			want:             false,
+			wantCount:        0,
+		},
+		{
+			name:             "multi fixed with range fixed event",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0.5.2","1.0.0"],"ranges":[{"events":[{"introduced":"0"},{"fixed":"0.5.2"}]}]}]`,
+			want:             true,
+			wantCount:        1,
+		},
+		{
 			name:             "missing fixed",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist"}]`,
 			want:             false,
