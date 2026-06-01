@@ -78,7 +78,7 @@ BONGSU_API_TARGET=http://localhost:5677 npm --prefix web run dev -- --host 0.0.0
 
 ## CVE DB 유효성 기준
 
-CVE DB에서 실제 매칭/리스캔에 사용하는 advisory는 affected package evidence가 있어야 합니다. 즉 패키지 이름, ecosystem/package type, fixed version 또는 fixed event가 있는 affected range가 확인되는 row만 matchable로 봅니다. `TEMP-*` 같은 임시 placeholder ID와 CISA KEV/EPSS처럼 우선순위 보강만 하는 feed는 이름 기반 매칭 후보로 쓰지 않습니다. EPSS는 별도 advisory가 아니라 같은 CVE row의 `epss_score`, `epss_percentile` 컬럼으로 병합됩니다.
+CVE DB에서 실제 매칭/리스캔에 사용하는 advisory는 affected package evidence가 있어야 합니다. 즉 패키지 이름, ecosystem/package type, package fixed version 또는 package fixed event가 있는 affected range가 확인되는 row만 matchable로 봅니다. `TEMP-*` 같은 임시 placeholder ID, git commit hash 같은 hash-only fixed evidence, CISA KEV/EPSS처럼 우선순위 보강만 하는 feed는 이름 기반 매칭 후보로 쓰지 않습니다. EPSS는 별도 advisory가 아니라 같은 CVE row의 `epss_score`, `epss_percentile` 컬럼으로 병합됩니다.
 
 대시보드 첫 화면의 CVE DB 상태 카드와 CVE Search에서 총 row, matchable row, EPSS 병합률, affected/reference 인덱스 커버리지, placeholder/빈 ID 경고를 확인할 수 있습니다.
 

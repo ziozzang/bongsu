@@ -38,19 +38,20 @@ var ErrAgentHostTokenMismatch = errors.New("agent token does not match host bind
 var ErrInvalidCveReferenceKey = errors.New("invalid CVE reference key")
 
 var (
-	cveReferenceKeyRe     = regexp.MustCompile(`(?i)\bCVE-\d{4}-\d{4,}\b`)
-	ghsaReferenceKeyRe    = regexp.MustCompile(`(?i)\bGHSA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}\b`)
-	rustsecReferenceKeyRe = regexp.MustCompile(`(?i)\bRUSTSEC-\d{4}-\d{4,}\b`)
-	pysecReferenceKeyRe   = regexp.MustCompile(`(?i)\bPYSEC-\d{4}-\d{1,}\b`)
-	goReferenceKeyRe      = regexp.MustCompile(`(?i)\bGO-\d{4}-\d{4,}\b`)
-	debianAdvisoryKeyRe   = regexp.MustCompile(`(?i)\bD(?:SA|LA)-\d{1,6}(?:-\d+)?\b`)
-	malwareAdvisoryKeyRe  = regexp.MustCompile(`(?i)\bMAL-\d{4}-\d{1,}\b`)
-	almaAdvisoryKeyRe     = regexp.MustCompile(`(?i)\bAL(?:BA|EA|SA)-\d{4}:\d{1,}\b`)
-	suseAdvisoryKeyRe     = regexp.MustCompile(`(?i)\b(?:openSUSE|SUSE)-[A-Z]{2}-\d{4}:\d{1,}-\d+\b`)
-	drupalAdvisoryKeyRe   = regexp.MustCompile(`(?i)\bDRUPAL-[A-Z]+-\d{4}-\d{3,}\b`)
-	dtsaAdvisoryKeyRe     = regexp.MustCompile(`(?i)\bDTSA-\d{1,}-\d+\b`)
-	osvAdvisoryKeyRe      = regexp.MustCompile(`(?i)\bOSV-\d{4}-\d{1,}\b`)
-	gsdAdvisoryKeyRe      = regexp.MustCompile(`(?i)\bGSD-\d{4}-\d{1,}\b`)
+	cveReferenceKeyRe      = regexp.MustCompile(`(?i)\bCVE-\d{4}-\d{4,}\b`)
+	ghsaReferenceKeyRe     = regexp.MustCompile(`(?i)\bGHSA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}\b`)
+	rustsecReferenceKeyRe  = regexp.MustCompile(`(?i)\bRUSTSEC-\d{4}-\d{4,}\b`)
+	pysecReferenceKeyRe    = regexp.MustCompile(`(?i)\bPYSEC-\d{4}-\d{1,}\b`)
+	goReferenceKeyRe       = regexp.MustCompile(`(?i)\bGO-\d{4}-\d{4,}\b`)
+	debianAdvisoryKeyRe    = regexp.MustCompile(`(?i)\bD(?:SA|LA)-\d{1,6}(?:-\d+)?\b`)
+	malwareAdvisoryKeyRe   = regexp.MustCompile(`(?i)\bMAL-\d{4}-\d{1,}\b`)
+	almaAdvisoryKeyRe      = regexp.MustCompile(`(?i)\bAL(?:BA|EA|SA)-\d{4}:\d{1,}\b`)
+	suseAdvisoryKeyRe      = regexp.MustCompile(`(?i)\b(?:openSUSE|SUSE)-[A-Z]{2}-\d{4}:\d{1,}-\d+\b`)
+	drupalAdvisoryKeyRe    = regexp.MustCompile(`(?i)\bDRUPAL-[A-Z]+-\d{4}-\d{3,}\b`)
+	dtsaAdvisoryKeyRe      = regexp.MustCompile(`(?i)\bDTSA-\d{1,}-\d+\b`)
+	osvAdvisoryKeyRe       = regexp.MustCompile(`(?i)\bOSV-\d{4}-\d{1,}\b`)
+	gsdAdvisoryKeyRe       = regexp.MustCompile(`(?i)\bGSD-\d{4}-\d{1,}\b`)
+	hashOnlyFixedVersionRe = regexp.MustCompile(`(?i)^[0-9a-f]{40}$`)
 )
 
 type RetentionPruneResult struct {
@@ -699,7 +700,7 @@ func fixedVersions(p affectedProduct) []string {
 	for _, r := range p.Ranges {
 		for _, ev := range r.Events {
 			fixed := strings.TrimSpace(ev.Fixed)
-			if fixed == "" || seen[fixed] {
+			if fixed == "" || isHashOnlyFixedVersion(fixed) || seen[fixed] {
 				continue
 			}
 			out = append(out, fixed)
@@ -715,7 +716,7 @@ func hasSafeFixedEvidence(p affectedProduct) bool {
 	}
 	for _, r := range p.Ranges {
 		for _, ev := range r.Events {
-			if strings.TrimSpace(ev.Fixed) != "" {
+			if fixed := strings.TrimSpace(ev.Fixed); fixed != "" && !isHashOnlyFixedVersion(fixed) {
 				return true
 			}
 		}
@@ -728,13 +729,17 @@ func uniqueFixedVersions(in []string) []string {
 	seen := map[string]bool{}
 	for _, fixed := range in {
 		fixed = strings.TrimSpace(fixed)
-		if fixed == "" || seen[fixed] {
+		if fixed == "" || isHashOnlyFixedVersion(fixed) || seen[fixed] {
 			continue
 		}
 		out = append(out, fixed)
 		seen[fixed] = true
 	}
 	return out
+}
+
+func isHashOnlyFixedVersion(version string) bool {
+	return hashOnlyFixedVersionRe.MatchString(strings.TrimSpace(version))
 }
 
 func versionInRange(installed string, events []affectedRangeEvent) bool {
@@ -750,6 +755,9 @@ func versionInRange(installed string, events []affectedRangeEvent) bool {
 			}
 		}
 		if active && ev.Fixed != "" {
+			if isHashOnlyFixedVersion(ev.Fixed) {
+				return false
+			}
 			if less, ok := versionLess(installed, ev.Fixed); ok {
 				if less {
 					return true
@@ -3668,24 +3676,50 @@ func cveFixedVersionSQL(alias string) string {
 	}
 	return fmt.Sprintf(`COALESCE(
 		%s,
-		NULLIF(jsonb_path_query_first(%saffected_products, '$[*].ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
-	)`, safeAffectedFixedVersionSQL(prefix+"affected_products->0"), prefix)
+		%s
+	)`, safeAffectedFixedVersionSQL(prefix+"affected_products->0"), cveAffectedProductsRangeFixedVersionSQL(prefix+"affected_products"))
 }
 
 func safeAffectedFixedVersionSQL(affectedExpr string) string {
 	return fmt.Sprintf(`CASE
 			WHEN jsonb_typeof(%s->'fixed') = 'array'
 			  AND jsonb_array_length(%s->'fixed') = 1
-			THEN NULLIF(%s->'fixed'->>0, '')
+			  AND %s
+			THEN NULLIF(trim(%s->'fixed'->>0), '')
 			ELSE NULL
-		END`, affectedExpr, affectedExpr, affectedExpr)
+		END`, affectedExpr, affectedExpr, fixedVersionValuePredicateSQL(affectedExpr+"->'fixed'->>0"), affectedExpr)
 }
 
 func cveAffectedPackageFixedVersionSQL(affectedExpr string) string {
 	return fmt.Sprintf(`COALESCE(
 		%s,
-		NULLIF(jsonb_path_query_first(%s, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
-	)`, safeAffectedFixedVersionSQL(affectedExpr), affectedExpr)
+		%s
+	)`, safeAffectedFixedVersionSQL(affectedExpr), cveAffectedPackageRangeFixedVersionSQL(affectedExpr))
+}
+
+func cveAffectedPackageRangeFixedVersionSQL(affectedExpr string) string {
+	return fmt.Sprintf(`(
+		SELECT NULLIF(trim(ev->>'fixed'), '')
+		FROM jsonb_array_elements(CASE WHEN jsonb_typeof(%s->'ranges') = 'array' THEN %s->'ranges' ELSE '[]'::jsonb END) r
+		JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(r->'events') = 'array' THEN r->'events' ELSE '[]'::jsonb END) ev ON true
+		WHERE %s
+		LIMIT 1
+	)`, affectedExpr, affectedExpr, fixedVersionValuePredicateSQL("ev->>'fixed'"))
+}
+
+func cveAffectedProductsRangeFixedVersionSQL(affectedProductsExpr string) string {
+	return fmt.Sprintf(`(
+		SELECT NULLIF(trim(ev->>'fixed'), '')
+		FROM jsonb_array_elements(CASE WHEN jsonb_typeof(%s) = 'array' THEN %s ELSE '[]'::jsonb END) ap
+		JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(ap->'ranges') = 'array' THEN ap->'ranges' ELSE '[]'::jsonb END) r ON true
+		JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(r->'events') = 'array' THEN r->'events' ELSE '[]'::jsonb END) ev ON true
+		WHERE %s
+		LIMIT 1
+	)`, affectedProductsExpr, affectedProductsExpr, fixedVersionValuePredicateSQL("ev->>'fixed'"))
+}
+
+func fixedVersionValuePredicateSQL(valueExpr string) string {
+	return fmt.Sprintf(`NULLIF(trim(%s), '') IS NOT NULL AND trim(%s) !~* '^[0-9a-f]{40}$'`, valueExpr, valueExpr)
 }
 
 func affectedProductEcosystemSQL(cveAlias, affectedAlias string) string {
@@ -5639,8 +5673,13 @@ const (
 )
 
 func cveSourceFixedPredicateSQL() string {
-	return `(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') = 1 AND COALESCE(ap->'fixed'->>0, '') != '')
-		OR jsonb_path_exists(ap, '$.ranges[*].events[*].fixed ? (@ != "")')`
+	return fmt.Sprintf(`(jsonb_typeof(ap->'fixed') = 'array' AND jsonb_array_length(ap->'fixed') = 1 AND %s)
+		OR EXISTS (
+			SELECT 1
+			FROM jsonb_array_elements(CASE WHEN jsonb_typeof(ap->'ranges') = 'array' THEN ap->'ranges' ELSE '[]'::jsonb END) r
+			JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(r->'events') = 'array' THEN r->'events' ELSE '[]'::jsonb END) ev ON true
+			WHERE %s
+		)`, fixedVersionValuePredicateSQL("ap->'fixed'->>0"), fixedVersionValuePredicateSQL("ev->>'fixed'"))
 }
 
 func cveSourceMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr string) string {

@@ -159,6 +159,16 @@ func TestCompatibleSecurityCandidateRejectsWeakOrWrongCandidates(t *testing.T) {
 		t.Fatal("candidate without fixed version should not match")
 	}
 
+	hashFixed := `[{"name":"foo","ecosystem":"npm","fixed":["0123456789abcdef0123456789abcdef01234567"]}]`
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "4.5.5", "code-library", "", hashFixed); ok {
+		t.Fatal("hash-only fixed evidence should not match as a package version")
+	}
+
+	hashRangeFixed := `[{"name":"foo","ecosystem":"npm","ranges":[{"events":[{"introduced":"0"},{"fixed":"0123456789abcdef0123456789abcdef01234567"}]}]}]`
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "4.5.5", "code-library", "", hashRangeFixed); ok {
+		t.Fatal("hash-only range fixed evidence should not match as a package version")
+	}
+
 	wrongEco := `[{"name":"foo","ecosystem":"PyPI","fixed":["1.2.3"]}]`
 	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "4.5.5", "code-library", "", wrongEco); ok {
 		t.Fatal("PyPI advisory should not match npm package with same name")
@@ -890,7 +900,9 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 		"NULLIF(ap->>'ecosystem', '')",
 		"jsonb_typeof(ap->'fixed') = 'array'",
 		"jsonb_array_length(ap->'fixed') = 1",
-		"jsonb_path_exists(ap, '$.ranges[*].events[*].fixed ? (@ != \"\")')",
+		"jsonb_array_elements(CASE WHEN jsonb_typeof(ap->'ranges')",
+		"ev->>'fixed'",
+		"!~* '^[0-9a-f]{40}$'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("source quality predicate missing %q: %s", want, got)
@@ -1216,7 +1228,9 @@ func TestCvePackageMatchablePredicateRequiresPackageTargetAndFixedData(t *testin
 		"NULLIF(p.pkg_type, '')",
 		"jsonb_typeof(ap->'fixed') = 'array'",
 		"jsonb_array_length(ap->'fixed') = 1",
-		"jsonb_path_exists(ap, '$.ranges[*].events[*].fixed ? (@ != \"\")')",
+		"jsonb_array_elements(CASE WHEN jsonb_typeof(ap->'ranges')",
+		"ev->>'fixed'",
+		"!~* '^[0-9a-f]{40}$'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("package matchable predicate missing %q: %s", want, got)
@@ -1279,6 +1293,18 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 		{
 			name:             "missing fixed",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist"}]`,
+			want:             false,
+			wantReason:       "missing fixed version",
+		},
+		{
+			name:             "hash fixed is not matchable",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0123456789abcdef0123456789abcdef01234567"]}]`,
+			want:             false,
+			wantReason:       "missing fixed version",
+		},
+		{
+			name:             "hash range fixed is not matchable",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","ranges":[{"events":[{"introduced":"0"},{"fixed":"0123456789abcdef0123456789abcdef01234567"}]}]}]`,
 			want:             false,
 			wantReason:       "missing fixed version",
 		},
@@ -1374,7 +1400,8 @@ func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
 		for _, want := range []string{
 			"jsonb_array_length",
 			"= 1",
-			"ranges[*].events[*].fixed",
+			"ev->>'fixed'",
+			"!~* '^[0-9a-f]{40}$'",
 		} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("%s CVE fixed enrichment missing %q: %s", name, want, got)
@@ -1418,7 +1445,8 @@ func TestCveAffectedPackageIndexUsesSharedFixedVersionRules(t *testing.T) {
 	for _, want := range []string{
 		"jsonb_array_length",
 		"= 1",
-		"$.ranges[*].events[*].fixed",
+		"ev->>'fixed'",
+		"!~* '^[0-9a-f]{40}$'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("affected-package fixed SQL missing %q: %s", want, got)
@@ -2095,6 +2123,22 @@ func TestTempCvePlaceholdersAreRemovedByMigration(t *testing.T) {
 	}
 }
 
+func TestHashFixedAffectedPackageIndexRowsAreRemovedByMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/028_remove_hash_fixed_affected_packages.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DELETE FROM cve_affected_packages",
+		"fixed_version ~* '^[0-9a-f]{40}$'",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("hash fixed affected-package cleanup migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestCvePlaceholderStatsTrackInvalidAdvisoryRows(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
@@ -2251,8 +2295,9 @@ func TestCveFixedVersionSQLIncludesTopLevelAndRangeEvents(t *testing.T) {
 	got := cveFixedVersionSQL("c")
 	for _, want := range []string{
 		"c.affected_products->0->'fixed'->>0",
-		"jsonb_path_query_first(c.affected_products",
-		"ranges[*].events[*].fixed",
+		"jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products)",
+		"ev->>'fixed'",
+		"!~* '^[0-9a-f]{40}$'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("fixed version SQL missing %q: %s", want, got)
