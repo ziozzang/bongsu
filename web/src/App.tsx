@@ -1794,6 +1794,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
                   <td>
                     <span className="badge" title={(v.advisory_sources || []).length ? `Advisory: ${(v.advisory_sources || []).join(', ')}` : ''}>{findingSourceLabel(v.finding_source)}</span>
                     {(v.advisory_sources || []).length > 0 && <div className="mono" style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: 2 }}>{(v.advisory_sources || []).slice(0, 2).join(', ')}</div>}
+                    {(v.advisory_evidence || []).length > 0 && <div className="mono" style={{ fontSize: '0.625rem', color: '#22c55e', marginTop: 2 }}>{(v.advisory_evidence || []).length} verified</div>}
                   </td>
                   <td className="mono" style={{ fontWeight: 700, color: riskLevelColor(v.risk_level) }}>
                     {v.risk_score ? v.risk_score.toFixed(1) : '-'}
@@ -1935,6 +1936,11 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
               {(vuln.advisory_sources || []).join(', ')}
             </div>
           )}
+          {(vuln.advisory_evidence || []).length > 0 && (
+            <div style={{ fontSize: '0.75rem', color: '#22c55e', marginTop: '0.25rem' }}>
+              {(vuln.advisory_evidence || []).length} verified advisories
+            </div>
+          )}
         </div>
         <div className="stat-card">
           <div className="label">CISA KEV</div>
@@ -2024,6 +2030,36 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
           </tbody>
         </table>
       </div>
+
+      {(vuln.advisory_evidence || []).length > 0 && (
+        <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+          <h3 style={{ margin: '0 0 0.75rem' }}>Advisory Evidence</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Ecosystem</th>
+                <th>Fixed</th>
+                <th>CVSS</th>
+                <th>EPSS</th>
+                <th>Title</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(vuln.advisory_evidence || []).map((e, idx) => (
+                <tr key={`${e.source}-${idx}`}>
+                  <td><span className="badge">{e.source}</span></td>
+                  <td className="mono">{e.ecosystem || '-'}</td>
+                  <td className="mono">{e.fixed_version || '-'}</td>
+                  <td className="mono">{e.cvss_score ? e.cvss_score.toFixed(1) : '-'}</td>
+                  <td className="mono">{e.epss_score ? `${(e.epss_score * 100).toFixed(1)}%` : '-'}</td>
+                  <td style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {vuln.cvss_vector && (
         <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
@@ -3368,6 +3404,7 @@ function CvssTooltip({ pkgId, score, onSelectVuln }: { pkgId: string; score: num
                  <span style={{ color: sevColor(v.severity), fontWeight: 600, fontSize: '0.75rem' }}>{v.severity} {v.cvss_score > 0 ? v.cvss_score.toFixed(1) : ''}</span>
                </div>
                {v.title && <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: 2 }}>{v.title}</div>}
+               {(v.advisory_evidence || []).length > 0 && <div className="mono" style={{ color: '#22c55e', fontSize: '0.6875rem', marginTop: 2 }}>Advisory: {(v.advisory_evidence || []).map(e => e.source).join(', ')}</div>}
                <div style={{ color: 'var(--text-muted)', fontSize: '0.6875rem', marginTop: 2 }}>
                  {v.installed_version}
                  {v.fixed_version && v.installed_version

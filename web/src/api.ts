@@ -168,6 +168,7 @@ export interface Vuln {
   primary_url: string;
   finding_source?: string;
   advisory_sources?: string[];
+  advisory_evidence?: AdvisoryEvidence[];
   host_id: string;
   host_owner?: string;
   host_team?: string;
@@ -188,6 +189,17 @@ export interface Vuln {
   sla_days: number;
   due_at?: string | null;
   overdue: boolean;
+}
+
+export interface AdvisoryEvidence {
+  source: string;
+  category?: string;
+  ecosystem?: string;
+  severity?: string;
+  cvss_score?: number;
+  epss_score?: number;
+  fixed_version?: string;
+  title?: string;
 }
 
 export interface Pkg {

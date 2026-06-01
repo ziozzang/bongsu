@@ -1030,6 +1030,40 @@ var vulnAdvisorySourcesExpr = fmt.Sprintf(`COALESCE(ARRAY(
 	ORDER BY c.source
 ), ARRAY[]::text[])`, affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("source_pkg"), cveSourceFixedPredicateSQL())
 
+var vulnAdvisoryEvidenceExpr = fmt.Sprintf(`COALESCE((
+	SELECT jsonb_agg(jsonb_build_object(
+		'source', source,
+		'category', category,
+		'ecosystem', ecosystem,
+		'severity', severity,
+		'cvss_score', cvss_score,
+		'epss_score', epss_score,
+		'fixed_version', fixed_version,
+		'title', title
+	) ORDER BY source)::text
+	FROM (
+		SELECT DISTINCT ON (c.source)
+		       c.source,
+		       c.category,
+		       COALESCE(NULLIF(ap->>'ecosystem', ''), c.ecosystem) AS ecosystem,
+		       c.severity,
+		       c.cvss_score,
+		       c.epss_score,
+		       COALESCE(%s, NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')) AS fixed_version,
+		       c.title
+		FROM cve_database c
+		JOIN packages source_pkg ON source_pkg.id = v.package_id
+		JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap ON true
+		WHERE c.vulnerability_id = v.vulnerability_id
+		  AND c.source NOT IN ('cisa-kev', 'epss')
+		  AND lower(COALESCE(ap->>'name', '')) = lower(v.pkg_name)
+		  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
+		  AND %s = %s
+		  AND (%s)
+		ORDER BY c.source, c.cvss_score DESC, c.updated_at DESC
+	) evidence
+), '[]')`, safeAffectedFixedVersionSQL("ap"), affectedProductEcosystemSQL("c", "ap"), packageEcosystemSQL("source_pkg"), cveSourceFixedPredicateSQL())
+
 var vulnSelectCols = `v.id, v.package_id, v.scan_id, v.host_id, v.vulnerability_id, v.severity, v.title, v.description, v.pkg_name,
 COALESCE((SELECT p.asset_type FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id), ''),
@@ -1038,7 +1072,7 @@ COALESCE((SELECT p.container_id FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.image_name FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.image_id FROM packages p WHERE p.id = v.package_id), ''),
 COALESCE((SELECT p.target FROM packages p WHERE p.id = v.package_id), ''),
-v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), ` + vulnAdvisorySourcesExpr + `, v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, ''),
+v.installed_version, v.fixed_version, v.cvss_score, v.cvss_vector, v.primary_url, v.pkg_path, v.layer_id, v.container, COALESCE(v.finding_source, 'scanner'), ` + vulnAdvisorySourcesExpr + `, ` + vulnAdvisoryEvidenceExpr + `, v.created_at, COALESCE(h.owner, ''), COALESCE(h.team, ''), COALESCE(h.environment, ''), COALESCE(h.criticality, ''),
 ` + vulnExploitedExpr + `,
 ` + vulnEPSSScoreExpr + `,
 ` + vulnEPSSPercentileExpr + `,
@@ -1059,12 +1093,19 @@ const vulnTriageJoin = ` LEFT JOIN LATERAL (
 const vulnTriageCols = `, COALESCE(vt.status, 'open'), COALESCE(vt.reason, ''), COALESCE(vt.comment, ''), vt.expires_at, COALESCE(vt.updated_by, ''), vt.updated_at`
 
 func scanVuln(scanner interface{ Scan(...interface{}) error }, v *models.Vulnerability) error {
-	return scanner.Scan(&v.ID, &v.PackageID, &v.ScanID, &v.HostID,
+	var advisoryEvidence sql.NullString
+	if err := scanner.Scan(&v.ID, &v.PackageID, &v.ScanID, &v.HostID,
 		&v.VulnerabilityID, &v.Severity, &v.Title, &v.Description,
 		&v.PkgName, &v.AssetType, &v.PkgType, &v.Ecosystem, &v.ContainerID, &v.ImageName, &v.ImageID, &v.Target, &v.InstalledVer, &v.FixedVersion, &v.CVSSScore,
 		&v.CVSSVector, &v.PrimaryURL, &v.PkgPath, &v.LayerID, &v.Container,
-		&v.FindingSource, pq.Array(&v.AdvisorySources), &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
-		&v.Exploited, &v.EPSSScore, &v.EPSSPercentile, &v.RiskScore, &v.RiskLevel, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt)
+		&v.FindingSource, pq.Array(&v.AdvisorySources), &advisoryEvidence, &v.CreatedAt, &v.HostOwner, &v.HostTeam, &v.HostEnvironment, &v.HostCriticality,
+		&v.Exploited, &v.EPSSScore, &v.EPSSPercentile, &v.RiskScore, &v.RiskLevel, &v.TriageStatus, &v.TriageReason, &v.TriageComment, &v.TriageExpiresAt, &v.TriageUpdatedBy, &v.TriageUpdatedAt); err != nil {
+		return err
+	}
+	if advisoryEvidence.Valid && advisoryEvidence.String != "" {
+		_ = json.Unmarshal([]byte(advisoryEvidence.String), &v.AdvisoryEvidence)
+	}
+	return nil
 }
 
 type VulnerabilityInsertResult struct {

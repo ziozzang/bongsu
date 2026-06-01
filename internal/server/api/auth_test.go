@@ -2036,7 +2036,10 @@ func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
 		"v.epss_score",
 		"v.exploited",
 		"Advisory Sources",
+		"Advisory Evidence",
+		"advisory_evidence",
 		"v.advisory_sources",
+		"v.advisory_evidence",
 		"Advisory:",
 	} {
 		if !strings.Contains(appBody, want) {
