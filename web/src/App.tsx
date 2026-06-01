@@ -393,6 +393,19 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setUpdating(false);
   };
 
+  const handleReferenceIndexRebuild = async () => {
+    setUpdating(true);
+    setUpdateMsg('');
+    try {
+      const r = await api.rebuildCveReferenceIndex();
+      setUpdateMsg(`Reference key index rebuilt: ${r.indexed.toLocaleString()} keys`);
+      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); }).catch(() => {});
+    } catch {
+      setUpdateMsg('Reference key index rebuild failed');
+    }
+    setUpdating(false);
+  };
+
   const handleRematch = async () => {
     setRematching(true);
     setRematchMsg('');
@@ -1050,7 +1063,15 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           disabled={updating}
           style={{ marginLeft: '0.5rem' }}
         >
-          Rebuild Index
+          Rebuild Affected Index
+        </button>
+        <button
+          className="update-btn"
+          onClick={handleReferenceIndexRebuild}
+          disabled={updating}
+          style={{ marginLeft: '0.5rem' }}
+        >
+          Rebuild Reference Index
         </button>
       </div>
       <div className="stats-grid" style={{ marginTop: '1rem' }}>
