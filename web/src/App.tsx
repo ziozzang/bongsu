@@ -290,6 +290,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [cveAffectedIndex, setCveAffectedIndex] = useState<HealthStatus['cve_affected_package_index'] | null>(null);
   const [cveEpssMerge, setCveEpssMerge] = useState<CveEpssMergeStats | null>(null);
   const [installerStatus, setInstallerStatus] = useState<InstallerStatus | null>(null);
+  const [dashboardHosts, setDashboardHosts] = useState<Host[]>([]);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
   const [inventoryCounts, setInventoryCounts] = useState<Record<string, number>>({});
   const [totalPkgs, setTotalPkgs] = useState(0);
@@ -326,6 +327,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     api.installerStatus().then(setInstallerStatus).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
     api.hosts().then(items => {
+      setDashboardHosts(items || []);
       setAgentCounts(items.reduce((acc, h) => {
         const status = h.agent_status || 'unknown';
         acc[status] = (acc[status] || 0) + 1;
@@ -499,6 +501,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const effectiveInventoryCounts = stats?.inventory_status_counts || inventoryCounts;
   const inventoryCoveragePercent = stats?.inventory_coverage_percent ?? 0;
   const inventoryFreshPercent = stats?.inventory_fresh_percent ?? 0;
+  const latestAgentVersion = installerStatus?.agent?.version || '';
+  const currentAgentCount = latestAgentVersion ? dashboardHosts.filter(h => h.agent_version === latestAgentVersion).length : 0;
+  const outdatedAgentCount = latestAgentVersion ? dashboardHosts.filter(h => h.agent_version && h.agent_version !== latestAgentVersion).length : 0;
+  const unknownAgentVersionCount = dashboardHosts.filter(h => !h.agent_version).length;
   const inventoryCoverageColor = inventoryCoveragePercent < 70
     ? 'var(--critical)'
     : inventoryCoveragePercent < 90
@@ -758,6 +764,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           >
             {effectiveAgentCounts.offline || 0}
           </button>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: outdatedAgentCount || unknownAgentVersionCount ? 'var(--medium)' : 'var(--low)' }} />
+          <div className="label">Agent Version Drift</div>
+          <div className="value" style={{ color: outdatedAgentCount ? 'var(--medium)' : 'var(--low)' }}>{outdatedAgentCount}</div>
+          <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+            current {currentAgentCount} / unknown {unknownAgentVersionCount}
+          </div>
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: inventoryCoverageColor }} />

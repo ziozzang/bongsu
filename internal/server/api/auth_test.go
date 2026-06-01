@@ -1262,6 +1262,10 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 		"installerStatus.agent.version",
 		"installerStatus.trivy.ready",
 		"Agent Version",
+		"Agent Version Drift",
+		"outdatedAgentCount",
+		"unknownAgentVersionCount",
+		"dashboardHosts.filter",
 	} {
 		if !strings.Contains(string(webApp), want) {
 			t.Fatalf("dashboard installer status missing %q", want)
