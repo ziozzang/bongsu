@@ -4366,6 +4366,8 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"searchReferenceGroup",
 		"Group Context",
 		"source_groups",
+		"Grouped Evidence",
+		"groupSummary.data.items",
 		"cveDbReferenceGroup",
 		"CveReferenceGroupSummary",
 	} {

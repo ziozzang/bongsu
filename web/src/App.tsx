@@ -3012,6 +3012,33 @@ function CveSearchView() {
                                       <span key={b.name} className="badge" style={{ color: 'var(--text-muted)' }}>{b.name}: {b.count.toLocaleString()}</span>
                                     ))}
                                   </div>
+                                  {(groupSummary.data.items || []).length > 0 && (
+                                    <div style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>
+                                      <strong style={{ fontSize: '0.75rem' }}>Grouped Evidence</strong>
+                                      <div style={{ marginTop: '0.375rem', display: 'grid', gap: '0.25rem' }}>
+                                        {(groupSummary.data.items || []).slice(0, 8).map(item => {
+                                          const itemPriority = isPriorityFeed(item);
+                                          return (
+                                            <div key={item.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(8rem, 1.4fr) minmax(6rem, 0.8fr) minmax(7rem, 1fr) minmax(6rem, 1fr) auto auto auto', gap: '0.5rem', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                              <span className="mono" style={{ color: 'var(--text)' }}>{item.vulnerability_id}</span>
+                                              <span>{item.source || '-'}</span>
+                                              <span>{item.category || '-'}</span>
+                                              <span className="mono">{item.ecosystem || '-'}</span>
+                                              <span className="badge" style={{ color: item.matchable ? '#22c55e' : itemPriority ? 'var(--medium)' : 'var(--text-muted)' }}>
+                                                {item.matchable ? 'matchable' : itemPriority ? 'priority' : 'reference'}
+                                              </span>
+                                              <span className="mono" style={{ color: cvssClr(item.cvss_score), justifySelf: 'end' }}>
+                                                CVSS {item.cvss_score > 0 ? item.cvss_score.toFixed(1) : '-'}
+                                              </span>
+                                              <span className="mono" style={{ justifySelf: 'end' }}>
+                                                EPSS {item.epss_score ? `${(item.epss_score * 100).toFixed(1)}%` : '-'}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
