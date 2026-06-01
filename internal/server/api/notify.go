@@ -21,6 +21,7 @@ type webhookNotifier struct {
 	minRiskLevel      string
 	inventoryStatuses map[string]bool
 	client            *http.Client
+	timeout           time.Duration
 	maxAttempts       int
 	retryDelay        time.Duration
 	onResult          func(event string, data map[string]any, status string, httpStatus int, errMsg string, attempts int)
@@ -37,15 +38,17 @@ func newWebhookNotifierFromEnv() *webhookNotifier {
 	if url == "" {
 		return nil
 	}
+	timeout := webhookTimeoutFromEnv()
 	return &webhookNotifier{
 		url:               url,
 		secret:            os.Getenv("BONGSU_WEBHOOK_SECRET"),
 		minSeverity:       strings.ToUpper(strings.TrimSpace(os.Getenv("BONGSU_WEBHOOK_MIN_SEVERITY"))),
 		minRiskLevel:      webhookRiskLevelFromEnv(),
 		inventoryStatuses: parseInventoryStatuses(os.Getenv("BONGSU_WEBHOOK_INVENTORY_STATUSES")),
-		client:            &http.Client{Timeout: 10 * time.Second},
+		client:            &http.Client{Timeout: timeout},
+		timeout:           timeout,
 		maxAttempts:       webhookRetryAttemptsFromEnv(),
-		retryDelay:        time.Duration(envInt("BONGSU_WEBHOOK_RETRY_DELAY_MS", 1000)) * time.Millisecond,
+		retryDelay:        webhookRetryDelayFromEnv(),
 	}
 }
 
@@ -82,6 +85,10 @@ func (n *webhookNotifier) Send(event string, data map[string]any) {
 		if delay <= 0 {
 			delay = time.Second
 		}
+		timeout := n.timeout
+		if timeout <= 0 {
+			timeout = 15 * time.Second
+		}
 		client := n.client
 		if client == nil {
 			client = http.DefaultClient
@@ -89,7 +96,7 @@ func (n *webhookNotifier) Send(event string, data map[string]any) {
 		var lastStatus int
 		var lastErr string
 		for attempt := 1; attempt <= attempts; attempt++ {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, n.url, bytes.NewReader(body))
 			if err != nil {
 				cancel()
@@ -149,6 +156,28 @@ func webhookRetryAttemptsFromEnv() int {
 		return 10
 	}
 	return attempts
+}
+
+func webhookRetryDelayFromEnv() time.Duration {
+	ms := envInt("BONGSU_WEBHOOK_RETRY_DELAY_MS", 1000)
+	if ms <= 0 {
+		return time.Second
+	}
+	if ms > 60000 {
+		return time.Minute
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+func webhookTimeoutFromEnv() time.Duration {
+	seconds := envInt("BONGSU_WEBHOOK_TIMEOUT_SECONDS", 15)
+	if seconds <= 0 {
+		return 15 * time.Second
+	}
+	if seconds > 300 {
+		return 5 * time.Minute
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (n *webhookNotifier) ShouldSendSeverity(counts map[string]int) bool {

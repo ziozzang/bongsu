@@ -214,7 +214,8 @@ spec:
 | `BONGSU_WEBHOOK_MIN_RISK_LEVEL` | `high` | Minimum computed risk level that triggers `scan.completed` webhook (`critical`,`high`,`medium`,`low`; use `off` to disable) |
 | `BONGSU_WEBHOOK_INVENTORY_STATUSES` | `empty` | Comma-separated inventory states that trigger `scan.completed` webhook (`healthy`,`degraded`,`stale`,`empty`,`none`) |
 | `BONGSU_WEBHOOK_RETRY_ATTEMPTS` | `3` | Webhook delivery attempts for network errors, HTTP 429, and HTTP 5xx responses; clamped to 1-10 |
-| `BONGSU_WEBHOOK_RETRY_DELAY_MS` | `1000` | Delay between retryable webhook attempts in milliseconds |
+| `BONGSU_WEBHOOK_RETRY_DELAY_MS` | `1000` | Delay between retryable webhook attempts in milliseconds; non-positive values use 1000 and values above 60000 clamp to 60000 |
+| `BONGSU_WEBHOOK_TIMEOUT_SECONDS` | `15` | Per-attempt webhook request timeout; non-positive values use 15 and values above 300 clamp to 300 |
 | `BONGSU_SLA_CRITICAL_DAYS` | `7` | Remediation SLA days for critical findings |
 | `BONGSU_SLA_HIGH_DAYS` | `30` | Remediation SLA days for high findings |
 | `BONGSU_SLA_MEDIUM_DAYS` | `90` | Remediation SLA days for medium findings |

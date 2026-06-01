@@ -181,6 +181,44 @@ func TestWebhookRetryAttemptsFromEnv(t *testing.T) {
 	}
 }
 
+func TestWebhookRetryDelayFromEnv(t *testing.T) {
+	t.Setenv("BONGSU_WEBHOOK_RETRY_DELAY_MS", "0")
+	if got := webhookRetryDelayFromEnv(); got != time.Second {
+		t.Fatalf("zero delay clamp = %s, want 1s", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_RETRY_DELAY_MS", "-50")
+	if got := webhookRetryDelayFromEnv(); got != time.Second {
+		t.Fatalf("negative delay clamp = %s, want 1s", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_RETRY_DELAY_MS", "70000")
+	if got := webhookRetryDelayFromEnv(); got != time.Minute {
+		t.Fatalf("high delay clamp = %s, want 1m", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_RETRY_DELAY_MS", "250")
+	if got := webhookRetryDelayFromEnv(); got != 250*time.Millisecond {
+		t.Fatalf("delay = %s, want 250ms", got)
+	}
+}
+
+func TestWebhookTimeoutFromEnv(t *testing.T) {
+	t.Setenv("BONGSU_WEBHOOK_TIMEOUT_SECONDS", "0")
+	if got := webhookTimeoutFromEnv(); got != 15*time.Second {
+		t.Fatalf("zero timeout clamp = %s, want 15s", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_TIMEOUT_SECONDS", "-1")
+	if got := webhookTimeoutFromEnv(); got != 15*time.Second {
+		t.Fatalf("negative timeout clamp = %s, want 15s", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_TIMEOUT_SECONDS", "999")
+	if got := webhookTimeoutFromEnv(); got != 5*time.Minute {
+		t.Fatalf("high timeout clamp = %s, want 5m", got)
+	}
+	t.Setenv("BONGSU_WEBHOOK_TIMEOUT_SECONDS", "3")
+	if got := webhookTimeoutFromEnv(); got != 3*time.Second {
+		t.Fatalf("timeout = %s, want 3s", got)
+	}
+}
+
 func TestWebhookSeverityThreshold(t *testing.T) {
 	n := &webhookNotifier{url: "http://example.invalid", minSeverity: "HIGH"}
 	if n.ShouldSendSeverity(map[string]int{"MEDIUM": 10}) {
