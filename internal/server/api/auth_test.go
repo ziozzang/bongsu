@@ -3714,6 +3714,7 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 		"s.db.DeleteCveEntriesBySourceTx",
 		"s.importCveJSONLTx",
 		"s.db.SyncEPSSPriorityColumnsTx",
+		"s.db.RefreshCveAffectedPackagesForSourceTx",
 		"errNoValidCveEntries",
 		"tx.Commit()",
 		"return 0, err",
@@ -3724,6 +3725,9 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 	}
 	if strings.Contains(fn, "UpsertCveEntries(ctx, batch)") {
 		t.Fatal("cve jsonl import must not commit each batch outside a single transaction")
+	}
+	if !strings.Contains(body, "UpsertCveEntriesWithoutAffectedIndexTx") {
+		t.Fatal("bulk cve jsonl import must rebuild affected package index after import instead of per row")
 	}
 }
 

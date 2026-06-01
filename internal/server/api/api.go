@@ -3828,6 +3828,11 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusInternalServerError, "cve epss merge failed", "merge_epss", err)
 		return
 	}
+	if _, err := s.db.RefreshCveAffectedPackagesForSourceTx(r.Context(), tx, ""); err != nil {
+		tx.Rollback()
+		fail(http.StatusInternalServerError, "cve affected package index failed", "index_cve", err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		fail(http.StatusInternalServerError, "cve import commit failed", "commit_cve", err)
 		return
@@ -4238,6 +4243,9 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 	if _, err := s.db.SyncEPSSPriorityColumnsTx(ctx, tx); err != nil {
 		return 0, err
 	}
+	if _, err := s.db.RefreshCveAffectedPackagesForSourceTx(ctx, tx, source); err != nil {
+		return 0, err
+	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
@@ -4246,7 +4254,7 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 
 func (s *Server) importCveJSONLTx(ctx context.Context, reader io.Reader, source string, tx *sql.Tx) (int, error) {
 	return s.importCveJSONLWithUpsert(ctx, reader, source, func(ctx context.Context, batch []models.CveEntry) (int, error) {
-		return s.db.UpsertCveEntriesTx(ctx, tx, batch)
+		return s.db.UpsertCveEntriesWithoutAffectedIndexTx(ctx, tx, batch)
 	})
 }
 

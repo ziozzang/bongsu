@@ -3799,6 +3799,14 @@ func (db *DB) UpsertCveEntries(ctx context.Context, entries []models.CveEntry) (
 }
 
 func (db *DB) UpsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry) (int, error) {
+	return db.upsertCveEntriesTx(ctx, tx, entries, true)
+}
+
+func (db *DB) UpsertCveEntriesWithoutAffectedIndexTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry) (int, error) {
+	return db.upsertCveEntriesTx(ctx, tx, entries, false)
+}
+
+func (db *DB) upsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry, refreshAffectedIndex bool) (int, error) {
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, epss_score, epss_percentile, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
 ON CONFLICT (vulnerability_id, source) DO UPDATE SET
@@ -3851,12 +3859,16 @@ RETURNING id`)
 			log.Printf("rematch scan row: %v", err)
 			continue
 		}
-		if _, err := db.RefreshCveAffectedPackagesForCveTx(ctx, tx, cveID); err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("refresh affected packages %s: %w", e.VulnerabilityID, err)
+		if refreshAffectedIndex {
+			if _, err := db.RefreshCveAffectedPackagesForCveTx(ctx, tx, cveID); err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("refresh affected packages %s: %w", e.VulnerabilityID, err)
+				}
+				log.Printf("refresh affected package index: %v", err)
+				continue
 			}
-			log.Printf("refresh affected package index: %v", err)
-			continue
+		} else {
+			_ = cveID
 		}
 		count++
 	}
@@ -3864,6 +3876,65 @@ RETURNING id`)
 		return 0, firstErr
 	}
 	return count, nil
+}
+
+func (db *DB) RefreshCveAffectedPackagesForSourceTx(ctx context.Context, tx *sql.Tx, source string) (int, error) {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM cve_affected_packages`); err != nil {
+			return 0, err
+		}
+		return db.insertCveAffectedPackagesTx(ctx, tx, "")
+	}
+	if _, err := tx.ExecContext(ctx, `
+DELETE FROM cve_affected_packages cap
+USING cve_database c
+WHERE cap.cve_id = c.id
+  AND c.source = $1`, source); err != nil {
+		return 0, err
+	}
+	return db.insertCveAffectedPackagesTx(ctx, tx, source)
+}
+
+func (db *DB) insertCveAffectedPackagesTx(ctx context.Context, tx *sql.Tx, source string) (int, error) {
+	source = strings.TrimSpace(source)
+	args := []any{}
+	filter := ""
+	if source != "" {
+		args = append(args, source)
+		filter = " AND c.source = $1"
+	}
+	fixedExpr := fmt.Sprintf(`COALESCE(
+		%s,
+		NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
+	)`, safeAffectedFixedVersionSQL("ap"))
+	ecosystemExpr := affectedProductEcosystemSQL("c", "ap")
+	res, err := tx.ExecContext(ctx, fmt.Sprintf(`
+INSERT INTO cve_affected_packages (cve_id, vulnerability_id, source, package_name, ecosystem, fixed_version, affected_product, updated_at)
+SELECT DISTINCT ON (c.id, lower(ap->>'name'), %s, %s)
+       c.id,
+       c.vulnerability_id,
+       c.source,
+       lower(ap->>'name') AS package_name,
+       %s AS ecosystem,
+       %s AS fixed_version,
+       ap AS affected_product,
+       now()
+FROM cve_database c
+JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap ON true
+WHERE COALESCE(ap->>'name', '') != ''
+  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
+  AND %s IS NOT NULL
+  AND %s != ''
+  %s
+ON CONFLICT (cve_id, package_name, ecosystem, fixed_version) DO UPDATE SET
+	affected_product=EXCLUDED.affected_product,
+	updated_at=now()`, ecosystemExpr, fixedExpr, ecosystemExpr, fixedExpr, fixedExpr, fixedExpr, filter), args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
 }
 
 func (db *DB) RefreshCveAffectedPackagesForCveTx(ctx context.Context, tx *sql.Tx, cveID string) (int, error) {

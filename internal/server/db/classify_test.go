@@ -1468,7 +1468,7 @@ func TestAgentCompletesScanRequestWithHostID(t *testing.T) {
 }
 
 func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
-	fn := "UpsertCveEntriesTx"
+	fn := "upsertCveEntriesTx"
 	out, err := os.ReadFile("db.go")
 	if err != nil {
 		t.Fatal(err)
@@ -1485,6 +1485,25 @@ func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
 	body = body[start : start+1+next]
 	if !strings.Contains(body, "if firstErr != nil") || strings.Contains(body, "if count == 0 && firstErr != nil") {
 		t.Fatalf("%s must reject the whole batch after any row insert error: %s", fn, body)
+	}
+}
+
+func TestBulkCveAffectedPackageRefreshCanScopeBySource(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"func (db *DB) UpsertCveEntriesWithoutAffectedIndexTx",
+		"func (db *DB) RefreshCveAffectedPackagesForSourceTx",
+		"DELETE FROM cve_affected_packages cap",
+		"AND c.source = $1",
+		"return db.insertCveAffectedPackagesTx(ctx, tx, source)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("bulk affected package index refresh missing %q", want)
+		}
 	}
 }
 
