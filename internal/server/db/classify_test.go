@@ -1328,6 +1328,38 @@ func TestCveAffectedPackageIndexRowsAreListable(t *testing.T) {
 	}
 }
 
+func TestCveAffectedPackageIndexStatsUsesSingleMatchableSourcePass(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetCveAffectedPackageIndexStats")
+	if start < 0 {
+		t.Fatal("GetCveAffectedPackageIndexStats not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetCveAffectedPackageIndexHealthStats")
+	if end < 0 {
+		t.Fatal("GetCveAffectedPackageIndexStats end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"WITH affected_index AS",
+		"matchable_sources AS",
+		"array_agg(ms.source ORDER BY ms.source)",
+		"pq.Array(&stats.MissingMatchableSources)",
+		"sum(matchable_cves)",
+		"max(latest_matchable_update)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("affected index stats missing %q: %s", want, fn)
+		}
+	}
+	if strings.Count(fn, "cveSourceMatchablePredicateSQL") != 1 {
+		t.Fatalf("affected index stats should build the matchable predicate once: %s", fn)
+	}
+}
+
 func TestRemoveStaleRematchedVulnerabilitiesUsesSourceQualityFixedPredicate(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {

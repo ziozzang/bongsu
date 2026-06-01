@@ -5128,15 +5128,39 @@ func (db *DB) GetCveAffectedPackageIndexStats(ctx context.Context) (*CveAffected
 	var stats CveAffectedPackageIndexStats
 	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")
 	err := db.QueryRowContext(ctx, fmt.Sprintf(`
+WITH affected_index AS (
+	SELECT
+		count(*) AS count,
+		count(DISTINCT source) FILTER (WHERE source != '') AS source_count,
+		count(DISTINCT cve_id) AS indexed_cves,
+		max(updated_at) AS last_update
+	FROM cve_affected_packages
+),
+matchable_sources AS (
+	SELECT
+		c.source,
+		count(*) AS matchable_cves,
+		max(c.updated_at) AS latest_matchable_update
+	FROM cve_database c
+	WHERE c.source != ''
+	  AND %s
+	GROUP BY c.source
+)
 SELECT
-	(SELECT count(*) FROM cve_affected_packages),
-	(SELECT count(DISTINCT source) FROM cve_affected_packages WHERE source != ''),
-	(SELECT count(DISTINCT cve_id) FROM cve_affected_packages),
-	(SELECT count(*) FROM cve_database c WHERE %s),
-	(SELECT max(updated_at) FROM cve_affected_packages),
-	(SELECT max(c.updated_at) FROM cve_database c WHERE %s),
-	(SELECT count(*) FROM cve_affected_packages cap WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id))`, matchablePredicate, matchablePredicate)).Scan(
-		&stats.Count, &stats.SourceCount, &stats.IndexedCVEs, &stats.MatchableCVEs, &stats.LastUpdate, &stats.LatestMatchableUpdate, &stats.Orphans)
+	COALESCE(ai.count, 0),
+	COALESCE(ai.source_count, 0),
+	COALESCE(ai.indexed_cves, 0),
+	COALESCE((SELECT sum(matchable_cves) FROM matchable_sources), 0),
+	ai.last_update,
+	(SELECT max(latest_matchable_update) FROM matchable_sources),
+	(SELECT count(*) FROM cve_affected_packages cap WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id)),
+	COALESCE((
+		SELECT array_agg(ms.source ORDER BY ms.source)
+		FROM matchable_sources ms
+		WHERE NOT EXISTS (SELECT 1 FROM cve_affected_packages cap WHERE cap.source = ms.source)
+	), ARRAY[]::text[])
+FROM affected_index ai`, matchablePredicate)).Scan(
+		&stats.Count, &stats.SourceCount, &stats.IndexedCVEs, &stats.MatchableCVEs, &stats.LastUpdate, &stats.LatestMatchableUpdate, &stats.Orphans, pq.Array(&stats.MissingMatchableSources))
 	if err != nil {
 		return nil, err
 	}
@@ -5144,28 +5168,6 @@ SELECT
 		stats.CoveragePercent = math.Round(float64(stats.IndexedCVEs)*1000/float64(stats.MatchableCVEs)) / 10
 	}
 	stats.Stale = stats.MatchableCVEs > 0 && (stats.LastUpdate == nil || stats.LatestMatchableUpdate == nil || stats.LastUpdate.Before(*stats.LatestMatchableUpdate))
-	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
-SELECT source
-FROM cve_database c
-WHERE source != ''
-  AND %s
-  AND NOT EXISTS (SELECT 1 FROM cve_affected_packages cap WHERE cap.source = c.source)
-GROUP BY source
-ORDER BY source`, matchablePredicate))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var source string
-		if err := rows.Scan(&source); err != nil {
-			return nil, err
-		}
-		stats.MissingMatchableSources = append(stats.MissingMatchableSources, source)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
 	if stats.MissingMatchableSources == nil {
 		stats.MissingMatchableSources = []string{}
 	}
