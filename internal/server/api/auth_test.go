@@ -1638,6 +1638,11 @@ func TestCveDbAdminActionsCarrySecurityDBRevision(t *testing.T) {
 	for _, want := range []string{
 		"revisionMeta := s.securityDBRevisionMeta(r.Context())",
 		"result.SecurityDBRevision",
+		"rematchSourcePolicySummary(stats, opts)",
+		"result.SourcePolicy",
+		`"eligible_sources"`,
+		`"excluded_sources"`,
+		`"source_policy"`,
 		"for k, v := range revisionMeta",
 		`"cve_db.rematch"`,
 	} {
@@ -2153,7 +2158,7 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_security_db_source_with_fixed_records",
 		"bongsu_security_db_source_with_ranges_records",
 		"bongsu_security_db_source_with_cvss_records",
-		"rematchSourcePolicy(sourceStats, rematchOptionsFromEnv())",
+		"rematchSourcePolicySummary(sourceStats, rematchOptionsFromEnv())",
 		"bongsu_security_db_source_rematch_eligible",
 		"GetCveAffectedPackageIndexStats(ctx)",
 		"bongsu_cve_affected_package_index_records",
@@ -2198,7 +2203,7 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"rematchOptionsFromEnv()",
-		"rematchSourcePolicy(stats, opts)",
+		"rematchSourcePolicySummary(stats, opts)",
 		"totalRecords += stat.Count",
 		"totalMatchable += stat.Matchable",
 		`"generated_at"`,

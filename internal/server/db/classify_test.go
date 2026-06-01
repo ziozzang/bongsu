@@ -1066,6 +1066,12 @@ func TestRematchResultExposesSecurityDBRevision(t *testing.T) {
 		"security_db_revision_error,omitempty",
 		"ScannedCandidates",
 		"scanned_candidates",
+		"EligibleSources",
+		"eligible_sources,omitempty",
+		"ExcludedSources",
+		"excluded_sources,omitempty",
+		"SourcePolicy",
+		"source_policy,omitempty",
 	} {
 		if !strings.Contains(typ, want) {
 			t.Fatalf("rematch result revision field missing %q: %s", want, typ)

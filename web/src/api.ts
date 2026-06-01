@@ -617,7 +617,7 @@ export const api = {
     return uploadForm<{ status: string; imported: number; trivy_db_loaded: boolean }>('/admin/security-db/import', form);
   },
   rematchCVEs: (body?: { sources?: string[]; min_source_matchable_percent?: number; candidate_limit?: number }) =>
-    requestJSON<{matched: number; new_vulns: number; skipped: number; scanned_candidates?: number; candidate_limit: number; limited: boolean; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),
+    requestJSON<{matched: number; new_vulns: number; skipped: number; scanned_candidates?: number; candidate_limit: number; limited: boolean; eligible_sources?: number; excluded_sources?: number; source_policy?: Record<string, { eligible?: boolean; reason?: string }>; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),
   rebuildCveAffectedIndex: () =>
     request<{status: string; indexed: number; index?: CveDbStatsResponse['affected_package_index']; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/affected-index/rebuild', undefined, 'POST'),
   recalcCveCVSS: () =>

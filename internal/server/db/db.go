@@ -4737,15 +4737,18 @@ func (db *DB) GetSecurityDBRevision(ctx context.Context) (string, error) {
 }
 
 type RematchResult struct {
-	Matched                 int    `json:"matched"`
-	NewVulns                int    `json:"new_vulns"`
-	Updated                 int    `json:"updated"`
-	Skipped                 int    `json:"skipped"`
-	ScannedCandidates       int    `json:"scanned_candidates"`
-	CandidateLimit          int    `json:"candidate_limit"`
-	Limited                 bool   `json:"limited"`
-	SecurityDBRevision      string `json:"security_db_revision,omitempty"`
-	SecurityDBRevisionError string `json:"security_db_revision_error,omitempty"`
+	Matched                 int                       `json:"matched"`
+	NewVulns                int                       `json:"new_vulns"`
+	Updated                 int                       `json:"updated"`
+	Skipped                 int                       `json:"skipped"`
+	ScannedCandidates       int                       `json:"scanned_candidates"`
+	CandidateLimit          int                       `json:"candidate_limit"`
+	Limited                 bool                      `json:"limited"`
+	SecurityDBRevision      string                    `json:"security_db_revision,omitempty"`
+	SecurityDBRevisionError string                    `json:"security_db_revision_error,omitempty"`
+	EligibleSources         int                       `json:"eligible_sources,omitempty"`
+	ExcludedSources         int                       `json:"excluded_sources,omitempty"`
+	SourcePolicy            map[string]map[string]any `json:"source_policy,omitempty"`
 }
 
 type RematchOptions struct {
