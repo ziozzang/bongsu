@@ -287,6 +287,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
   const [cveSources, setCveSources] = useState<CveSourceStat[]>([]);
   const [cveRematchPolicy, setCveRematchPolicy] = useState<CveRematchPolicy | null>(null);
+  const [cveAffectedIndex, setCveAffectedIndex] = useState<HealthStatus['cve_affected_package_index'] | null>(null);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
   const [inventoryCounts, setInventoryCounts] = useState<Record<string, number>>({});
   const [totalPkgs, setTotalPkgs] = useState(0);
@@ -313,10 +314,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     api.rawHealth().then(h => {
       setHealth(h);
       setSecurityDbConfigured(!!h.security_db?.configured);
+      setCveAffectedIndex(h.cve_affected_package_index || null);
     }).catch(() => {});
   }, [updating]);
   useEffect(() => {
-    api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); }).catch(() => {});
+    api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); }).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
     api.hosts().then(items => {
       setAgentCounts(items.reduce((acc, h) => {
@@ -362,9 +364,23 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     try {
       await api.updateSecurityDB();
       setUpdateMsg('Security sources sync started/completed');
-      api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); }).catch(() => {});
+      api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); }).catch(() => {});
     } catch {
       setUpdateMsg('Security source sync failed or is not configured');
+    }
+    setUpdating(false);
+  };
+
+  const handleAffectedIndexRebuild = async () => {
+    setUpdating(true);
+    setUpdateMsg('');
+    try {
+      const r = await api.rebuildCveAffectedIndex();
+      setCveAffectedIndex(r.index || null);
+      setUpdateMsg(`Affected package index rebuilt: ${r.indexed.toLocaleString()} entries`);
+      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); }).catch(() => {});
+    } catch {
+      setUpdateMsg('Affected package index rebuild failed');
     }
     setUpdating(false);
   };
@@ -953,6 +969,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         >
           {cvssRecalcBusy ? 'Recalculating...' : 'Recalc CVSS'}
         </button>
+        <button
+          className="update-btn"
+          onClick={handleAffectedIndexRebuild}
+          disabled={updating}
+          style={{ marginLeft: '0.5rem' }}
+        >
+          Rebuild Index
+        </button>
       </div>
       <div className="stats-grid" style={{ marginTop: '1rem' }}>
         <div className="stat-card">
@@ -985,6 +1009,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div className="value" style={{ color: cveMatchableColor }}>{cveTotalRecords ? cveMatchablePercent.toFixed(1) : '0.0'}%</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             {cveTotalMatchable.toLocaleString()} records with ecosystem/range data
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: (cveAffectedIndex?.orphans || 0) > 0 ? 'var(--high)' : 'var(--low)' }} />
+          <div className="label">Affected Index</div>
+          <div className="value" style={{ color: (cveAffectedIndex?.orphans || 0) > 0 ? 'var(--high)' : 'var(--low)' }}>{(cveAffectedIndex?.count || 0).toLocaleString()}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {(cveAffectedIndex?.source_count || 0).toLocaleString()} sources, {(cveAffectedIndex?.orphans || 0).toLocaleString()} orphans
           </div>
         </div>
         <div className="stat-card">

@@ -190,6 +190,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/admin/security-db/import", s.handleSecurityDbImport)
 	s.mux.HandleFunc("POST /api/admin/security-db/update", s.handleSecurityDbUpdate)
 	s.mux.HandleFunc("POST /api/admin/cve-db/rematch", s.handleCveDbRematch)
+	s.mux.HandleFunc("POST /api/admin/cve-db/affected-index/rebuild", s.handleCveDbAffectedIndexRebuild)
 	s.mux.HandleFunc("POST /api/admin/cve-db/recalc-cvss", s.handleCveDbRecalcCVSS)
 	s.mux.HandleFunc("GET /api/admin/cve-db/export", s.handleCveDbExport)
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
@@ -2922,6 +2923,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if last := s.cveDBRematchLastResult(r.Context(), isAdmin); last != nil {
 		resp["cve_db_rematch"] = map[string]any{"last_result": last}
 	}
+	if indexStats, err := s.db.GetCveAffectedPackageIndexStats(r.Context()); err == nil {
+		resp["cve_affected_package_index"] = indexStats
+	} else if isAdmin {
+		resp["cve_affected_package_index"] = map[string]any{"error": err.Error()}
+	}
 	if err := s.db.PingContext(r.Context()); err != nil {
 		resp["status"] = "degraded"
 		resp["db_error"] = "connection failed"
@@ -3270,6 +3276,16 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			}
 		} else {
 			writePromGauge(&b, "bongsu_security_db_source_quality_metrics_error", nil, 1)
+		}
+		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(ctx); err == nil {
+			writePromGauge(&b, "bongsu_cve_affected_package_index_records", nil, float64(indexStats.Count))
+			writePromGauge(&b, "bongsu_cve_affected_package_index_sources", nil, float64(indexStats.SourceCount))
+			writePromGauge(&b, "bongsu_cve_affected_package_index_orphans", nil, float64(indexStats.Orphans))
+			if indexStats.LastUpdate != nil {
+				writePromGauge(&b, "bongsu_cve_affected_package_index_last_update_timestamp_seconds", nil, float64(indexStats.LastUpdate.Unix()))
+			}
+		} else {
+			writePromGauge(&b, "bongsu_cve_affected_package_index_metrics_error", nil, 1)
 		}
 		if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
 			writePromGauge(&b, "bongsu_security_db_revision_info", map[string]string{"revision": revision}, 1)
@@ -4591,6 +4607,36 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Enriched %d vulnerabilities with CVE DB data", enriched)
 }
 
+func (s *Server) handleCveDbAffectedIndexRebuild(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	count, err := s.db.RebuildCveAffectedPackages(r.Context())
+	if err != nil {
+		log.Printf("cve affected package index rebuild: %v", err)
+		http.Error(w, "rebuild failed", http.StatusInternalServerError)
+		return
+	}
+	stats, _ := s.db.GetCveAffectedPackageIndexStats(r.Context())
+	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	out := map[string]any{"status": "ok", "indexed": count, "index": stats}
+	for k, v := range revisionMeta {
+		out[k] = v
+	}
+	writeJSON(w, http.StatusOK, out)
+	auditMeta := map[string]any{"indexed": count}
+	if stats != nil {
+		auditMeta["index_count"] = stats.Count
+		auditMeta["index_sources"] = stats.SourceCount
+		auditMeta["index_orphans"] = stats.Orphans
+	}
+	for k, v := range revisionMeta {
+		auditMeta[k] = v
+	}
+	s.audit(r, "cve_db.affected_index_rebuild", "cve_db", "affected_index", "ok", auditMeta)
+}
+
 func rematchOptionsFromEnv() db.RematchOptions {
 	opts, err := normalizeRematchOptions(db.RematchOptions{
 		Sources:                   splitCSV(os.Getenv("BONGSU_CVE_MATCH_SOURCES")),
@@ -5166,6 +5212,7 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	if totalRecords > 0 {
 		totalMatchablePercent = float64(totalMatchable) / float64(totalRecords) * 100
 	}
+	indexStats, indexErr := s.db.GetCveAffectedPackageIndexStats(r.Context())
 	resp := map[string]any{
 		"generated_at":            time.Now().UTC().Format(time.RFC3339),
 		"source_count":            len(stats),
@@ -5180,6 +5227,11 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 			"eligible_sources":             eligible,
 			"excluded_sources":             len(stats) - eligible,
 		},
+	}
+	if indexErr == nil {
+		resp["affected_package_index"] = indexStats
+	} else {
+		resp["affected_package_index_error"] = indexErr.Error()
 	}
 	for k, v := range s.securityDBRevisionMeta(r.Context()) {
 		resp[k] = v

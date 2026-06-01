@@ -4548,6 +4548,28 @@ type CveSourceStats struct {
 	LastUpdate       *time.Time `json:"last_update"`
 }
 
+type CveAffectedPackageIndexStats struct {
+	Count       int        `json:"count"`
+	SourceCount int        `json:"source_count"`
+	LastUpdate  *time.Time `json:"last_update"`
+	Orphans     int        `json:"orphans"`
+}
+
+func (db *DB) GetCveAffectedPackageIndexStats(ctx context.Context) (*CveAffectedPackageIndexStats, error) {
+	var stats CveAffectedPackageIndexStats
+	err := db.QueryRowContext(ctx, `
+SELECT
+	(SELECT count(*) FROM cve_affected_packages),
+	(SELECT count(DISTINCT source) FROM cve_affected_packages WHERE source != ''),
+	(SELECT max(updated_at) FROM cve_affected_packages),
+	(SELECT count(*) FROM cve_affected_packages cap WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id))`).Scan(
+		&stats.Count, &stats.SourceCount, &stats.LastUpdate, &stats.Orphans)
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
 func (db *DB) GetCveSourceStats(ctx context.Context) ([]CveSourceStats, error) {
 	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 WITH normalized AS (

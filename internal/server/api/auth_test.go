@@ -2094,6 +2094,7 @@ func TestSecurityDBFreshnessHealthAndMetricsAreExposed(t *testing.T) {
 		`bongsu_security_db_required_source_missing`,
 		`bongsu_security_db_source_oldest_age_seconds`,
 		`bongsu_security_db_source_matchable_percent`,
+		`bongsu_cve_affected_package_index_records`,
 		`bongsu_security_db_source_quality_metrics_error`,
 	} {
 		if !strings.Contains(body, want) {
@@ -2129,6 +2130,9 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_security_db_source_with_cvss_records",
 		"rematchSourcePolicy(sourceStats, rematchOptionsFromEnv())",
 		"bongsu_security_db_source_rematch_eligible",
+		"GetCveAffectedPackageIndexStats(ctx)",
+		"bongsu_cve_affected_package_index_records",
+		"bongsu_cve_affected_package_index_orphans",
 		"bongsu_security_db_source_quality_metrics_error",
 	} {
 		if !strings.Contains(fn, want) {
@@ -2162,6 +2166,8 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		`"total_records"`,
 		`"total_matchable"`,
 		`"total_matchable_percent"`,
+		`"affected_package_index"`,
+		"GetCveAffectedPackageIndexStats",
 		"s.securityDBRevisionMeta(r.Context())",
 		`"rematch_eligible"`,
 		`"rematch_exclusion"`,
@@ -2197,6 +2203,9 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"cveDbStatus",
 		"CVE DB Status",
 		"CVE Matchable",
+		"Affected Index",
+		"handleAffectedIndexRebuild",
+		"Rebuild Index",
 		"Weakest CVE Source",
 		"Rematch Eligible Sources",
 		"cveRematchPolicy",
@@ -2216,7 +2225,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "generated_at?: string", "total_matchable_percent?: number", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "rebuildCveAffectedIndex", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
