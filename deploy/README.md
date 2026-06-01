@@ -281,6 +281,8 @@ spec:
 | - | `--packages-only` | Server-side CVE matching |
 | - | `--type` | Scan type: `daily` or `manual` |
 
+One-line installer and binary download authentication is header-only. Use `X-Install-Token`; token-bearing query strings are rejected so install credentials do not land in URL logs.
+
 ## API Endpoints
 
 | Method | Path | Description |

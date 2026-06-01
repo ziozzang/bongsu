@@ -293,9 +293,6 @@ func (s *Server) authenticateAgent(r *http.Request) bool {
 
 func (s *Server) authenticateInstall(r *http.Request) bool {
 	token := r.Header.Get("X-Install-Token")
-	if token == "" {
-		token = r.URL.Query().Get("token")
-	}
 	if s.installToken != "" && s.matchKey(token, s.installToken) {
 		return true
 	}

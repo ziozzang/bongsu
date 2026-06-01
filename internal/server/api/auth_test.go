@@ -51,9 +51,15 @@ func TestAuthSeparation(t *testing.T) {
 		t.Fatal("agent key must not authenticate admin")
 	}
 
-	req = httptest.NewRequest("GET", "/api/install.sh?token=install-token", nil)
+	req = httptest.NewRequest("GET", "/api/install.sh", nil)
+	req.Header.Set("X-Install-Token", "install-token")
 	if !s.authenticateInstall(req) {
 		t.Fatal("install token should authenticate installer")
+	}
+
+	req = httptest.NewRequest("GET", "/api/install.sh?token=install-token", nil)
+	if s.authenticateInstall(req) {
+		t.Fatal("install token query parameter must not authenticate installer")
 	}
 
 	req = httptest.NewRequest("GET", "/api/install.sh?api_key=admin-key", nil)
@@ -77,7 +83,8 @@ func TestInstallAuthRequiresTokenOrAdminHeader(t *testing.T) {
 	}
 
 	s.installToken = "install-token"
-	req = httptest.NewRequest("GET", "/api/install.sh?token=install-token", nil)
+	req = httptest.NewRequest("GET", "/api/install.sh", nil)
+	req.Header.Set("X-Install-Token", "install-token")
 	if !s.authenticateInstall(req) {
 		t.Fatal("install token should authenticate installer")
 	}
