@@ -214,6 +214,8 @@ spec:
 | `BONGSU_DB_MAX_OPEN_CONNS` | `25` | Maximum open PostgreSQL connections from the server |
 | `BONGSU_DB_MAX_IDLE_CONNS` | `5` | Maximum idle PostgreSQL connections retained |
 | `BONGSU_DB_CONN_MAX_LIFETIME_MINUTES` | `5` | Maximum lifetime for pooled PostgreSQL connections |
+| `BONGSU_DB_CONNECT_TIMEOUT_SECONDS` | `30` | Startup timeout for the initial PostgreSQL connection |
+| `BONGSU_DB_MIGRATION_TIMEOUT_SECONDS` | `600` | Startup timeout for checksum-tracked migrations, including large CVE DB indexes |
 | `BONGSU_AUTO_MIGRATE` | `true` | Run checksum-tracked DB migrations on startup |
 | `BONGSU_TRIVY_PATH` | `trivy` | Trivy binary path |
 | `BONGSU_TRIVY_CACHE_DIR` | `/app/trivy-cache` | Trivy cache directory |

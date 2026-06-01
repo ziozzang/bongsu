@@ -4443,15 +4443,18 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 			args = append(args, vals...)
 			argN += len(vals)
 		} else {
-			baseQ += fmt.Sprintf(` AND (
-			vulnerability_id ILIKE $%d OR title ILIKE $%d OR description ILIKE $%d
-			OR EXISTS (
-				SELECT 1
-				FROM jsonb_array_elements(CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END) ap
-				WHERE ap->>'name' ILIKE $%d
-				   OR COALESCE(NULLIF(ap->>'ecosystem', ''), ecosystem) ILIKE $%d
-				   OR ap::text ILIKE $%d
-			)
+			baseQ += fmt.Sprintf(` AND id IN (
+			SELECT search_cve.id FROM cve_database search_cve WHERE search_cve.vulnerability_id ILIKE $%d
+			UNION
+			SELECT search_cve.id FROM cve_database search_cve WHERE search_cve.title ILIKE $%d
+			UNION
+			SELECT search_cve.id FROM cve_database search_cve WHERE search_cve.description ILIKE $%d
+			UNION
+			SELECT cap.cve_id FROM cve_affected_packages cap WHERE cap.package_name ILIKE $%d
+			UNION
+			SELECT cap.cve_id FROM cve_affected_packages cap WHERE cap.ecosystem ILIKE $%d
+			UNION
+			SELECT cap.cve_id FROM cve_affected_packages cap WHERE cap.fixed_version ILIKE $%d
 		)`, argN, argN, argN, argN, argN, argN)
 			args = append(args, "%"+query+"%")
 			argN++

@@ -29,10 +29,10 @@ func main() {
 		log.Fatalf("invalid server secret configuration: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), time.Duration(envPositiveInt("BONGSU_DB_CONNECT_TIMEOUT_SECONDS", 30))*time.Second)
+	defer connectCancel()
 
-	database, err := db.New(ctx, dbDSN)
+	database, err := db.New(connectCtx, dbDSN)
 	if err != nil {
 		log.Fatalf("connect to database: %v", err)
 	}
@@ -40,9 +40,12 @@ func main() {
 	log.Println("Connected to database")
 
 	if autoMigrate {
-		if err := database.RunMigrations(ctx); err != nil {
+		migrationCtx, migrationCancel := context.WithTimeout(context.Background(), time.Duration(envPositiveInt("BONGSU_DB_MIGRATION_TIMEOUT_SECONDS", 600))*time.Second)
+		if err := database.RunMigrations(migrationCtx); err != nil {
+			migrationCancel()
 			log.Fatalf("run migrations: %v", err)
 		}
+		migrationCancel()
 		log.Println("Database migrations applied")
 		indexCtx, indexCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS", 180))*time.Second)
 		if n, err := database.EnsureCveAffectedPackages(indexCtx); err != nil {

@@ -973,10 +973,13 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 		"minEPSS",
 		"minEPSSPercentile",
 		"includePrioritySources",
-		"jsonb_array_elements(CASE WHEN jsonb_typeof(affected_products) = 'array'",
-		"ap->>'name' ILIKE",
-		"COALESCE(NULLIF(ap->>'ecosystem', ''), ecosystem) ILIKE",
-		"ap::text ILIKE",
+		"AND id IN (",
+		"SELECT search_cve.id FROM cve_database search_cve WHERE search_cve.vulnerability_id ILIKE",
+		"UNION",
+		"FROM cve_affected_packages cap",
+		"cap.package_name ILIKE",
+		"cap.ecosystem ILIKE",
+		"cap.fixed_version ILIKE",
 		"epss_score>=$",
 		"epss_percentile>=$",
 		"source NOT IN ('cisa-kev', 'epss')",
@@ -1006,6 +1009,9 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 	}
 	if strings.Contains(fn, "c.refs::text ILIKE ('%%' || k.cve") {
 		t.Fatalf("CVE group count enrichment must avoid broad reference text scans until reference keys are indexed: %s", fn)
+	}
+	if strings.Contains(fn, "ap::text ILIKE") {
+		t.Fatalf("CVE search must use indexed affected-package rows instead of broad affected_products text scans: %s", fn)
 	}
 }
 
@@ -1313,6 +1319,33 @@ func TestNormalizeGHSAReferenceKeysMigration(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("GHSA reference key normalization migration missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestCveSearchTrigramIndexesMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/039_cve_search_trigram_indexes.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"CREATE EXTENSION IF NOT EXISTS pg_trgm",
+		"idx_cve_db_vulnerability_id_trgm",
+		"vulnerability_id gin_trgm_ops",
+		"idx_cve_db_title_trgm",
+		"title gin_trgm_ops",
+		"idx_cve_db_description_trgm",
+		"description gin_trgm_ops",
+		"idx_cve_affected_pkg_name_trgm",
+		"package_name gin_trgm_ops",
+		"idx_cve_affected_ecosystem_trgm",
+		"ecosystem gin_trgm_ops",
+		"idx_cve_affected_fixed_version_trgm",
+		"fixed_version gin_trgm_ops",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE search trigram migration missing %q: %s", want, body)
 		}
 	}
 }
