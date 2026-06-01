@@ -608,12 +608,14 @@ export interface CveReferenceGroupSummary {
   key: string;
   total: number;
   matchable: number;
+  affected_package_total?: number;
   sources: CveReferenceGroupBucket[];
   categories: CveReferenceGroupBucket[];
   ecosystems: CveReferenceGroupBucket[];
   source_groups: CveReferenceGroupBucket[];
   reference_keys: string[];
   items: CveDbEntry[];
+  affected_packages?: CveAffectedPackage[];
 }
 
 export interface RetentionPruneResult {

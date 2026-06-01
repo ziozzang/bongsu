@@ -4469,6 +4469,9 @@ func (db *DB) GetCveReferenceGroupSummary(ctx context.Context, key string, limit
 	if summary.SourceGroups, err = db.cveReferenceGroupBuckets(ctx, "COALESCE(NULLIF(source, ''), '(unknown)') || ' / ' || COALESCE(NULLIF(category, ''), '(uncategorized)') || ' / ' || COALESCE(NULLIF(ecosystem, ''), '(unknown)')", baseQ, args); err != nil {
 		return summary, err
 	}
+	if summary.AffectedPackages, summary.AffectedPackageTotal, err = db.cveReferenceGroupAffectedPackages(ctx, baseQ, args, limit); err != nil {
+		return summary, err
+	}
 	dataArgs := append([]any{}, args...)
 	dataArgs = append(dataArgs, limit)
 	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT %s %s ORDER BY cvss_score DESC NULLS LAST, updated_at DESC LIMIT $%d", CveCols, baseQ, len(dataArgs)), dataArgs...)
@@ -4511,6 +4514,42 @@ func (db *DB) cveReferenceGroupBuckets(ctx context.Context, expr, baseQ string, 
 		out = append(out, b)
 	}
 	return out, rows.Err()
+}
+
+func (db *DB) cveReferenceGroupAffectedPackages(ctx context.Context, baseQ string, args []any, limit int) ([]CveAffectedPackage, int, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	countQ := "SELECT count(*) FROM cve_affected_packages cap JOIN cve_database c ON c.id = cap.cve_id WHERE " + strings.TrimPrefix(baseQ, "FROM cve_database WHERE ")
+	var total int
+	if err := db.QueryRowContext(ctx, countQ, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	dataArgs := append([]any{}, args...)
+	dataArgs = append(dataArgs, limit)
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+SELECT cap.cve_id, cap.vulnerability_id, cap.source, cap.package_name, cap.ecosystem, cap.fixed_version, cap.affected_product::text, cap.updated_at
+FROM cve_affected_packages cap
+JOIN cve_database c ON c.id = cap.cve_id
+WHERE %s
+ORDER BY cap.package_name, cap.ecosystem, cap.fixed_version, cap.source, cap.vulnerability_id
+LIMIT $%d`, strings.TrimPrefix(baseQ, "FROM cve_database WHERE "), len(dataArgs)), dataArgs...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := []CveAffectedPackage{}
+	for rows.Next() {
+		var item CveAffectedPackage
+		if err := rows.Scan(&item.CveID, &item.VulnerabilityID, &item.Source, &item.PackageName, &item.Ecosystem, &item.FixedVersion, &item.AffectedProduct, &item.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
 func cveReferenceKeys(e models.CveEntry) []string {
@@ -5064,15 +5103,17 @@ type CveReferenceGroupBucket struct {
 }
 
 type CveReferenceGroupSummary struct {
-	Key           string                    `json:"key"`
-	Total         int                       `json:"total"`
-	Matchable     int                       `json:"matchable"`
-	Sources       []CveReferenceGroupBucket `json:"sources"`
-	Categories    []CveReferenceGroupBucket `json:"categories"`
-	Ecosystems    []CveReferenceGroupBucket `json:"ecosystems"`
-	SourceGroups  []CveReferenceGroupBucket `json:"source_groups"`
-	ReferenceKeys []string                  `json:"reference_keys"`
-	Items         []models.CveEntry         `json:"items"`
+	Key                  string                    `json:"key"`
+	Total                int                       `json:"total"`
+	Matchable            int                       `json:"matchable"`
+	Sources              []CveReferenceGroupBucket `json:"sources"`
+	Categories           []CveReferenceGroupBucket `json:"categories"`
+	Ecosystems           []CveReferenceGroupBucket `json:"ecosystems"`
+	SourceGroups         []CveReferenceGroupBucket `json:"source_groups"`
+	ReferenceKeys        []string                  `json:"reference_keys"`
+	Items                []models.CveEntry         `json:"items"`
+	AffectedPackageTotal int                       `json:"affected_package_total"`
+	AffectedPackages     []CveAffectedPackage      `json:"affected_packages"`
 }
 
 type CveAffectedPackageIndexStats struct {

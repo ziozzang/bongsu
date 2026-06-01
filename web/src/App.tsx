@@ -3080,6 +3080,25 @@ function CveSearchView() {
                                       <span key={b.name} className="badge" style={{ color: 'var(--text-muted)' }}>{b.name}: {b.count.toLocaleString()}</span>
                                     ))}
                                   </div>
+                                  {(groupSummary.data.affected_packages || []).length > 0 && (
+                                    <div style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>
+                                      <strong style={{ fontSize: '0.75rem' }}>Group Match Evidence</strong>
+                                      <span className="mono" style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                                        showing {(groupSummary.data.affected_packages || []).length.toLocaleString()} of {(groupSummary.data.affected_package_total || 0).toLocaleString()}
+                                      </span>
+                                      <div style={{ marginTop: '0.375rem', display: 'grid', gap: '0.25rem' }}>
+                                        {(groupSummary.data.affected_packages || []).slice(0, 10).map((item, idx) => (
+                                          <div key={`${item.cve_id}-${item.package_name}-${item.ecosystem}-${item.fixed_version}-${idx}`} style={{ display: 'grid', gridTemplateColumns: 'minmax(7rem, 1fr) minmax(8rem, 1.2fr) minmax(6rem, 0.8fr) minmax(5rem, 0.8fr) minmax(7rem, 1fr)', gap: '0.5rem', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                            <span className="mono" style={{ color: 'var(--text)' }}>{item.vulnerability_id}</span>
+                                            <span style={{ fontWeight: 600, color: 'var(--text)' }}>{item.package_name}</span>
+                                            <span className="mono">{item.ecosystem}</span>
+                                            <span>{item.source || '-'}</span>
+                                            <span className="mono" style={{ color: '#22c55e' }}>Fixed {item.fixed_version}</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
                                   {(groupSummary.data.items || []).length > 0 && (
                                     <div style={{ marginTop: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.5rem' }}>
                                       <strong style={{ fontSize: '0.75rem' }}>Grouped Evidence</strong>
