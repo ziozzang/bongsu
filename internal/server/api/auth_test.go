@@ -1501,6 +1501,7 @@ func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 		`s.auditSystem("security_db.recalculation"`,
 		"RemoveStaleRematchedVulnerabilities",
 		`"stale_rematch_removed"`,
+		`"rematch_scanned_candidates"`,
 		"s.queueSecurityDBRescans(reason, status)",
 	} {
 		if !strings.Contains(fn, want) {
@@ -1929,6 +1930,7 @@ func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
 		"bongsu_security_recalculation_last_rematch_new_vulns",
 		"bongsu_security_recalculation_last_rematch_limited",
 		"bongsu_security_recalculation_last_rematch_candidates",
+		"bongsu_security_recalculation_last_rematch_scanned_candidates",
 		"bongsu_security_recalculation_last_rematch_candidate_limit",
 		"bongsu_security_db_sync_configured",
 		"bongsu_security_db_sync_running",

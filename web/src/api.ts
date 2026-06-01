@@ -325,6 +325,7 @@ export interface HealthStatus {
       findings_enriched?: number;
       stale_rematch_removed?: number;
       rematch_candidates?: number;
+      rematch_scanned_candidates?: number;
       rematch_new_vulns?: number;
       rematch_skipped?: number;
       rematch_limited?: boolean;
@@ -561,7 +562,7 @@ export const api = {
     return uploadForm<{ status: string; imported: number; trivy_db_loaded: boolean }>('/admin/security-db/import', form);
   },
   rematchCVEs: (body?: { sources?: string[]; min_source_matchable_percent?: number; candidate_limit?: number }) =>
-    requestJSON<{matched: number; new_vulns: number; skipped: number; candidate_limit: number; limited: boolean; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),
+    requestJSON<{matched: number; new_vulns: number; skipped: number; scanned_candidates?: number; candidate_limit: number; limited: boolean; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),
   recalcCveCVSS: () =>
     request<{status: string; updated: number; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/recalc-cvss', undefined, 'POST'),
   pruneRetention: (body: { dry_run: boolean; scan_days?: number; request_days?: number; audit_days?: number }) =>

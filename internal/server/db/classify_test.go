@@ -1026,12 +1026,13 @@ func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
 	for _, want := range []string{
 		"opts.ScanID",
 		"opts.CandidateLimit+1",
+		"ScannedCandidates",
+		"compatible > opts.CandidateLimit",
 		"JOIN cve_affected_packages cap",
 		"cap.package_name = lower(p.name)",
 		"cap.ecosystem = %s",
 		"JOIN cve_database c ON c.id = cap.cve_id",
 		"result.Limited = true",
-		"matches = matches[:opts.CandidateLimit]",
 		"AND p.scan_id =",
 		"scanJoin = \"\"",
 		"JOIN (%s) ls ON p.scan_id = ls.id",
@@ -1063,6 +1064,8 @@ func TestRematchResultExposesSecurityDBRevision(t *testing.T) {
 		"security_db_revision,omitempty",
 		"SecurityDBRevisionError",
 		"security_db_revision_error,omitempty",
+		"ScannedCandidates",
+		"scanned_candidates",
 	} {
 		if !strings.Contains(typ, want) {
 			t.Fatalf("rematch result revision field missing %q: %s", want, typ)

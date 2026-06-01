@@ -3107,6 +3107,7 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_new_vulns", nil, metricNumber(last["rematch_new_vulns"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_limited", nil, boolMetric(last["rematch_limited"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_candidates", nil, metricNumber(last["rematch_candidates"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_scanned_candidates", nil, metricNumber(last["rematch_scanned_candidates"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_candidate_limit", nil, metricNumber(last["rematch_candidate_limit"]))
 	}
 	if s.dbMgr != nil && s.dbMgr.IsReady() {
@@ -3400,6 +3401,7 @@ func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDet
 		"findings_enriched",
 		"stale_rematch_removed",
 		"rematch_candidates",
+		"rematch_scanned_candidates",
 		"rematch_new_vulns",
 		"rematch_skipped",
 		"rematch_limited",
@@ -4033,8 +4035,9 @@ func (s *Server) runSecurityRecalculation(reason string) {
 		log.Printf("security recalculation rematch failed: %v", err)
 		failures = append(failures, "rematch: "+err.Error())
 	} else {
-		log.Printf("security recalculation rematched candidates=%d new=%d skipped=%d limited=%v limit=%d", r.Matched, r.NewVulns, r.Skipped, r.Limited, r.CandidateLimit)
+		log.Printf("security recalculation rematched candidates=%d scanned=%d new=%d skipped=%d limited=%v limit=%d", r.Matched, r.ScannedCandidates, r.NewVulns, r.Skipped, r.Limited, r.CandidateLimit)
 		meta["rematch_candidates"] = r.Matched
+		meta["rematch_scanned_candidates"] = r.ScannedCandidates
 		meta["rematch_new_vulns"] = r.NewVulns
 		meta["rematch_skipped"] = r.Skipped
 		meta["rematch_limited"] = r.Limited
@@ -4495,6 +4498,7 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		"matched":                      result.Matched,
 		"new_vulns":                    result.NewVulns,
 		"skipped":                      result.Skipped,
+		"scanned_candidates":           result.ScannedCandidates,
 		"candidate_limit":              result.CandidateLimit,
 		"limited":                      result.Limited,
 		"sources":                      opts.Sources,

@@ -4563,6 +4563,7 @@ type RematchResult struct {
 	NewVulns                int    `json:"new_vulns"`
 	Updated                 int    `json:"updated"`
 	Skipped                 int    `json:"skipped"`
+	ScannedCandidates       int    `json:"scanned_candidates"`
 	CandidateLimit          int    `json:"candidate_limit"`
 	Limited                 bool   `json:"limited"`
 	SecurityDBRevision      string `json:"security_db_revision,omitempty"`
@@ -4672,7 +4673,14 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		filters += fmt.Sprintf(" AND p.scan_id = $%d", len(args))
 		scanJoin = ""
 	}
-	args = append(args, opts.CandidateLimit+1)
+	rowLimit := opts.CandidateLimit * 100
+	if rowLimit < opts.CandidateLimit+1 {
+		rowLimit = opts.CandidateLimit + 1
+	}
+	if rowLimit > MaxRematchCandidateLimit+1 {
+		rowLimit = MaxRematchCandidateLimit + 1
+	}
+	args = append(args, rowLimit)
 	limitPlaceholder := fmt.Sprintf("$%d", len(args))
 
 	query := fmt.Sprintf(`
@@ -4719,14 +4727,13 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		matches = append(matches, m)
 	}
 
-	result := &RematchResult{Matched: len(matches), CandidateLimit: opts.CandidateLimit}
-	if len(matches) > opts.CandidateLimit {
+	result := &RematchResult{ScannedCandidates: len(matches), CandidateLimit: opts.CandidateLimit}
+	if len(matches) >= rowLimit {
 		result.Limited = true
-		matches = matches[:opts.CandidateLimit]
-		result.Matched = opts.CandidateLimit
 	}
 	var newVulns []models.Vulnerability
 	pending := map[string]int{}
+	compatible := 0
 
 	for _, m := range matches {
 		affected, ok := compatibleSecurityCandidate(m.pkgName, m.pkgType, m.pkgEco, m.version, m.category, m.cveEco, m.affectedProducts)
@@ -4734,6 +4741,12 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 			result.Skipped++
 			continue
 		}
+		compatible++
+		if compatible > opts.CandidateLimit {
+			result.Limited = true
+			break
+		}
+		result.Matched++
 		var exists bool
 		if err := db.QueryRowContext(ctx,
 			"SELECT EXISTS(SELECT 1 FROM vulnerabilities WHERE package_id=$1 AND vulnerability_id=$2 AND scan_id=$3)",
