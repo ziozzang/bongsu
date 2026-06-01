@@ -2886,6 +2886,9 @@ func TestCvePackageEcosystemMismatchFilterChecksAllAffectedProducts(t *testing.T
 			t.Fatalf("ecosystem mismatch filter missing %q: %s", want, got)
 		}
 	}
+	if !strings.Contains(got, "WHERE mismatch_pkg.id = v.package_id\n\t\t AND NOT") {
+		t.Fatalf("ecosystem mismatch filter must keep mismatch_pkg predicates inside the package subquery: %s", got)
+	}
 	if strings.Contains(got, "affected_products->0") {
 		t.Fatalf("ecosystem mismatch filter must not inspect only first affected product: %s", got)
 	}

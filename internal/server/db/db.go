@@ -3828,7 +3828,8 @@ func cvePackageEcosystemMismatchFilter(vulnAlias string) string {
 		SELECT 1
 		FROM packages mismatch_pkg
 		WHERE mismatch_pkg.id = %[1]s.package_id
-	)`, vulnAlias) + cvePackageEcosystemMismatchFilterForPackage(vulnAlias, "mismatch_pkg")
+		%[2]s
+	)`, vulnAlias, cvePackageEcosystemMismatchFilterForPackage(vulnAlias, "mismatch_pkg"))
 }
 
 func cvePackageEcosystemMismatchFilterForPackage(vulnAlias, packageAlias string) string {

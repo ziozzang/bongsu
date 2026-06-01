@@ -721,8 +721,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div className="eyebrow">Self-hosted vulnerability watchtower</div>
           <h1>bongsu</h1>
           <p>
-            봉수대처럼 각 호스트와 동작 중인 컨테이너에서 패키지 정보를 모아,
-            OS 패키지와 코드 라이브러리를 분리해 CVSS 기반 취약점 데이터베이스와 매칭합니다.
+            Named after a Korean signal-fire watchtower, Bongsu gathers package evidence from hosts and running containers,
+            separates OS packages from code libraries, and matches them against CVSS-aware vulnerability databases.
           </p>
         </div>
         <div className="install-box">
@@ -1463,19 +1463,19 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         <div className="info-header">
           <div className="info-icon">🏔</div>
           <div>
-            <h3>봉수 (Bongsu)</h3>
+            <h3>Bongsu</h3>
             <p>
-              봉수대(烽燧臺)에서 이름을 따온 자체 호스팅 패키지 취약점 모니터링 시스템입니다.
-              봉수대가 변방의 정보를 중앙으로 전달하듯, Bongsu는 각 호스트와 컨테이너에서 수집한 패키지 정보를 서버로 모아 CVSS 취약점 데이터베이스와 매칭하여 결과를 보여줍니다.
+              Bongsu is named after a Korean signal-fire watchtower. It centralizes package evidence from hosts and containers,
+              then matches that inventory against CVSS-aware vulnerability databases.
             </p>
             <p>
-              Agent가 각 호스트에 설치되어 주기적으로 패키지 목록을 수집하고, 서버에서 Trivy 취약점 데이터베이스를 기반으로 CVE 매칭을 수행합니다.
-              검색 결과는 이 대시보드를 통해 호스트, 패키지, 취약점 단위로 조회할 수 있습니다.
+              Agents collect package inventories periodically. The server stores host, container, image, and package context so operators
+              can inspect findings by host, package, container, and vulnerability.
             </p>
             <div className="info-links">
-              <span><strong>Hosts</strong> — 등록된 호스트 및 취약점 분포</span>
-              <span><strong>Packages</strong> — 전체 패키지 검색 및 CVSS 정렬</span>
-              <span><strong>Vulnerabilities</strong> — CVE 상세 정보 및 필터링</span>
+              <span><strong>Hosts</strong> - registered systems and SBOM state</span>
+              <span><strong>Packages</strong> - package search and CVSS ordering</span>
+              <span><strong>Vulnerabilities</strong> - CVE detail, triage, and filtering</span>
             </div>
           </div>
         </div>

@@ -8,6 +8,14 @@ async function responseError(res: Response): Promise<Error> {
   return new Error(text || `HTTP ${res.status}`);
 }
 
+function handleUnauthorized(): Error {
+  if (apiKey) {
+    clearApiKey();
+    if (onUnauthorized) onUnauthorized();
+  }
+  return new Error('Unauthorized');
+}
+
 export function setApiKey(key: string) {
   apiKey = key;
   localStorage.setItem('bongsu_api_key', key);
@@ -39,9 +47,7 @@ async function request<T>(path: string, params?: Record<string, string>, method?
 
   const res = await fetch(url.toString(), { method: method || 'GET', headers });
   if (res.status === 401) {
-    clearApiKey();
-    if (onUnauthorized) onUnauthorized();
-    throw new Error('Unauthorized');
+    throw handleUnauthorized();
   }
   if (!res.ok) throw await responseError(res);
   return res.json();
@@ -50,9 +56,7 @@ async function request<T>(path: string, params?: Record<string, string>, method?
 async function requestCveDbStats(): Promise<CveDbStatsResponse> {
   const res = await fetch(API_BASE + '/cve-db/stats', { headers: apiHeaders() });
   if (res.status === 401) {
-    clearApiKey();
-    if (onUnauthorized) onUnauthorized();
-    throw new Error('Unauthorized');
+    throw handleUnauthorized();
   }
   if (!res.ok) throw await responseError(res);
   const body = await res.json() as CveDbStatsResponse;
@@ -70,9 +74,7 @@ async function requestJSON<T>(path: string, body: unknown): Promise<T> {
   const headers = apiHeaders({ 'Content-Type': 'application/json' });
   const res = await fetch(API_BASE + path, { method: 'POST', headers, body: JSON.stringify(body) });
   if (res.status === 401) {
-    clearApiKey();
-    if (onUnauthorized) onUnauthorized();
-    throw new Error('Unauthorized');
+    throw handleUnauthorized();
   }
   if (!res.ok) throw await responseError(res);
   return res.json();
@@ -82,9 +84,7 @@ async function requestEmpty<T>(path: string, method: string): Promise<T> {
   const headers = apiHeaders();
   const res = await fetch(API_BASE + path, { method, headers });
   if (res.status === 401) {
-    clearApiKey();
-    if (onUnauthorized) onUnauthorized();
-    throw new Error('Unauthorized');
+    throw handleUnauthorized();
   }
   if (!res.ok) throw await responseError(res);
   return res.json();
@@ -100,9 +100,7 @@ async function download(path: string, filename: string, params?: Record<string, 
   }
   const res = await fetch(url.toString(), { headers });
   if (res.status === 401) {
-    clearApiKey();
-    if (onUnauthorized) onUnauthorized();
-    throw new Error('Unauthorized');
+    throw handleUnauthorized();
   }
   if (!res.ok) throw await responseError(res);
   const blob = await res.blob();
@@ -121,9 +119,7 @@ async function uploadForm<T>(path: string, form: FormData): Promise<T> {
   if (apiKey) headers['X-API-Key'] = apiKey;
   const res = await fetch(API_BASE + path, { method: 'POST', headers, body: form });
   if (res.status === 401) {
-    clearApiKey();
-    if (onUnauthorized) onUnauthorized();
-    throw new Error('Unauthorized');
+    throw handleUnauthorized();
   }
   if (!res.ok) throw await responseError(res);
   return res.json();

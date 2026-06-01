@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-01 20:10:00 KST
+Updated: 2026-06-01 20:23:25 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,12 +24,13 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head before this continuation:
 
 ```text
-7a9762a (master, origin/main) Verify airgap package contents
+82972fb (master, origin/main) Preserve container SBOM relationships
 ```
 
 Important recent commits:
 
 ```text
+82972fb Preserve container SBOM relationships
 7a9762a Verify airgap package contents
 c3fa8e0 Add RBAC scope enforcement tests
 725c748 Add operations runbook
@@ -63,6 +64,7 @@ This handoff commit should include:
 - RBAC enforcement regression coverage for package/container/scan/scan-request endpoint scoping and container/image/asset-group policy expansion through latest container assets and host metadata.
 - Airgap package contents verifier that checks the release package script includes static binaries, Docker images, deploy files, migrations, docs, web assets, source sync/import/export tools, loader script, and SHA256 manifests.
 - Agent package annotation, DB persistence, and CycloneDX/SPDX export tests that preserve host/container/image/package target relationship context for SBOM and inventory data.
+- Live dashboard hardening: optional admin/summary widget failures no longer log out the no-auth dashboard, package/vulnerability summary SQL no longer references a package alias outside scope, and the dashboard action bar wraps instead of clipping controls.
 
 ## Live Runtime
 
@@ -81,19 +83,20 @@ Last known listener state:
 API was last started with:
 
 ```bash
-BONGSU_DB_DSN="postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable" \
+go build -o /tmp/bongsu-server-live ./cmd/server
+setsid env BONGSU_DB_DSN="postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable" \
 BONGSU_API_KEY=test-admin BONGSU_AGENT_API_KEY=test-agent BONGSU_INSTALL_TOKEN=test-install \
 BONGSU_ALLOW_WEAK_SECRETS=true BONGSU_WEB_AUTH=false \
 BONGSU_SECURITY_DB_SYNC_ON_START=false BONGSU_SECURITY_DB_SYNC_CMD="" \
 BONGSU_TRIVY_DB_INTERVAL_HOURS=0 BONGSU_AGENT_BIN=/home/ziozzang/bongsu/bin/bongsu-agent \
-BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS=180 \
-BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS=120 \
+BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS=30 \
+BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS=1 \
 BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE=10000 \
 BONGSU_CVE_SEARCH_TIMEOUT_SECONDS=15 \
 BONGSU_CVE_REFERENCE_GROUP_TIMEOUT_SECONDS=10 \
 BONGSU_CVE_AFFECTED_PACKAGES_TIMEOUT_SECONDS=10 \
 BONGSU_VULNERABILITY_LIST_TIMEOUT_SECONDS=15 \
-BONGSU_PORT=5677 go run ./cmd/server
+BONGSU_PORT=5677 /tmp/bongsu-server-live >/tmp/bongsu-api-5677.log 2>&1 < /dev/null &
 ```
 
 Do not change this to `8080`. Keep API and web split as `5677` and `5678`.
@@ -148,6 +151,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - Go tests now assert RBAC access scope expansion for host, container, image, and asset-group policies and verify inventory/scan list endpoints apply those scopes.
 - CI runs `scripts/verify-package-contents.sh` to keep air-gapped release archives from silently losing required files.
 - Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
+- Live Playwright smoke passed against `http://10.2.2.10:5678/` for the dashboard, CVE Search, and Hosts. The live `/api/packages?limit=1` and `/api/vuln-summary?group_by=owner` endpoints returned 200 after the mismatch-filter SQL fix.
 
 ## Verification Commands
 
@@ -163,6 +167,7 @@ go test ./...
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
+npm --prefix web run test:e2e
 BONGSU_DB_PASSWORD=bongsu docker compose -f deploy/docker-compose.yml config >/tmp/bongsu-compose.out
 BONGSU_DB_PASSWORD=bongsu docker compose -f deploy/docker-compose.airgap.yml config >/tmp/bongsu-airgap-compose.out
 git diff --check
@@ -197,8 +202,8 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 
 1. Confirm this handoff commit is pushed to `origin/main`.
 2. Re-run full verification after the next session starts; do not assume long-running local processes survived.
-3. Open the web UI at `http://10.2.2.10:5678/` and visually verify dashboard, CVE Search, vulnerability list, RBAC/admin pages, and force scan controls.
-4. Add a lightweight browser/E2E test for the CVE Search menu and dashboard CVE DB status card.
+3. Re-open the web UI at `http://10.2.2.10:5678/` after any UI change and visually verify dashboard, CVE Search, vulnerability list, RBAC/admin pages, and force scan controls.
+4. Keep extending browser coverage beyond the current dashboard/CVE Search/Hosts/RBAC smoke paths.
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
 6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.

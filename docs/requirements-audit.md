@@ -1,6 +1,6 @@
 # Bongsu Requirements Audit
 
-Updated: 2026-06-01 20:10:00 KST
+Updated: 2026-06-01 20:23:25 KST
 
 This audit keeps the original product requirements tied to implementation evidence, verification commands, and remaining gaps. It is not a completion claim; the goal remains open until every item has authoritative evidence from code, tests, deployment, and live behavior.
 
@@ -19,13 +19,13 @@ This audit keeps the original product requirements tied to implementation eviden
 | R2 | Classify security sources by OS package vs code package/library and match to compatible sources only. | Implemented | `docs/vulnerability-matching-rules.md`, `internal/server/db`, `migrations/022_cve_affected_packages.sql`, package ecosystem fields in API models | `go test ./...` |
 | R3 | Collect installed OS/library packages, host metadata, running containers, images, and relationship context, then send SBOM to the server. | Implemented | `internal/agent/collector`, `cmd/agent`, `internal/agent/reporter`, `internal/shared/models`, DB package/container persistence, SBOM export paths in server API, source-level ontology preservation tests | `go test ./...`; live agent enrollment still needs environment-specific validation |
 | R4 | RBAC by UserID/GroupID for host/container/system access. | Implemented | access subject/policy migrations, `/api/admin/rbac-*` handlers, dashboard RBAC view, viewer-key flow, browser smoke for subject/policy creation, source-level scope enforcement tests for host/container/image/asset-group policies | `go test ./...`, `npm --prefix web run test:e2e`; live multi-tenant enforcement fixtures remain useful |
-| R5 | Provide a sufficiently good web interface. | Partial | Vite dashboard, CVE DB status card, CVE Search, vulnerability/host/RBAC/audit/admin views | `npm --prefix web run build`, `npm --prefix web run test:e2e`; visual live audit at `http://10.2.2.10:5678/` remains required |
+| R5 | Provide a sufficiently good web interface. | Implemented | Vite dashboard, CVE DB status card, CVE Search, vulnerability/host/RBAC/audit/admin views, live 5678 browser smoke screenshots, optional-widget failure tolerance | `npm --prefix web run build`, `npm --prefix web run test:e2e`; live Playwright smoke at `http://10.2.2.10:5678/` |
 | R6 | Deploy fully in air-gapped environments; update externally, export, import internally. | Verified | airgap compose file, bundle import/export, package script, packaged docs, static binary verification, trivy archive validation, package contents verifier | `./scripts/verify-deploy-config.sh`, `./scripts/verify-package-contents.sh`, `./scripts/verify-static-binaries.sh`, compose config checks |
 | R7 | Provide force scan and rematch functions. | Implemented | scan request APIs, dashboard force-scan buttons, agent daemon polling, CVE rematch endpoints, auto-rescan on security DB changes | `go test ./...`, `npm --prefix web run test:e2e`; live force-scan against enrolled agents remains environment-specific |
 | R8 | Calculate CVSS and match vulnerabilities while distinguishing OS package vulnerabilities from library vulnerabilities. | Implemented | CVSS recalculation support, ecosystem-aware affected package index, package type/ecosystem fields on findings | `go test ./...` |
 | R9 | Collect from diverse public DBs and merge carefully, preserving only records with sufficient fixed/range evidence for matching. | Implemented | CISA KEV, FIRST EPSS, OSV, NVD, Trivy scripts; matchability policy; affected/reference indexes; placeholder rejection | `go test ./...`, `./scripts/verify-migrations.sh` |
 | R10 | Provide one-line installer that downloads required binaries, can deploy as service, and uploads scan results. | Verified for installer paths | `/api/install.sh`, `scripts/install-agent.sh`, installer readiness metrics, cron/download/systemd smoke verification | `./scripts/verify-installer-smoke.sh`, `go test ./...` |
-| R11 | Everything must be sufficiently tested. | Partial | Go unit/source tests, Playwright E2E for CVE DB, force scan, and RBAC admin flows; deployment/static/installer/migration/runbook verifiers; GitHub Actions CI | CI and local verifier suite; broader live multi-host/container fixtures remain useful |
+| R11 | Everything must be sufficiently tested. | Partial | Go unit/source tests, Playwright E2E for CVE DB, dashboard partial-failure behavior, force scan, and RBAC admin flows; deployment/static/installer/migration/runbook verifiers; GitHub Actions CI | CI and local verifier suite; broader live multi-host/container fixtures remain useful |
 | R12 | Use parallel worktrees/sub-agents where useful; static binaries by default. | Partial | static binary verifier, package script, CI static build gate | `./scripts/verify-static-binaries.sh`; sub-agent usage is process evidence, not repository evidence |
 | R13 | Management server deploys with Docker Compose. | Verified | `deploy/docker-compose.yml`, `deploy/docker-compose.airgap.yml`, safe default verifier | compose config checks, `./scripts/verify-deploy-config.sh` |
 | R14 | Product name is `bongsu`, dashboard introduces the name and meaning, and pushes go to `github.com/ziozzang/bongsu` main. | Implemented | README, dashboard branding, git remote push history | `git remote -v`, `git log`; live dashboard visual check remains useful |
@@ -56,7 +56,7 @@ git diff --check
 
 ## Remaining Commercial-Readiness Gaps
 
-- Live browser review is still required on `http://10.2.2.10:5678/` after each larger UI change.
+- Live browser smoke passed on `http://10.2.2.10:5678/` for dashboard, CVE Search, and Hosts after this UI fix; repeat after larger UI changes.
 - Multi-host/container RBAC enforcement has source-level coverage; live multi-tenant fixtures should still be exercised before a commercial release.
 - Large imported CVE DB performance should keep being measured with current production-scale snapshots.
 - Airgap package contents are verified statically; a full generated release package should still be exercised in a real offline environment before commercial release.
