@@ -1096,7 +1096,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div className="value" style={{ color: lastManualRematchColor }}>{lastManualRematch?.status || '-'}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             {lastManualRematch?.finished_at
-              ? `${(lastManualRematch.matched || 0).toLocaleString()} matches, ${(lastManualRematch.scanned_candidates || 0).toLocaleString()} scanned`
+              ? `${(lastManualRematch.matched || 0).toLocaleString()} matches, ${(lastManualRematch.scanned_candidates || 0).toLocaleString()} scanned${lastManualRematch.eligible_sources !== undefined ? ` · ${lastManualRematch.eligible_sources} src` : ''}`
               : 'no manual run yet'}
           </div>
         </div>

@@ -1948,6 +1948,33 @@ func TestSecurityRecalculationLastResultUsesAuditLog(t *testing.T) {
 	}
 }
 
+func TestCveDbRematchLastResultExposesSourcePolicy(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) cveDBRematchLastResult")
+	if start < 0 {
+		t.Fatal("cveDBRematchLastResult not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleDeleteScan")
+	if end < 0 {
+		t.Fatal("cveDBRematchLastResult end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`"eligible_sources"`,
+		`"excluded_sources"`,
+		`"source_policy"`,
+		`out["source_policy"] = policy`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("manual rematch last result missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
@@ -1981,6 +2008,8 @@ func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
 		"bongsu_cve_db_last_manual_rematch_limited",
 		"bongsu_cve_db_last_manual_rematch_matches",
 		"bongsu_cve_db_last_manual_rematch_scanned_candidates",
+		"bongsu_cve_db_last_manual_rematch_eligible_sources",
+		"bongsu_cve_db_last_manual_rematch_excluded_sources",
 		"bongsu_security_db_sync_configured",
 		"bongsu_security_db_sync_running",
 		"bongsu_security_db_sync_last_error",

@@ -3136,6 +3136,8 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_scanned_candidates", nil, metricNumber(last["scanned_candidates"]))
 		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_candidate_limit", nil, metricNumber(last["candidate_limit"]))
 		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_new_vulns", nil, metricNumber(last["new_vulns"]))
+		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_eligible_sources", nil, metricNumber(last["eligible_sources"]))
+		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_excluded_sources", nil, metricNumber(last["excluded_sources"]))
 	}
 	if s.dbMgr != nil && s.dbMgr.IsReady() {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 1)
@@ -3517,6 +3519,8 @@ func (s *Server) cveDBRematchLastResult(ctx context.Context, includeDetails bool
 		"scanned_candidates",
 		"candidate_limit",
 		"limited",
+		"eligible_sources",
+		"excluded_sources",
 		"security_db_revision",
 	} {
 		if v, ok := meta[key]; ok {
@@ -3532,6 +3536,9 @@ func (s *Server) cveDBRematchLastResult(ctx context.Context, includeDetails bool
 		}
 		if scanID, ok := meta["scan_id"]; ok {
 			out["scan_id"] = scanID
+		}
+		if policy, ok := meta["source_policy"]; ok {
+			out["source_policy"] = policy
 		}
 		if errMsg, _ := meta["security_db_revision_error"].(string); errMsg != "" {
 			out["security_db_revision_error"] = errMsg
