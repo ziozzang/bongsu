@@ -2886,6 +2886,18 @@ function CveSearchView() {
                               </code>
                             </div>
                           )}
+                          {(entry.reference_keys || []).length > 0 && (
+                            <div style={{ marginBottom: '0.75rem' }}>
+                              <strong style={{ fontSize: '0.8125rem' }}>Reference Groups</strong>
+                              <div style={{ marginTop: '0.25rem' }}>
+                                {(entry.reference_keys || []).slice(0, 20).map(key => (
+                                  <span key={key} className="badge" style={{ marginRight: '0.375rem', marginBottom: '0.25rem', color: key.startsWith('cve:') ? '#22c55e' : 'var(--text-muted)' }}>
+                                    {key}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           {(entry.matchable_affected_count || 0) > 0 && (
                             <div style={{ marginBottom: '0.75rem' }}>
                               <strong style={{ fontSize: '0.8125rem' }}>Indexed Match Evidence</strong>

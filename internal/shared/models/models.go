@@ -288,6 +288,7 @@ type CveEntry struct {
 	ModifiedDate      *time.Time `json:"modified_date,omitempty"`
 	AffectedProducts  string     `json:"affected_products"`
 	References        string     `json:"references"`
+	ReferenceKeys     []string   `json:"reference_keys,omitempty"`
 	RawData           string     `json:"raw_data"`
 	UpdatedAt         time.Time  `json:"updated_at"`
 }

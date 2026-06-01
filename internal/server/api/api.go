@@ -324,6 +324,22 @@ func (s *Server) canReadHost(r *http.Request, hostID string) bool {
 	return scope.CanReadHost(hostID)
 }
 
+func (s *Server) canReadCveDB(r *http.Request) bool {
+	if s.authenticateAdmin(r) || !s.webAuth {
+		return true
+	}
+	subject := s.viewerSubject(r)
+	if subject == "" {
+		return false
+	}
+	ok, err := s.db.HasResourcePermission(r.Context(), subject, "cve_db", []string{"read", "admin"})
+	if err != nil {
+		log.Printf("rbac cve_db scope %s: %v", subject, err)
+		return false
+	}
+	return ok
+}
+
 func (s *Server) matchKey(got, want string) bool {
 	if got == "" || want == "" {
 		return false
@@ -4958,6 +4974,10 @@ func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if !s.canReadCveDB(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	sources, err := s.db.GetCveSources(r.Context())
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
@@ -5189,7 +5209,7 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 		return
 	}
 	switch body.ResourceType {
-	case "host", "container", "image", "asset_group", "all":
+	case "host", "container", "image", "asset_group", "cve_db", "all":
 	default:
 		http.Error(w, "invalid resource_type", http.StatusBadRequest)
 		return
@@ -5266,6 +5286,10 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !s.canReadCveDB(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	stats, err := s.db.GetCveSourceStats(r.Context())
@@ -5371,6 +5395,10 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if !s.canReadCveDB(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	ctx := r.Context()
 
 	query := r.URL.Query().Get("q")
@@ -5406,6 +5434,10 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCveDbAffectedPackages(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !s.canReadCveDB(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	id := strings.TrimSpace(r.PathValue("id"))

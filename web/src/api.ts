@@ -529,6 +529,7 @@ export interface CveDbEntry {
   modified_date: string | null;
   affected_products: string;
   references: string;
+  reference_keys?: string[];
   raw_data?: string;
   updated_at?: string;
 }

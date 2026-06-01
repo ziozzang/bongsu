@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +35,14 @@ var ErrScanRequestNotActive = errors.New("scan request is not pending or claimed
 var ErrScanRequestClaimMismatch = errors.New("scan request was not claimed by this host")
 var ErrScanRequestNotRetryable = errors.New("scan request is not failed, degraded, or cancelled")
 var ErrAgentHostTokenMismatch = errors.New("agent token does not match host binding")
+
+var (
+	cveReferenceKeyRe     = regexp.MustCompile(`(?i)\bCVE-\d{4}-\d{4,}\b`)
+	ghsaReferenceKeyRe    = regexp.MustCompile(`(?i)\bGHSA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}\b`)
+	rustsecReferenceKeyRe = regexp.MustCompile(`(?i)\bRUSTSEC-\d{4}-\d{4,}\b`)
+	pysecReferenceKeyRe   = regexp.MustCompile(`(?i)\bPYSEC-\d{4}-\d{1,}\b`)
+	goReferenceKeyRe      = regexp.MustCompile(`(?i)\bGO-\d{4}-\d{4,}\b`)
+)
 
 type RetentionPruneResult struct {
 	DryRun        bool   `json:"dry_run"`
@@ -2122,6 +2132,31 @@ func (db *DB) GetExportScope(ctx context.Context, subjectRef string) (AccessScop
 	return db.getAccessScopeForPermissions(ctx, subjectRef, []string{"export", "admin"})
 }
 
+func (db *DB) HasResourcePermission(ctx context.Context, subjectRef, resourceType string, permissions []string) (bool, error) {
+	subjectType, externalID := parseAccessSubjectRef(subjectRef)
+	if len(permissions) == 0 {
+		return false, nil
+	}
+	args := []any{externalID, resourceType, pqStringArray(permissions)}
+	typeFilter := ""
+	if subjectType != "" {
+		typeFilter = " AND s.subject_type=$4"
+		args = append(args, subjectType)
+	}
+	var ok bool
+	err := db.QueryRowContext(ctx, `
+SELECT EXISTS (
+	SELECT 1
+	FROM access_subjects s
+	JOIN access_policies p ON p.subject_id = s.id
+	WHERE s.external_id=$1`+typeFilter+`
+	  AND (p.resource_type=$2 OR p.resource_type='all')
+	  AND (p.resource_id='*' OR p.resource_id='')
+	  AND p.permission = ANY($3)
+)`, args...).Scan(&ok)
+	return ok, err
+}
+
 func (db *DB) getAccessScopeForPermissions(ctx context.Context, subjectRef string, permissions []string) (AccessScope, error) {
 	subjectType, externalID := parseAccessSubjectRef(subjectRef)
 	if len(permissions) == 0 {
@@ -4188,9 +4223,75 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source str
 		}
 		e.MatchableAffected = cveEntryMatchableAffectedCount(e.AffectedProducts, e.Ecosystem)
 		e.Matchable = e.MatchableAffected > 0
+		e.ReferenceKeys = cveReferenceKeys(e)
 		entries = append(entries, e)
 	}
 	return entries, total, nil
+}
+
+func cveReferenceKeys(e models.CveEntry) []string {
+	keys := []string{}
+	text := strings.Join([]string{e.VulnerabilityID, e.Title, e.Description, e.References}, "\n")
+	addRegexKeys := func(prefix string, re *regexp.Regexp, upper bool) {
+		for _, match := range re.FindAllString(text, -1) {
+			match = strings.TrimSpace(match)
+			if upper {
+				match = strings.ToUpper(match)
+			}
+			keys = appendUnique(keys, prefix+match)
+		}
+	}
+	addRegexKeys("cve:", cveReferenceKeyRe, true)
+	addRegexKeys("ghsa:", ghsaReferenceKeyRe, false)
+	addRegexKeys("rustsec:", rustsecReferenceKeyRe, true)
+	addRegexKeys("pysec:", pysecReferenceKeyRe, true)
+	addRegexKeys("go:", goReferenceKeyRe, true)
+
+	for _, raw := range referenceURLs(e.References) {
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" {
+			continue
+		}
+		host := strings.ToLower(strings.TrimPrefix(u.Host, "www."))
+		path := strings.Trim(u.EscapedPath(), "/")
+		parts := strings.Split(path, "/")
+		if host == "github.com" && len(parts) >= 2 {
+			owner := strings.ToLower(parts[0])
+			repo := strings.ToLower(strings.TrimSuffix(parts[1], ".git"))
+			if owner != "" && repo != "" {
+				keys = appendUnique(keys, "repo:github.com/"+owner+"/"+repo)
+			}
+			continue
+		}
+		if strings.Contains(host, "debian.org") {
+			keys = appendUnique(keys, "vendor:debian")
+		} else if strings.Contains(host, "ubuntu.com") {
+			keys = appendUnique(keys, "vendor:ubuntu")
+		} else if strings.Contains(host, "redhat.com") {
+			keys = appendUnique(keys, "vendor:redhat")
+		}
+	}
+	return keys
+}
+
+func referenceURLs(refs string) []string {
+	type refEntry struct {
+		URL string `json:"url"`
+	}
+	out := []string{}
+	var entries []refEntry
+	if refs != "" && json.Unmarshal([]byte(refs), &entries) == nil {
+		for _, entry := range entries {
+			if strings.TrimSpace(entry.URL) != "" {
+				out = append(out, strings.TrimSpace(entry.URL))
+			}
+		}
+		return out
+	}
+	if strings.TrimSpace(refs) != "" {
+		out = append(out, strings.Fields(refs)...)
+	}
+	return out
 }
 
 func calcCvssScore(vector string) float64 {

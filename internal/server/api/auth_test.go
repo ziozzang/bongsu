@@ -747,6 +747,25 @@ func TestViewerKeys(t *testing.T) {
 	}
 }
 
+func TestCveDBReadUsesRBACResource(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"func (s *Server) canReadCveDB",
+		`HasResourcePermission(r.Context(), subject, "cve_db", []string{"read", "admin"})`,
+		"if !s.canReadCveDB(r)",
+		`http.Error(w, "forbidden", http.StatusForbidden)`,
+		`case "host", "container", "image", "asset_group", "cve_db", "all":`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("cve_db RBAC enforcement missing %q", want)
+		}
+	}
+}
+
 func TestCorsRequiresExplicitAllowedOrigin(t *testing.T) {
 	s := &Server{corsOrigins: parseAllowedOrigins("https://console.example.com")}
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -4209,6 +4228,8 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"cveDbAffectedPackages",
 		"Indexed Match Evidence",
 		"Load More",
+		"Reference Groups",
+		"reference_keys",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard CVE search auto-load/error UI missing %q", want)

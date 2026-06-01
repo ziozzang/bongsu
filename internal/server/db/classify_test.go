@@ -518,6 +518,43 @@ func TestAccessPolicyExportPermissionMigration(t *testing.T) {
 	}
 }
 
+func TestAccessPolicyCveDBResourceMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/023_access_policy_cve_db.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DROP CONSTRAINT IF EXISTS access_policies_resource_type_check",
+		"ADD CONSTRAINT access_policies_resource_type_check",
+		"'cve_db'",
+		"'all'",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("cve_db resource migration missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestHasResourcePermissionSupportsGlobalResources(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"func (db *DB) HasResourcePermission",
+		"parseAccessSubjectRef(subjectRef)",
+		"p.resource_type=$2 OR p.resource_type='all'",
+		"p.resource_id='*' OR p.resource_id=''",
+		"p.permission = ANY($3)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("global resource permission support missing %q", want)
+		}
+	}
+}
+
 func TestVulnSummaryGroupExprAllowlist(t *testing.T) {
 	if got := vulnSummaryGroupExpr("team"); got != "COALESCE(NULLIF(h.team, ''), '(unassigned)')" {
 		t.Fatalf("team group expr = %q", got)
@@ -880,6 +917,32 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestCveReferenceKeysGroupVendorCVEAndAdvisories(t *testing.T) {
+	entry := models.CveEntry{
+		VulnerabilityID: "DEBIAN-CVE-2026-48840",
+		Title:           "Debian tracker item",
+		References:      `[{"url":"https://security-tracker.debian.org/tracker/CVE-2026-48840","type":"ADVISORY"},{"url":"https://github.com/MervinPraison/PraisonAI/security/advisories/GHSA-c2m8-4gcg-v22g","type":"WEB"},{"url":"https://github.com/MervinPraison/PraisonAI","type":"PACKAGE"}]`,
+	}
+	got := cveReferenceKeys(entry)
+	for _, want := range []string{
+		"cve:CVE-2026-48840",
+		"vendor:debian",
+		"ghsa:GHSA-c2m8-4gcg-v22g",
+		"repo:github.com/mervinpraison/praisonai",
+	} {
+		found := false
+		for _, key := range got {
+			if key == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("reference keys missing %q in %#v", want, got)
 		}
 	}
 }
