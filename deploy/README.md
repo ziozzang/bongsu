@@ -30,6 +30,9 @@ cd deploy && docker compose up -d --build
 # 3. Check health
 curl http://localhost:5677/api/health
 
+# Web UI
+open http://localhost:5678/
+
 # 4. Install agent on target host
 curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://your-server:5678/api/install.sh" | sudo bash
 ```
@@ -118,6 +121,32 @@ After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB
 
 Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and optional `trivy-db.tar.gz` before applying any database or cache changes. The manifest also carries `security_db_revision`, and export/import audit rows record it so operators can correlate an offline bundle with the automatic rescans it triggers. `/health` and the dashboard show the current merged revision and source freshness, with revision lookup and freshness errors limited to admin health responses. The dashboard CVE source table marks stale sources and shows their age next to matchability and rematch policy state. Direct CVE JSONL import responses and CVE import/export audit rows also include the resulting revision. A corrupt or tampered bundle is rejected, the full CVE database is replaced inside one database transaction, and Trivy DB archives are staged before replacing the active cache so bad rows or invalid archives do not leave partially committed CVE/cache data. Direct source imports replace existing rows for that source in the same transaction, so advisories removed upstream do not remain as stale matches.
 
+## CVE DB Status and Matching Quality
+
+The dashboard shows CVE DB status on the first page. Treat that card as the operator-facing gate for whether a database is safe to use for rematch/rescan:
+
+- `status=ok` means no temporary placeholder IDs, no empty vulnerability IDs/sources, current affected-package and reference-key indexes, and enough local EPSS enrichment coverage.
+- `matchable` means the row has affected package name, ecosystem/package type, and fixed-version evidence. A fixed version may come from a direct fixed field or a fixed event inside an affected range.
+- `TEMP-*` IDs are rejected during import and removed by migration. They are placeholders, not usable vulnerability identities.
+- Priority-only feeds such as CISA KEV and FIRST EPSS enrich existing CVE rows but do not create package-name matches by themselves. EPSS is merged onto matching CVE rows as `epss_score` and `epss_percentile`.
+- Reference groups intentionally keep vendor/category context while grouping related advisories under canonical keys such as `cve:CVE-...`, so Debian/Ubuntu/RHEL/OSV/NVD evidence can be audited together without losing ecosystem boundaries.
+
+Useful checks:
+
+```bash
+curl -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/stats?refresh=true"
+curl -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/search?q=CVE-2026-48840&matchable=true"
+```
+
+If the CVE DB status reports a stale or missing derived index after a manual DB repair, rebuild it asynchronously:
+
+```bash
+curl -X POST -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/cve-db/affected-index/rebuild?async=true"
+curl -X POST -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/cve-db/reference-index/rebuild?async=true"
+```
+
+Progress is visible in admin `/api/health`, `/api/cve-db/stats`, metrics, and the dashboard rebuild cards.
+
 ## Agent Installation
 
 ### On Bare-Metal/VM Host
@@ -202,6 +231,11 @@ spec:
 | `BONGSU_CVE_MATCH_SOURCES` | empty | Optional comma-separated CVE source allowlist for automatic rematch |
 | `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT` | `0` | Skip CVE sources below this matchable-record percentage during automatic rematch; matchable records require name, ecosystem, and fixed-version data |
 | `BONGSU_CVE_MATCH_CANDIDATE_LIMIT` | `50000` | Maximum candidate package/advisory pairs evaluated per rematch pass, clamped at 1000000; responses and audit logs mark `limited=true` when reached |
+| `BONGSU_CVE_STATS_CACHE_SECONDS` | `15` | Short in-process cache TTL for `/api/cve-db/stats`; use `refresh=true` to bypass |
+| `BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS` | `1500` | Best-effort timeout for CVE Search reference-group summary enrichment |
+| `BONGSU_CVE_AFFECTED_INDEX_TIMEOUT_SECONDS` | `5` | Health timeout for affected-package index detail before falling back to lightweight status |
+| `BONGSU_CVE_REFERENCE_INDEX_TIMEOUT_SECONDS` | `5` | Health timeout for reference-key index detail before falling back to lightweight status |
+| `BONGSU_HEALTH_DB_TIMEOUT_SECONDS` | `2` | Shared DB timeout for optional health details |
 | `BONGSU_AGENT_REPORT_MAX_BYTES` | `536870912` | Maximum accepted agent report body size |
 | `BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES` | `2147483648` | Maximum accepted direct Trivy DB upload size |
 | `BONGSU_CVE_DB_IMPORT_MAX_BYTES` | `2147483648` | Maximum accepted CVE JSONL import size |
@@ -274,7 +308,8 @@ spec:
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL atomically |
 | `POST` | `/api/admin/cve-db/rematch` | Rematch packages, optionally with `sources`, `min_source_matchable_percent`, `candidate_limit`, and `scan_id` JSON filters; response includes compatible `matched`, raw `scanned_candidates`, and source policy eligibility counts |
-| `POST` | `/api/admin/cve-db/affected-index/rebuild` | Rebuild the materialized affected-package index used by rematch and report index counts/orphans |
+| `POST` | `/api/admin/cve-db/affected-index/rebuild` | Rebuild the materialized affected-package index used by rematch; `?async=true` queues it in the background |
+| `POST` | `/api/admin/cve-db/reference-index/rebuild` | Rebuild the materialized reference-key index used by CVE Search grouping; `?async=true` queues it in the background |
 | `GET` | `/api/admin/metrics` | Admin-only Prometheus text metrics for DB pool health, agent status/version coverage, SBOM inventory quality, security recalculation state, latest rematch candidate-limit status, Trivy readiness, security source freshness/quality, affected-package index coverage/staleness, EPSS merge coverage, active risk-level backlog, and automatic rescan backlog |
 | `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs; responses include effective cutoff timestamps and affected row counts |
 | `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
