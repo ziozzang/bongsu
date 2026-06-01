@@ -1812,6 +1812,32 @@ func TestScanAndFindingSourceConstraintsMigration(t *testing.T) {
 	}
 }
 
+func TestScoreRangeConstraintsMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/033_score_range_constraints.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"UPDATE cve_database",
+		"LEAST(10, GREATEST(0, cvss_score))",
+		"LEAST(1, GREATEST(0, epss_score))",
+		"LEAST(1, GREATEST(0, epss_percentile))",
+		"UPDATE vulnerabilities",
+		"cve_database_cvss_score_range_check",
+		"CHECK (cvss_score >= 0 AND cvss_score <= 10)",
+		"cve_database_epss_score_range_check",
+		"CHECK (epss_score >= 0 AND epss_score <= 1)",
+		"cve_database_epss_percentile_range_check",
+		"CHECK (epss_percentile >= 0 AND epss_percentile <= 1)",
+		"vulnerabilities_cvss_score_range_check",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("score range constraint migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
