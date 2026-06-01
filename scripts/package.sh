@@ -61,7 +61,7 @@ docker build -t "bongsu-agent:${VERSION}" -t "bongsu-agent:latest" \
 echo ""
 echo "[4/6] Staging files..."
 rm -rf "$STAGING"
-mkdir -p "$STAGING"/{images,bin,scripts,deploy,web}
+mkdir -p "$STAGING"/{images,bin,scripts,deploy,web,docs}
 
 # Save Docker images
 echo "  Saving Docker images..."
@@ -101,6 +101,10 @@ cp deploy/.env.example "$STAGING/deploy/"
 # Copy migrations
 cp -r migrations "$STAGING/"
 
+# Copy docs
+cp -r docs "$STAGING/"
+cp README.md "$STAGING/"
+
 # Copy web dist
 cp -r web/dist "$STAGING/web/"
 
@@ -139,6 +143,7 @@ echo "  bin/                 Static server and agent binaries"
 echo "  scripts/             installer, source sync, and security DB bundle tools"
 echo "  deploy/              docker-compose.yml, .env.example"
 echo "  migrations/          Database migrations"
+echo "  docs/                Architecture, matching rules, audit, and operations runbook"
 echo "  SHA256SUMS           Integrity manifest for packaged files"
 echo "  load-images.sh       Load Docker images on target"
 echo ""

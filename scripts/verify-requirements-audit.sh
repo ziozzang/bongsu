@@ -7,6 +7,8 @@ ARCH="$ROOT/docs/architecture.md"
 MATCHING="$ROOT/docs/vulnerability-matching-rules.md"
 README="$ROOT/README.md"
 CI="$ROOT/.github/workflows/ci.yml"
+RUNBOOK="$ROOT/docs/operations-runbook.md"
+PACKAGE_SCRIPT="$ROOT/scripts/package.sh"
 
 require_file() {
     if [ ! -f "$1" ]; then
@@ -37,7 +39,7 @@ reject_text() {
     fi
 }
 
-for file in "$AUDIT" "$ARCH" "$MATCHING" "$README" "$CI"; do
+for file in "$AUDIT" "$ARCH" "$MATCHING" "$README" "$CI" "$RUNBOOK" "$PACKAGE_SCRIPT"; do
     require_file "$file"
 done
 
@@ -86,7 +88,44 @@ done
 
 require_text "$CI" 'verify-requirements-audit\.sh' "CI must run the requirements audit verifier"
 require_text "$README" 'requirements-audit\.md' "README must link the requirements audit"
+require_text "$README" 'operations-runbook\.md' "README must link the operations runbook"
 require_text "$ARCH" 'BONGSU_SYSTEMD_DIR' "architecture must document systemd installer test hooks"
 require_text "$MATCHING" 'package/ecosystem/fixed evidence' "matching rules must describe package evidence"
+require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
+
+for section in \
+    'Production Readiness Checklist' \
+    'Install' \
+    'Upgrade' \
+    'Backup And Restore' \
+    'Security DB Operations' \
+    'Monitoring And Alerting' \
+    'Incident Response' \
+    'Routine Maintenance'
+do
+    require_text "$RUNBOOK" "^## ${section}$" "operations runbook missing section $section"
+done
+
+for keyword in \
+    '5677' \
+    '5678' \
+    'Caddy' \
+    'BONGSU_ALLOW_WEAK_SECRETS=false' \
+    'BONGSU_WEB_AUTH=true' \
+    'BONGSU_AGENT_HOST_BINDING=true' \
+    'docker compose' \
+    'air-gapped' \
+    'SHA256SUMS' \
+    'pg_dump' \
+    'restore' \
+    'admin/metrics' \
+    'TEMP-\*' \
+    'CVD-\*' \
+    'EPSS' \
+    'requeue-stale' \
+    'agent-token/reset'
+do
+    require_text "$RUNBOOK" "$keyword" "operations runbook missing keyword $keyword"
+done
 
 echo "Requirements audit verification passed"
