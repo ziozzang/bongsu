@@ -3796,6 +3796,11 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusBadRequest, err.Error(), "validate_cve_count", err)
 		return
 	}
+	if _, err := s.db.SyncEPSSPriorityColumnsTx(r.Context(), tx); err != nil {
+		tx.Rollback()
+		fail(http.StatusInternalServerError, "cve epss merge failed", "merge_epss", err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		fail(http.StatusInternalServerError, "cve import commit failed", "commit_cve", err)
 		return
@@ -4201,6 +4206,9 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 	}
 	if count == 0 {
 		return 0, errNoValidCveEntries
+	}
+	if _, err := s.db.SyncEPSSPriorityColumnsTx(ctx, tx); err != nil {
+		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err

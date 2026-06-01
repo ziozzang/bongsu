@@ -1024,6 +1024,7 @@ func TestSecurityDBBundleImportUsesSingleCveTransaction(t *testing.T) {
 		"s.db.DeleteAllCveEntriesTx",
 		"s.importCveJSONLTx",
 		"validateSecurityDBBundleImportedCount(manifest, imported)",
+		"s.db.SyncEPSSPriorityColumnsTx",
 		"tx.Rollback()",
 		"tx.Commit()",
 	} {
@@ -3707,6 +3708,7 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 		"s.db.BeginTx",
 		"s.db.DeleteCveEntriesBySourceTx",
 		"s.importCveJSONLTx",
+		"s.db.SyncEPSSPriorityColumnsTx",
 		"errNoValidCveEntries",
 		"tx.Commit()",
 		"return 0, err",

@@ -1008,8 +1008,8 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,now())`
 const vulnCols = `id, package_id, scan_id, host_id, vulnerability_id, severity, title, description, pkg_name, installed_version, fixed_version, cvss_score, cvss_vector, primary_url, pkg_path, layer_id, container, finding_source, created_at`
 
 const vulnExploitedExpr = `EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)`
-const vulnEPSSScoreExpr = `COALESCE((SELECT epss.epss_score FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)`
-const vulnEPSSPercentileExpr = `COALESCE((SELECT epss.epss_percentile FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id ORDER BY epss.updated_at DESC LIMIT 1), 0)`
+const vulnEPSSScoreExpr = `COALESCE((SELECT MAX(cve.epss_score) FROM cve_database cve WHERE cve.vulnerability_id = v.vulnerability_id), 0)`
+const vulnEPSSPercentileExpr = `COALESCE((SELECT MAX(cve.epss_percentile) FROM cve_database cve WHERE cve.vulnerability_id = v.vulnerability_id), 0)`
 const vulnRiskScoreExpr = `LEAST(100, GREATEST(0, (v.cvss_score * 5) + (` + vulnEPSSScoreExpr + ` * 30) + CASE WHEN ` + vulnExploitedExpr + ` THEN 20 ELSE 0 END + CASE lower(COALESCE(h.criticality, '')) WHEN 'critical' THEN 10 WHEN 'high' THEN 5 ELSE 0 END))`
 const vulnRiskLevelExpr = `CASE WHEN ` + vulnRiskScoreExpr + ` >= 80 THEN 'critical' WHEN ` + vulnRiskScoreExpr + ` >= 60 THEN 'high' WHEN ` + vulnRiskScoreExpr + ` >= 40 THEN 'medium' ELSE 'low' END`
 
@@ -2718,12 +2718,12 @@ func (db *DB) ListVulnerabilities(ctx context.Context, f VulnFilter, limit, offs
 		baseQ += ` AND EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source = 'cisa-kev' AND kev.vulnerability_id = v.vulnerability_id)`
 	}
 	if f.MinEPSS > 0 {
-		baseQ += fmt.Sprintf(" AND EXISTS(SELECT 1 FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id AND epss.epss_score >= $%d)", argN)
+		baseQ += fmt.Sprintf(" AND EXISTS(SELECT 1 FROM cve_database cve WHERE cve.vulnerability_id = v.vulnerability_id AND cve.epss_score >= $%d)", argN)
 		args = append(args, f.MinEPSS)
 		argN++
 	}
 	if f.MinEPSSPct > 0 {
-		baseQ += fmt.Sprintf(" AND EXISTS(SELECT 1 FROM cve_database epss WHERE epss.source = 'epss' AND epss.vulnerability_id = v.vulnerability_id AND epss.epss_percentile >= $%d)", argN)
+		baseQ += fmt.Sprintf(" AND EXISTS(SELECT 1 FROM cve_database cve WHERE cve.vulnerability_id = v.vulnerability_id AND cve.epss_percentile >= $%d)", argN)
 		args = append(args, f.MinEPSSPct)
 		argN++
 	}
@@ -3832,6 +3832,48 @@ func (db *DB) DeleteAllCveEntriesTx(ctx context.Context, tx *sql.Tx) (int, error
 	return int(n), nil
 }
 
+func (db *DB) SyncEPSSPriorityColumnsTx(ctx context.Context, tx *sql.Tx) (int, error) {
+	clearRes, err := tx.ExecContext(ctx, `
+		UPDATE cve_database c
+		SET epss_score = 0,
+		    epss_percentile = 0
+		WHERE c.source != 'epss'
+		  AND (c.epss_score != 0 OR c.epss_percentile != 0)
+		  AND NOT EXISTS (
+			SELECT 1
+			FROM cve_database epss
+			WHERE epss.source = 'epss'
+			  AND epss.vulnerability_id = c.vulnerability_id
+			  AND (epss.epss_score > 0 OR epss.epss_percentile > 0)
+		  )`)
+	if err != nil {
+		return 0, err
+	}
+	setRes, err := tx.ExecContext(ctx, `
+		WITH latest_epss AS (
+			SELECT DISTINCT ON (vulnerability_id)
+			       vulnerability_id, epss_score, epss_percentile
+			FROM cve_database
+			WHERE source = 'epss'
+			  AND (epss_score > 0 OR epss_percentile > 0)
+			ORDER BY vulnerability_id, updated_at DESC, epss_score DESC, epss_percentile DESC
+		)
+		UPDATE cve_database c
+		SET epss_score = latest_epss.epss_score,
+		    epss_percentile = latest_epss.epss_percentile
+		FROM latest_epss
+		WHERE c.source != 'epss'
+		  AND c.vulnerability_id = latest_epss.vulnerability_id
+		  AND (c.epss_score IS DISTINCT FROM latest_epss.epss_score
+		       OR c.epss_percentile IS DISTINCT FROM latest_epss.epss_percentile)`)
+	if err != nil {
+		return 0, err
+	}
+	clearN, _ := clearRes.RowsAffected()
+	setN, _ := setRes.RowsAffected()
+	return int(clearN + setN), nil
+}
+
 func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source string, minCVSS float64, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {
 	baseQ := `FROM cve_database WHERE 1=1`
 	args := []any{}
@@ -4398,14 +4440,17 @@ func cveSourceMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr string) 
 		)`, affectedProductsExpr, ecosystemExpr, cveSourceFixedPredicateSQL())
 }
 
-func cvePackageMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr, packageNameExpr string) string {
+func cvePackageMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr, packageNameExpr, packageEcosystemExpr string) string {
+	effectiveEcosystem := normalizeEcosystemSQL(fmt.Sprintf("lower(COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(%s, '')))", ecosystemExpr))
+	packageEcosystem := normalizeEcosystemSQL(fmt.Sprintf("lower(%s)", packageEcosystemExpr))
 	return fmt.Sprintf(`EXISTS (
 		SELECT 1
 		FROM jsonb_array_elements(%s) ap
 		WHERE lower(COALESCE(ap->>'name', '')) = lower(%s)
 		  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(%s, '')) IS NOT NULL
+		  AND %s = %s
 		  AND (%s)
-	)`, affectedProductsExpr, packageNameExpr, ecosystemExpr, cveSourceFixedPredicateSQL())
+	)`, affectedProductsExpr, packageNameExpr, ecosystemExpr, effectiveEcosystem, packageEcosystem, cveSourceFixedPredicateSQL())
 }
 
 func cveEntryHasMatchableAffectedProduct(affectedProducts, ecosystem string) bool {
@@ -4483,7 +4528,7 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		JOIN source_quality sq ON sq.source = c.source
 		WHERE 1=1%s
 		LIMIT %s
-	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), scanJoin, cvePackageMatchablePredicateSQL(candidateAffectedProducts, "c.ecosystem", "p.name"), filters, limitPlaceholder)
+	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), scanJoin, cvePackageMatchablePredicateSQL(candidateAffectedProducts, "c.ecosystem", "p.name", "COALESCE(NULLIF(p.ecosystem, ''), NULLIF(p.pkg_type, ''))"), filters, limitPlaceholder)
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {

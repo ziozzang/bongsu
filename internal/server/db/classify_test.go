@@ -849,12 +849,14 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 }
 
 func TestCvePackageMatchablePredicateRequiresPackageTargetAndFixedData(t *testing.T) {
-	got := cvePackageMatchablePredicateSQL("c.affected_products", "c.ecosystem", "p.name")
+	got := cvePackageMatchablePredicateSQL("c.affected_products", "c.ecosystem", "p.name", "COALESCE(NULLIF(p.ecosystem, ''), NULLIF(p.pkg_type, ''))")
 	for _, want := range []string{
 		"jsonb_array_elements(c.affected_products) ap",
 		"lower(COALESCE(ap->>'name', '')) = lower(p.name)",
 		"NULLIF(ap->>'ecosystem', '')",
 		"NULLIF(c.ecosystem, '')",
+		"NULLIF(p.ecosystem, '')",
+		"NULLIF(p.pkg_type, '')",
 		"jsonb_typeof(ap->'fixed') = 'array'",
 		"jsonb_array_length(ap->'fixed') = 1",
 		"jsonb_path_exists(ap, '$.ranges[*].events[*].fixed ? (@ != \"\")')",
@@ -994,7 +996,7 @@ func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
 	for _, want := range []string{
 		"opts.ScanID",
 		"opts.CandidateLimit+1",
-		"cvePackageMatchablePredicateSQL(candidateAffectedProducts, \"c.ecosystem\", \"p.name\")",
+		"cvePackageMatchablePredicateSQL(candidateAffectedProducts, \"c.ecosystem\", \"p.name\", \"COALESCE(NULLIF(p.ecosystem, ''), NULLIF(p.pkg_type, ''))\")",
 		"result.Limited = true",
 		"matches = matches[:opts.CandidateLimit]",
 		"AND p.scan_id =",
@@ -1807,7 +1809,8 @@ func TestListVulnerabilitiesExposesCisaKevPrioritization(t *testing.T) {
 		"&v.RiskScore",
 		"&v.RiskLevel",
 		`kev.source = 'cisa-kev'`,
-		`epss.source = 'epss'`,
+		`MAX(cve.epss_score)`,
+		`MAX(cve.epss_percentile)`,
 		`kev.vulnerability_id = v.vulnerability_id`,
 		"if f.Exploited",
 		"if f.MinEPSS > 0",
@@ -1843,6 +1846,10 @@ func TestCveDatabaseStoresEPSSPriorityColumns(t *testing.T) {
 		"&e.EPSSPercentile",
 		"epss_score=EXCLUDED.epss_score",
 		"epss_percentile=EXCLUDED.epss_percentile",
+		"func (db *DB) SyncEPSSPriorityColumnsTx",
+		"source = 'epss'",
+		"c.source != 'epss'",
+		"latest_epss",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("CVE DB EPSS support missing %q", want)
