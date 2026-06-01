@@ -6386,10 +6386,21 @@ func (s *Server) handleCveDbReferenceGroup(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "missing key", http.StatusBadRequest)
 		return
 	}
-	summary, err := s.db.GetCveReferenceGroupSummary(r.Context(), key, limitParam(r, 50))
+	groupTimeout := envInt("BONGSU_CVE_REFERENCE_GROUP_TIMEOUT_SECONDS", 10)
+	if groupTimeout <= 0 {
+		groupTimeout = 10
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(groupTimeout)*time.Second)
+	defer cancel()
+	summary, err := s.db.GetCveReferenceGroupSummary(ctx, key, limitParam(r, 50))
 	if err != nil {
 		if errors.Is(err, db.ErrInvalidCveReferenceKey) {
 			http.Error(w, "invalid key", http.StatusBadRequest)
+			return
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			log.Printf("cve-db reference group timeout after %ds: %v", groupTimeout, err)
+			http.Error(w, "reference group timeout", http.StatusGatewayTimeout)
 			return
 		}
 		log.Printf("cve-db reference group: %v", err)

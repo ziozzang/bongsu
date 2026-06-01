@@ -4462,9 +4462,12 @@ func TestCveDbReferenceGroupEndpoint(t *testing.T) {
 		"s.authenticateWeb(r)",
 		"s.canReadCveDB(r)",
 		`r.URL.Query().Get("key")`,
+		`envInt("BONGSU_CVE_REFERENCE_GROUP_TIMEOUT_SECONDS", 10)`,
+		"context.WithTimeout(r.Context()",
 		"s.db.GetCveReferenceGroupSummary",
 		"errors.Is(err, db.ErrInvalidCveReferenceKey)",
 		`http.Error(w, "invalid key", http.StatusBadRequest)`,
+		`http.Error(w, "reference group timeout", http.StatusGatewayTimeout)`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("CVE reference group endpoint missing %q", want)
