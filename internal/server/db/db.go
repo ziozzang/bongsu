@@ -43,7 +43,14 @@ var (
 	rustsecReferenceKeyRe = regexp.MustCompile(`(?i)\bRUSTSEC-\d{4}-\d{4,}\b`)
 	pysecReferenceKeyRe   = regexp.MustCompile(`(?i)\bPYSEC-\d{4}-\d{1,}\b`)
 	goReferenceKeyRe      = regexp.MustCompile(`(?i)\bGO-\d{4}-\d{4,}\b`)
-	debianAdvisoryKeyRe   = regexp.MustCompile(`(?i)\bD(?:SA|LA)-\d{1,6}-\d+\b`)
+	debianAdvisoryKeyRe   = regexp.MustCompile(`(?i)\bD(?:SA|LA)-\d{1,6}(?:-\d+)?\b`)
+	malwareAdvisoryKeyRe  = regexp.MustCompile(`(?i)\bMAL-\d{4}-\d{1,}\b`)
+	almaAdvisoryKeyRe     = regexp.MustCompile(`(?i)\bAL(?:BA|EA|SA)-\d{4}:\d{1,}\b`)
+	suseAdvisoryKeyRe     = regexp.MustCompile(`(?i)\b(?:openSUSE|SUSE)-[A-Z]{2}-\d{4}:\d{1,}-\d+\b`)
+	drupalAdvisoryKeyRe   = regexp.MustCompile(`(?i)\bDRUPAL-[A-Z]+-\d{4}-\d{3,}\b`)
+	dtsaAdvisoryKeyRe     = regexp.MustCompile(`(?i)\bDTSA-\d{1,}-\d+\b`)
+	osvAdvisoryKeyRe      = regexp.MustCompile(`(?i)\bOSV-\d{4}-\d{1,}\b`)
+	gsdAdvisoryKeyRe      = regexp.MustCompile(`(?i)\bGSD-\d{4}-\d{1,}\b`)
 )
 
 type RetentionPruneResult struct {
@@ -4470,7 +4477,7 @@ GROUP BY k.reference_key`, matchablePredicate), pq.Array(keys))
 }
 
 func preferredReferenceGroupKey(keys []string) string {
-	for _, prefix := range []string{"cve:", "debian:", "ghsa:", "rustsec:", "pysec:", "go:", "repo:", "vendor:"} {
+	for _, prefix := range []string{"cve:", "debian:", "ghsa:", "rustsec:", "pysec:", "go:", "mal:", "alma:", "suse:", "drupal:", "dtsa:", "osv:", "gsd:", "repo:", "vendor:"} {
 		for _, key := range keys {
 			if strings.HasPrefix(key, prefix) {
 				return key
@@ -4617,6 +4624,13 @@ func cveReferenceKeys(e models.CveEntry) []string {
 	addRegexKeys("pysec:", pysecReferenceKeyRe, true)
 	addRegexKeys("go:", goReferenceKeyRe, true)
 	addRegexKeys("debian:", debianAdvisoryKeyRe, true)
+	addRegexKeys("mal:", malwareAdvisoryKeyRe, true)
+	addRegexKeys("alma:", almaAdvisoryKeyRe, true)
+	addRegexKeys("suse:", suseAdvisoryKeyRe, false)
+	addRegexKeys("drupal:", drupalAdvisoryKeyRe, true)
+	addRegexKeys("dtsa:", dtsaAdvisoryKeyRe, true)
+	addRegexKeys("osv:", osvAdvisoryKeyRe, true)
+	addRegexKeys("gsd:", gsdAdvisoryKeyRe, true)
 	if isDebianSecurityEntry(e) {
 		keys = appendUnique(keys, "vendor:debian")
 	}
@@ -4701,6 +4715,48 @@ func cveReferenceKeyFilter(referenceKey string) (string, []string) {
 			return "", nil
 		}
 		return indexFilter, []string{"debian:" + id}
+	case strings.HasPrefix(lower, "mal:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("mal:"):]))
+		if !malwareAdvisoryKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return indexFilter, []string{"mal:" + id}
+	case strings.HasPrefix(lower, "alma:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("alma:"):]))
+		if !almaAdvisoryKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return indexFilter, []string{"alma:" + id}
+	case strings.HasPrefix(lower, "suse:"):
+		id := strings.TrimSpace(key[len("suse:"):])
+		if !suseAdvisoryKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return indexFilter, []string{"suse:" + id}
+	case strings.HasPrefix(lower, "drupal:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("drupal:"):]))
+		if !drupalAdvisoryKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return indexFilter, []string{"drupal:" + id}
+	case strings.HasPrefix(lower, "dtsa:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("dtsa:"):]))
+		if !dtsaAdvisoryKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return indexFilter, []string{"dtsa:" + id}
+	case strings.HasPrefix(lower, "osv:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("osv:"):]))
+		if !osvAdvisoryKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return indexFilter, []string{"osv:" + id}
+	case strings.HasPrefix(lower, "gsd:"):
+		id := strings.ToUpper(strings.TrimSpace(key[len("gsd:"):]))
+		if !gsdAdvisoryKeyRe.MatchString(id) {
+			return "", nil
+		}
+		return indexFilter, []string{"gsd:" + id}
 	case strings.HasPrefix(lower, "repo:"):
 		repo := strings.TrimSpace(strings.TrimPrefix(lower, "repo:"))
 		if !strings.HasPrefix(repo, "github.com/") || strings.Count(repo, "/") < 2 {

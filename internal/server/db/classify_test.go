@@ -1003,6 +1003,9 @@ func TestPreferredReferenceGroupKeyUsesCanonicalThenVendorAdvisory(t *testing.T)
 	if got := preferredReferenceGroupKey([]string{"vendor:debian", "debian:DLA-214-1", "cve:CVE-2026-48840"}); got != "cve:CVE-2026-48840" {
 		t.Fatalf("preferred key = %q, want canonical CVE", got)
 	}
+	if got := preferredReferenceGroupKey([]string{"vendor:suse", "suse:openSUSE-SU-2023:0279-1"}); got != "suse:openSUSE-SU-2023:0279-1" {
+		t.Fatalf("preferred key = %q, want SUSE advisory", got)
+	}
 }
 
 func TestCveReferenceKeyFilterSupportsCanonicalGroups(t *testing.T) {
@@ -1029,6 +1032,18 @@ func TestCveReferenceKeyFilterSupportsCanonicalGroups(t *testing.T) {
 			key:        "debian:DLA-214-1",
 			wantFilter: "cve_reference_keys",
 			wantVals:   []string{"debian:DLA-214-1"},
+		},
+		{
+			name:       "malware advisory",
+			key:        "mal:MAL-2021-1",
+			wantFilter: "cve_reference_keys",
+			wantVals:   []string{"mal:MAL-2021-1"},
+		},
+		{
+			name:       "suse advisory",
+			key:        "suse:openSUSE-SU-2023:0279-1",
+			wantFilter: "cve_reference_keys",
+			wantVals:   []string{"suse:openSUSE-SU-2023:0279-1"},
 		},
 		{
 			name:       "github repo",
@@ -1151,6 +1166,41 @@ func TestCveReferenceKeysTagDebianAdvisoriesWithoutCVEAlias(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("reference keys missing %q in %#v", want, got)
+		}
+	}
+}
+
+func TestCveReferenceKeysIndexNonCVEAdvisoryIDs(t *testing.T) {
+	tests := []struct {
+		id   string
+		want string
+	}{
+		{id: "MAL-2021-1", want: "mal:MAL-2021-1"},
+		{id: "ALBA-2019:1524", want: "alma:ALBA-2019:1524"},
+		{id: "ALEA-2019:3314", want: "alma:ALEA-2019:3314"},
+		{id: "SUSE-SU-2023:0863-1", want: "suse:SUSE-SU-2023:0863-1"},
+		{id: "openSUSE-SU-2023:0279-1", want: "suse:openSUSE-SU-2023:0279-1"},
+		{id: "DSA-1100", want: "debian:DSA-1100"},
+		{id: "DRUPAL-CONTRIB-2017-082", want: "drupal:DRUPAL-CONTRIB-2017-082"},
+		{id: "DTSA-100-1", want: "dtsa:DTSA-100-1"},
+		{id: "OSV-2021-1658", want: "osv:OSV-2021-1658"},
+		{id: "GSD-2022-1000008", want: "gsd:GSD-2022-1000008"},
+	}
+	for _, tt := range tests {
+		got := cveReferenceKeys(models.CveEntry{VulnerabilityID: tt.id})
+		found := false
+		for _, key := range got {
+			if key == tt.want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("reference keys for %q missing %q in %#v", tt.id, tt.want, got)
+		}
+		filter, vals := cveReferenceKeyFilter(tt.want)
+		if filter == "" || len(vals) != 1 || vals[0] != tt.want {
+			t.Fatalf("filter for %q = %q %#v", tt.want, filter, vals)
 		}
 	}
 }
