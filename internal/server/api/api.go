@@ -3291,8 +3291,12 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			writePromGauge(&b, "bongsu_cve_affected_package_index_coverage_percent", nil, indexStats.CoveragePercent)
 			writePromGauge(&b, "bongsu_cve_affected_package_index_missing_matchable_sources", nil, float64(len(indexStats.MissingMatchableSources)))
 			writePromGauge(&b, "bongsu_cve_affected_package_index_orphans", nil, float64(indexStats.Orphans))
+			writePromGauge(&b, "bongsu_cve_affected_package_index_stale", nil, boolMetric(indexStats.Stale))
 			if indexStats.LastUpdate != nil {
 				writePromGauge(&b, "bongsu_cve_affected_package_index_last_update_timestamp_seconds", nil, float64(indexStats.LastUpdate.Unix()))
+			}
+			if indexStats.LatestMatchableUpdate != nil {
+				writePromGauge(&b, "bongsu_cve_affected_package_index_latest_matchable_update_timestamp_seconds", nil, float64(indexStats.LatestMatchableUpdate.Unix()))
 			}
 		} else {
 			writePromGauge(&b, "bongsu_cve_affected_package_index_metrics_error", nil, 1)

@@ -1497,6 +1497,9 @@ func TestBulkCveAffectedPackageRefreshCanScopeBySource(t *testing.T) {
 	for _, want := range []string{
 		"func (db *DB) UpsertCveEntriesWithoutAffectedIndexTx",
 		"func (db *DB) RefreshCveAffectedPackagesForSourceTx",
+		"LatestMatchableUpdate",
+		"stats.Stale",
+		"max(c.updated_at)",
 		"DELETE FROM cve_affected_packages cap",
 		"AND c.source = $1",
 		"return db.insertCveAffectedPackagesTx(ctx, tx, source)",

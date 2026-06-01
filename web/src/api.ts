@@ -356,6 +356,8 @@ export interface HealthStatus {
     coverage_percent?: number;
     missing_matchable_sources?: string[];
     last_update?: string;
+    latest_matchable_update?: string;
+    stale?: boolean;
     orphans?: number;
     error?: string;
   };
@@ -420,6 +422,8 @@ export interface CveDbStatsResponse {
     coverage_percent?: number;
     missing_matchable_sources?: string[];
     last_update?: string;
+    latest_matchable_update?: string;
+    stale?: boolean;
     orphans: number;
   };
   affected_package_index_error?: string;

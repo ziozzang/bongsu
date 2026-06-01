@@ -2160,6 +2160,8 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_cve_affected_package_index_coverage_percent",
 		"bongsu_cve_affected_package_index_missing_matchable_sources",
 		"bongsu_cve_affected_package_index_orphans",
+		"bongsu_cve_affected_package_index_stale",
+		"bongsu_cve_affected_package_index_latest_matchable_update_timestamp_seconds",
 		"GetCveEPSSMergeStats(ctx)",
 		"bongsu_cve_epss_records",
 		"bongsu_cve_epss_cves",
@@ -2245,6 +2247,9 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"CVE DB Status",
 		"CVE Matchable",
 		"Affected Index",
+		"cveAffectedIndexUnhealthy",
+		"cveAffectedIndex?.stale",
+		"older than matchable CVE rows",
 		"EPSS Merge",
 		"epssMergeCoverage",
 		"cveEpssMerge?.enriched_records",
@@ -2272,7 +2277,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "epss_merge", "merge_coverage_percent", "rebuildCveAffectedIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "latest_matchable_update", "stale?: boolean", "epss_merge", "merge_coverage_percent", "rebuildCveAffectedIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}

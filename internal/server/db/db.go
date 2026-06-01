@@ -4556,6 +4556,8 @@ type CveAffectedPackageIndexStats struct {
 	CoveragePercent         float64    `json:"coverage_percent"`
 	MissingMatchableSources []string   `json:"missing_matchable_sources"`
 	LastUpdate              *time.Time `json:"last_update"`
+	LatestMatchableUpdate   *time.Time `json:"latest_matchable_update"`
+	Stale                   bool       `json:"stale"`
 	Orphans                 int        `json:"orphans"`
 }
 
@@ -4580,14 +4582,16 @@ SELECT
 	(SELECT count(DISTINCT cve_id) FROM cve_affected_packages),
 	(SELECT count(*) FROM cve_database c WHERE %s),
 	(SELECT max(updated_at) FROM cve_affected_packages),
-	(SELECT count(*) FROM cve_affected_packages cap WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id))`, matchablePredicate)).Scan(
-		&stats.Count, &stats.SourceCount, &stats.IndexedCVEs, &stats.MatchableCVEs, &stats.LastUpdate, &stats.Orphans)
+	(SELECT max(c.updated_at) FROM cve_database c WHERE %s),
+	(SELECT count(*) FROM cve_affected_packages cap WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id))`, matchablePredicate, matchablePredicate)).Scan(
+		&stats.Count, &stats.SourceCount, &stats.IndexedCVEs, &stats.MatchableCVEs, &stats.LastUpdate, &stats.LatestMatchableUpdate, &stats.Orphans)
 	if err != nil {
 		return nil, err
 	}
 	if stats.MatchableCVEs > 0 {
 		stats.CoveragePercent = math.Round(float64(stats.IndexedCVEs)*1000/float64(stats.MatchableCVEs)) / 10
 	}
+	stats.Stale = stats.MatchableCVEs > 0 && (stats.LastUpdate == nil || stats.LatestMatchableUpdate == nil || stats.LastUpdate.Before(*stats.LatestMatchableUpdate))
 	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 SELECT source
 FROM cve_database c

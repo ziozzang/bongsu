@@ -270,12 +270,12 @@ spec:
 | `GET` | `/api/admin/security-db/export` | Export CVE DB + optional Trivy DB bundle |
 | `POST` | `/api/admin/security-db/import` | Import exported security DB bundle |
 | `POST` | `/api/admin/security-db/recalculate` | Queue full security DB recalculation, enrichment, rematch, stale cleanup, and automatic package-only rescans |
-| `GET` | `/api/cve-db/stats` | Source counts, matchable percentage, and quality counters for matchable/fixed/range/CVSS data |
+| `GET` | `/api/cve-db/stats` | Source counts, matchable percentage, quality counters for matchable/fixed/range/CVSS data, affected-index freshness, and EPSS merge coverage |
 | `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
 | `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL atomically |
 | `POST` | `/api/admin/cve-db/rematch` | Rematch packages, optionally with `sources`, `min_source_matchable_percent`, `candidate_limit`, and `scan_id` JSON filters; response includes compatible `matched` and raw `scanned_candidates` counts |
 | `POST` | `/api/admin/cve-db/affected-index/rebuild` | Rebuild the materialized affected-package index used by rematch and report index counts/orphans |
-| `GET` | `/api/admin/metrics` | Admin-only Prometheus text metrics for DB pool health, agent status/version coverage, SBOM inventory quality, security recalculation state, latest rematch candidate-limit status, Trivy readiness, security source freshness/quality, affected-package index coverage, EPSS merge coverage, active risk-level backlog, and automatic rescan backlog |
+| `GET` | `/api/admin/metrics` | Admin-only Prometheus text metrics for DB pool health, agent status/version coverage, SBOM inventory quality, security recalculation state, latest rematch candidate-limit status, Trivy readiness, security source freshness/quality, affected-package index coverage/staleness, EPSS merge coverage, active risk-level backlog, and automatic rescan backlog |
 | `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs; responses include effective cutoff timestamps and affected row counts |
 | `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
 | `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |
