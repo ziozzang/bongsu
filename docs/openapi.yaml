@@ -1,0 +1,3352 @@
+openapi: "3.0.3"
+info:
+  title: Bongsu Vulnerability Management API
+  version: 0.1.0
+  description: >
+    Vulnerability management and SBOM platform API. Provides host inventory,
+    vulnerability scanning, CVE database management, RBAC, and installer
+    endpoints.
+  license:
+    name: MIT
+
+servers:
+  - url: /
+    description: Current server
+
+security: []
+
+paths:
+  # ── Health ──────────────────────────────────────────────────────────────
+
+  /api/health:
+    get:
+      operationId: getHealth
+      tags: [health]
+      summary: Health check
+      description: >
+        Returns system health. Admin API key gets additional operational
+        details (index stats, recalculation status, trivy-db internals).
+      parameters:
+        - name: X-API-Key
+          in: header
+          schema:
+            type: string
+          description: Admin API key for extended details
+      responses:
+        "200":
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/ready:
+    get:
+      operationId: getReady
+      tags: [health]
+      summary: Readiness check
+      description: Returns ready when the database and Trivy DB are loaded.
+      responses:
+        "200":
+          description: Ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        "503":
+          description: Not ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: not_ready
+                  db:
+                    type: string
+                  trivy_db:
+                    type: string
+
+  /api/live:
+    get:
+      operationId: getLive
+      tags: [health]
+      summary: Liveness check
+      responses:
+        "200":
+          description: Alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: alive
+
+  # ── Hosts ───────────────────────────────────────────────────────────────
+
+  /api/hosts:
+    get:
+      operationId: listHosts
+      tags: [hosts]
+      summary: List all hosts
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: agent_status
+          in: query
+          schema:
+            type: string
+            enum: [online, stale, offline, unknown]
+          description: Filter by agent status
+        - name: inventory_status
+          in: query
+          schema:
+            type: string
+            enum: [healthy, degraded, stale, empty, none]
+          description: Filter by inventory status
+        - name: agent_version_state
+          in: query
+          schema:
+            type: string
+            enum: [current, outdated, unknown]
+          description: Filter by agent version drift state
+      responses:
+        "200":
+          description: List of hosts with vulnerability counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HostWithVulns"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/hosts/{id}:
+    get:
+      operationId: getHost
+      tags: [hosts]
+      summary: Get host details
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+      responses:
+        "200":
+          description: Host details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Host"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/hosts/{id}/packages:
+    get:
+      operationId: getHostPackages
+      tags: [hosts]
+      summary: Get host packages
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated package list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedPackages"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/hosts/{id}/sbom:
+    get:
+      operationId: getHostSBOM
+      tags: [hosts]
+      summary: Get host SBOM
+      description: Export SBOM in CycloneDX or SPDX format.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [cyclonedx, cdx, spdx]
+            default: cyclonedx
+      responses:
+        "200":
+          description: SBOM document
+          content:
+            application/vnd.cyclonedx+json:
+              schema:
+                type: object
+            application/spdx+json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Host not found or no packages available
+
+  /api/hosts/{id}/vuln-counts:
+    get:
+      operationId: getHostVulnCounts
+      tags: [hosts]
+      summary: Get vulnerability counts per severity
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+      responses:
+        "200":
+          description: Vulnerability counts keyed by severity
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/hosts/{id}/metadata:
+    post:
+      operationId: updateHostMetadata
+      tags: [hosts]
+      summary: Update host metadata
+      security:
+        - AdminKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HostMetadataUpdate"
+      responses:
+        "200":
+          description: Updated host
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Host"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/hosts/{id}/agent-token/reset:
+    post:
+      operationId: resetHostAgentToken
+      tags: [hosts]
+      summary: Reset agent token
+      security:
+        - AdminKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+      responses:
+        "200":
+          description: Token reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Vulnerabilities ─────────────────────────────────────────────────────
+
+  /api/vulnerabilities:
+    get:
+      operationId: listVulnerabilities
+      tags: [vulnerabilities]
+      summary: List vulnerabilities
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: severity
+          in: query
+          schema:
+            type: string
+        - name: host_id
+          in: query
+          schema:
+            type: string
+        - name: triage_status
+          in: query
+          schema:
+            type: string
+            enum: [open, in_progress, accepted_risk, false_positive, fixed, ignored]
+        - name: finding_source
+          in: query
+          schema:
+            type: string
+            enum: [scanner, cve-db]
+        - name: risk_level
+          in: query
+          schema:
+            type: string
+            enum: [critical, high, medium, low]
+        - name: overdue
+          in: query
+          schema:
+            type: boolean
+        - name: exploited
+          in: query
+          schema:
+            type: boolean
+        - name: min_epss
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: min_epss_percentile
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: pkg_name
+          in: query
+          schema:
+            type: string
+        - name: container
+          in: query
+          schema:
+            type: string
+        - name: owner
+          in: query
+          schema:
+            type: string
+        - name: team
+          in: query
+          schema:
+            type: string
+        - name: environment
+          in: query
+          schema:
+            type: string
+        - name: criticality
+          in: query
+          schema:
+            type: string
+        - name: min_cvss
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: show_no_fix
+          in: query
+          schema:
+            type: boolean
+          description: Include vulnerabilities with no fix available
+        - name: show_mismatch
+          in: query
+          schema:
+            type: boolean
+          description: Include mismatched vulnerabilities
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        "200":
+          description: Paginated vulnerability list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedVulnerabilities"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "504":
+          description: Vulnerability list timeout
+
+  /api/vulnerabilities/export:
+    get:
+      operationId: exportVulnerabilities
+      tags: [vulnerabilities]
+      summary: Export vulnerabilities
+      description: Export up to 100,000 rows as CSV or JSON.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [csv, json]
+            default: csv
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            maximum: 100000
+          description: Max rows to export
+        - name: severity
+          in: query
+          schema:
+            type: string
+        - name: host_id
+          in: query
+          schema:
+            type: string
+        - name: triage_status
+          in: query
+          schema:
+            type: string
+        - name: finding_source
+          in: query
+          schema:
+            type: string
+        - name: risk_level
+          in: query
+          schema:
+            type: string
+        - name: pkg_name
+          in: query
+          schema:
+            type: string
+        - name: min_cvss
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Exported file
+          content:
+            text/csv:
+              schema:
+                type: string
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/vulnerabilities/filters:
+    get:
+      operationId: getVulnFilters
+      tags: [vulnerabilities]
+      summary: Get available filter options
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      responses:
+        "200":
+          description: Filter options
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilterOptions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/vulnerabilities/triage:
+    post:
+      operationId: upsertVulnerabilityTriage
+      tags: [vulnerabilities]
+      summary: Upsert vulnerability triage
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VulnerabilityTriage"
+      responses:
+        "200":
+          description: Triage upserted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnerabilityTriage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/cve-search:
+    get:
+      operationId: searchCVEs
+      tags: [vulnerabilities]
+      summary: Search CVEs in findings
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: pkg_name
+          in: query
+          schema:
+            type: string
+        - name: severity
+          in: query
+          schema:
+            type: string
+        - name: min_cvss
+          in: query
+          schema:
+            type: number
+            format: double
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        "200":
+          description: Paginated CVE results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedVulnerabilities"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/vuln-summary:
+    get:
+      operationId: getVulnSummary
+      tags: [vulnerabilities]
+      summary: Vulnerability summary counts
+      description: >
+        Returns severity counts across visible hosts, or grouped breakdown
+        when group_by is specified.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: group_by
+          in: query
+          schema:
+            type: string
+          description: "Metadata field to group by (owner, team, environment, criticality)"
+      responses:
+        "200":
+          description: Vulnerability summary
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    additionalProperties:
+                      type: object
+                      additionalProperties:
+                        type: integer
+                  - type: object
+                    properties:
+                      group_by:
+                        type: string
+                      items:
+                        type: array
+                        items:
+                          type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Packages ────────────────────────────────────────────────────────────
+
+  /api/packages:
+    get:
+      operationId: searchPackages
+      tags: [packages]
+      summary: Search packages
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Name search query
+        - name: host_id
+          in: query
+          schema:
+            type: string
+        - name: container
+          in: query
+          schema:
+            type: string
+        - name: pkg_type
+          in: query
+          schema:
+            type: string
+        - name: source
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        "200":
+          description: Paginated package list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedPackages"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/packages/filters:
+    get:
+      operationId: getPackageFilters
+      tags: [packages]
+      summary: Package filter options
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      responses:
+        "200":
+          description: Filter options
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FilterOptions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/packages/{id}/vulnerabilities:
+    get:
+      operationId: getPackageVulnerabilities
+      tags: [packages]
+      summary: Get vulnerabilities for a package
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of vulnerabilities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Vulnerability"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Containers ──────────────────────────────────────────────────────────
+
+  /api/containers:
+    get:
+      operationId: searchContainers
+      tags: [containers]
+      summary: Search containers
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Name search query
+        - name: host_id
+          in: query
+          schema:
+            type: string
+        - name: image
+          in: query
+          schema:
+            type: string
+          description: Image name filter
+        - name: runtime
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        "200":
+          description: Paginated container list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedContainers"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ── Scans ───────────────────────────────────────────────────────────────
+
+  /api/scans:
+    get:
+      operationId: listScans
+      tags: [scans]
+      summary: List scans
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: host_id
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated scan list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedScans"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/scans/{id}:
+    delete:
+      operationId: deleteScan
+      tags: [scans]
+      summary: Delete a scan
+      security:
+        - AdminKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: force
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Force delete even if it is the latest inventory scan
+      responses:
+        "200":
+          description: Scan deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Latest inventory scan requires force=true
+
+  /api/scan-requests:
+    get:
+      operationId: listScanRequests
+      tags: [scans]
+      summary: List scan requests
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: host_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, claimed, completed, degraded, failed, cancelled]
+        - name: scan_type
+          in: query
+          schema:
+            type: string
+            enum: [manual, daily, security-db-update]
+        - name: stale
+          in: query
+          schema:
+            type: boolean
+          description: Show only stale requests
+        - name: security_db_revision
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated scan request list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedScanRequests"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createScanRequest
+      tags: [scans]
+      summary: Create scan request
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanRequestCreate"
+      responses:
+        "202":
+          description: Scan request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScanRequest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/scan-requests/{id}/cancel:
+    post:
+      operationId: cancelScanRequest
+      tags: [scans]
+      summary: Cancel scan request
+      security:
+        - AdminKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scan request cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: cancelled
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Scan request is not pending or claimed
+
+  /api/scan-requests/{id}/requeue:
+    post:
+      operationId: requeueScanRequest
+      tags: [scans]
+      summary: Requeue scan request
+      security:
+        - AdminKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                message:
+                  type: string
+      responses:
+        "200":
+          description: Scan request requeued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: pending
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Scan request is not retryable
+
+  /api/scan-requests/requeue-stale:
+    post:
+      operationId: requeueStaleScanRequests
+      tags: [scans]
+      summary: Requeue stale scan requests
+      security:
+        - AdminKey: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                timeout_minutes:
+                  type: integer
+                  default: 60
+      responses:
+        "200":
+          description: Stale requests requeued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  requeued:
+                    type: integer
+                  cancelled_duplicates:
+                    type: integer
+                  timeout_minutes:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/scan-requests/requeue-filtered:
+    post:
+      operationId: requeueFilteredScanRequests
+      tags: [scans]
+      summary: Requeue filtered scan requests
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: []
+              properties:
+                host_id:
+                  type: string
+                status:
+                  type: string
+                  enum: [failed, degraded, cancelled]
+                scan_type:
+                  type: string
+                  enum: [manual, daily, security-db-update]
+                security_db_revision:
+                  type: string
+                message:
+                  type: string
+      responses:
+        "200":
+          description: Filtered requests requeued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  requeued:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Agent ───────────────────────────────────────────────────────────────
+
+  /api/report:
+    post:
+      operationId: submitReport
+      tags: [agent]
+      summary: Submit scan report
+      description: Agents submit scan results including host, packages, vulnerabilities, and containers.
+      security:
+        - AgentKey: []
+      parameters:
+        - name: X-Bongsu-Agent-Token
+          in: header
+          schema:
+            type: string
+          description: Agent host binding token
+        - name: X-Bongsu-Host-ID
+          in: header
+          schema:
+            type: string
+          description: Host ID matching the report host
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScanReport"
+      responses:
+        "200":
+          description: Report accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReportResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Agent token mismatch or host binding error
+        "413":
+          description: Report too large
+
+  /api/agent/scan-requests/claim:
+    post:
+      operationId: claimScanRequest
+      tags: [agent]
+      summary: Claim a scan request
+      security:
+        - AgentKey: []
+      parameters:
+        - name: host_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: X-Bongsu-Agent-Token
+          in: header
+          schema:
+            type: string
+        - name: X-Bongsu-Host-ID
+          in: header
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scan request claimed (or no pending requests)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request:
+                    nullable: true
+                    allOf:
+                      - $ref: "#/components/schemas/ScanRequest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/agent/scan-requests/{id}/complete:
+    post:
+      operationId: completeScanRequest
+      tags: [agent]
+      summary: Complete a claimed scan request
+      security:
+        - AgentKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: X-Bongsu-Agent-Token
+          in: header
+          schema:
+            type: string
+        - name: X-Bongsu-Host-ID
+          in: header
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [host_id]
+              properties:
+                status:
+                  type: string
+                  enum: [completed, degraded, failed]
+                  default: completed
+                message:
+                  type: string
+                host_id:
+                  type: string
+      responses:
+        "200":
+          description: Scan request completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: completed
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Scan request is not active or claim mismatch
+
+  # ── Installer ───────────────────────────────────────────────────────────
+
+  /api/install.sh:
+    get:
+      operationId: getInstallScript
+      tags: [installer]
+      summary: Download install script
+      security:
+        - InstallToken: []
+        - AdminKey: []
+      responses:
+        "200":
+          description: Shell script
+          content:
+            text/x-shellscript:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Install token not configured
+
+  /api/downloads/bongsu-agent:
+    get:
+      operationId: downloadAgent
+      tags: [installer]
+      summary: Download agent binary
+      security:
+        - InstallToken: []
+        - AdminKey: []
+      responses:
+        "200":
+          description: Agent binary
+          headers:
+            X-Bongsu-SHA256:
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/downloads/trivy:
+    get:
+      operationId: downloadTrivy
+      tags: [installer]
+      summary: Download trivy binary
+      security:
+        - InstallToken: []
+        - AdminKey: []
+      responses:
+        "200":
+          description: Trivy binary
+          headers:
+            X-Bongsu-SHA256:
+              schema:
+                type: string
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/admin/installer/status:
+    get:
+      operationId: getInstallerStatus
+      tags: [installer]
+      summary: Installer status
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: Installer binary availability
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstallerStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Stats ───────────────────────────────────────────────────────────────
+
+  /api/stats:
+    get:
+      operationId: getStats
+      tags: [stats]
+      summary: Dashboard statistics
+      description: >
+        Aggregate stats including host counts, vulnerability severity/risk
+        level counts, inventory coverage, scan request status, security DB
+        rescan progress, and triage counts.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      responses:
+        "200":
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Admin ───────────────────────────────────────────────────────────────
+
+  /api/admin/metrics:
+    get:
+      operationId: getMetrics
+      tags: [admin]
+      summary: Prometheus-format metrics
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: Prometheus exposition text
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/retention/prune:
+    post:
+      operationId: pruneRetention
+      tags: [admin]
+      summary: Prune old operational data
+      security:
+        - AdminKey: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run:
+                  type: boolean
+                  default: true
+                scan_days:
+                  type: integer
+                  default: 180
+                request_days:
+                  type: integer
+                  default: 90
+                audit_days:
+                  type: integer
+                  default: 365
+      responses:
+        "200":
+          description: Prune result
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/audit-logs:
+    get:
+      operationId: listAuditLogs
+      tags: [admin]
+      summary: List audit logs
+      security:
+        - AdminKey: []
+      parameters:
+        - name: actor_type
+          in: query
+          schema:
+            type: string
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: created_from
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: "RFC3339 or YYYY-MM-DD"
+        - name: created_to
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: "RFC3339 or YYYY-MM-DD"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated audit log list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedAuditLogs"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Admin RBAC ──────────────────────────────────────────────────────────
+
+  /api/admin/rbac/subjects:
+    get:
+      operationId: listAccessSubjects
+      tags: [admin]
+      summary: List access subjects
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: List of access subjects
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AccessSubject"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: upsertAccessSubject
+      tags: [admin]
+      summary: Upsert access subject
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [external_id]
+              properties:
+                id:
+                  type: string
+                subject_type:
+                  type: string
+                  enum: [user, group]
+                  default: user
+                external_id:
+                  type: string
+                display_name:
+                  type: string
+      responses:
+        "200":
+          description: Subject upserted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/rbac/subjects/{id}:
+    delete:
+      operationId: deleteAccessSubject
+      tags: [admin]
+      summary: Delete access subject
+      security:
+        - AdminKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Subject deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/admin/rbac/policies:
+    get:
+      operationId: listAccessPolicies
+      tags: [admin]
+      summary: List access policies
+      security:
+        - AdminKey: []
+      parameters:
+        - name: subject_external_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of access policies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AccessPolicy"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: upsertAccessPolicy
+      tags: [admin]
+      summary: Upsert access policy
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resource_type]
+              properties:
+                id:
+                  type: string
+                subject_id:
+                  type: string
+                subject_external_id:
+                  type: string
+                resource_type:
+                  type: string
+                  enum: [host, container, image, asset_group, cve_db, all]
+                resource_id:
+                  type: string
+                permission:
+                  type: string
+                  enum: [read, write, admin, export]
+                  default: read
+      responses:
+        "200":
+          description: Policy upserted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusOK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/rbac/policies/{id}:
+    delete:
+      operationId: deleteAccessPolicy
+      tags: [admin]
+      summary: Delete access policy
+      security:
+        - AdminKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Policy deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── CVE DB (public read) ───────────────────────────────────────────────
+
+  /api/cve-db/stats:
+    get:
+      operationId: getCveDbStats
+      tags: [cve-db]
+      summary: CVE DB statistics
+      description: Returns comprehensive CVE database statistics with caching.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: refresh
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Force cache refresh
+      responses:
+        "200":
+          description: CVE DB statistics
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/cve-db/sources:
+    get:
+      operationId: getCveDbSources
+      tags: [cve-db]
+      summary: List CVE sources
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      responses:
+        "200":
+          description: CVE sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/cve-db/search:
+    get:
+      operationId: searchCveDb
+      tags: [cve-db]
+      summary: Search CVE database
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: reference_key
+          in: query
+          schema:
+            type: string
+        - name: severity
+          in: query
+          schema:
+            type: string
+        - name: source
+          in: query
+          schema:
+            type: string
+        - name: min_cvss
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: min_epss
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: min_epss_percentile
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: matchable
+          in: query
+          schema:
+            type: boolean
+        - name: include_priority_sources
+          in: query
+          schema:
+            type: boolean
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated CVE entries
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedCveEntries"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "504":
+          description: Search timeout
+
+  /api/cve-db/reference-group:
+    get:
+      operationId: getCveDbReferenceGroup
+      tags: [cve-db]
+      summary: CVE reference group summary
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Reference group summary
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "504":
+          description: Reference group timeout
+
+  /api/cve-db/{id}/affected-packages:
+    get:
+      operationId: getCveDbAffectedPackages
+      tags: [cve-db]
+      summary: Affected packages for a CVE
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated affected packages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "504":
+          description: Affected packages timeout
+
+  # ── Admin CVE DB ────────────────────────────────────────────────────────
+
+  /api/admin/cve-db/import:
+    post:
+      operationId: importCveDb
+      tags: [admin]
+      summary: Import CVE JSONL
+      description: Upload a JSONL file of CVE entries.
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                source:
+                  type: string
+                  default: custom
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  imported:
+                    type: integer
+                  total:
+                    type: integer
+                  security_db_revision:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/cve-db/rematch:
+    post:
+      operationId: rematchCveDb
+      tags: [admin]
+      summary: Rematch CVEs to packages
+      security:
+        - AdminKey: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sources:
+                  type: array
+                  items:
+                    type: string
+                min_source_matchable_percent:
+                  type: number
+                  format: double
+                scan_id:
+                  type: string
+                candidate_limit:
+                  type: integer
+      responses:
+        "200":
+          description: Rematch result
+          content:
+            application/json:
+              schema:
+                type: object
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/cve-db/affected-index/rebuild:
+    post:
+      operationId: rebuildAffectedIndex
+      tags: [admin]
+      summary: Rebuild affected package index
+      security:
+        - AdminKey: []
+      parameters:
+        - name: async
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Rebuild result
+          content:
+            application/json:
+              schema:
+                type: object
+        "202":
+          description: Rebuild queued
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Rebuild already running
+
+  /api/admin/cve-db/reference-index/rebuild:
+    post:
+      operationId: rebuildReferenceIndex
+      tags: [admin]
+      summary: Rebuild reference key index
+      security:
+        - AdminKey: []
+      parameters:
+        - name: async
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Rebuild result
+          content:
+            application/json:
+              schema:
+                type: object
+        "202":
+          description: Rebuild queued
+          content:
+            application/json:
+              schema:
+                type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: Rebuild already running
+
+  /api/admin/cve-db/recalc-cvss:
+    post:
+      operationId: recalcCvss
+      tags: [admin]
+      summary: Recalculate CVSS scores
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: Recalc result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  updated:
+                    type: integer
+                  security_db_revision:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/cve-db/export:
+    get:
+      operationId: exportCveDb
+      tags: [admin]
+      summary: Export CVE DB
+      security:
+        - AdminKey: []
+      parameters:
+        - name: source
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: CVE database JSONL
+          headers:
+            X-Bongsu-CVE-Records:
+              schema:
+                type: integer
+            X-Bongsu-SHA256:
+              schema:
+                type: string
+            X-Bongsu-Security-DB-Revision:
+              schema:
+                type: string
+          content:
+            application/x-ndjson:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/cve-db/sources:
+    get:
+      operationId: getAdminCveDbSources
+      tags: [admin]
+      summary: List CVE sources (admin alias)
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: CVE sources
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Admin Trivy DB ──────────────────────────────────────────────────────
+
+  /api/admin/trivy-db:
+    post:
+      operationId: uploadTrivyDB
+      tags: [admin]
+      summary: Upload Trivy DB
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [db]
+              properties:
+                db:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: DB loaded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  message:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Trivy DB manager not available
+
+  /api/admin/trivy-db/update:
+    post:
+      operationId: updateTrivyDB
+      tags: [admin]
+      summary: Trigger Trivy DB update
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: Update triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  message:
+                    type: string
+                  trivy_db_ready:
+                    type: boolean
+                  last_update:
+                    type: string
+                    format: date-time
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Download failed
+        "503":
+          description: Trivy DB manager not available
+
+  # ── Admin Security DB ───────────────────────────────────────────────────
+
+  /api/admin/security-db/export:
+    get:
+      operationId: exportSecurityDb
+      tags: [admin]
+      summary: Export security DB bundle
+      security:
+        - AdminKey: []
+      parameters:
+        - name: include_trivy
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Security DB bundle tar.gz
+          content:
+            application/gzip:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/admin/security-db/import:
+    post:
+      operationId: importSecurityDb
+      tags: [admin]
+      summary: Import security DB bundle
+      security:
+        - AdminKey: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [bundle]
+              properties:
+                bundle:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  imported:
+                    type: integer
+                  trivy_db_loaded:
+                    type: boolean
+                  security_db_revision:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Trivy DB manager required but unavailable
+
+  /api/admin/security-db/update:
+    post:
+      operationId: updateSecurityDb
+      tags: [admin]
+      summary: Trigger security DB update
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: Update result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  security_db:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          description: Update failed
+        "503":
+          description: Security DB manager not available
+
+  /api/admin/security-db/recalculate:
+    post:
+      operationId: recalculateSecurityDb
+      tags: [admin]
+      summary: Trigger security recalculation
+      security:
+        - AdminKey: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Recalculation queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: queued
+                  reason:
+                    type: string
+                  security_recalculation:
+                    type: object
+                  security_db_revision:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+components:
+  # ── Security Schemes ──────────────────────────────────────────────────
+
+  securitySchemes:
+    AdminKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Admin API key
+
+    AgentKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Agent API key (or admin key)
+
+    ViewerKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Viewer API key (subject:key format)
+
+    InstallToken:
+      type: apiKey
+      in: header
+      name: X-Install-Token
+      description: Install token
+
+  # ── Reusable Parameters ──────────────────────────────────────────────
+
+  parameters:
+    HostID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Host ID
+
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 50
+      description: Maximum items to return
+
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 1000000
+        default: 0
+      description: Number of items to skip
+
+  # ── Reusable Responses ───────────────────────────────────────────────
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: unauthorized
+
+    Forbidden:
+      description: Forbidden
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: forbidden
+
+    NotFound:
+      description: Not found
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: not found
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  # ── Schemas ──────────────────────────────────────────────────────────
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
+    StatusOK:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+
+    # ── Health ────────────────────────────────────────────────────────
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        trivy_db_ready:
+          type: boolean
+        web_auth:
+          type: boolean
+        version:
+          type: string
+        commit:
+          type: string
+        build_date:
+          type: string
+        uptime_seconds:
+          type: integer
+        security_db_revision:
+          type: string
+        security_recalculation:
+          type: object
+        security_db_freshness:
+          type: object
+        trivy_db:
+          type: object
+        security_db:
+          type: object
+
+    # ── Host ──────────────────────────────────────────────────────────
+
+    Host:
+      type: object
+      properties:
+        id:
+          type: string
+        hostname:
+          type: string
+        ip_address:
+          type: string
+        os_name:
+          type: string
+        os_version:
+          type: string
+        kernel:
+          type: string
+        arch:
+          type: string
+        cpu_model:
+          type: string
+        cpu_cores:
+          type: integer
+        memory_mb:
+          type: integer
+          format: int64
+        agent_version:
+          type: string
+        agent_token_set:
+          type: boolean
+        owner:
+          type: string
+        team:
+          type: string
+        environment:
+          type: string
+        criticality:
+          type: string
+        tags:
+          type: string
+        last_seen:
+          type: string
+          format: date-time
+        agent_status:
+          type: string
+          enum: [online, stale, offline, unknown]
+        last_seen_age_seconds:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+
+    HostWithVulns:
+      allOf:
+        - $ref: "#/components/schemas/Host"
+        - type: object
+          properties:
+            vuln_counts:
+              type: object
+              additionalProperties:
+                type: integer
+            active_vuln_counts:
+              type: object
+              additionalProperties:
+                type: integer
+            latest_inventory:
+              $ref: "#/components/schemas/HostInventorySummary"
+
+    HostInventorySummary:
+      type: object
+      properties:
+        scan_id:
+          type: string
+        package_count:
+          type: integer
+        vuln_count:
+          type: integer
+        container_count:
+          type: integer
+        scan_status:
+          type: string
+        scanned_at:
+          type: string
+          format: date-time
+
+    HostMetadataUpdate:
+      type: object
+      properties:
+        owner:
+          type: string
+        team:
+          type: string
+        environment:
+          type: string
+        criticality:
+          type: string
+        tags:
+          type: string
+          description: Valid JSON string
+
+    # ── Vulnerability ─────────────────────────────────────────────────
+
+    Vulnerability:
+      type: object
+      properties:
+        id:
+          type: string
+        package_id:
+          type: string
+        scan_id:
+          type: string
+        host_id:
+          type: string
+        vulnerability_id:
+          type: string
+        severity:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        pkg_name:
+          type: string
+        asset_type:
+          type: string
+        pkg_type:
+          type: string
+        ecosystem:
+          type: string
+        container_id:
+          type: string
+        image_name:
+          type: string
+        image_id:
+          type: string
+        target:
+          type: string
+        pkg_path:
+          type: string
+        installed_version:
+          type: string
+        fixed_version:
+          type: string
+        cvss_score:
+          type: number
+          format: double
+        cvss_vector:
+          type: string
+        primary_url:
+          type: string
+        container:
+          type: string
+        layer_id:
+          type: string
+        finding_source:
+          type: string
+        advisory_sources:
+          type: array
+          items:
+            type: string
+        advisory_evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdvisoryEvidence"
+        host_owner:
+          type: string
+        host_team:
+          type: string
+        host_environment:
+          type: string
+        host_criticality:
+          type: string
+        exploited:
+          type: boolean
+        epss_score:
+          type: number
+          format: double
+        epss_percentile:
+          type: number
+          format: double
+        risk_score:
+          type: number
+          format: double
+        risk_level:
+          type: string
+        triage_status:
+          type: string
+        triage_reason:
+          type: string
+        triage_comment:
+          type: string
+        triage_expires_at:
+          type: string
+          format: date-time
+        triage_updated_by:
+          type: string
+        triage_updated_at:
+          type: string
+          format: date-time
+        sla_days:
+          type: integer
+        due_at:
+          type: string
+          format: date-time
+        overdue:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    AdvisoryEvidence:
+      type: object
+      properties:
+        source:
+          type: string
+        category:
+          type: string
+        ecosystem:
+          type: string
+        severity:
+          type: string
+        cvss_score:
+          type: number
+          format: double
+        epss_score:
+          type: number
+          format: double
+        fixed_version:
+          type: string
+        title:
+          type: string
+
+    VulnerabilityTriage:
+      type: object
+      required: [vulnerability_id, status]
+      properties:
+        id:
+          type: string
+        vulnerability_id:
+          type: string
+        host_id:
+          type: string
+        pkg_name:
+          type: string
+        status:
+          type: string
+          enum: [open, in_progress, accepted_risk, false_positive, fixed, ignored]
+        reason:
+          type: string
+        comment:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        updated_by:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ── Package ───────────────────────────────────────────────────────
+
+    Package:
+      type: object
+      properties:
+        id:
+          type: string
+        scan_id:
+          type: string
+        host_id:
+          type: string
+        asset_type:
+          type: string
+        asset_id:
+          type: string
+        source:
+          type: string
+        container:
+          type: string
+        container_id:
+          type: string
+        image_name:
+          type: string
+        image_id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        arch:
+          type: string
+        pkg_type:
+          type: string
+        ecosystem:
+          type: string
+        purl:
+          type: string
+        src_name:
+          type: string
+        file_path:
+          type: string
+        layer_id:
+          type: string
+        target:
+          type: string
+        max_cvss:
+          type: number
+          format: double
+        vuln_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Container ─────────────────────────────────────────────────────
+
+    ContainerAsset:
+      type: object
+      properties:
+        id:
+          type: string
+        scan_id:
+          type: string
+        host_id:
+          type: string
+        runtime:
+          type: string
+        container_id:
+          type: string
+        name:
+          type: string
+        image_name:
+          type: string
+        image_id:
+          type: string
+        image_digest:
+          type: string
+        state:
+          type: string
+        labels:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        package_count:
+          type: integer
+        vulnerability_count:
+          type: integer
+        critical_count:
+          type: integer
+        high_count:
+          type: integer
+        max_cvss:
+          type: number
+          format: double
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Scan ──────────────────────────────────────────────────────────
+
+    Scan:
+      type: object
+      properties:
+        id:
+          type: string
+        host_id:
+          type: string
+        scan_type:
+          type: string
+        status:
+          type: string
+          enum: [running, completed, degraded, failed]
+        error_summary:
+          type: string
+        security_db_revision:
+          type: string
+        scan_request_id:
+          type: string
+        package_count:
+          type: integer
+        vulnerability_count:
+          type: integer
+        container_count:
+          type: integer
+        packages_added:
+          type: integer
+        packages_removed:
+          type: integer
+        packages_changed:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    ScanRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        host_id:
+          type: string
+        requested_by:
+          type: string
+        scan_type:
+          type: string
+          enum: [manual, daily, security-db-update]
+        packages_only:
+          type: boolean
+        reason:
+          type: string
+        security_db_revision:
+          type: string
+        status:
+          type: string
+          enum: [pending, claimed, completed, degraded, failed, cancelled]
+        error_message:
+          type: string
+        claimed_by_host_id:
+          type: string
+        claimed_at:
+          type: string
+          format: date-time
+        request_age_seconds:
+          type: integer
+          format: int64
+        claim_age_seconds:
+          type: integer
+          format: int64
+        request_stale:
+          type: boolean
+        claim_stale:
+          type: boolean
+        completed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    ScanRequestCreate:
+      type: object
+      properties:
+        host_id:
+          type: string
+        scan_type:
+          type: string
+          enum: [manual, daily, security-db-update]
+          default: manual
+        packages_only:
+          type: boolean
+        reason:
+          type: string
+        requested_by:
+          type: string
+        security_db_revision:
+          type: string
+
+    # ── Scan Report ───────────────────────────────────────────────────
+
+    ScanReport:
+      type: object
+      required: [host]
+      properties:
+        host:
+          $ref: "#/components/schemas/Host"
+        scan_type:
+          type: string
+          enum: [inventory, daily, manual, security-db-update]
+          default: inventory
+        scan_id:
+          type: string
+          description: UUID, auto-generated if empty
+        scan_request_id:
+          type: string
+        security_db_revision:
+          type: string
+        errors:
+          type: array
+          items:
+            type: string
+        containers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContainerAsset"
+        packages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Package"
+        vulnerabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Vulnerability"
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserAccount"
+        processes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessSnapshot"
+        ports:
+          type: array
+          items:
+            $ref: "#/components/schemas/PortInfo"
+        timestamp:
+          type: string
+          format: date-time
+
+    UserAccount:
+      type: object
+      properties:
+        id:
+          type: string
+        scan_id:
+          type: string
+        host_id:
+          type: string
+        username:
+          type: string
+        uid:
+          type: integer
+        gid:
+          type: integer
+        home_dir:
+          type: string
+        shell:
+          type: string
+
+    ProcessSnapshot:
+      type: object
+      properties:
+        id:
+          type: string
+        scan_id:
+          type: string
+        host_id:
+          type: string
+        pid:
+          type: integer
+        name:
+          type: string
+        cmdline:
+          type: string
+        user:
+          type: string
+        cpu_usage:
+          type: number
+          format: double
+        mem_usage:
+          type: number
+          format: double
+
+    PortInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        scan_id:
+          type: string
+        host_id:
+          type: string
+        name:
+          type: string
+        port:
+          type: integer
+        protocol:
+          type: string
+        address:
+          type: string
+        pid:
+          type: integer
+
+    ReportResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        scan_id:
+          type: string
+        scan_status:
+          type: string
+          enum: [completed, degraded]
+        inventory_status:
+          type: string
+          enum: [healthy, degraded, empty]
+        error_summary:
+          type: string
+        security_db_revision:
+          type: string
+        ingest_error_count:
+          type: integer
+        skipped_vuln_count:
+          type: integer
+
+    # ── CVE Entry ─────────────────────────────────────────────────────
+
+    CveEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        vulnerability_id:
+          type: string
+        source:
+          type: string
+        category:
+          type: string
+        ecosystem:
+          type: string
+        severity:
+          type: string
+        cvss_score:
+          type: number
+          format: double
+        cvss_vector:
+          type: string
+        epss_score:
+          type: number
+          format: double
+        epss_percentile:
+          type: number
+          format: double
+        matchable:
+          type: boolean
+        matchable_affected_count:
+          type: integer
+        matchability_reason:
+          type: string
+        reference_group_total:
+          type: integer
+        reference_group_matchable:
+          type: integer
+        reference_group_sources:
+          type: integer
+        reference_group_status:
+          type: string
+        reference_group_key:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        published_date:
+          type: string
+          format: date-time
+        modified_date:
+          type: string
+          format: date-time
+        affected_products:
+          type: string
+        references:
+          type: string
+        reference_keys:
+          type: array
+          items:
+            type: string
+        raw_data:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    # ── RBAC ──────────────────────────────────────────────────────────
+
+    AccessSubject:
+      type: object
+      properties:
+        id:
+          type: string
+        subject_type:
+          type: string
+          enum: [user, group]
+        external_id:
+          type: string
+        display_name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AccessPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+        subject_id:
+          type: string
+        subject_type:
+          type: string
+        subject_external_id:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        permission:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Audit Log ─────────────────────────────────────────────────────
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+        actor_type:
+          type: string
+        actor_id:
+          type: string
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+        status:
+          type: string
+        ip_address:
+          type: string
+        user_agent:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Installer ─────────────────────────────────────────────────────
+
+    InstallerStatus:
+      type: object
+      properties:
+        install_token_configured:
+          type: boolean
+        ready:
+          type: boolean
+        agent:
+          $ref: "#/components/schemas/InstallerBinaryStatus"
+        trivy:
+          $ref: "#/components/schemas/InstallerBinaryStatus"
+
+    InstallerBinaryStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        ready:
+          type: boolean
+        path:
+          type: string
+        version:
+          type: string
+        bytes:
+          type: integer
+          format: int64
+        sha256:
+          type: string
+        error:
+          type: string
+
+    # ── Dashboard Stats ───────────────────────────────────────────────
+
+    DashboardStats:
+      type: object
+      properties:
+        total_hosts:
+          type: integer
+        total_vulnerabilities:
+          type: integer
+        severity_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        agent_status_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        agent_version_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        latest_agent_version:
+          type: string
+        agent_version_drift_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        inventory_status_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        inventory_covered_hosts:
+          type: integer
+        inventory_coverage_percent:
+          type: number
+          format: double
+        inventory_fresh_hosts:
+          type: integer
+        inventory_fresh_percent:
+          type: number
+          format: double
+        inventory_latest_packages:
+          type: integer
+        inventory_latest_vulnerabilities:
+          type: integer
+        inventory_latest_containers:
+          type: integer
+        active_vulnerabilities:
+          type: integer
+        active_severity_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        active_risk_level_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        overdue_sla_count:
+          type: integer
+        overdue_sla_risk_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        scan_request_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        scan_request_stale_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        security_db_revision:
+          type: string
+        security_db_rescan_request_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        security_db_rescan_progress:
+          type: object
+        security_db_scan_coverage:
+          type: object
+        triage_active_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        triage_expired_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        triage_expiring_soon_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        triage_expiring_soon_days:
+          type: integer
+
+    # ── Filter Options ────────────────────────────────────────────────
+
+    FilterOptions:
+      type: object
+      description: Available filter values for the relevant resource type
+      additionalProperties: true
+
+    # ── Paginated Collections ─────────────────────────────────────────
+
+    PaginatedVulnerabilities:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Vulnerability"
+        total:
+          type: integer
+
+    PaginatedPackages:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Package"
+        total:
+          type: integer
+
+    PaginatedContainers:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContainerAsset"
+        total:
+          type: integer
+
+    PaginatedScans:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Scan"
+        total:
+          type: integer
+
+    PaginatedScanRequests:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ScanRequest"
+        total:
+          type: integer
+
+    PaginatedCveEntries:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/CveEntry"
+        total:
+          type: integer
+
+    PaginatedAuditLogs:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLog"
+        total:
+          type: integer

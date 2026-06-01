@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"crypto/subtle"
+	_ "embed"
 	"encoding/json"
 	"io/fs"
 	"log"
@@ -21,6 +22,16 @@ import (
 	"github.com/ziozzang/bongsu/internal/server/trivydb"
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
+
+//go:embed openapi.yaml
+var openAPISpecYAML []byte
+
+type BuildInfo struct {
+	Version   string
+	Commit    string
+	BuildDate string
+	StartTime time.Time
+}
 
 type Server struct {
 	db           *db.DB
@@ -58,6 +69,11 @@ type Server struct {
 	cveStatsCacheGen   int64
 	cveStatsInflight   bool
 	cveStatsWaiters    []chan cveStatsBuildResult
+
+	generalRateLimiter *ipRateLimiter
+	agentRateLimiter   *ipRateLimiter
+
+	buildInfo BuildInfo
 }
 
 type cveStatsBuildResult struct {
@@ -73,7 +89,7 @@ const (
 	defaultSecurityDBMaxSourceAgeHours = 30
 )
 
-func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, secMgr *secdb.Manager) *Server {
+func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, secMgr *secdb.Manager, info BuildInfo) *Server {
 	apiKey := os.Getenv("BONGSU_API_KEY")
 	if apiKey == "" {
 		apiKey = uuid.New().String()
@@ -87,6 +103,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 
 	s := &Server{
 		db:           database,
+		buildInfo:    info,
 		apiKey:       apiKey,
 		agentKey:     agentKey,
 		installToken: os.Getenv("BONGSU_INSTALL_TOKEN"),
@@ -103,6 +120,13 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	if s.notifier != nil {
 		s.notifier.onResult = s.auditWebhookResult
 	}
+
+	generalRPS := envFloat("BONGSU_RATE_LIMIT_RPS", 30)
+	generalBurst := envInt("BONGSU_RATE_LIMIT_BURST", 60)
+	agentRPS := envFloat("BONGSU_RATE_LIMIT_AGENT_RPS", 100)
+	s.generalRateLimiter = newIPRateLimiter(generalRPS, generalBurst)
+	s.agentRateLimiter = newIPRateLimiter(agentRPS, int(agentRPS)*2)
+
 	s.routes()
 	return s
 }
@@ -148,6 +172,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.recoverMiddleware(h)
 	h = s.corsMiddleware(h)
 	h = s.securityHeadersMiddleware(h)
+	h = s.rateLimitMiddleware(h)
 	h = s.requestIDMiddleware(h)
 	h = s.accessLogMiddleware(h)
 	return h
@@ -191,6 +216,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/installer/status", s.handleInstallerStatus)
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
+	s.mux.HandleFunc("GET /api/ready", s.handleReady)
+	s.mux.HandleFunc("GET /api/live", s.handleLiveness)
+	s.mux.HandleFunc("GET /api/docs/openapi.yaml", s.handleOpenAPISpec)
 	s.mux.HandleFunc("DELETE /api/scans/{id}", s.handleDeleteScan)
 	s.mux.HandleFunc("POST /api/admin/trivy-db", s.handleTrivyDBUpload)
 	s.mux.HandleFunc("POST /api/admin/trivy-db/update", s.handleTrivyDBUpdate)
@@ -488,4 +516,10 @@ func clientIP(r *http.Request) string {
 		return host
 	}
 	return r.RemoteAddr
+}
+
+func (s *Server) handleOpenAPISpec(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/openapi+yaml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(openAPISpecYAML)
 }

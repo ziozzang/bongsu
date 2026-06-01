@@ -21,7 +21,14 @@ import (
 	"github.com/ziozzang/bongsu/internal/server/trivydb"
 )
 
+var (
+	version   = "dev"
+	commit    = ""
+	buildDate = ""
+)
+
 func main() {
+	startTime := time.Now()
 	port := envInt("BONGSU_PORT", 5677)
 	dbDSN := envOr("BONGSU_DB_DSN", "postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable")
 	autoMigrate := envBool("BONGSU_AUTO_MIGRATE", true)
@@ -91,7 +98,12 @@ func main() {
 	secMgr := secdb.NewManager(secSyncCmd, secInterval)
 	secMgr.SetSyncOnStart(envBool("BONGSU_SECURITY_DB_SYNC_ON_START", true))
 
-	server := api.New(database, matcher, dbMgr, secMgr)
+	server := api.New(database, matcher, dbMgr, secMgr, api.BuildInfo{
+		Version:   version,
+		Commit:    commit,
+		BuildDate: buildDate,
+		StartTime: startTime,
+	})
 	secMgr.SetFailureHook(server.SecurityDatabaseSyncFailed)
 	recalcCtx, recalcCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS", 120))*time.Second)
 	if n, err := database.CalcCvssScores(recalcCtx); err == nil && n > 0 {

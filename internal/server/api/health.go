@@ -37,6 +37,12 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"trivy_db_ready":         false,
 		"web_auth":               s.webAuth,
 		"security_recalculation": recalcStatus,
+		"version":                s.buildInfo.Version,
+		"commit":                 s.buildInfo.Commit,
+		"build_date":             s.buildInfo.BuildDate,
+	}
+	if !s.buildInfo.StartTime.IsZero() {
+		resp["uptime_seconds"] = int64(time.Since(s.buildInfo.StartTime).Seconds())
 	}
 	if includeOperationalDetails {
 		var healthAffectedIndex *db.CveAffectedPackageIndexStats
@@ -260,4 +266,36 @@ func requiredSecurityDBSources() []string {
 		return []string{"cisa-kev", "epss", "osv", "nvd", "trivy"}
 	}
 	return sources
+}
+
+func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
+	readyTimeout := envInt("BONGSU_HEALTH_DB_TIMEOUT_SECONDS", 2)
+	if readyTimeout < 1 {
+		readyTimeout = 1
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(readyTimeout)*time.Second)
+	defer cancel()
+
+	if err := s.db.PingContext(ctx); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status": "not_ready",
+			"db":     "unavailable",
+		})
+		return
+	}
+
+	if s.dbMgr != nil && !s.dbMgr.IsReady() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+			"status":   "not_ready",
+			"db":       "connected",
+			"trivy_db": "not_loaded",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ready"})
+}
+
+func (s *Server) handleLiveness(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"status": "alive"})
 }

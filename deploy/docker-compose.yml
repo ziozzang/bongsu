@@ -128,6 +128,9 @@ services:
       BONGSU_RETENTION_AUDIT_DAYS: ${BONGSU_RETENTION_AUDIT_DAYS:-365}
       BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES: ${BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES:-60}
       BONGSU_WEB_AUTH: ${BONGSU_WEB_AUTH:-true}
+      BONGSU_RATE_LIMIT_RPS: ${BONGSU_RATE_LIMIT_RPS:-30}
+      BONGSU_RATE_LIMIT_BURST: ${BONGSU_RATE_LIMIT_BURST:-60}
+      BONGSU_RATE_LIMIT_AGENT_RPS: ${BONGSU_RATE_LIMIT_AGENT_RPS:-100}
     volumes:
       - trivy-cache:/app/trivy-cache
     depends_on:
@@ -139,7 +142,7 @@ services:
     networks:
       - bongsu-net
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5677/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5677/api/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
