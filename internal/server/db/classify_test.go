@@ -848,6 +848,36 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 	}
 }
 
+func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) SearchCveDatabase")
+	if start < 0 {
+		t.Fatal("SearchCveDatabase not found")
+	}
+	end := strings.Index(body[start:], "func calcCvssScore")
+	if end < 0 {
+		t.Fatal("SearchCveDatabase end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"matchableOnly bool",
+		"jsonb_array_elements(CASE WHEN jsonb_typeof(affected_products) = 'array'",
+		"ap->>'name' ILIKE",
+		"COALESCE(NULLIF(ap->>'ecosystem', ''), ecosystem) ILIKE",
+		"ap::text ILIKE",
+		"if matchableOnly",
+		"cveSourceMatchablePredicateSQL",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("CVE search missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestCvePackageMatchablePredicateRequiresPackageTargetAndFixedData(t *testing.T) {
 	got := cvePackageMatchablePredicateSQL("c.affected_products", "c.ecosystem", "p.name", "COALESCE(NULLIF(p.ecosystem, ''), NULLIF(p.pkg_type, ''))")
 	for _, want := range []string{

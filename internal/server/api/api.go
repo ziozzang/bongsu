@@ -5116,12 +5116,13 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	minCVSS := floatParam(r, "min_cvss", 0)
+	matchableOnly := boolQuery(r, "matchable")
 	sortBy := r.URL.Query().Get("sort_by")
 	sortOrder := r.URL.Query().Get("sort_order")
 	limit := limitParam(r, 50)
 	offset := offsetParam(r)
 
-	entries, total, err := s.db.SearchCveDatabase(ctx, query, severity, source, minCVSS, sortBy, sortOrder, limit, offset)
+	entries, total, err := s.db.SearchCveDatabase(ctx, query, severity, source, minCVSS, matchableOnly, sortBy, sortOrder, limit, offset)
 	if err != nil {
 		log.Printf("cve-db search: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
@@ -5177,6 +5178,15 @@ func intParam(r *http.Request, key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func boolQuery(r *http.Request, key string) bool {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get(key))) {
+	case "1", "true", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func limitParam(r *http.Request, def int) int {

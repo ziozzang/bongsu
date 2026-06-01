@@ -3874,13 +3874,22 @@ func (db *DB) SyncEPSSPriorityColumnsTx(ctx context.Context, tx *sql.Tx) (int, e
 	return int(clearN + setN), nil
 }
 
-func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source string, minCVSS float64, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {
+func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source string, minCVSS float64, matchableOnly bool, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {
 	baseQ := `FROM cve_database WHERE 1=1`
 	args := []any{}
 	argN := 1
 
 	if query != "" {
-		baseQ += fmt.Sprintf(" AND (vulnerability_id ILIKE $%d OR title ILIKE $%d OR description ILIKE $%d)", argN, argN, argN)
+		baseQ += fmt.Sprintf(` AND (
+			vulnerability_id ILIKE $%d OR title ILIKE $%d OR description ILIKE $%d
+			OR EXISTS (
+				SELECT 1
+				FROM jsonb_array_elements(CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END) ap
+				WHERE ap->>'name' ILIKE $%d
+				   OR COALESCE(NULLIF(ap->>'ecosystem', ''), ecosystem) ILIKE $%d
+				   OR ap::text ILIKE $%d
+			)
+		)`, argN, argN, argN, argN, argN, argN)
 		args = append(args, "%"+query+"%")
 		argN++
 	}
@@ -3898,6 +3907,9 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source str
 		baseQ += fmt.Sprintf(" AND cvss_score>=$%d", argN)
 		args = append(args, minCVSS)
 		argN++
+	}
+	if matchableOnly {
+		baseQ += " AND " + cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END", "ecosystem")
 	}
 
 	var total int

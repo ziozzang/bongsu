@@ -2433,6 +2433,7 @@ function CveSearchView() {
   const [source, setSource] = useState('');
   const [sources, setSources] = useState<string[]>([]);
   const [minCvss, setMinCvss] = useState('');
+  const [matchableOnly, setMatchableOnly] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
@@ -2456,6 +2457,7 @@ function CveSearchView() {
     if (severity) params.severity = severity;
     if (source) params.source = source;
     if (minCvss) params.min_cvss = minCvss;
+    if (matchableOnly) params.matchable = 'true';
     params.sort_by = sb;
     params.sort_order = sd ? 'desc' : 'asc';
     api.cveDbSearch(params)
@@ -2470,7 +2472,7 @@ function CveSearchView() {
         setSearched(true);
         setLoading(false);
       });
-  }, [query, severity, source, minCvss, sortBy, sortDesc]);
+  }, [query, severity, source, minCvss, matchableOnly, sortBy, sortDesc]);
 
   useEffect(() => {
     api.cveDbSources().then(data => {
@@ -2547,7 +2549,7 @@ function CveSearchView() {
         <div className="filters">
           <input
             type="text"
-            placeholder="CVE ID or keyword..."
+            placeholder="CVE, package, ecosystem, keyword..."
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') doSearch(0); }}
@@ -2572,6 +2574,14 @@ function CveSearchView() {
             min="0" max="10" step="0.1"
             style={{ width: 90 }}
           />
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+            <input
+              type="checkbox"
+              checked={matchableOnly}
+              onChange={e => setMatchableOnly(e.target.checked)}
+            />
+            Matchable only
+          </label>
           <button className="filter-btn" onClick={() => doSearch(0)} disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
           {searched && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{results.total.toLocaleString()} results</span>}
         </div>
@@ -2581,7 +2591,7 @@ function CveSearchView() {
 
       {!searched && !loading && (
         <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-          Search the CVE database by CVE ID, keyword, severity, source, or minimum CVSS score.
+          Search the CVE database by CVE ID, affected package, ecosystem, keyword, severity, source, or minimum CVSS score.
         </div>
       )}
 
