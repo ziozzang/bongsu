@@ -1805,15 +1805,18 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	fn := body[start : start+1+end]
 	for _, want := range []string{
 		"isAdmin := s.authenticateAdmin(r)",
+		"includeOperationalDetails := isAdmin || !s.webAuth",
 		"s.dbMgr.Status()",
 		"s.dbMgr.PublicStatus()",
 		"s.secMgr.Status()",
 		"s.secMgr.PublicStatus()",
 		"recalcStatus := s.securityRecalculationStatus(isAdmin)",
+		"if includeOperationalDetails",
 		`s.securityRecalculationLastResult(r.Context(), isAdmin)`,
 		`recalcStatus["last_result"] = last`,
 		`s.cveDBRematchLastResult(r.Context(), isAdmin)`,
 		`resp["cve_db_rematch"]`,
+		`resp["cve_affected_package_index"]`,
 		`"security_recalculation": recalcStatus`,
 		"for k, v := range s.securityDBRevisionMeta(r.Context())",
 		`k == "security_db_revision" || isAdmin`,

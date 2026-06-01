@@ -2910,9 +2910,12 @@ func scanRequestErrorMessage(err error) string {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	isAdmin := s.authenticateAdmin(r)
+	includeOperationalDetails := isAdmin || !s.webAuth
 	recalcStatus := s.securityRecalculationStatus(isAdmin)
-	if last := s.securityRecalculationLastResult(r.Context(), isAdmin); last != nil {
-		recalcStatus["last_result"] = last
+	if includeOperationalDetails {
+		if last := s.securityRecalculationLastResult(r.Context(), isAdmin); last != nil {
+			recalcStatus["last_result"] = last
+		}
 	}
 	resp := map[string]any{
 		"status":                 "ok",
@@ -2920,13 +2923,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"web_auth":               s.webAuth,
 		"security_recalculation": recalcStatus,
 	}
-	if last := s.cveDBRematchLastResult(r.Context(), isAdmin); last != nil {
-		resp["cve_db_rematch"] = map[string]any{"last_result": last}
-	}
-	if indexStats, err := s.db.GetCveAffectedPackageIndexStats(r.Context()); err == nil {
-		resp["cve_affected_package_index"] = indexStats
-	} else if isAdmin {
-		resp["cve_affected_package_index"] = map[string]any{"error": err.Error()}
+	if includeOperationalDetails {
+		if last := s.cveDBRematchLastResult(r.Context(), isAdmin); last != nil {
+			resp["cve_db_rematch"] = map[string]any{"last_result": last}
+		}
+		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(r.Context()); err == nil {
+			resp["cve_affected_package_index"] = indexStats
+		} else if isAdmin {
+			resp["cve_affected_package_index"] = map[string]any{"error": err.Error()}
+		}
 	}
 	if err := s.db.PingContext(r.Context()); err != nil {
 		resp["status"] = "degraded"
