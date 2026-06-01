@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-01 19:47:22 KST
+Updated: 2026-06-01 19:52:00 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -47,11 +47,15 @@ b7e7361 Reduce CVE stats cold path latency
 This handoff commit should include:
 
 - `docs/agent-handoff.md`
-- `scripts/verify-installer-smoke.sh`
+- `docs/requirements-audit.md`
+- `scripts/verify-requirements-audit.sh`
 - `.github/workflows/ci.yml`
+- `README.md`
+- `scripts/verify-installer-smoke.sh`
 - A cron-mode one-line installer smoke verification that installs local packaged agent/Trivy binaries into a temporary work directory, generates and reuses a persistent agent token, writes `0600` config/token files, replaces the bongsu cron entry on reinstall, and runs the first agent scan without requiring root, systemd, network access, or Caddy changes.
 - Download-path installer verification that fetches agent and Trivy binaries through header-authenticated `curl`, rejects token-bearing URLs, requires the `X-Bongsu-SHA256` header, and fails closed while removing a checksum-mismatched binary.
 - Systemd-mode installer verification that writes service/timer/daemon unit files into a test systemd directory, validates hardening directives and daemon polling command, calls `systemctl daemon-reload` plus timer/daemon enablement, and runs the first scan without touching `/etc/systemd` during tests.
+- Requirements audit coverage that maps the original product requirements to evidence, verification commands, and remaining commercial-readiness gaps without declaring the overall goal complete.
 
 ## Live Runtime
 
@@ -142,6 +146,7 @@ git status --short --branch
 go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
+./scripts/verify-requirements-audit.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build

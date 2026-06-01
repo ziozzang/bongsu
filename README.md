@@ -102,6 +102,7 @@ Force scan 요청을 즉시 받아 처리하는 상주 모드는 다음처럼 �
 
 - [배포 가이드](deploy/README.md)
 - [아키텍처와 구현 상태](docs/architecture.md)
+- [요구사항 감사표](docs/requirements-audit.md)
 - [환경변수 참조](deploy/.env.example)
 
 ## 라이선스
