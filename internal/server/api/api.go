@@ -5977,10 +5977,43 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	}
 	started := time.Now()
 	durations := map[string]int64{}
-	stepStarted := time.Now()
-	stats, err := s.db.GetCveSourceStats(r.Context())
-	durations["source_stats"] = time.Since(stepStarted).Milliseconds()
-	if err != nil {
+
+	var stats []db.CveSourceStats
+	var statsErr error
+	var indexStats *db.CveAffectedPackageIndexStats
+	var indexErr error
+	var referenceIndexStats *db.CveReferenceKeyIndexStats
+	var referenceIndexErr error
+	var epssStats *db.CveEPSSMergeStats
+	var epssErr error
+	var placeholderStats *db.CvePlaceholderStats
+	var placeholderErr error
+	var securityMeta map[string]any
+
+	var sourceStatsMS, affectedIndexMS, referenceIndexMS, epssMS, placeholderMS, securityRevisionMS int64
+	var wg sync.WaitGroup
+	measure := func(dst *int64, fn func()) {
+		defer wg.Done()
+		stepStarted := time.Now()
+		fn()
+		*dst = time.Since(stepStarted).Milliseconds()
+	}
+	wg.Add(6)
+	go measure(&sourceStatsMS, func() { stats, statsErr = s.db.GetCveSourceStats(r.Context()) })
+	go measure(&affectedIndexMS, func() { indexStats, indexErr = s.db.GetCveAffectedPackageIndexStats(r.Context()) })
+	go measure(&referenceIndexMS, func() { referenceIndexStats, referenceIndexErr = s.db.GetCveReferenceKeyIndexStats(r.Context()) })
+	go measure(&epssMS, func() { epssStats, epssErr = s.db.GetCveEPSSMergeStats(r.Context()) })
+	go measure(&placeholderMS, func() { placeholderStats, placeholderErr = s.db.GetCvePlaceholderStats(r.Context()) })
+	go measure(&securityRevisionMS, func() { securityMeta = s.securityDBRevisionMeta(r.Context()) })
+	wg.Wait()
+	durations["source_stats"] = sourceStatsMS
+	durations["affected_package_index"] = affectedIndexMS
+	durations["reference_key_index"] = referenceIndexMS
+	durations["epss_merge"] = epssMS
+	durations["placeholder_quality"] = placeholderMS
+	durations["security_db_revision"] = securityRevisionMS
+
+	if statsErr != nil {
 		if r.URL.Query().Get("refresh") != "true" {
 			s.finishCveStatsBuild(cveStatsBuildResult{status: http.StatusInternalServerError, msg: "db error"})
 		}
@@ -6014,18 +6047,6 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	if totalRecords > 0 {
 		totalMatchablePercent = float64(totalMatchable) / float64(totalRecords) * 100
 	}
-	stepStarted = time.Now()
-	indexStats, indexErr := s.db.GetCveAffectedPackageIndexStats(r.Context())
-	durations["affected_package_index"] = time.Since(stepStarted).Milliseconds()
-	stepStarted = time.Now()
-	referenceIndexStats, referenceIndexErr := s.db.GetCveReferenceKeyIndexStats(r.Context())
-	durations["reference_key_index"] = time.Since(stepStarted).Milliseconds()
-	stepStarted = time.Now()
-	epssStats, epssErr := s.db.GetCveEPSSMergeStats(r.Context())
-	durations["epss_merge"] = time.Since(stepStarted).Milliseconds()
-	stepStarted = time.Now()
-	placeholderStats, placeholderErr := s.db.GetCvePlaceholderStats(r.Context())
-	durations["placeholder_quality"] = time.Since(stepStarted).Milliseconds()
 	resp := map[string]any{
 		"generated_at":            time.Now().UTC().Format(time.RFC3339),
 		"source_count":            len(stats),
@@ -6074,11 +6095,9 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp["cve_db_quality_error"] = placeholderErr.Error()
 	}
-	stepStarted = time.Now()
-	for k, v := range s.securityDBRevisionMeta(r.Context()) {
+	for k, v := range securityMeta {
 		resp[k] = v
 	}
-	durations["security_db_revision"] = time.Since(stepStarted).Milliseconds()
 	durations["total"] = time.Since(started).Milliseconds()
 	resp["durations_ms"] = durations
 	body, err := json.Marshal(resp)

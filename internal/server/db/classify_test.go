@@ -916,7 +916,7 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 	}
 }
 
-func TestCveSourceStatsUsesSingleAffectedProductExpansion(t *testing.T) {
+func TestCveSourceStatsAvoidsAffectedProductExpansion(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
 		t.Fatal(err)
@@ -932,21 +932,21 @@ func TestCveSourceStatsUsesSingleAffectedProductExpansion(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		"per_cve AS",
-		"LEFT JOIN LATERAL jsonb_array_elements(n.affected_products) ap ON true",
-		"COALESCE(bool_or(",
-		"COUNT(*) FILTER (WHERE matchable)",
-		"COUNT(*) FILTER (WHERE has_ecosystem)",
-		"COUNT(*) FILTER (WHERE has_fixed)",
-		"COUNT(*) FILTER (WHERE has_ranges)",
-		"COUNT(*) FILTER (WHERE has_cvss)",
+		"base AS",
+		"matchable AS",
+		"jsonb_path_exists",
+		"FROM cve_affected_packages",
+		"count(DISTINCT cve_id) AS matchable",
+		"COALESCE(matchable.matchable, 0) AS matchable",
+		"GREATEST(base.with_fixed, COALESCE(matchable.matchable, 0)) AS with_fixed",
+		"count(*) FILTER (WHERE cvss_score > 0",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("source stats missing %q: %s", want, fn)
 		}
 	}
-	if strings.Count(fn, "jsonb_array_elements") != 1 {
-		t.Fatalf("source stats should expand affected_products once: %s", fn)
+	if strings.Contains(fn, "jsonb_array_elements") || strings.Contains(fn, "LEFT JOIN LATERAL") {
+		t.Fatalf("source stats must avoid per-affected-product expansion: %s", fn)
 	}
 }
 
