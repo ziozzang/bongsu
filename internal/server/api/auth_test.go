@@ -4438,8 +4438,11 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 		`floatParam(r, "min_epss_percentile", 0)`,
 		`boolQuery(r, "matchable")`,
 		`boolQuery(r, "include_priority_sources")`,
+		`envInt("BONGSU_CVE_SEARCH_TIMEOUT_SECONDS", 15)`,
+		"context.WithTimeout(r.Context()",
 		"s.db.SearchCveDatabase(ctx, query, referenceKey, severity, source",
 		"minCVSS, minEPSS, minEPSSPercentile, matchableOnly, includePrioritySources",
+		`http.Error(w, "search timeout", http.StatusGatewayTimeout)`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search source normalization missing %q: %s", want, fn)

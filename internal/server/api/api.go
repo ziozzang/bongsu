@@ -6329,7 +6329,12 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-	ctx := r.Context()
+	searchTimeout := envInt("BONGSU_CVE_SEARCH_TIMEOUT_SECONDS", 15)
+	if searchTimeout <= 0 {
+		searchTimeout = 15
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(searchTimeout)*time.Second)
+	defer cancel()
 
 	query := r.URL.Query().Get("q")
 	referenceKey := strings.TrimSpace(r.URL.Query().Get("reference_key"))
@@ -6351,6 +6356,11 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 
 	entries, total, err := s.db.SearchCveDatabase(ctx, query, referenceKey, severity, source, minCVSS, minEPSS, minEPSSPercentile, matchableOnly, includePrioritySources, sortBy, sortOrder, limit, offset)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			log.Printf("cve-db search timeout after %ds: %v", searchTimeout, err)
+			http.Error(w, "search timeout", http.StatusGatewayTimeout)
+			return
+		}
 		log.Printf("cve-db search: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
