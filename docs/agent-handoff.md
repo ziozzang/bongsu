@@ -132,6 +132,7 @@ Run these after pulling this handoff state:
 git status --short --branch
 go test ./...
 ./scripts/verify-migrations.sh
+./scripts/verify-deploy-config.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
 BONGSU_DB_PASSWORD=bongsu docker compose -f deploy/docker-compose.yml config >/tmp/bongsu-compose.out

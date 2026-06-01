@@ -30,6 +30,9 @@ jobs:
       - name: Verify migration ordering
         run: ./scripts/verify-migrations.sh
 
+      - name: Verify deployment configuration defaults
+        run: ./scripts/verify-deploy-config.sh
+
       - name: Verify static release binaries
         run: ./scripts/verify-static-binaries.sh
 
