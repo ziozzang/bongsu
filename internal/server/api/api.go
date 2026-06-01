@@ -58,6 +58,11 @@ type Server struct {
 	securityRecalcPending bool
 	securityRecalcReason  string
 
+	affectedIndexMu        sync.Mutex
+	affectedIndexRunning   bool
+	affectedIndexStartedAt time.Time
+	affectedIndexLast      map[string]any
+
 	referenceIndexMu        sync.Mutex
 	referenceIndexRunning   bool
 	referenceIndexStartedAt time.Time
@@ -3190,6 +3195,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		cancel()
+		resp["cve_affected_index_rebuild"] = s.affectedIndexRebuildStatus()
 		resp["cve_reference_index_rebuild"] = s.referenceIndexRebuildStatus()
 	}
 	dbCtx, cancel := withHealthDBTimeout()
@@ -3903,6 +3909,20 @@ func (s *Server) referenceIndexRebuildStatus() map[string]any {
 	}
 	if s.referenceIndexLast != nil {
 		status["last_result"] = cloneMap(s.referenceIndexLast)
+	}
+	return status
+}
+
+func (s *Server) affectedIndexRebuildStatus() map[string]any {
+	s.affectedIndexMu.Lock()
+	defer s.affectedIndexMu.Unlock()
+	status := map[string]any{"running": s.affectedIndexRunning}
+	if s.affectedIndexRunning && !s.affectedIndexStartedAt.IsZero() {
+		status["started_at"] = s.affectedIndexStartedAt.UTC().Format(time.RFC3339)
+		status["duration_ms"] = time.Since(s.affectedIndexStartedAt).Milliseconds()
+	}
+	if s.affectedIndexLast != nil {
+		status["last_result"] = cloneMap(s.affectedIndexLast)
 	}
 	return status
 }
@@ -5155,6 +5175,15 @@ func (s *Server) handleCveDbAffectedIndexRebuild(w http.ResponseWriter, r *http.
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if r.URL.Query().Get("async") == "true" {
+		started, status := s.startAffectedIndexRebuild()
+		code := http.StatusAccepted
+		if !started {
+			code = http.StatusConflict
+		}
+		writeJSON(w, code, map[string]any{"status": status, "affected_index_rebuild": s.affectedIndexRebuildStatus()})
+		return
+	}
 	started := time.Now()
 	count, err := s.db.RebuildCveAffectedPackages(r.Context())
 	durationMS := time.Since(started).Milliseconds()
@@ -5183,6 +5212,65 @@ func (s *Server) handleCveDbAffectedIndexRebuild(w http.ResponseWriter, r *http.
 		auditMeta[k] = v
 	}
 	s.audit(r, "cve_db.affected_index_rebuild", "cve_db", "affected_index", "ok", auditMeta)
+}
+
+func (s *Server) startAffectedIndexRebuild() (bool, string) {
+	s.affectedIndexMu.Lock()
+	if s.affectedIndexRunning {
+		s.affectedIndexMu.Unlock()
+		return false, "running"
+	}
+	s.affectedIndexRunning = true
+	s.affectedIndexStartedAt = time.Now()
+	s.affectedIndexMu.Unlock()
+
+	go s.runAffectedIndexRebuild()
+	return true, "queued"
+}
+
+func (s *Server) runAffectedIndexRebuild() {
+	started := time.Now()
+	log.Printf("CVE affected package index rebuild started")
+	s.auditSystem("cve_db.affected_index_rebuild", "cve_db", "affected_index", "started", map[string]any{"started_at": started.UTC().Format(time.RFC3339)})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_CVE_AFFECTED_INDEX_TIMEOUT_SECONDS", 180))*time.Second)
+	defer cancel()
+	count, err := s.db.RebuildCveAffectedPackages(ctx)
+	durationMS := time.Since(started).Milliseconds()
+	status := "ok"
+	meta := map[string]any{"indexed": count, "duration_ms": durationMS}
+	if err != nil {
+		status = "error"
+		meta["error"] = err.Error()
+		log.Printf("CVE affected package index rebuild failed after %dms: %v", durationMS, err)
+	} else {
+		log.Printf("CVE affected package index rebuild finished indexed=%d duration_ms=%d", count, durationMS)
+		ctxStats, cancelStats := context.WithTimeout(context.Background(), 10*time.Second)
+		if stats, statsErr := s.db.GetCveAffectedPackageIndexStats(ctxStats); statsErr == nil && stats != nil {
+			meta["index_count"] = stats.Count
+			meta["index_sources"] = stats.SourceCount
+			meta["index_coverage_percent"] = stats.CoveragePercent
+			meta["index_missing_matchable_sources"] = stats.MissingMatchableSources
+			meta["index_orphans"] = stats.Orphans
+		}
+		cancelStats()
+	}
+	ctxMeta, cancelMeta := context.WithTimeout(context.Background(), 5*time.Second)
+	for k, v := range s.securityDBRevisionMeta(ctxMeta) {
+		meta[k] = v
+	}
+	cancelMeta()
+	s.auditSystem("cve_db.affected_index_rebuild", "cve_db", "affected_index", status, meta)
+	result := cloneMap(meta)
+	result["status"] = status
+	result["finished_at"] = time.Now().UTC().Format(time.RFC3339)
+	s.affectedIndexMu.Lock()
+	s.affectedIndexRunning = false
+	s.affectedIndexStartedAt = time.Time{}
+	s.affectedIndexLast = result
+	s.affectedIndexMu.Unlock()
+	if err == nil {
+		s.clearCveStatsCache()
+	}
 }
 
 func (s *Server) handleCveDbReferenceIndexRebuild(w http.ResponseWriter, r *http.Request) {

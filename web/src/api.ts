@@ -406,6 +406,24 @@ export interface HealthStatus {
       security_db_revision_error?: string;
     };
   };
+  cve_affected_index_rebuild?: {
+    running?: boolean;
+    started_at?: string;
+    duration_ms?: number;
+    last_result?: {
+      status?: string;
+      indexed?: number;
+      duration_ms?: number;
+      finished_at?: string;
+      error?: string;
+      index_count?: number;
+      index_sources?: number;
+      index_coverage_percent?: number;
+      index_orphans?: number;
+      security_db_revision?: string;
+      security_db_revision_error?: string;
+    };
+  };
   cve_affected_package_index?: {
     count?: number;
     source_count?: number;
@@ -801,7 +819,7 @@ export const api = {
   rematchCVEs: (body?: { sources?: string[]; min_source_matchable_percent?: number; candidate_limit?: number }) =>
     requestJSON<{matched: number; new_vulns: number; skipped: number; scanned_candidates?: number; candidate_limit: number; limited: boolean; eligible_sources?: number; excluded_sources?: number; source_policy?: Record<string, { eligible?: boolean; reason?: string }>; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),
   rebuildCveAffectedIndex: () =>
-    request<{status: string; indexed: number; duration_ms?: number; index?: CveDbStatsResponse['affected_package_index']; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/affected-index/rebuild', undefined, 'POST'),
+    request<{status: string; indexed?: number; duration_ms?: number; index?: CveDbStatsResponse['affected_package_index']; affected_index_rebuild?: HealthStatus['cve_affected_index_rebuild']; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/affected-index/rebuild', { async: 'true' }, 'POST'),
   rebuildCveReferenceIndex: () =>
     request<{status: string; indexed?: number; duration_ms?: number; reference_index_rebuild?: HealthStatus['cve_reference_index_rebuild']; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/reference-index/rebuild', { async: 'true' }, 'POST'),
   recalcCveCVSS: () =>

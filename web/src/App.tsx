@@ -326,7 +326,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     }).catch(() => {});
   }, [updating]);
   useEffect(() => {
-    if (!health?.cve_reference_index_rebuild?.running) return;
+    if (!health?.cve_reference_index_rebuild?.running && !health?.cve_affected_index_rebuild?.running) return;
     const timer = window.setInterval(() => {
       api.rawHealth().then(h => {
         setHealth(h);
@@ -337,7 +337,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); setCveReferenceIndex(r.reference_key_index || null); setCveDbQuality(r.cve_db_quality || null); }).catch(() => {});
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [health?.cve_reference_index_rebuild?.running]);
+  }, [health?.cve_reference_index_rebuild?.running, health?.cve_affected_index_rebuild?.running]);
   useEffect(() => {
     api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); setCveReferenceIndex(r.reference_key_index || null); setCveDbQuality(r.cve_db_quality || null); }).catch(() => {});
     api.installerStatus().then(setInstallerStatus).catch(() => {});
@@ -399,9 +399,19 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setUpdateMsg('');
     try {
       const r = await api.rebuildCveAffectedIndex();
-      setCveAffectedIndex(r.index || null);
-      const duration = r.duration_ms ? ` in ${(r.duration_ms / 1000).toFixed(1)}s` : '';
-      setUpdateMsg(`Affected package index rebuilt: ${r.indexed.toLocaleString()} entries${duration}`);
+      if (r.status === 'queued') {
+        setUpdateMsg('Affected package index rebuild queued');
+      } else if (r.status === 'running') {
+        setUpdateMsg('Affected package index rebuild is already running');
+      } else {
+        setCveAffectedIndex(r.index || null);
+        const duration = r.duration_ms ? ` in ${(r.duration_ms / 1000).toFixed(1)}s` : '';
+        setUpdateMsg(`Affected package index rebuilt: ${(r.indexed || 0).toLocaleString()} entries${duration}`);
+      }
+      if (r.affected_index_rebuild) {
+        setHealth(prev => ({ ...(prev || {} as HealthStatus), cve_affected_index_rebuild: r.affected_index_rebuild }));
+      }
+      api.rawHealth().then(setHealth).catch(() => {});
       api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); setCveDbQuality(x.cve_db_quality || null); }).catch(() => {});
     } catch {
       setUpdateMsg('Affected package index rebuild failed');
@@ -480,6 +490,16 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const cveAffectedIndexIndexedOnly = cveAffectedIndex?.summary_mode === 'indexed-only';
   const cveAffectedIndexUnhealthy = !!(cveAffectedIndex?.stale || (cveAffectedIndex?.orphans || 0) > 0 || (cveAffectedIndex?.missing_matchable_sources?.length || 0) > 0 || cveAffectedIndex?.error);
   const cveAffectedIndexColor = cveAffectedIndexUnhealthy ? 'var(--high)' : cveAffectedIndexIndexedOnly ? 'var(--medium)' : 'var(--low)';
+  const affectedRebuild = health?.cve_affected_index_rebuild;
+  const affectedRebuildLast = affectedRebuild?.last_result;
+  const affectedRebuildRunning = !!affectedRebuild?.running;
+  const affectedRebuildColor = affectedRebuildRunning
+    ? 'var(--medium)'
+    : affectedRebuildLast?.status === 'error'
+      ? 'var(--critical)'
+      : affectedRebuildLast?.status === 'ok'
+        ? 'var(--low)'
+        : 'var(--text-muted)';
   const cveReferenceIndexUnhealthy = !!(!cveReferenceIndex || cveReferenceIndex.stale || (cveReferenceIndex.orphans || 0) > 0 || (cveReferenceIndex.coverage_percent ?? 0) < 90);
   const cveReferenceIndexColor = cveReferenceIndexUnhealthy ? 'var(--high)' : 'var(--low)';
   const referenceRebuild = health?.cve_reference_index_rebuild;
@@ -1209,6 +1229,20 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             {cveAffectedIndexIndexedOnly
               ? `${(cveAffectedIndex?.indexed_cves || 0).toLocaleString()} indexed CVEs, ${(cveAffectedIndex?.orphans || 0).toLocaleString()} orphans`
               : `${(cveAffectedIndex?.indexed_cves || 0).toLocaleString()} / ${(cveAffectedIndex?.matchable_cves || 0).toLocaleString()} CVEs, ${(cveAffectedIndex?.orphans || 0).toLocaleString()} orphans`}
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: affectedRebuildColor }} />
+          <div className="label">Affected Rebuild</div>
+          <div className="value" style={{ color: affectedRebuildColor }}>
+            {affectedRebuildRunning ? 'running' : affectedRebuildLast?.status || 'idle'}
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {affectedRebuildRunning
+              ? `${Math.round((affectedRebuild?.duration_ms || 0) / 1000)}s elapsed`
+              : affectedRebuildLast?.finished_at
+                ? `${(affectedRebuildLast.indexed || 0).toLocaleString()} entries, ${(affectedRebuildLast.duration_ms || 0) > 0 ? `${((affectedRebuildLast.duration_ms || 0) / 1000).toFixed(1)}s` : 'duration pending'}`
+                : 'no recent rebuild'}
           </div>
         </div>
         <div className="stat-card">
