@@ -968,6 +968,7 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 	for _, want := range []string{
 		"matchableOnly, includePrioritySources bool",
 		"referenceKey",
+		"cveReferenceKeyWhereFromSearchQuery(query, argN)",
 		"cveReferenceKeyFilter(referenceKey)",
 		"minEPSS",
 		"minEPSSPercentile",
@@ -1005,6 +1006,34 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 	}
 	if strings.Contains(fn, "c.refs::text ILIKE ('%%' || k.cve") {
 		t.Fatalf("CVE group count enrichment must avoid broad reference text scans until reference keys are indexed: %s", fn)
+	}
+}
+
+func TestCveReferenceKeyFilterForSearchQueryUsesIndexedAdvisoryIDs(t *testing.T) {
+	tests := []struct {
+		query string
+		want  []string
+	}{
+		{query: " CVE-2024-3094 ", want: []string{"cve:CVE-2024-3094"}},
+		{query: "ghsa-4mgv-366x-qxvx", want: []string{"ghsa:GHSA-4MGV-366X-QXVX"}},
+		{query: "DLA-214-1", want: []string{"debian:DLA-214-1"}},
+		{query: "openSUSE-SU-2023:0279-1", want: []string{"suse:openSUSE-SU-2023:0279-1"}},
+		{query: "not an advisory", want: nil},
+	}
+	for _, tt := range tests {
+		filter, vals := cveReferenceKeyFilterForSearchQuery(tt.query)
+		if len(tt.want) == 0 {
+			if filter != "" || vals != nil {
+				t.Fatalf("filter for %q = %q %#v, want empty", tt.query, filter, vals)
+			}
+			continue
+		}
+		if !strings.Contains(filter, "cve_reference_keys") {
+			t.Fatalf("filter for %q = %q, want indexed reference-key lookup", tt.query, filter)
+		}
+		if !reflect.DeepEqual(vals, tt.want) {
+			t.Fatalf("vals for %q = %#v, want %#v", tt.query, vals, tt.want)
+		}
 	}
 }
 

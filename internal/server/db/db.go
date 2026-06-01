@@ -4436,8 +4436,14 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 	args := []any{}
 	argN := 1
 
+	query = strings.TrimSpace(query)
 	if query != "" {
-		baseQ += fmt.Sprintf(` AND (
+		if filter, vals, ok := cveReferenceKeyWhereFromSearchQuery(query, argN); ok {
+			baseQ += " AND " + filter
+			args = append(args, vals...)
+			argN += len(vals)
+		} else {
+			baseQ += fmt.Sprintf(` AND (
 			vulnerability_id ILIKE $%d OR title ILIKE $%d OR description ILIKE $%d
 			OR EXISTS (
 				SELECT 1
@@ -4447,8 +4453,9 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 				   OR ap::text ILIKE $%d
 			)
 		)`, argN, argN, argN, argN, argN, argN)
-		args = append(args, "%"+query+"%")
-		argN++
+			args = append(args, "%"+query+"%")
+			argN++
+		}
 	}
 	if referenceKey != "" {
 		filter, vals, ok := cveReferenceKeyWhere(referenceKey, argN)
@@ -4898,8 +4905,75 @@ func cveReferenceKeyFilter(referenceKey string) (string, []string) {
 	}
 }
 
+func cveReferenceKeyFilterForSearchQuery(query string) (string, []string) {
+	if filter, vals := cveReferenceKeyFilter(query); filter != "" {
+		return filter, vals
+	}
+	key := strings.TrimSpace(query)
+	if key == "" || strings.ContainsAny(key, " \t\r\n") {
+		return "", nil
+	}
+	if exactReferenceMatch(cveReferenceKeyRe, key) {
+		return cveReferenceKeyFilter("cve:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(ghsaReferenceKeyRe, key) {
+		return cveReferenceKeyFilter("ghsa:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(rustsecReferenceKeyRe, key) {
+		return cveReferenceKeyFilter("rustsec:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(pysecReferenceKeyRe, key) {
+		return cveReferenceKeyFilter("pysec:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(goReferenceKeyRe, key) {
+		return cveReferenceKeyFilter("go:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(debianAdvisoryKeyRe, key) {
+		return cveReferenceKeyFilter("debian:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(malwareAdvisoryKeyRe, key) {
+		return cveReferenceKeyFilter("mal:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(almaAdvisoryKeyRe, key) {
+		return cveReferenceKeyFilter("alma:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(suseAdvisoryKeyRe, key) {
+		return cveReferenceKeyFilter("suse:" + key)
+	}
+	if exactReferenceMatch(drupalAdvisoryKeyRe, key) {
+		return cveReferenceKeyFilter("drupal:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(dtsaAdvisoryKeyRe, key) {
+		return cveReferenceKeyFilter("dtsa:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(osvAdvisoryKeyRe, key) {
+		return cveReferenceKeyFilter("osv:" + strings.ToUpper(key))
+	}
+	if exactReferenceMatch(gsdAdvisoryKeyRe, key) {
+		return cveReferenceKeyFilter("gsd:" + strings.ToUpper(key))
+	}
+	return "", nil
+}
+
+func exactReferenceMatch(re *regexp.Regexp, s string) bool {
+	match := re.FindString(s)
+	return match != "" && len(match) == len(s)
+}
+
 func cveReferenceKeyWhere(referenceKey string, start int) (string, []any, bool) {
 	filter, vals := cveReferenceKeyFilter(referenceKey)
+	if filter == "" {
+		return "", nil, false
+	}
+	args := make([]any, 0, len(vals))
+	for _, val := range vals {
+		args = append(args, val)
+	}
+	return fmt.Sprintf(filter, placeholderRange(start, len(args))...), args, true
+}
+
+func cveReferenceKeyWhereFromSearchQuery(query string, start int) (string, []any, bool) {
+	filter, vals := cveReferenceKeyFilterForSearchQuery(query)
 	if filter == "" {
 		return "", nil, false
 	}
