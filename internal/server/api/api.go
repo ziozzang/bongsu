@@ -3133,6 +3133,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"security_recalculation": recalcStatus,
 	}
 	if includeOperationalDetails {
+		var healthAffectedIndex *db.CveAffectedPackageIndexStats
+		var healthReferenceIndex *db.CveReferenceKeyIndexStats
+		var healthAffectedIndexErr error
+		var healthReferenceIndexErr error
 		dbCtx, cancel := withHealthDBTimeout()
 		if last := s.cveDBRematchLastResult(dbCtx, isAdmin); last != nil {
 			resp["cve_db_rematch"] = map[string]any{"last_result": last}
@@ -3145,8 +3149,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		cancel()
 		dbCtx, cancel = withHealthDBTimeout()
 		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(dbCtx); err == nil {
+			healthAffectedIndex = indexStats
 			resp["cve_affected_package_index"] = indexStats
 		} else if isAdmin {
+			healthAffectedIndexErr = err
 			detailErr := err
 			cancel()
 			dbCtx, cancel = withHealthDBTimeout()
@@ -3160,13 +3166,24 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		cancel()
 		dbCtx, cancel = withHealthDBTimeout()
 		if referenceIndexStats, err := s.db.GetCveReferenceKeyIndexStats(dbCtx); err == nil {
+			healthReferenceIndex = referenceIndexStats
 			resp["cve_reference_key_index"] = referenceIndexStats
 		} else if isAdmin {
+			healthReferenceIndexErr = err
 			resp["cve_reference_key_index"] = map[string]any{"error": err.Error()}
 		}
 		cancel()
 		dbCtx, cancel = withHealthDBTimeout()
-		if quality := s.cveDBQualitySummary(dbCtx, cveDBQualityInput{}); quality != nil {
+		placeholderStats, placeholderErr := s.db.GetCvePlaceholderStats(dbCtx)
+		if quality := s.cveDBQualitySummary(dbCtx, cveDBQualityInput{
+			Placeholders:          placeholderStats,
+			PlaceholderStatsError: placeholderErr,
+			AffectedIndex:         healthAffectedIndex,
+			AffectedIndexError:    healthAffectedIndexErr,
+			ReferenceIndex:        healthReferenceIndex,
+			ReferenceIndexError:   healthReferenceIndexErr,
+			SkipMissingFetch:      true,
+		}); quality != nil {
 			resp["cve_db_quality"] = quality
 			if status, _ := quality["status"].(string); status == "degraded" {
 				resp["status"] = "degraded"
@@ -6064,19 +6081,20 @@ type cveDBQualityInput struct {
 	ReferenceIndexError   error
 	EPSSMergeError        error
 	PlaceholderStatsError error
+	SkipMissingFetch      bool
 }
 
 func (s *Server) cveDBQualitySummary(ctx context.Context, input cveDBQualityInput) map[string]any {
-	if input.Placeholders == nil && input.PlaceholderStatsError == nil {
+	if !input.SkipMissingFetch && input.Placeholders == nil && input.PlaceholderStatsError == nil {
 		input.Placeholders, input.PlaceholderStatsError = s.db.GetCvePlaceholderStats(ctx)
 	}
-	if input.AffectedIndex == nil && input.AffectedIndexError == nil {
+	if !input.SkipMissingFetch && input.AffectedIndex == nil && input.AffectedIndexError == nil {
 		input.AffectedIndex, input.AffectedIndexError = s.db.GetCveAffectedPackageIndexStats(ctx)
 	}
-	if input.ReferenceIndex == nil && input.ReferenceIndexError == nil {
+	if !input.SkipMissingFetch && input.ReferenceIndex == nil && input.ReferenceIndexError == nil {
 		input.ReferenceIndex, input.ReferenceIndexError = s.db.GetCveReferenceKeyIndexStats(ctx)
 	}
-	if input.EPSS == nil && input.EPSSMergeError == nil {
+	if !input.SkipMissingFetch && input.EPSS == nil && input.EPSSMergeError == nil {
 		input.EPSS, input.EPSSMergeError = s.db.GetCveEPSSMergeStats(ctx)
 	}
 	if ctx.Err() != nil && input.Placeholders == nil && input.AffectedIndex == nil && input.ReferenceIndex == nil && input.EPSS == nil {
