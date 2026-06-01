@@ -1144,7 +1144,7 @@ func TestCveReferenceKeysGroupVendorCVEAndAdvisories(t *testing.T) {
 	for _, want := range []string{
 		"cve:CVE-2026-48840",
 		"vendor:debian",
-		"ghsa:GHSA-c2m8-4gcg-v22g",
+		"ghsa:GHSA-C2M8-4GCG-V22G",
 		"debian:DLA-1234-1",
 		"repo:github.com/mervinpraison/praisonai",
 	} {
@@ -1263,6 +1263,27 @@ func TestCveReferenceKeyQualityConstraintsMigration(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("CVE reference key quality migration missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestNormalizeGHSAReferenceKeysMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/038_normalize_ghsa_reference_keys.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"duplicate_ghsa_keys",
+		"PARTITION BY cve_id, upper(substring(reference_key from length('ghsa:') + 1))",
+		"DELETE FROM cve_reference_keys",
+		"UPDATE cve_reference_keys",
+		"'ghsa:' || upper(substring(reference_key from length('ghsa:') + 1))",
+		"cve_reference_keys_ghsa_canonical_case_check",
+		"CHECK (reference_key NOT ILIKE 'ghsa:%' OR reference_key ~ '^ghsa:GHSA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}$') NOT VALID",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("GHSA reference key normalization migration missing %q: %s", want, body)
 		}
 	}
 }

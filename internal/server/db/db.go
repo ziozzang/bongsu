@@ -4743,7 +4743,7 @@ func cveReferenceKeys(e models.CveEntry) []string {
 		}
 	}
 	addRegexKeys("cve:", cveReferenceKeyRe, true)
-	addRegexKeys("ghsa:", ghsaReferenceKeyRe, false)
+	addRegexKeys("ghsa:", ghsaReferenceKeyRe, true)
 	addRegexKeys("rustsec:", rustsecReferenceKeyRe, true)
 	addRegexKeys("pysec:", pysecReferenceKeyRe, true)
 	addRegexKeys("go:", goReferenceKeyRe, true)
@@ -4810,7 +4810,7 @@ func cveReferenceKeyFilter(referenceKey string) (string, []string) {
 		}
 		return indexFilter, []string{"cve:" + cve}
 	case strings.HasPrefix(lower, "ghsa:"):
-		ghsa := strings.TrimSpace(key[len("ghsa:"):])
+		ghsa := strings.ToUpper(strings.TrimSpace(key[len("ghsa:"):]))
 		if !ghsaReferenceKeyRe.MatchString(ghsa) {
 			return "", nil
 		}
