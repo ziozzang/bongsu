@@ -276,6 +276,17 @@ export interface Stats {
   scan_request_stale_counts?: Record<string, number>;
   security_db_revision?: string;
   security_db_rescan_request_counts?: Record<string, number>;
+  security_db_rescan_progress?: {
+    revision?: string;
+    total?: number;
+    open?: number;
+    terminal?: number;
+    succeeded?: number;
+    failed?: number;
+    cancelled?: number;
+    complete_percent?: number;
+    healthy_percent?: number;
+  };
 }
 
 export interface VulnSummaryRow {

@@ -526,6 +526,15 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       : lastAutoRescan?.status === 'ok'
         ? 'var(--low)'
         : 'var(--medium)';
+  const rescanProgress = stats?.security_db_rescan_progress || {};
+  const rescanCompletePercent = Number(rescanProgress.complete_percent || 0);
+  const rescanProgressColor = (rescanProgress.failed || 0) > 0
+    ? 'var(--critical)'
+    : (rescanProgress.open || 0) > 0
+      ? 'var(--medium)'
+      : (rescanProgress.total || 0) > 0
+        ? 'var(--low)'
+        : 'var(--text-muted)';
   const triageActiveCounts = stats?.triage_active_counts || {};
   const triageExpiringSoonCounts = stats?.triage_expiring_soon_counts || {};
   const suppressedTriageCount = ['accepted_risk', 'false_positive', 'fixed', 'ignored']
@@ -976,6 +985,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           >
             {stats.security_db_rescan_request_counts?.failed || 0}
           </button>
+        </div>
+        <div className="stat-card" title={rescanProgress.revision ? `Revision ${rescanProgress.revision}` : 'Current security DB revision'}>
+          <div className="accent-bar" style={{ background: rescanProgressColor }} />
+          <div className="label">Current DB Rescan Done</div>
+          <div className="value" style={{ color: rescanProgressColor }}>{rescanCompletePercent.toFixed(1)}%</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {(rescanProgress.terminal || 0).toLocaleString()} done, {(rescanProgress.open || 0).toLocaleString()} open of {(rescanProgress.total || 0).toLocaleString()}
+          </div>
         </div>
       </div>
       <div className="db-status-bar" style={{ marginTop: '1.5rem' }}>

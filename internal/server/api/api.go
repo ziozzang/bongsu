@@ -1902,6 +1902,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	securityDBRevision := ""
 	securityDBRescanCounts := map[string]int{}
+	securityDBRescanProgress := map[string]any{}
 	if revision, err := s.db.GetSecurityDBRevision(ctx); err != nil {
 		log.Printf("security db revision stats: %v", err)
 	} else {
@@ -1910,6 +1911,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			log.Printf("security db rescan status counts: %v", err)
 		} else {
 			securityDBRescanCounts = counts
+			securityDBRescanProgress = securityDBRescanProgressSummary(revision, counts)
 		}
 	}
 
@@ -1937,6 +1939,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"scan_request_stale_counts":         staleScanRequestCounts,
 		"security_db_revision":              securityDBRevision,
 		"security_db_rescan_request_counts": securityDBRescanCounts,
+		"security_db_rescan_progress":       securityDBRescanProgress,
 	}
 	resp["agent_version_drift_counts"] = agentVersionDriftCounts(agentVersionCounts, fmt.Sprint(resp["latest_agent_version"]))
 	if s.authenticateAdmin(r) || !s.webAuth {
@@ -3552,6 +3555,12 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 				for _, status := range []string{"pending", "claimed", "completed", "degraded", "failed", "cancelled"} {
 					writePromGauge(&b, "bongsu_security_db_rescan_requests", map[string]string{"status": status}, float64(counts[status]))
 				}
+				progress := securityDBRescanProgressSummary(revision, counts)
+				writePromGauge(&b, "bongsu_security_db_rescan_total", nil, metricNumber(progress["total"]))
+				writePromGauge(&b, "bongsu_security_db_rescan_open", nil, metricNumber(progress["open"]))
+				writePromGauge(&b, "bongsu_security_db_rescan_terminal", nil, metricNumber(progress["terminal"]))
+				writePromGauge(&b, "bongsu_security_db_rescan_complete_percent", nil, metricNumber(progress["complete_percent"]))
+				writePromGauge(&b, "bongsu_security_db_rescan_healthy_percent", nil, metricNumber(progress["healthy_percent"]))
 			} else {
 				writePromGauge(&b, "bongsu_security_db_rescan_metrics_error", nil, 1)
 			}
@@ -3604,6 +3613,29 @@ func percent(numerator, denominator int) float64 {
 		return 0
 	}
 	return math.Round(float64(numerator)*1000/float64(denominator)) / 10
+}
+
+func securityDBRescanProgressSummary(revision string, counts map[string]int) map[string]any {
+	pending := counts["pending"]
+	claimed := counts["claimed"]
+	completed := counts["completed"]
+	degraded := counts["degraded"]
+	failed := counts["failed"]
+	cancelled := counts["cancelled"]
+	open := pending + claimed
+	terminal := completed + degraded + failed + cancelled
+	total := open + terminal
+	return map[string]any{
+		"revision":         revision,
+		"total":            total,
+		"open":             open,
+		"terminal":         terminal,
+		"succeeded":        completed + degraded,
+		"failed":           failed,
+		"cancelled":        cancelled,
+		"complete_percent": percent(terminal, total),
+		"healthy_percent":  percent(completed+degraded, total),
+	}
 }
 
 func writePromGauge(b *strings.Builder, name string, labels map[string]string, value float64) {
