@@ -1838,6 +1838,48 @@ func TestScoreRangeConstraintsMigration(t *testing.T) {
 	}
 }
 
+func TestCoreIdentityConstraintsMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/034_core_identity_constraints.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"hosts_identity_nonempty_check",
+		"CHECK (trim(id) <> '' AND trim(hostname) <> '')",
+		"scans_identity_nonempty_check",
+		"CHECK (trim(id) <> '' AND trim(host_id) <> '' AND trim(scan_type) <> '' AND trim(status) <> '')",
+		"packages_identity_nonempty_check",
+		"CHECK (trim(id) <> '' AND trim(scan_id) <> '' AND trim(host_id) <> '' AND trim(name) <> '' AND trim(source) <> '' AND trim(pkg_type) <> '')",
+		"vulnerabilities_identity_nonempty_check",
+		"CHECK (trim(id) <> '' AND trim(package_id) <> '' AND trim(scan_id) <> '' AND trim(host_id) <> '' AND trim(vulnerability_id) <> '' AND trim(pkg_name) <> '')",
+		"cve_database_identity_nonempty_check",
+		"CHECK (trim(id) <> '' AND trim(vulnerability_id) <> '' AND trim(source) <> '')",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("core identity constraint migration missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestRejectTempCVEIdentifiersMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/035_reject_temp_cve_identifiers.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DELETE FROM cve_database",
+		"LIKE 'TEMP-%'",
+		"cve_database_no_temp_identifier_check",
+		"CHECK (upper(trim(vulnerability_id)) NOT LIKE 'TEMP-%' AND upper(trim(id)) NOT LIKE 'TEMP-%')",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("TEMP CVE identifier migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
