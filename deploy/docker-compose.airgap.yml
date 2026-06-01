@@ -19,8 +19,9 @@ services:
   server:
     image: bongsu-server:${BONGSU_VERSION:-0.1.0}
     ports:
-      - "${BONGSU_PORT:-8080}:8080"
+      - "${BONGSU_API_PORT:-5677}:5677"
     environment:
+      BONGSU_PORT: "5677"
       BONGSU_DB_DSN: postgres://${BONGSU_DB_USER:-bongsu}:${BONGSU_DB_PASSWORD:?Set BONGSU_DB_PASSWORD in .env}@postgres:5432/${BONGSU_DB_NAME:-bongsu}?sslmode=disable
       BONGSU_DB_MAX_OPEN_CONNS: ${BONGSU_DB_MAX_OPEN_CONNS:-25}
       BONGSU_DB_MAX_IDLE_CONNS: ${BONGSU_DB_MAX_IDLE_CONNS:-5}
@@ -46,6 +47,8 @@ services:
       BONGSU_SECURITY_DB_SYNC_CMD: ""
       BONGSU_SECURITY_DB_SYNC_ON_START: "false"
       BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES: ${BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES:-8192}
+      BONGSU_SECURITY_DB_REQUIRED_SOURCES: ${BONGSU_SECURITY_DB_REQUIRED_SOURCES:-cisa-kev,epss,osv,nvd,trivy}
+      BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS: ${BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS:-30}
       BONGSU_SYNC_REQUIRE_TRIVY_SOURCE: ${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-false}
       BONGSU_AUTO_RESCAN_ON_DB_UPDATE: ${BONGSU_AUTO_RESCAN_ON_DB_UPDATE:-true}
       BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS: ${BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS:-720}
@@ -76,11 +79,22 @@ services:
     networks:
       - bongsu-net
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5677/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  web:
+    image: bongsu-web:${BONGSU_VERSION:-0.1.0}
+    ports:
+      - "${BONGSU_WEB_PORT:-5678}:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - bongsu-net
 
 networks:
   bongsu-net:

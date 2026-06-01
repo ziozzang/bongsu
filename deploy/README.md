@@ -28,10 +28,10 @@ cp deploy/.env.example deploy/.env
 cd deploy && docker compose up -d --build
 
 # 3. Check health
-curl http://localhost:8080/api/health
+curl http://localhost:5677/api/health
 
 # 4. Install agent on target host
-curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://your-server:8080/api/install.sh" | sudo bash
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://your-server:5678/api/install.sh" | sudo bash
 ```
 
 ## Air-Gapped Deployment
@@ -76,10 +76,10 @@ cp deploy/.env.example deploy/.env
 cd deploy && docker compose -f docker-compose.airgap.yml up -d
 
 # 5. Import security DB bundle
-./scripts/import-security-db-bundle.sh http://localhost:8080 your-secret-key ../bongsu-security-db-bundle.tar.gz
+./scripts/import-security-db-bundle.sh http://localhost:5677 your-secret-key ../bongsu-security-db-bundle.tar.gz
 
 # 6. Install agents on target hosts
-curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server-host:8080/api/install.sh" | sudo bash
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server-host:5678/api/install.sh" | sudo bash
 ```
 
 ## Updating Vulnerability Database (CVSS Data)
@@ -97,7 +97,7 @@ docker compose restart server
 **Override auto-update** (optional `.env`):
 ```
 BONGSU_TRIVY_DB_INTERVAL_HOURS=6
-BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:8080
+BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:5677
 BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 BONGSU_SECURITY_DB_SYNC_ON_START=true
 BONGSU_AUTO_RESCAN_ON_DB_UPDATE=true
@@ -110,10 +110,10 @@ After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB
 
 ```bash
 # On connected machine:
-./scripts/export-security-db-bundle.sh http://connected-server:8080 your-api-key bongsu-security-db-bundle.tar.gz
+./scripts/export-security-db-bundle.sh http://connected-server:5677 your-api-key bongsu-security-db-bundle.tar.gz
 
 # Transfer to air-gapped, then:
-./scripts/import-security-db-bundle.sh http://server:8080 your-api-key bongsu-security-db-bundle.tar.gz
+./scripts/import-security-db-bundle.sh http://server:5677 your-api-key bongsu-security-db-bundle.tar.gz
 ```
 
 Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and optional `trivy-db.tar.gz` before applying any database or cache changes. The manifest also carries `security_db_revision`, and export/import audit rows record it so operators can correlate an offline bundle with the automatic rescans it triggers. `/health` and the dashboard show the current merged revision and source freshness, with revision lookup and freshness errors limited to admin health responses. The dashboard CVE source table marks stale sources and shows their age next to matchability and rematch policy state. Direct CVE JSONL import responses and CVE import/export audit rows also include the resulting revision. A corrupt or tampered bundle is rejected, the full CVE database is replaced inside one database transaction, and Trivy DB archives are staged before replacing the active cache so bad rows or invalid archives do not leave partially committed CVE/cache data. Direct source imports replace existing rows for that source in the same transaction, so advisories removed upstream do not remain as stale matches.
@@ -125,7 +125,7 @@ Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and o
 ```bash
 # Copy bongsu-agent binary and install-agent.sh to target host.
 # The installer creates/reuses /opt/bongsu/agent.token unless BONGSU_AGENT_TOKEN is supplied.
-./install-agent.sh http://server:8080 your-api-key
+./install-agent.sh http://server:5677 your-api-key
 ```
 
 The script:
@@ -152,7 +152,7 @@ spec:
             image: bongsu-agent:0.1.0
             args:
               - --server
-              - http://bongsu-server:8080
+              - http://bongsu-server:5677
               - --api-key
               - $(BONGSU_API_KEY)
               - --packages-only
@@ -179,7 +179,8 @@ spec:
 | `BONGSU_HTTP_MAX_HEADER_BYTES` | `1048576` | Maximum accepted HTTP request header size |
 | `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC; use `key:user:alice` or `key:group:platform` when user and group IDs may overlap |
 | `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
-| `BONGSU_PORT` | `8080` | Server listen port |
+| `BONGSU_API_PORT` | `5677` | Host port for the Bongsu API server |
+| `BONGSU_WEB_PORT` | `5678` | Host port for the Bongsu web UI |
 | `BONGSU_DB_DSN` | `postgres://bongsu:...` | PostgreSQL connection string |
 | `BONGSU_DB_MAX_OPEN_CONNS` | `25` | Maximum open PostgreSQL connections from the server |
 | `BONGSU_DB_MAX_IDLE_CONNS` | `5` | Maximum idle PostgreSQL connections retained |
@@ -189,10 +190,11 @@ spec:
 | `BONGSU_TRIVY_CACHE_DIR` | `/app/trivy-cache` | Trivy cache directory |
 | `BONGSU_TRIVY_DB_REPO` | `ghcr.io/aquasecurity/trivy-db` | Trivy DB registry |
 | `BONGSU_TRIVY_DB_INTERVAL_HOURS` | `6` connected, `0` airgap | DB update interval (`0`=disabled) |
-| `BONGSU_SECURITY_DB_SYNC_CMD` | `/app/scripts/sync-all-cvedb.sh http://localhost:8080` connected, empty airgap | Command for OSV/NVD/Trivy source sync; the bundled script reads `BONGSU_API_KEY` from the container environment |
+| `BONGSU_SECURITY_DB_SYNC_CMD` | `/app/scripts/sync-all-cvedb.sh http://localhost:5677` connected, empty airgap | Command for OSV/NVD/Trivy source sync; the bundled script reads `BONGSU_API_KEY` from the container environment |
 | `BONGSU_SECURITY_DB_INTERVAL_HOURS` | `6` | Security source sync interval |
 | `BONGSU_SECURITY_DB_SYNC_ON_START` | `true` | Run the configured security source sync once on server startup before waiting for the periodic interval |
 | `BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES` | `8192` | Tail bytes of the most recent source sync output retained in admin-authenticated health checks and failed update responses |
+| `BONGSU_SECURITY_DB_REQUIRED_SOURCES` | `cisa-kev,epss,osv,nvd,trivy` | Required merged CVE sources; health and dashboard mark the DB degraded if any are missing |
 | `BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS` | `30` | Mark merged security DB source freshness as stale when any source has not updated within this many hours (`0` disables age-based staleness) |
 | `BONGSU_SYNC_REQUIRE_TRIVY_SOURCE` | `true` connected, `false` airgap | Fail the bundled source sync if Trivy CVE extraction is missing or empty instead of silently producing a partial source set. The sync script searches `TRIVY_BIN`, `BONGSU_TRIVY_PATH`, `/opt/bongsu/bin/trivy`, and bundled `bin/trivy` paths before declaring Trivy unavailable. |
 | `BONGSU_AUTO_RESCAN_ON_DB_UPDATE` | `true` | Queue background rescans after security DB changes |
@@ -299,26 +301,26 @@ echo 'BONGSU_VIEWER_API_KEYS=viewer-secret:user:alice' >> deploy/.env
 # Create subject and grant read access to one host
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
   -d '{"subject_type":"user","external_id":"alice","display_name":"Alice"}' \
-  http://localhost:8080/api/admin/rbac/subjects
+  http://localhost:5677/api/admin/rbac/subjects
 
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
   -d '{"subject_external_id":"user:alice","resource_type":"host","resource_id":"HOST_ID","permission":"read"}' \
-  http://localhost:8080/api/admin/rbac/policies
+  http://localhost:5677/api/admin/rbac/policies
 
 # Grant export permission separately for SBOM/vulnerability report downloads
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
   -d '{"subject_external_id":"user:alice","resource_type":"host","resource_id":"HOST_ID","permission":"export"}' \
-  http://localhost:8080/api/admin/rbac/policies
+  http://localhost:5677/api/admin/rbac/policies
 
 # Container and image policies resolve through the latest container inventory
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
   -d '{"subject_external_id":"user:alice","resource_type":"image","resource_id":"registry.local/app/api:2026.06","permission":"read"}' \
-  http://localhost:8080/api/admin/rbac/policies
+  http://localhost:5677/api/admin/rbac/policies
 
 # Asset group policies resolve through current host metadata
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
   -d '{"subject_external_id":"user:alice","resource_type":"asset_group","resource_id":"team:platform","permission":"read"}' \
-  http://localhost:8080/api/admin/rbac/policies
+  http://localhost:5677/api/admin/rbac/policies
 ```
 
 ## Troubleshooting

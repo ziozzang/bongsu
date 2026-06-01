@@ -279,6 +279,8 @@ export interface HealthStatus {
     status: string;
     stale: boolean;
     source_count?: number;
+    required_sources?: string[];
+    missing_sources?: string[];
     max_age_hours?: number;
     oldest_source?: string;
     oldest_last_update?: string;
@@ -491,9 +493,9 @@ export const api = {
     request<{ group_by?: string; items: VulnSummaryRow[] }>('/vuln-summary', params),
   cveSearch: (params: { q?: string; pkg_name?: string; severity?: string; min_cvss?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Vuln[]; total: number }>('/cve-search', params),
-  cveDbSearch: (params: { q?: string; severity?: string; source?: string; min_cvss?: string; limit?: string; offset?: string }) =>
+  cveDbSearch: (params: { q?: string; severity?: string; source?: string; min_cvss?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: CveDbEntry[]; total: number }>('/cve-db/search', params),
-  cveDbSources: () => request<string[]>('/admin/cve-db/sources'),
+  cveDbSources: () => request<{ sources: string[] }>('/cve-db/sources'),
   cveDbStats: () => request<CveDbStatsResponse>('/cve-db/stats'),
   packages: (params: { host_id?: string; container?: string; pkg_type?: string; source?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Pkg[]; total: number }>('/packages', params),

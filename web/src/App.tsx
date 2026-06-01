@@ -400,8 +400,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const weakestCveSource = cveSources.reduce<CveSourceStat | null>((worst, source) =>
     !worst || (source.matchable_percent ?? 0) < (worst.matchable_percent ?? 0) ? source : worst, null);
   const staleCveSources = health?.security_db_freshness?.stale_sources || [];
+  const missingCveSources = health?.security_db_freshness?.missing_sources || [];
   const staleCveSourceByName = new Map(staleCveSources.map(s => [s.source.toLowerCase(), s]));
   const staleCveSourceCount = staleCveSources.length;
+  const cveSourceAlertCount = staleCveSourceCount + missingCveSources.length;
   const oldestCveAgeDays = health?.security_db_freshness?.oldest_age_seconds
     ? health.security_db_freshness.oldest_age_seconds / 86400
     : 0;
@@ -423,7 +425,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const securitySyncLast = health?.security_db?.last_attempt && !health.security_db.last_attempt.startsWith('0001-')
     ? new Date(health.security_db.last_attempt).toLocaleString()
     : '';
-  const cveFreshnessColor = staleCveSourceCount > 0 || health?.security_db_freshness?.stale ? 'var(--critical)' : 'var(--low)';
+  const cveFreshnessColor = missingCveSources.length > 0 || staleCveSourceCount > 0 || health?.security_db_freshness?.stale ? 'var(--critical)' : 'var(--low)';
   const cveMatchableColor = cveMatchablePercent < 50 && cveTotalRecords > 0
     ? 'var(--critical)'
     : cveMatchablePercent < 80 && cveTotalRecords > 0
@@ -977,10 +979,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: cveFreshnessColor }} />
-          <div className="label">Stale CVE Sources</div>
-          <div className="value" style={{ color: cveFreshnessColor }}>{staleCveSourceCount}</div>
+          <div className="label">CVE Source Alerts</div>
+          <div className="value" style={{ color: cveFreshnessColor }}>{cveSourceAlertCount}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            {health?.security_db_freshness?.oldest_source ? `${health.security_db_freshness.oldest_source} oldest, ${oldestCveAgeDays.toFixed(1)}d` : 'freshness pending'}
+            {missingCveSources.length ? `missing ${missingCveSources.join(', ')}` : health?.security_db_freshness?.oldest_source ? `${health.security_db_freshness.oldest_source} oldest, ${oldestCveAgeDays.toFixed(1)}d` : 'freshness pending'}
           </div>
         </div>
       </div>
@@ -988,6 +990,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {health?.security_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security sources: {health.security_db.last_error}</div>}
       {health?.security_db_revision_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB revision: {health.security_db_revision_error}</div>}
       {health?.security_db_freshness?.error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB freshness: {health.security_db_freshness.error}</div>}
+      {missingCveSources.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Missing CVE sources: {missingCveSources.join(', ')}</div>}
       {health?.security_db_freshness?.oldest_last_update && (
         <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
           Oldest CVE source: {health.security_db_freshness.oldest_source || '-'} updated {new Date(health.security_db_freshness.oldest_last_update).toLocaleString()}
@@ -2429,7 +2432,7 @@ function CveSearchView() {
 
   useEffect(() => {
     api.cveDbSources().then(data => {
-      if (Array.isArray(data)) setSources(data);
+      setSources(data.sources || []);
     }).catch(() => {});
   }, []);
 

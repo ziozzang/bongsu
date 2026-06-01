@@ -23,7 +23,7 @@ const (
 )
 
 func main() {
-	serverURL := flag.String("server", "", "Bongsu server URL (e.g. http://bongsu:8080)")
+	serverURL := flag.String("server", "", "Bongsu API URL (e.g. http://bongsu:5677)")
 	apiKey := flag.String("api-key", "", "API key for authentication")
 	workDir := flag.String("work-dir", "/opt/bongsu", "Working directory")
 	scanType := flag.String("type", "daily", "Scan type: daily or manual")

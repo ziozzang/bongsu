@@ -6,7 +6,7 @@
 
 set -euo pipefail
 
-SERVER_URL="${1:-http://localhost:5678}"
+SERVER_URL="${1:-http://localhost:5677}"
 API_KEY="${2:-${BONGSU_API_KEY:-}}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TMPDIR=$(mktemp -d)

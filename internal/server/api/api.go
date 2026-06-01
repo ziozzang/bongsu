@@ -202,6 +202,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/admin/rbac/policies", s.handleUpsertAccessPolicy)
 	s.mux.HandleFunc("DELETE /api/admin/rbac/policies/{id}", s.handleDeleteAccessPolicy)
 	s.mux.HandleFunc("GET /api/admin/audit-logs", s.handleListAuditLogs)
+	s.mux.HandleFunc("GET /api/cve-db/sources", s.handleCveDbSources)
 	s.mux.HandleFunc("GET /api/cve-db/stats", s.handleCveDbStats)
 	s.mux.HandleFunc("GET /api/cve-db/search", s.handleCveDbSearch)
 	s.serveDashboard()
@@ -2930,8 +2931,10 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 		maxAgeHours = defaultSecurityDBMaxSourceAgeHours
 	}
 	maxAge := time.Duration(maxAgeHours * float64(time.Hour))
+	requiredSources := requiredSecurityDBSources()
 	resp := map[string]any{
-		"max_age_hours": maxAgeHours,
+		"max_age_hours":    maxAgeHours,
+		"required_sources": requiredSources,
 	}
 	if s.db == nil {
 		resp["status"] = "unavailable"
@@ -2950,6 +2953,8 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 	}
 	resp["source_count"] = len(stats)
 	if len(stats) == 0 {
+		resp["missing_sources"] = requiredSources
+		resp["missing_source_count"] = len(requiredSources)
 		resp["status"] = "empty"
 		resp["stale"] = true
 		if includeDetails {
@@ -2963,8 +2968,10 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 	var oldestLastUpdate *time.Time
 	var oldestAge time.Duration
 	staleSources := make([]map[string]any, 0)
+	presentSources := make(map[string]bool, len(stats))
 	for _, stat := range stats {
-		source := stat.Source
+		source := strings.ToLower(strings.TrimSpace(stat.Source))
+		presentSources[source] = true
 		sourceStatus := map[string]any{"source": source}
 		isStale := false
 		if stat.LastUpdate == nil {
@@ -2989,6 +2996,14 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 			staleSources = append(staleSources, sourceStatus)
 		}
 	}
+	missingSources := make([]string, 0)
+	for _, source := range requiredSources {
+		if !presentSources[source] {
+			missingSources = append(missingSources, source)
+		}
+	}
+	resp["missing_sources"] = missingSources
+	resp["missing_source_count"] = len(missingSources)
 	if oldestLastUpdate != nil {
 		resp["oldest_source"] = oldestSource
 		resp["oldest_last_update"] = oldestLastUpdate.Format(time.RFC3339)
@@ -2996,7 +3011,10 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 	} else if len(stats) > 0 {
 		resp["oldest_source"] = stats[0].Source
 	}
-	if len(staleSources) > 0 {
+	if len(missingSources) > 0 {
+		resp["status"] = "missing_sources"
+		resp["stale"] = true
+	} else if len(staleSources) > 0 {
 		resp["status"] = "stale"
 		resp["stale"] = true
 	} else {
@@ -3007,6 +3025,18 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 		resp["stale_sources"] = staleSources
 	}
 	return resp
+}
+
+func requiredSecurityDBSources() []string {
+	raw := strings.TrimSpace(os.Getenv("BONGSU_SECURITY_DB_REQUIRED_SOURCES"))
+	if raw == "" {
+		raw = "cisa-kev,epss,osv,nvd,trivy"
+	}
+	sources, err := normalizeCveSources(splitCSV(raw))
+	if err != nil {
+		return []string{"cisa-kev", "epss", "osv", "nvd", "trivy"}
+	}
+	return sources
 }
 
 func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
@@ -3164,6 +3194,12 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_security_db_source_stale", nil, boolMetric(freshness["stale"]))
 		if count, ok := freshness["source_count"].(int); ok {
 			writePromGauge(&b, "bongsu_security_db_source_count", nil, float64(count))
+		}
+		if missing, ok := freshness["missing_sources"].([]string); ok {
+			writePromGauge(&b, "bongsu_security_db_required_source_missing_count", nil, float64(len(missing)))
+			for _, source := range missing {
+				writePromGauge(&b, "bongsu_security_db_required_source_missing", map[string]string{"source": source}, 1)
+			}
 		}
 		if oldestAge, ok := freshness["oldest_age_seconds"].(float64); ok {
 			writePromGauge(&b, "bongsu_security_db_source_oldest_age_seconds", nil, oldestAge)
@@ -4656,7 +4692,7 @@ func writeTarFile(tw *tar.Writer, name, path string) error {
 }
 
 func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
-	if !s.authenticateAdmin(r) {
+	if !s.authenticateWeb(r) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

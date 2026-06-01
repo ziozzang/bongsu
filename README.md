@@ -18,7 +18,7 @@ cp deploy/.env.example deploy/.env
 cd deploy && docker compose up -d --build
 
 # 3. 에이전트 설치 (타겟 호스트에서)
-curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://your-server:8080/api/install.sh" | sudo bash
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://your-server:5678/api/install.sh" | sudo bash
 ```
 
 ## 아키텍처
@@ -63,16 +63,16 @@ Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
 
 ```bash
 # 온라인 보안 DB 동기화 예시
-BONGSU_SECURITY_DB_SYNC_CMD="./scripts/sync-all-cvedb.sh http://localhost:8080"
+BONGSU_SECURITY_DB_SYNC_CMD="./scripts/sync-all-cvedb.sh http://localhost:5677"
 BONGSU_SECURITY_DB_SYNC_ON_START=true
 BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 
-# 개발 대시보드 프록시 대상. 8080에 다른 로컬 서비스가 있으면 bongsu 백엔드 포트로 바꿉니다.
-BONGSU_API_TARGET=http://localhost:8080 npm --prefix web run dev -- --host 0.0.0.0 --port 5678
+# 개발 대시보드: API는 5677, 웹은 5678에서 실행합니다.
+BONGSU_API_TARGET=http://localhost:5677 npm --prefix web run dev -- --host 0.0.0.0 --port 5678
 
 # Airgap export/import bundle
-./scripts/export-security-db-bundle.sh http://server:8080 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz
-./scripts/import-security-db-bundle.sh http://airgap-server:8080 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz
+./scripts/export-security-db-bundle.sh http://server:5677 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz
+./scripts/import-security-db-bundle.sh http://airgap-server:5677 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz
 ```
 
 ## 에이전트 설치
@@ -80,7 +80,7 @@ BONGSU_API_TARGET=http://localhost:8080 npm --prefix web run dev -- --host 0.0.0
 웹 대시보드 첫 화면과 `/api/install.sh`에서 같은 one-line 설치를 제공합니다. 이 endpoint는 agent key를 포함하므로 `BONGSU_INSTALL_TOKEN` 설정이 필요합니다.
 
 ```bash
-curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:8080/api/install.sh" | sudo bash
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/install.sh" | sudo bash
 ```
 
 설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다. 바이너리 다운로드 인증은 URL query가 아니라 `X-Install-Token` 헤더로 처리됩니다. 설치된 에이전트는 admin key가 아니라 `BONGSU_AGENT_API_KEY`를 사용하며, credential이 들어있는 config는 `0600` 권한으로 생성됩니다.

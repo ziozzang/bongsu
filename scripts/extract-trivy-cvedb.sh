@@ -278,4 +278,4 @@ PYEOF
 
 TOTAL=$(wc -l < "${OUTPUT}")
 echo "Total: ${TOTAL} CVE entries written to ${OUTPUT}"
-echo "Import: curl -F 'file=@${OUTPUT}' -F 'source=trivy' -H 'X-API-Key: YOUR_KEY' http://YOUR_SERVER:8080/api/admin/cve-db/import"
+echo "Import: curl -F 'file=@${OUTPUT}' -F 'source=trivy' -H 'X-API-Key: YOUR_KEY' http://YOUR_SERVER:5677/api/admin/cve-db/import"

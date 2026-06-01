@@ -126,7 +126,7 @@ echo "  3. cd ${PACKAGE_NAME} && ./load-images.sh"
 echo "  4. cp deploy/.env.example deploy/.env && edit .env"
 echo "  5. cd deploy && docker compose -f docker-compose.airgap.yml up -d"
 echo "  6. Import security DB bundle:"
-echo "     ./scripts/import-security-db-bundle.sh http://localhost:8080 <api-key> bongsu-security-db-bundle.tar.gz"
+echo "     ./scripts/import-security-db-bundle.sh http://localhost:5677 <api-key> bongsu-security-db-bundle.tar.gz"
 
 # Cleanup
 rm -rf "$STAGING"

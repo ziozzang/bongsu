@@ -2051,13 +2051,21 @@ func TestSecurityDBFreshnessHealthAndMetricsAreExposed(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS`,
+		`BONGSU_SECURITY_DB_REQUIRED_SOURCES`,
 		`defaultSecurityDBMaxSourceAgeHours`,
+		`requiredSecurityDBSources()`,
 		`GetCveSourceStats(ctx)`,
 		`resp["status"] = "stale"`,
+		`resp["status"] = "missing_sources"`,
 		`"oldest_source"`,
 		`"stale_sources"`,
+		`"required_sources"`,
+		`"missing_sources"`,
+		`"missing_source_count"`,
 		`bongsu_security_db_source_stale`,
 		`bongsu_security_db_source_count`,
+		`bongsu_security_db_required_source_missing_count`,
+		`bongsu_security_db_required_source_missing`,
 		`bongsu_security_db_source_oldest_age_seconds`,
 		`bongsu_security_db_source_matchable_percent`,
 		`bongsu_security_db_source_quality_metrics_error`,
@@ -2169,7 +2177,9 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"cveRematchEligibleCount",
 		"policy excluded",
 		"s.rematch_eligible === false",
-		"Stale CVE Sources",
+		"CVE Source Alerts",
+		"missingCveSources",
+		"Missing CVE sources",
 		"oldestCveAgeDays",
 		"staleCveSourceByName",
 		"staleSource?.age_seconds",
@@ -2180,7 +2190,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "generated_at?: string", "total_matchable_percent?: number", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string"} {
+	for _, want := range []string{"CveDbStatsResponse", "generated_at?: string", "total_matchable_percent?: number", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
@@ -2543,7 +2553,12 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"BONGSU_HTTP_WRITE_TIMEOUT_SECONDS: ${BONGSU_HTTP_WRITE_TIMEOUT_SECONDS:-120}",
 				"BONGSU_HTTP_IDLE_TIMEOUT_SECONDS: ${BONGSU_HTTP_IDLE_TIMEOUT_SECONDS:-120}",
 				"BONGSU_HTTP_MAX_HEADER_BYTES: ${BONGSU_HTTP_MAX_HEADER_BYTES:-1048576}",
+				`BONGSU_PORT: "5677"`,
+				`${BONGSU_API_PORT:-5677}:5677`,
+				`${BONGSU_WEB_PORT:-5678}:80`,
 				"BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES: ${BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES:-8192}",
+				"BONGSU_SECURITY_DB_REQUIRED_SOURCES: ${BONGSU_SECURITY_DB_REQUIRED_SOURCES:-cisa-kev,epss,osv,nvd,trivy}",
+				"BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS: ${BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS:-30}",
 				"BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:",
 				"BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES: ${BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES:-2147483648}",
 				"BONGSU_CVE_DB_IMPORT_MAX_BYTES: ${BONGSU_CVE_DB_IMPORT_MAX_BYTES:-2147483648}",
@@ -2578,7 +2593,7 @@ func TestConnectedComposeEnablesSecurityDbAutoUpdateDefaults(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"BONGSU_TRIVY_DB_INTERVAL_HOURS: ${BONGSU_TRIVY_DB_INTERVAL_HOURS:-6}",
-		"BONGSU_SECURITY_DB_SYNC_CMD: ${BONGSU_SECURITY_DB_SYNC_CMD:-/app/scripts/sync-all-cvedb.sh http://localhost:8080}",
+		"BONGSU_SECURITY_DB_SYNC_CMD: ${BONGSU_SECURITY_DB_SYNC_CMD:-/app/scripts/sync-all-cvedb.sh http://localhost:5677}",
 		"BONGSU_SECURITY_DB_INTERVAL_HOURS: ${BONGSU_SECURITY_DB_INTERVAL_HOURS:-6}",
 		"BONGSU_SECURITY_DB_SYNC_ON_START: ${BONGSU_SECURITY_DB_SYNC_ON_START:-true}",
 		"BONGSU_SYNC_REQUIRE_TRIVY_SOURCE: ${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-true}",
@@ -2597,6 +2612,7 @@ func TestAirgapComposeDisablesConnectedSecurityDbAutoUpdate(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`BONGSU_TRIVY_DB_INTERVAL_HOURS: "0"`,
+		`BONGSU_PORT: "5677"`,
 		`BONGSU_SECURITY_DB_SYNC_CMD: ""`,
 		`BONGSU_SECURITY_DB_SYNC_ON_START: "false"`,
 		`BONGSU_SYNC_REQUIRE_TRIVY_SOURCE: ${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-false}`,
@@ -2620,10 +2636,14 @@ func TestDeployEnvExampleKeepsWebAuthEnabled(t *testing.T) {
 		t.Fatal("example deployment must not default web auth to disabled")
 	}
 	for _, want := range []string{
+		"BONGSU_API_PORT=5677",
+		"BONGSU_WEB_PORT=5678",
 		"BONGSU_TRIVY_DB_INTERVAL_HOURS=6",
-		"BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:8080",
+		"BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:5677",
 		"BONGSU_SECURITY_DB_SYNC_ON_START=true",
 		"BONGSU_SYNC_REQUIRE_TRIVY_SOURCE=true",
+		"BONGSU_SECURITY_DB_REQUIRED_SOURCES=cisa-kev,epss,osv,nvd,trivy",
+		"BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS=30",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("example deployment auto-update default missing %q", want)

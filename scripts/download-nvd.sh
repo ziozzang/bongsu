@@ -167,4 +167,4 @@ mv "${OUTPUT_TMP}" "${OUTPUT}"
 trap - EXIT
 TOTAL=$(wc -l < "${OUTPUT}")
 echo "Output: ${OUTPUT} (${TOTAL} entries)"
-echo "Import: curl -F 'file=@${OUTPUT}' -F 'source=nvd' -H 'X-API-Key: YOUR_KEY' http://YOUR_SERVER:8080/api/admin/cve-db/import"
+echo "Import: curl -F 'file=@${OUTPUT}' -F 'source=nvd' -H 'X-API-Key: YOUR_KEY' http://YOUR_SERVER:5677/api/admin/cve-db/import"

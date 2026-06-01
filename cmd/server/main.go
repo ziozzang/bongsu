@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	port := envInt("BONGSU_PORT", 8080)
+	port := envInt("BONGSU_PORT", 5677)
 	dbDSN := envOr("BONGSU_DB_DSN", "postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable")
 	autoMigrate := envBool("BONGSU_AUTO_MIGRATE", true)
 	if err := validateServerSecrets(); err != nil {
