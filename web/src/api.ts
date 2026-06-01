@@ -483,6 +483,7 @@ export interface CveDbStatsResponse {
   reference_key_index_error?: string;
   epss_merge?: CveEpssMergeStats;
   epss_merge_error?: string;
+  durations_ms?: Record<string, number>;
   sources: CveSourceStat[];
   rematch_policy?: CveRematchPolicy;
 }

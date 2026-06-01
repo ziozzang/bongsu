@@ -5581,7 +5581,11 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	started := time.Now()
+	durations := map[string]int64{}
+	stepStarted := time.Now()
 	stats, err := s.db.GetCveSourceStats(r.Context())
+	durations["source_stats"] = time.Since(stepStarted).Milliseconds()
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
@@ -5613,9 +5617,15 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	if totalRecords > 0 {
 		totalMatchablePercent = float64(totalMatchable) / float64(totalRecords) * 100
 	}
+	stepStarted = time.Now()
 	indexStats, indexErr := s.db.GetCveAffectedPackageIndexStats(r.Context())
+	durations["affected_package_index"] = time.Since(stepStarted).Milliseconds()
+	stepStarted = time.Now()
 	referenceIndexStats, referenceIndexErr := s.db.GetCveReferenceKeyIndexStats(r.Context())
+	durations["reference_key_index"] = time.Since(stepStarted).Milliseconds()
+	stepStarted = time.Now()
 	epssStats, epssErr := s.db.GetCveEPSSMergeStats(r.Context())
+	durations["epss_merge"] = time.Since(stepStarted).Milliseconds()
 	resp := map[string]any{
 		"generated_at":            time.Now().UTC().Format(time.RFC3339),
 		"source_count":            len(stats),
@@ -5646,9 +5656,13 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	} else {
 		resp["epss_merge_error"] = epssErr.Error()
 	}
+	stepStarted = time.Now()
 	for k, v := range s.securityDBRevisionMeta(r.Context()) {
 		resp[k] = v
 	}
+	durations["security_db_revision"] = time.Since(stepStarted).Milliseconds()
+	durations["total"] = time.Since(started).Milliseconds()
+	resp["durations_ms"] = durations
 	writeJSON(w, http.StatusOK, resp)
 }
 
