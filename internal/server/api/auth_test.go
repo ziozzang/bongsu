@@ -542,11 +542,14 @@ func TestSecurityDBUploadLimitsAreConfigured(t *testing.T) {
 		"maxTrivyDBUploadBytes()",
 		"maxCveDBImportBytes()",
 		"maxSecurityDBBundleBytes()",
+		"maxJSONBodyBytes()",
 		`envBytes("BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES", 2<<30)`,
 		`envBytes("BONGSU_CVE_DB_IMPORT_MAX_BYTES", 2<<30)`,
 		`envBytes("BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES", 4<<30)`,
 		`envBytes("BONGSU_MULTIPART_MEMORY_MAX_BYTES", 32<<20)`,
+		`envBytes("BONGSU_JSON_BODY_MAX_BYTES", 1<<20)`,
 		"ParseMultipartForm(maxMultipartMemoryBytes())",
+		"decodeJSONBody",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("security DB upload limit missing %q", want)
@@ -596,6 +599,10 @@ func TestMaxSecurityDBUploadBytes(t *testing.T) {
 	if got := maxMultipartMemoryBytes(); got != 45678 {
 		t.Fatalf("multipart memory max = %d, want 45678", got)
 	}
+	t.Setenv("BONGSU_JSON_BODY_MAX_BYTES", "56789")
+	if got := maxJSONBodyBytes(); got != 56789 {
+		t.Fatalf("json body max = %d, want 56789", got)
+	}
 
 	for _, tt := range []struct {
 		key  string
@@ -606,6 +613,7 @@ func TestMaxSecurityDBUploadBytes(t *testing.T) {
 		{"BONGSU_CVE_DB_IMPORT_MAX_BYTES", 2 << 30, maxCveDBImportBytes},
 		{"BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES", 4 << 30, maxSecurityDBBundleBytes},
 		{"BONGSU_MULTIPART_MEMORY_MAX_BYTES", 32 << 20, maxMultipartMemoryBytes},
+		{"BONGSU_JSON_BODY_MAX_BYTES", 1 << 20, maxJSONBodyBytes},
 	} {
 		for _, value := range []string{"0", "-1", "invalid"} {
 			t.Setenv(tt.key, value)
@@ -613,6 +621,21 @@ func TestMaxSecurityDBUploadBytes(t *testing.T) {
 				t.Fatalf("%s=%q got %d, want %d", tt.key, value, got, tt.def)
 			}
 		}
+	}
+}
+
+func TestJSONControlBodyLimitReturns413(t *testing.T) {
+	t.Setenv("BONGSU_JSON_BODY_MAX_BYTES", "8")
+	s := &Server{apiKey: "admin-key", webAuth: true}
+	req := httptest.NewRequest("POST", "/api/hosts/host-1/metadata", strings.NewReader(`{"owner":"too-large"}`))
+	req.SetPathValue("id", "host-1")
+	req.Header.Set("X-API-Key", "admin-key")
+	rr := httptest.NewRecorder()
+
+	s.handleUpdateHostMetadata(rr, req)
+
+	if rr.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized JSON body status = %d, want %d; body=%s", rr.Code, http.StatusRequestEntityTooLarge, rr.Body.String())
 	}
 }
 

@@ -204,6 +204,7 @@ spec:
 | `BONGSU_CVE_DB_IMPORT_MAX_BYTES` | `2147483648` | Maximum accepted CVE JSONL import size |
 | `BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES` | `4294967296` | Maximum accepted air-gap security DB bundle import size |
 | `BONGSU_MULTIPART_MEMORY_MAX_BYTES` | `33554432` | Multipart form memory threshold before large upload parts spill to temporary files |
+| `BONGSU_JSON_BODY_MAX_BYTES` | `1048576` | Maximum accepted JSON body size for control-plane API requests |
 | `BONGSU_API_MAX_PAGE_LIMIT` | `1000` | Maximum `limit` accepted by paginated API endpoints |
 | `BONGSU_API_MAX_PAGE_OFFSET` | `1000000` | Maximum `offset` accepted by paginated API endpoints |
 | `BONGSU_VULN_EXPORT_MAX_ROWS` | `100000` | Maximum vulnerability rows per report export |

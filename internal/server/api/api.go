@@ -959,8 +959,8 @@ func (s *Server) handleUpdateHostMetadata(w http.ResponseWriter, r *http.Request
 		Criticality string `json:"criticality"`
 		Tags        string `json:"tags"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := decodeJSONBody(w, r, &body, false); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
 		return
 	}
 	if body.Tags == "" {
@@ -1532,8 +1532,8 @@ func (s *Server) handleUpsertVulnerabilityTriage(w http.ResponseWriter, r *http.
 		return
 	}
 	var body models.VulnerabilityTriage
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := decodeJSONBody(w, r, &body, false); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
 		return
 	}
 	normalizeVulnerabilityTriage(&body)
@@ -2538,11 +2538,9 @@ func (s *Server) handleRequeueScanRequest(w http.ResponseWriter, r *http.Request
 	var body struct {
 		Message string `json:"message"`
 	}
-	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
+	if err := decodeJSONBody(w, r, &body, true); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
+		return
 	}
 	body.Message = strings.TrimSpace(body.Message)
 	if body.Message == "" {
@@ -2566,11 +2564,9 @@ func (s *Server) handleRequeueStaleScanRequests(w http.ResponseWriter, r *http.R
 	var body struct {
 		TimeoutMinutes int `json:"timeout_minutes"`
 	}
-	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
+	if err := decodeJSONBody(w, r, &body, true); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
+		return
 	}
 	if body.TimeoutMinutes <= 0 {
 		body.TimeoutMinutes = envInt("BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES", 60)
@@ -2603,8 +2599,8 @@ func (s *Server) handleRequeueFilteredScanRequests(w http.ResponseWriter, r *htt
 		SecurityDBRevision string `json:"security_db_revision"`
 		Message            string `json:"message"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := decodeJSONBody(w, r, &body, true); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
 		return
 	}
 	body.HostID = strings.TrimSpace(body.HostID)
@@ -2656,8 +2652,8 @@ func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var req models.ScanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := decodeJSONBody(w, r, &req, false); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
 		return
 	}
 	if err := normalizeScanRequestCreate(&req); err != nil {
@@ -2770,8 +2766,8 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 		Message string `json:"message"`
 		HostID  string `json:"host_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := decodeJSONBody(w, r, &body, false); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
 		return
 	}
 	body.HostID = strings.TrimSpace(body.HostID)
@@ -4234,8 +4230,8 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 			ScanID                    string   `json:"scan_id"`
 			CandidateLimit            int      `json:"candidate_limit"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
-			http.Error(w, "invalid json", http.StatusBadRequest)
+		if err := decodeJSONBody(w, r, &body, true); err != nil {
+			writeJSONBodyError(w, err, "invalid json")
 			return
 		}
 		if len(body.Sources) > 0 {
@@ -4522,11 +4518,9 @@ func (s *Server) handleRetentionPrune(w http.ResponseWriter, r *http.Request) {
 		RequestDays int   `json:"request_days"`
 		AuditDays   int   `json:"audit_days"`
 	}
-	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
-			http.Error(w, "invalid request body", http.StatusBadRequest)
-			return
-		}
+	if err := decodeJSONBody(w, r, &body, true); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
+		return
 	}
 	if body.ScanDays <= 0 {
 		body.ScanDays = envInt("BONGSU_RETENTION_SCAN_DAYS", 180)
@@ -4592,8 +4586,8 @@ func (s *Server) handleUpsertAccessSubject(w http.ResponseWriter, r *http.Reques
 		ExternalID  string `json:"external_id"`
 		DisplayName string `json:"display_name"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := decodeJSONBody(w, r, &body, false); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
 		return
 	}
 	if body.SubjectType == "" {
@@ -4723,8 +4717,8 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 		ResourceID        string `json:"resource_id"`
 		Permission        string `json:"permission"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := decodeJSONBody(w, r, &body, false); err != nil {
+		writeJSONBodyError(w, err, "invalid request body")
 		return
 	}
 	if body.SubjectID == "" && body.SubjectExternalID == "" {
@@ -4915,6 +4909,30 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any, allowEmpty bool) error {
+	if r.Body == nil {
+		if allowEmpty {
+			return nil
+		}
+		return io.EOF
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes())
+	err := json.NewDecoder(r.Body).Decode(dst)
+	if err == io.EOF && allowEmpty {
+		return nil
+	}
+	return err
+}
+
+func writeJSONBodyError(w http.ResponseWriter, err error, fallback string) {
+	var maxBytesErr *http.MaxBytesError
+	if errors.As(err, &maxBytesErr) {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	http.Error(w, fallback, http.StatusBadRequest)
+}
+
 func intParam(r *http.Request, key string, def int) int {
 	v := r.URL.Query().Get(key)
 	if v == "" {
@@ -5050,6 +5068,10 @@ func maxSecurityDBBundleBytes() int64 {
 
 func maxMultipartMemoryBytes() int64 {
 	return envBytes("BONGSU_MULTIPART_MEMORY_MAX_BYTES", 32<<20)
+}
+
+func maxJSONBodyBytes() int64 {
+	return envBytes("BONGSU_JSON_BODY_MAX_BYTES", 1<<20)
 }
 
 func envBytes(key string, def int64) int64 {
