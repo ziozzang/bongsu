@@ -5306,9 +5306,9 @@ func (db *DB) GetCveSourceStats(ctx context.Context) ([]CveSourceStats, error) {
 	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
 WITH normalized AS (
 	SELECT
+		id,
 		source,
 		updated_at,
-		COALESCE(category, '') AS category,
 		COALESCE(ecosystem, '') AS ecosystem,
 		cvss_score,
 		COALESCE(cvss_vector, '') AS cvss_vector,
@@ -5318,33 +5318,37 @@ WITH normalized AS (
 		END AS affected_products
 	FROM cve_database
 	WHERE source != ''
+),
+per_cve AS (
+	SELECT
+		n.id,
+		n.source,
+		n.updated_at,
+		(n.cvss_score > 0 OR n.cvss_vector != '') AS has_cvss,
+		(n.ecosystem != '' OR COALESCE(bool_or(COALESCE(ap->>'ecosystem', '') != ''), false)) AS has_ecosystem,
+		COALESCE(bool_or(%s), false) AS has_fixed,
+		COALESCE(bool_or(jsonb_typeof(ap->'ranges') = 'array' AND jsonb_array_length(ap->'ranges') > 0), false) AS has_ranges,
+		COALESCE(bool_or(
+			COALESCE(ap->>'name', '') != ''
+			AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(n.ecosystem, '')) IS NOT NULL
+			AND (%s)
+		), false) AS matchable
+	FROM normalized n
+	LEFT JOIN LATERAL jsonb_array_elements(n.affected_products) ap ON true
+	GROUP BY n.id, n.source, n.updated_at, n.ecosystem, n.cvss_score, n.cvss_vector
 )
 SELECT
 	source,
 	COUNT(*) AS count,
-	COUNT(*) FILTER (
-		WHERE %s
-	) AS matchable,
-	COUNT(*) FILTER (
-		WHERE ecosystem != '' OR EXISTS (
-			SELECT 1 FROM jsonb_array_elements(affected_products) ap
-			WHERE COALESCE(ap->>'ecosystem', '') != ''
-		)
-	) AS with_ecosystem,
-	COUNT(*) FILTER (
-		WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(affected_products) ap WHERE %s)
-	) AS with_fixed,
-	COUNT(*) FILTER (
-		WHERE EXISTS (
-			SELECT 1 FROM jsonb_array_elements(affected_products) ap
-			WHERE jsonb_typeof(ap->'ranges') = 'array' AND jsonb_array_length(ap->'ranges') > 0
-		)
-	) AS with_ranges,
-	COUNT(*) FILTER (WHERE cvss_score > 0 OR cvss_vector != '') AS with_cvss,
+	COUNT(*) FILTER (WHERE matchable) AS matchable,
+	COUNT(*) FILTER (WHERE has_ecosystem) AS with_ecosystem,
+	COUNT(*) FILTER (WHERE has_fixed) AS with_fixed,
+	COUNT(*) FILTER (WHERE has_ranges) AS with_ranges,
+	COUNT(*) FILTER (WHERE has_cvss) AS with_cvss,
 	MAX(updated_at) AS last_update
-FROM normalized
+FROM per_cve
 GROUP BY source
-ORDER BY source`, cveSourceMatchablePredicateSQL("affected_products", "ecosystem"), cveSourceFixedPredicateSQL()))
+ORDER BY source`, cveSourceFixedPredicateSQL(), cveSourceFixedPredicateSQL()))
 	if err != nil {
 		return nil, err
 	}

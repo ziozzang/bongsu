@@ -888,6 +888,40 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 	}
 }
 
+func TestCveSourceStatsUsesSingleAffectedProductExpansion(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetCveSourceStats")
+	if start < 0 {
+		t.Fatal("GetCveSourceStats not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetSecurityDBRevision")
+	if end < 0 {
+		t.Fatal("GetCveSourceStats end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"per_cve AS",
+		"LEFT JOIN LATERAL jsonb_array_elements(n.affected_products) ap ON true",
+		"COALESCE(bool_or(",
+		"COUNT(*) FILTER (WHERE matchable)",
+		"COUNT(*) FILTER (WHERE has_ecosystem)",
+		"COUNT(*) FILTER (WHERE has_fixed)",
+		"COUNT(*) FILTER (WHERE has_ranges)",
+		"COUNT(*) FILTER (WHERE has_cvss)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("source stats missing %q: %s", want, fn)
+		}
+	}
+	if strings.Count(fn, "jsonb_array_elements") != 1 {
+		t.Fatalf("source stats should expand affected_products once: %s", fn)
+	}
+}
+
 func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
