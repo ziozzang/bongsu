@@ -1161,6 +1161,33 @@ func TestCveReferenceKeysGroupVendorCVEAndAdvisories(t *testing.T) {
 	}
 }
 
+func TestCveReferenceKeysRejectMalformedGitHubRepositoryReferences(t *testing.T) {
+	entry := models.CveEntry{
+		References: `[{"url":"https://github.com/mariocasciaro/object-path%230116"},{"url":"https://github.com/flitbit/json-ptr%23security-vulnerabilities-resolved"},{"url":"https://github.com/valid-owner/valid.repo-name"}]`,
+	}
+	got := cveReferenceKeys(entry)
+	for _, bad := range []string{
+		"repo:github.com/mariocasciaro/object-path%230116",
+		"repo:github.com/flitbit/json-ptr%23security-vulnerabilities-resolved",
+	} {
+		for _, key := range got {
+			if key == bad {
+				t.Fatalf("malformed repo key %q should not be indexed: %#v", bad, got)
+			}
+		}
+	}
+	found := false
+	for _, key := range got {
+		if key == "repo:github.com/valid-owner/valid.repo-name" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("valid repo key missing in %#v", got)
+	}
+}
+
 func TestCveReferenceKeysTagDebianAdvisoriesWithoutCVEAlias(t *testing.T) {
 	entry := models.CveEntry{
 		VulnerabilityID: "DLA-214-1",
@@ -1213,6 +1240,29 @@ func TestCveReferenceKeysIndexNonCVEAdvisoryIDs(t *testing.T) {
 		filter, vals := cveReferenceKeyFilter(tt.want)
 		if filter == "" || len(vals) != 1 || vals[0] != tt.want {
 			t.Fatalf("filter for %q = %q %#v", tt.want, filter, vals)
+		}
+	}
+}
+
+func TestCveReferenceKeyQualityConstraintsMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/037_cve_reference_key_quality_constraints.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DELETE FROM cve_reference_keys",
+		"upper(trim(reference_key)) LIKE '%TEMP-%'",
+		"cve_reference_keys_identity_nonempty_check",
+		"CHECK (trim(cve_id) <> '' AND trim(reference_key) <> '')",
+		"cve_reference_keys_no_temp_identifier_check",
+		"cve_reference_keys_format_check",
+		"repo:github\\.com/[a-z0-9_.-]+/[a-z0-9_.-]+",
+		"vendor:(debian|ubuntu|redhat)",
+		"NOT VALID",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE reference key quality migration missing %q: %s", want, body)
 		}
 	}
 }

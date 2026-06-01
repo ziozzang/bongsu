@@ -52,6 +52,7 @@ var (
 	osvAdvisoryKeyRe       = regexp.MustCompile(`(?i)\bOSV-\d{4}-\d{1,}\b`)
 	gsdAdvisoryKeyRe       = regexp.MustCompile(`(?i)\bGSD-\d{4}-\d{1,}\b`)
 	hashOnlyFixedVersionRe = regexp.MustCompile(`(?i)^[0-9a-f]{40}$`)
+	githubRepoPartRe       = regexp.MustCompile(`^[a-z0-9_.-]+$`)
 )
 
 type RetentionPruneResult struct {
@@ -4764,12 +4765,12 @@ func cveReferenceKeys(e models.CveEntry) []string {
 			continue
 		}
 		host := strings.ToLower(strings.TrimPrefix(u.Host, "www."))
-		path := strings.Trim(u.EscapedPath(), "/")
+		path := strings.Trim(u.Path, "/")
 		parts := strings.Split(path, "/")
 		if host == "github.com" && len(parts) >= 2 {
 			owner := strings.ToLower(parts[0])
 			repo := strings.ToLower(strings.TrimSuffix(parts[1], ".git"))
-			if owner != "" && repo != "" {
+			if githubRepoPartRe.MatchString(owner) && githubRepoPartRe.MatchString(repo) {
 				keys = appendUnique(keys, "repo:github.com/"+owner+"/"+repo)
 			}
 			continue
