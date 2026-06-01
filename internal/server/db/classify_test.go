@@ -1919,6 +1919,28 @@ func TestRequeueScanRequestOnlyRetriesTerminalRequests(t *testing.T) {
 	}
 }
 
+func TestScanRequestStatusConstraintIncludesDegraded(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/031_scan_request_status_degraded.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DROP CONSTRAINT IF EXISTS scan_requests_status_check",
+		"ADD CONSTRAINT scan_requests_status_check",
+		"'pending'",
+		"'claimed'",
+		"'completed'",
+		"'degraded'",
+		"'failed'",
+		"'cancelled'",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("scan request status constraint migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestFilteredRequeueRequiresTerminalRequestsAndFilters(t *testing.T) {
 	dbFile, err := os.ReadFile("db.go")
 	if err != nil {
