@@ -1,6 +1,7 @@
 package db
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -1477,6 +1478,23 @@ func TestRetentionPruneDoesNotDeleteRunningScans(t *testing.T) {
 	}
 	if !strings.Contains(got, "status IN ('completed','degraded')") {
 		t.Fatalf("retention prune must still preserve latest usable inventory: %s", got)
+	}
+}
+
+func TestRetentionPruneResultCarriesCutoffs(t *testing.T) {
+	result := RetentionPruneResult{
+		ScanCutoff:    "2026-01-01T00:00:00Z",
+		RequestCutoff: "2026-02-01T00:00:00Z",
+		AuditCutoff:   "2026-03-01T00:00:00Z",
+	}
+	data, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"scan_cutoff"`, `"request_cutoff"`, `"audit_cutoff"`} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("retention prune result missing cutoff field %q: %s", want, data)
+		}
 	}
 }
 

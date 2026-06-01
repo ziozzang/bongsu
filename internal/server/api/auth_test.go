@@ -3205,6 +3205,39 @@ func TestAuditLogDashboardCoversSecurityStatusesAndActions(t *testing.T) {
 	}
 }
 
+func TestRetentionPruneCutoffsAreExposed(t *testing.T) {
+	apiOut, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	typeOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiBody := string(apiOut)
+	appBody := string(appOut)
+	typeBody := string(typeOut)
+	for _, want := range []string{`"scan_cutoff":`, `"request_cutoff":`, `"audit_cutoff":`} {
+		if !strings.Contains(apiBody, want) {
+			t.Fatalf("retention prune audit metadata missing %q", want)
+		}
+	}
+	for _, want := range []string{"scan_cutoff: string", "request_cutoff: string", "audit_cutoff: string"} {
+		if !strings.Contains(typeBody, want) {
+			t.Fatalf("retention prune API type missing %q", want)
+		}
+	}
+	for _, want := range []string{"r.scan_cutoff", "r.request_cutoff", "r.audit_cutoff", "before ${scanCutoff}", "before ${requestCutoff}", "before ${auditCutoff}"} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("retention prune dashboard cutoff display missing %q", want)
+		}
+	}
+}
+
 func TestAuditLogTimeRangeFiltersAreExposed(t *testing.T) {
 	apiOut, err := os.ReadFile("api.go")
 	if err != nil {

@@ -442,6 +442,9 @@ export interface RetentionPruneResult {
   scan_days: number;
   request_days: number;
   audit_days: number;
+  scan_cutoff: string;
+  request_cutoff: string;
+  audit_cutoff: string;
   scans: number;
   packages: number;
   vulnerabilities: number;

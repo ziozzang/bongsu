@@ -35,19 +35,22 @@ var ErrScanRequestNotRetryable = errors.New("scan request is not failed, degrade
 var ErrAgentHostTokenMismatch = errors.New("agent token does not match host binding")
 
 type RetentionPruneResult struct {
-	DryRun      bool `json:"dry_run"`
-	ScanDays    int  `json:"scan_days"`
-	RequestDays int  `json:"request_days"`
-	AuditDays   int  `json:"audit_days"`
-	Scans       int  `json:"scans"`
-	Packages    int  `json:"packages"`
-	Vulns       int  `json:"vulnerabilities"`
-	Containers  int  `json:"containers"`
-	Users       int  `json:"users"`
-	Processes   int  `json:"processes"`
-	Ports       int  `json:"ports"`
-	Requests    int  `json:"scan_requests"`
-	AuditLogs   int  `json:"audit_logs"`
+	DryRun        bool   `json:"dry_run"`
+	ScanDays      int    `json:"scan_days"`
+	RequestDays   int    `json:"request_days"`
+	AuditDays     int    `json:"audit_days"`
+	ScanCutoff    string `json:"scan_cutoff"`
+	RequestCutoff string `json:"request_cutoff"`
+	AuditCutoff   string `json:"audit_cutoff"`
+	Scans         int    `json:"scans"`
+	Packages      int    `json:"packages"`
+	Vulns         int    `json:"vulnerabilities"`
+	Containers    int    `json:"containers"`
+	Users         int    `json:"users"`
+	Processes     int    `json:"processes"`
+	Ports         int    `json:"ports"`
+	Requests      int    `json:"scan_requests"`
+	AuditLogs     int    `json:"audit_logs"`
 }
 
 func New(ctx context.Context, dsn string) (*DB, error) {
@@ -396,6 +399,9 @@ func (db *DB) PruneOperationalData(ctx context.Context, scanDays, requestDays, a
 	scanCutoff := now.Add(-time.Duration(scanDays) * 24 * time.Hour)
 	requestCutoff := now.Add(-time.Duration(requestDays) * 24 * time.Hour)
 	auditCutoff := now.Add(-time.Duration(auditDays) * 24 * time.Hour)
+	result.ScanCutoff = scanCutoff.UTC().Format(time.RFC3339)
+	result.RequestCutoff = requestCutoff.UTC().Format(time.RFC3339)
+	result.AuditCutoff = auditCutoff.UTC().Format(time.RFC3339)
 
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

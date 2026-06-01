@@ -474,7 +474,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       const r = await api.pruneRetention({ dry_run: dryRun });
       const inventoryRows = r.packages + r.vulnerabilities + r.containers + r.users + r.processes + r.ports;
       const affected = r.scans + inventoryRows + r.scan_requests + r.audit_logs;
-      setRetentionMsg(`${dryRun ? 'Dry run' : 'Pruned'}: ${affected.toLocaleString()} records (${r.scans} scans, ${inventoryRows} inventory rows, ${r.scan_requests} requests, ${r.audit_logs} audit logs)`);
+      const scanCutoff = r.scan_cutoff ? new Date(r.scan_cutoff).toLocaleString() : `${r.scan_days}d`;
+      const requestCutoff = r.request_cutoff ? new Date(r.request_cutoff).toLocaleString() : `${r.request_days}d`;
+      const auditCutoff = r.audit_cutoff ? new Date(r.audit_cutoff).toLocaleString() : `${r.audit_days}d`;
+      setRetentionMsg(`${dryRun ? 'Dry run' : 'Pruned'}: ${affected.toLocaleString()} records (${r.scans} scans before ${scanCutoff}, ${inventoryRows} inventory rows, ${r.scan_requests} requests before ${requestCutoff}, ${r.audit_logs} audit logs before ${auditCutoff})`);
     } catch {
       setRetentionMsg('Retention prune failed or requires admin API key');
     }
