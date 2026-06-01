@@ -2907,6 +2907,19 @@ function CveSearchView() {
                         <span className="host-link" style={{ color: 'var(--primary)' }}>
                           {entry.vulnerability_id}
                         </span>
+                        {(entry.reference_group_total || 0) > 1 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: 3 }}>
+                            <span className="badge" style={{ color: '#22c55e' }}>
+                              group {entry.reference_group_total}
+                            </span>
+                            <span className="badge" style={{ color: 'var(--text-muted)' }}>
+                              {entry.reference_group_sources || 0} src
+                            </span>
+                            <span className="badge" style={{ color: (entry.reference_group_matchable || 0) > 0 ? '#22c55e' : 'var(--text-muted)' }}>
+                              {entry.reference_group_matchable || 0} match
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td>
                         <span className={badge(entry.severity)}>

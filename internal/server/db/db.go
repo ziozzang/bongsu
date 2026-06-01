@@ -4235,7 +4235,77 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 		e.ReferenceKeys = cveReferenceKeys(e)
 		entries = append(entries, e)
 	}
+	if err := db.enrichCveReferenceGroupCounts(ctx, entries); err != nil {
+		return nil, 0, err
+	}
 	return entries, total, nil
+}
+
+type cveReferenceGroupCounts struct {
+	Total     int
+	Matchable int
+	Sources   int
+}
+
+func (db *DB) enrichCveReferenceGroupCounts(ctx context.Context, entries []models.CveEntry) error {
+	cves := []string{}
+	entryKeys := make([]string, len(entries))
+	for i := range entries {
+		for _, key := range entries[i].ReferenceKeys {
+			if strings.HasPrefix(key, "cve:") {
+				cve := strings.TrimSpace(strings.TrimPrefix(key, "cve:"))
+				if cveReferenceKeyRe.MatchString(cve) {
+					entryKeys[i] = strings.ToUpper(cve)
+					cves = appendUnique(cves, strings.ToUpper(cve))
+				}
+				break
+			}
+		}
+	}
+	if len(cves) == 0 {
+		return nil
+	}
+	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+WITH keys AS (SELECT unnest($1::text[]) AS cve)
+SELECT k.cve,
+	count(c.id),
+	count(c.id) FILTER (WHERE %s),
+	count(DISTINCT NULLIF(c.source, ''))
+FROM keys k
+JOIN cve_database c ON (
+	c.vulnerability_id ILIKE ('%%' || k.cve || '%%')
+	OR c.title ILIKE ('%%' || k.cve || '%%')
+	OR c.description ILIKE ('%%' || k.cve || '%%')
+	OR c.refs::text ILIKE ('%%' || k.cve || '%%')
+)
+GROUP BY k.cve`, matchablePredicate), pq.Array(cves))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	counts := map[string]cveReferenceGroupCounts{}
+	for rows.Next() {
+		var key string
+		var c cveReferenceGroupCounts
+		if err := rows.Scan(&key, &c.Total, &c.Matchable, &c.Sources); err != nil {
+			return err
+		}
+		counts[strings.ToUpper(key)] = c
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range entries {
+		c, ok := counts[entryKeys[i]]
+		if !ok {
+			continue
+		}
+		entries[i].ReferenceGroupTotal = c.Total
+		entries[i].ReferenceGroupMatchable = c.Matchable
+		entries[i].ReferenceGroupSources = c.Sources
+	}
+	return nil
 }
 
 func (db *DB) GetCveReferenceGroupSummary(ctx context.Context, key string, limit int) (CveReferenceGroupSummary, error) {

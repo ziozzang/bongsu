@@ -917,6 +917,11 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 		"source NOT IN ('cisa-kev', 'epss')",
 		"if matchableOnly",
 		"cveSourceMatchablePredicateSQL",
+		"enrichCveReferenceGroupCounts",
+		"ReferenceGroupTotal",
+		"ReferenceGroupMatchable",
+		"ReferenceGroupSources",
+		"pq.Array(cves)",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search missing %q: %s", want, fn)
