@@ -238,6 +238,7 @@ spec:
 | `BONGSU_CVE_REFERENCE_INDEX_TIMEOUT_SECONDS` | `5` | Health timeout for reference-key index detail before falling back to lightweight status |
 | `BONGSU_HEALTH_DB_TIMEOUT_SECONDS` | `2` | Shared DB timeout for optional health details |
 | `BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS` | `120` | Startup timeout for CVSS recalculation, vulnerability enrichment, and severity normalization after index preparation |
+| `BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE` | `10000` | Batch size for validating and deleting stale `cve-db` findings during security DB recalculation; clamped at 100000 |
 | `BONGSU_AGENT_REPORT_MAX_BYTES` | `536870912` | Maximum accepted agent report body size |
 | `BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES` | `2147483648` | Maximum accepted direct Trivy DB upload size |
 | `BONGSU_CVE_DB_IMPORT_MAX_BYTES` | `2147483648` | Maximum accepted CVE JSONL import size |

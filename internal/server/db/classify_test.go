@@ -1527,6 +1527,9 @@ func TestRemoveStaleRematchedVulnerabilitiesUsesCompatibleCandidateCheck(t *test
 	for _, want := range []string{
 		"staleRematchedVulnerabilityIDs",
 		"compatibleSecurityCandidate",
+		"BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE",
+		"batchSize > 100000",
+		"afterID = lastID",
 		"installed_version",
 		"affected_products",
 		"DELETE FROM vulnerabilities WHERE id = ANY($1)",
@@ -1800,6 +1803,8 @@ func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T
 	for _, want := range []string{
 		"DELETE FROM vulnerabilities WHERE id = ANY($1)",
 		"v.finding_source = 'cve-db'",
+		"($1 = '' OR v.id > $1)",
+		"LIMIT $2",
 		"JOIN packages p ON p.id = v.package_id",
 		"LEFT JOIN cve_database c ON c.vulnerability_id = v.vulnerability_id",
 		"compatibleSecurityCandidate",

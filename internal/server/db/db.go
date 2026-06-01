@@ -3602,22 +3602,37 @@ func (db *DB) EnrichVulnerabilities(ctx context.Context) (int, error) {
 }
 
 func (db *DB) RemoveStaleRematchedVulnerabilities(ctx context.Context) (int, error) {
-	staleIDs, err := db.staleRematchedVulnerabilityIDs(ctx)
-	if err != nil {
-		return 0, err
+	batchSize := envPositiveInt("BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE", 10000)
+	if batchSize > 100000 {
+		batchSize = 100000
 	}
-	if len(staleIDs) == 0 {
-		return 0, nil
+	total := 0
+	afterID := ""
+	for {
+		staleIDs, lastID, scanned, err := db.staleRematchedVulnerabilityIDs(ctx, afterID, batchSize)
+		if err != nil {
+			return total, err
+		}
+		if len(staleIDs) > 0 {
+			res, err := db.ExecContext(ctx, `DELETE FROM vulnerabilities WHERE id = ANY($1)`, pq.Array(staleIDs))
+			if err != nil {
+				return total, err
+			}
+			n, _ := res.RowsAffected()
+			total += int(n)
+		}
+		if scanned < batchSize || lastID == "" {
+			break
+		}
+		afterID = lastID
 	}
-	res, err := db.ExecContext(ctx, `DELETE FROM vulnerabilities WHERE id = ANY($1)`, pq.Array(staleIDs))
-	if err != nil {
-		return 0, err
-	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
+	return total, nil
 }
 
-func (db *DB) staleRematchedVulnerabilityIDs(ctx context.Context) ([]string, error) {
+func (db *DB) staleRematchedVulnerabilityIDs(ctx context.Context, afterID string, limit int) ([]string, string, int, error) {
+	if limit <= 0 {
+		limit = 10000
+	}
 	rows, err := db.QueryContext(ctx, `
 SELECT v.id,
        COALESCE(NULLIF(p.name, ''), NULLIF(v.pkg_name, '')) AS package_name,
@@ -3631,9 +3646,11 @@ FROM vulnerabilities v
 JOIN packages p ON p.id = v.package_id
 LEFT JOIN cve_database c ON c.vulnerability_id = v.vulnerability_id
 WHERE v.finding_source = 'cve-db'
-ORDER BY v.id`)
+  AND ($1 = '' OR v.id > $1)
+ORDER BY v.id
+LIMIT $2`, afterID, limit)
 	if err != nil {
-		return nil, err
+		return nil, "", 0, err
 	}
 	defer rows.Close()
 
@@ -3643,11 +3660,15 @@ ORDER BY v.id`)
 	}
 	states := map[string]*state{}
 	order := []string{}
+	lastID := ""
+	scanned := 0
 	for rows.Next() {
 		var id, pkgName, pkgType, pkgEco, installed, cveCategory, cveEco, affectedProducts string
 		if err := rows.Scan(&id, &pkgName, &pkgType, &pkgEco, &installed, &cveCategory, &cveEco, &affectedProducts); err != nil {
-			return nil, err
+			return nil, "", scanned, err
 		}
+		lastID = id
+		scanned++
 		st, ok := states[id]
 		if !ok {
 			st = &state{}
@@ -3663,7 +3684,7 @@ ORDER BY v.id`)
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, err
+		return nil, "", scanned, err
 	}
 	stale := make([]string, 0, len(order))
 	for _, id := range order {
@@ -3671,7 +3692,7 @@ ORDER BY v.id`)
 			stale = append(stale, id)
 		}
 	}
-	return stale, nil
+	return stale, lastID, scanned, nil
 }
 
 func cveEnrichmentFixedVersionSQL(cveAlias, vulnAlias string) string {
