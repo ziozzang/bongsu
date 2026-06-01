@@ -3079,7 +3079,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(dbCtx); err == nil {
 			resp["cve_affected_package_index"] = indexStats
 		} else if isAdmin {
-			resp["cve_affected_package_index"] = map[string]any{"error": err.Error()}
+			detailErr := err
+			cancel()
+			dbCtx, cancel = withHealthDBTimeout()
+			if lightStats, lightErr := s.db.GetCveAffectedPackageIndexHealthStats(dbCtx); lightErr == nil {
+				lightStats["detail_error"] = detailErr.Error()
+				resp["cve_affected_package_index"] = lightStats
+			} else {
+				resp["cve_affected_package_index"] = map[string]any{"error": detailErr.Error(), "fallback_error": lightErr.Error()}
+			}
 		}
 		cancel()
 		dbCtx, cancel = withHealthDBTimeout()

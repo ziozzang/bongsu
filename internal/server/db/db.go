@@ -5172,6 +5172,33 @@ ORDER BY source`, matchablePredicate))
 	return &stats, nil
 }
 
+func (db *DB) GetCveAffectedPackageIndexHealthStats(ctx context.Context) (map[string]any, error) {
+	var count, sourceCount, indexedCVEs, orphans int
+	var lastUpdate *time.Time
+	err := db.QueryRowContext(ctx, `
+SELECT
+	(SELECT count(*) FROM cve_affected_packages),
+	(SELECT count(DISTINCT source) FROM cve_affected_packages WHERE source != ''),
+	(SELECT count(DISTINCT cve_id) FROM cve_affected_packages),
+	(SELECT max(updated_at) FROM cve_affected_packages),
+	(SELECT count(*) FROM cve_affected_packages cap WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id))`).Scan(
+		&count, &sourceCount, &indexedCVEs, &lastUpdate, &orphans)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{
+		"summary_mode": "indexed-only",
+		"count":        count,
+		"source_count": sourceCount,
+		"indexed_cves": indexedCVEs,
+		"orphans":      orphans,
+	}
+	if lastUpdate != nil {
+		out["last_update"] = lastUpdate
+	}
+	return out, nil
+}
+
 func (db *DB) GetCveReferenceKeyIndexStats(ctx context.Context) (*CveReferenceKeyIndexStats, error) {
 	var stats CveReferenceKeyIndexStats
 	err := db.QueryRowContext(ctx, `

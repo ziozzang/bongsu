@@ -383,6 +383,9 @@ export interface HealthStatus {
     stale?: boolean;
     orphans?: number;
     error?: string;
+    summary_mode?: string;
+    detail_error?: string;
+    fallback_error?: string;
   };
   cve_reference_key_index?: {
     count?: number;
