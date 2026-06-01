@@ -1530,6 +1530,8 @@ func TestRemoveStaleRematchedVulnerabilitiesUsesCompatibleCandidateCheck(t *test
 		"BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE",
 		"batchSize > 100000",
 		"afterID = lastID",
+		"WITH candidate_vulns AS",
+		"FROM candidate_vulns cv",
 		"installed_version",
 		"affected_products",
 		"DELETE FROM vulnerabilities WHERE id = ANY($1)",
@@ -1805,8 +1807,9 @@ func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T
 		"v.finding_source = 'cve-db'",
 		"($1 = '' OR v.id > $1)",
 		"LIMIT $2",
+		"FROM candidate_vulns cv",
 		"JOIN packages p ON p.id = v.package_id",
-		"LEFT JOIN cve_database c ON c.vulnerability_id = v.vulnerability_id",
+		"LEFT JOIN cve_database c ON c.vulnerability_id = cv.vulnerability_id",
 		"compatibleSecurityCandidate",
 	} {
 		if !strings.Contains(fn, want) {

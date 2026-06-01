@@ -3634,21 +3634,31 @@ func (db *DB) staleRematchedVulnerabilityIDs(ctx context.Context, afterID string
 		limit = 10000
 	}
 	rows, err := db.QueryContext(ctx, `
-SELECT v.id,
-       COALESCE(NULLIF(p.name, ''), NULLIF(v.pkg_name, '')) AS package_name,
-       COALESCE(p.pkg_type, '') AS pkg_type,
-       COALESCE(p.ecosystem, '') AS package_ecosystem,
-       COALESCE(NULLIF(v.installed_version, ''), p.version) AS installed_version,
+WITH candidate_vulns AS (
+	SELECT v.id,
+	       COALESCE(NULLIF(p.name, ''), NULLIF(v.pkg_name, '')) AS package_name,
+	       COALESCE(p.pkg_type, '') AS pkg_type,
+	       COALESCE(p.ecosystem, '') AS package_ecosystem,
+	       COALESCE(NULLIF(v.installed_version, ''), p.version) AS installed_version,
+	       v.vulnerability_id
+	FROM vulnerabilities v
+	JOIN packages p ON p.id = v.package_id
+	WHERE v.finding_source = 'cve-db'
+	  AND ($1 = '' OR v.id > $1)
+	ORDER BY v.id
+	LIMIT $2
+)
+SELECT cv.id,
+       cv.package_name,
+       cv.pkg_type,
+       cv.package_ecosystem,
+       cv.installed_version,
        COALESCE(c.category, '') AS cve_category,
        COALESCE(c.ecosystem, '') AS cve_ecosystem,
        COALESCE(c.affected_products::text, '') AS affected_products
-FROM vulnerabilities v
-JOIN packages p ON p.id = v.package_id
-LEFT JOIN cve_database c ON c.vulnerability_id = v.vulnerability_id
-WHERE v.finding_source = 'cve-db'
-  AND ($1 = '' OR v.id > $1)
-ORDER BY v.id
-LIMIT $2`, afterID, limit)
+FROM candidate_vulns cv
+LEFT JOIN cve_database c ON c.vulnerability_id = cv.vulnerability_id
+ORDER BY cv.id`, afterID, limit)
 	if err != nil {
 		return nil, "", 0, err
 	}
@@ -3667,13 +3677,13 @@ LIMIT $2`, afterID, limit)
 		if err := rows.Scan(&id, &pkgName, &pkgType, &pkgEco, &installed, &cveCategory, &cveEco, &affectedProducts); err != nil {
 			return nil, "", scanned, err
 		}
-		lastID = id
-		scanned++
 		st, ok := states[id]
 		if !ok {
 			st = &state{}
 			states[id] = st
 			order = append(order, id)
+			lastID = id
+			scanned++
 		}
 		st.seen = true
 		if st.compatible {
