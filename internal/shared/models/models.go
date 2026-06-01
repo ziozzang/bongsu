@@ -268,6 +268,7 @@ type CveEntry struct {
 	CVSSVector       string     `json:"cvss_vector"`
 	EPSSScore        float64    `json:"epss_score,omitempty"`
 	EPSSPercentile   float64    `json:"epss_percentile,omitempty"`
+	Matchable        bool       `json:"matchable"`
 	Title            string     `json:"title"`
 	Description      string     `json:"description"`
 	PublishedDate    *time.Time `json:"published_date,omitempty"`

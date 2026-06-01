@@ -2512,6 +2512,32 @@ function CveSearchView() {
     if (!raw) return [];
     try { return JSON.parse(raw); } catch { return []; }
   };
+  const affectedPackageFixedVersions = (pkg: any): string[] => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const add = (v: unknown) => {
+      if (typeof v !== 'string') return;
+      const fixed = v.trim();
+      if (!fixed || seen.has(fixed)) return;
+      seen.add(fixed);
+      out.push(fixed);
+    };
+    if (Array.isArray(pkg?.fixed)) pkg.fixed.forEach(add);
+    if (Array.isArray(pkg?.ranges)) {
+      pkg.ranges.forEach((range: any) => {
+        if (Array.isArray(range?.events)) range.events.forEach((event: any) => add(event?.fixed));
+      });
+    }
+    return out;
+  };
+  const affectedPackageTarget = (pkg: any, entry: CveDbEntry): string => {
+    const target = typeof pkg?.ecosystem === 'string' && pkg.ecosystem.trim() ? pkg.ecosystem : entry.ecosystem;
+    return typeof target === 'string' ? target.trim() : '';
+  };
+  const isMatchableAffectedPackage = (pkg: any, entry: CveDbEntry): boolean =>
+    typeof pkg?.name === 'string' && pkg.name.trim() !== '' &&
+    affectedPackageTarget(pkg, entry) !== '' &&
+    affectedPackageFixedVersions(pkg).length > 0;
 
   return (
     <>
@@ -2571,6 +2597,7 @@ function CveSearchView() {
                 <th className="clickable" onClick={() => toggleSort('cvss_score')} style={{ userSelect: 'none' }}>CVSS{sortArrow('cvss_score')}</th>
                 <th className="clickable" onClick={() => toggleSort('epss_score')} style={{ userSelect: 'none' }}>EPSS{sortArrow('epss_score')}</th>
                 <th className="clickable" onClick={() => toggleSort('source')} style={{ userSelect: 'none' }}>Source{sortArrow('source')}</th>
+                <th>Match</th>
                 <th className="clickable" onClick={() => toggleSort('title')} style={{ userSelect: 'none' }}>Title{sortArrow('title')}</th>
                 <th className="clickable" onClick={() => toggleSort('published_date')} style={{ userSelect: 'none' }}>Published{sortArrow('published_date')}</th>
               </tr>
@@ -2606,6 +2633,11 @@ function CveSearchView() {
                       <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                         {entry.source}
                       </td>
+                      <td>
+                        <span className="badge" style={{ color: entry.matchable ? '#22c55e' : 'var(--text-muted)' }}>
+                          {entry.matchable ? 'matchable' : 'reference'}
+                        </span>
+                      </td>
                       <td style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {entry.title || '-'}
                       </td>
@@ -2615,7 +2647,7 @@ function CveSearchView() {
                     </tr>
                     {isExpanded && (
                       <tr>
-                        <td colSpan={7} style={{ background: 'var(--surface)', padding: '1rem 1.5rem' }}>
+                        <td colSpan={8} style={{ background: 'var(--surface)', padding: '1rem 1.5rem' }}>
                           {entry.description && (
                             <div style={{ marginBottom: '0.75rem' }}>
                               <strong>Description</strong>
@@ -2637,19 +2669,24 @@ function CveSearchView() {
                               <strong style={{ fontSize: '0.8125rem' }}>Affected Packages</strong>
                               <div style={{ marginTop: '0.25rem' }}>
                                 {prods.slice(0, 20).map((pkg: any, idx: number) => {
-                                  const fixedArr = pkg.fixed || [];
+                                  const fixedArr = affectedPackageFixedVersions(pkg);
                                   const lastFixed = fixedArr.length > 0 ? fixedArr[fixedArr.length - 1] : '';
+                                  const target = affectedPackageTarget(pkg, entry);
+                                  const matchablePkg = isMatchableAffectedPackage(pkg, entry);
                                   return (
                                     <div key={idx} style={{ background: 'var(--bg)', padding: '0.4rem 0.75rem', borderRadius: 4, border: '1px solid var(--border)', marginBottom: '0.25rem' }}>
                                       <span style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{pkg.name || 'unknown'}</span>
-                                      {pkg.ecosystem && (
-                                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>{pkg.ecosystem}</span>
+                                      {target && (
+                                        <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>{target}</span>
                                       )}
                                       {lastFixed && (
                                         <span style={{ fontSize: '0.6875rem', color: '#22c55e', background: 'rgba(34,197,94,0.1)', padding: '1px 6px', borderRadius: 3, fontWeight: 600, marginLeft: '0.5rem' }}>
                                           Fixed: {lastFixed}
                                         </span>
                                       )}
+                                      <span style={{ fontSize: '0.6875rem', color: matchablePkg ? '#22c55e' : 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                                        {matchablePkg ? 'used for matching' : 'reference only'}
+                                      </span>
                                     </div>
                                   );
                                 })}
@@ -2677,7 +2714,7 @@ function CveSearchView() {
                 );
               })}
               {results.items.length === 0 && (
-                <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No results found</td></tr>
+                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No results found</td></tr>
               )}
             </tbody>
           </table>

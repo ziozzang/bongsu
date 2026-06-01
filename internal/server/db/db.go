@@ -3893,6 +3893,7 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source str
 		if err := ScanCveEntry(rows, &e); err != nil {
 			return nil, 0, err
 		}
+		e.Matchable = cveEntryHasMatchableAffectedProduct(e.AffectedProducts, e.Ecosystem)
 		entries = append(entries, e)
 	}
 	return entries, total, nil
@@ -4394,7 +4395,42 @@ func cveSourceMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr string) 
 		WHERE COALESCE(ap->>'name', '') != ''
 		  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(%s, '')) IS NOT NULL
 		  AND (%s)
-	)`, affectedProductsExpr, ecosystemExpr, cveSourceFixedPredicateSQL())
+		)`, affectedProductsExpr, ecosystemExpr, cveSourceFixedPredicateSQL())
+}
+
+func cvePackageMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr, packageNameExpr string) string {
+	return fmt.Sprintf(`EXISTS (
+		SELECT 1
+		FROM jsonb_array_elements(%s) ap
+		WHERE lower(COALESCE(ap->>'name', '')) = lower(%s)
+		  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(%s, '')) IS NOT NULL
+		  AND (%s)
+	)`, affectedProductsExpr, packageNameExpr, ecosystemExpr, cveSourceFixedPredicateSQL())
+}
+
+func cveEntryHasMatchableAffectedProduct(affectedProducts, ecosystem string) bool {
+	var products []affectedProduct
+	if affectedProducts == "" || json.Unmarshal([]byte(affectedProducts), &products) != nil {
+		return false
+	}
+	cveEco := normalizeEcosystem(ecosystem)
+	for _, p := range products {
+		if strings.TrimSpace(p.Name) == "" {
+			continue
+		}
+		effectiveEco := normalizeEcosystem(p.Ecosystem)
+		if effectiveEco == "" {
+			effectiveEco = cveEco
+		}
+		if effectiveEco == "" {
+			continue
+		}
+		if len(fixedVersions(p)) == 0 {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchResult, error) {
@@ -4424,6 +4460,7 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 	limitPlaceholder := fmt.Sprintf("$%d", len(args))
 
 	affectedProducts := `CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END`
+	candidateAffectedProducts := `CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END`
 	query := fmt.Sprintf(`
 		WITH source_quality AS (
 			SELECT
@@ -4442,11 +4479,11 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		       c.title, c.description, c.refs, c.category, c.ecosystem, c.affected_products
 		FROM packages p
 		%s
-		JOIN cve_database c ON c.affected_products @> jsonb_build_array(jsonb_build_object('name', p.name))
+		JOIN cve_database c ON %s
 		JOIN source_quality sq ON sq.source = c.source
 		WHERE 1=1%s
 		LIMIT %s
-	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), scanJoin, filters, limitPlaceholder)
+	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), scanJoin, cvePackageMatchablePredicateSQL(candidateAffectedProducts, "c.ecosystem", "p.name"), filters, limitPlaceholder)
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {

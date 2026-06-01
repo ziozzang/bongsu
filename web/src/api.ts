@@ -442,17 +442,22 @@ export interface CveDbEntry {
   id: string;
   vulnerability_id: string;
   source: string;
+  category?: string;
+  ecosystem?: string;
   severity: string;
   cvss_score: number;
   cvss_vector: string;
   epss_score?: number;
   epss_percentile?: number;
+  matchable?: boolean;
   title: string;
   description: string;
   published_date: string | null;
   modified_date: string | null;
   affected_products: string;
   references: string;
+  raw_data?: string;
+  updated_at?: string;
 }
 
 export interface RetentionPruneResult {

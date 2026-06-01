@@ -848,6 +848,71 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 	}
 }
 
+func TestCvePackageMatchablePredicateRequiresPackageTargetAndFixedData(t *testing.T) {
+	got := cvePackageMatchablePredicateSQL("c.affected_products", "c.ecosystem", "p.name")
+	for _, want := range []string{
+		"jsonb_array_elements(c.affected_products) ap",
+		"lower(COALESCE(ap->>'name', '')) = lower(p.name)",
+		"NULLIF(ap->>'ecosystem', '')",
+		"NULLIF(c.ecosystem, '')",
+		"jsonb_typeof(ap->'fixed') = 'array'",
+		"jsonb_array_length(ap->'fixed') = 1",
+		"jsonb_path_exists(ap, '$.ranges[*].events[*].fixed ? (@ != \"\")')",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("package matchable predicate missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
+	tests := []struct {
+		name             string
+		affectedProducts string
+		ecosystem        string
+		want             bool
+	}{
+		{
+			name:             "package ecosystem fixed",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0.5.2"]}]`,
+			want:             true,
+		},
+		{
+			name:             "cve ecosystem fixed",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","fixed":["0.5.2"]}]`,
+			ecosystem:        "Packagist",
+			want:             true,
+		},
+		{
+			name:             "range fixed event",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","ranges":[{"events":[{"introduced":"0"},{"fixed":"0.5.2"}]}]}]`,
+			want:             true,
+		},
+		{
+			name:             "missing fixed",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist"}]`,
+			want:             false,
+		},
+		{
+			name:             "missing ecosystem",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","fixed":["0.5.2"]}]`,
+			want:             false,
+		},
+		{
+			name:             "missing package name",
+			affectedProducts: `[{"ecosystem":"Packagist","fixed":["0.5.2"]}]`,
+			want:             false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := cveEntryHasMatchableAffectedProduct(tt.affectedProducts, tt.ecosystem); got != tt.want {
+				t.Fatalf("matchable=%v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCveSourceStatsExposeMatchablePercent(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
@@ -929,6 +994,7 @@ func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
 	for _, want := range []string{
 		"opts.ScanID",
 		"opts.CandidateLimit+1",
+		"cvePackageMatchablePredicateSQL(candidateAffectedProducts, \"c.ecosystem\", \"p.name\")",
 		"result.Limited = true",
 		"matches = matches[:opts.CandidateLimit]",
 		"AND p.scan_id =",
