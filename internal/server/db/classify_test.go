@@ -969,6 +969,47 @@ func TestCveReferenceKeyFilterSupportsCanonicalGroups(t *testing.T) {
 	}
 }
 
+func TestCveReferenceGroupSummaryUsesSameCanonicalFilter(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetCveReferenceGroupSummary")
+	if start < 0 {
+		t.Fatal("GetCveReferenceGroupSummary not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) cveReferenceGroupBuckets")
+	if end < 0 {
+		t.Fatal("cveReferenceGroupBuckets not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"ErrInvalidCveReferenceKey",
+		"cveReferenceKeyWhere(key, 1)",
+		"cveSourceMatchablePredicateSQL",
+		"summary.Sources",
+		"summary.Categories",
+		"summary.Ecosystems",
+		"summary.ReferenceKeys",
+		"summary.Items",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("reference group summary missing %q: %s", want, fn)
+		}
+	}
+	for _, want := range []string{
+		"type CveReferenceGroupSummary struct",
+		"type CveReferenceGroupBucket struct",
+		`json:"reference_keys"`,
+		`json:"matchable"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("reference group summary type missing %q", want)
+		}
+	}
+}
+
 func TestCveReferenceKeysGroupVendorCVEAndAdvisories(t *testing.T) {
 	entry := models.CveEntry{
 		VulnerabilityID: "DEBIAN-CVE-2026-48840",

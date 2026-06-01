@@ -35,6 +35,7 @@ var ErrScanRequestNotActive = errors.New("scan request is not pending or claimed
 var ErrScanRequestClaimMismatch = errors.New("scan request was not claimed by this host")
 var ErrScanRequestNotRetryable = errors.New("scan request is not failed, degraded, or cancelled")
 var ErrAgentHostTokenMismatch = errors.New("agent token does not match host binding")
+var ErrInvalidCveReferenceKey = errors.New("invalid CVE reference key")
 
 var (
 	cveReferenceKeyRe     = regexp.MustCompile(`(?i)\bCVE-\d{4}-\d{4,}\b`)
@@ -4156,15 +4157,11 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 		argN++
 	}
 	if referenceKey != "" {
-		filter, vals := cveReferenceKeyFilter(referenceKey)
-		if filter != "" {
-			placeholders := make([]any, 0, len(vals))
-			for _, val := range vals {
-				placeholders = append(placeholders, val)
-			}
-			baseQ += fmt.Sprintf(" AND "+filter, placeholderRange(argN, len(placeholders))...)
-			args = append(args, placeholders...)
-			argN += len(placeholders)
+		filter, vals, ok := cveReferenceKeyWhere(referenceKey, argN)
+		if ok {
+			baseQ += " AND " + filter
+			args = append(args, vals...)
+			argN += len(vals)
 		}
 	}
 	if severity != "" {
@@ -4239,6 +4236,73 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 		entries = append(entries, e)
 	}
 	return entries, total, nil
+}
+
+func (db *DB) GetCveReferenceGroupSummary(ctx context.Context, key string, limit int) (CveReferenceGroupSummary, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	filter, args, ok := cveReferenceKeyWhere(key, 1)
+	if !ok {
+		return CveReferenceGroupSummary{}, ErrInvalidCveReferenceKey
+	}
+	summary := CveReferenceGroupSummary{Key: strings.TrimSpace(key)}
+	baseQ := "FROM cve_database WHERE " + filter
+	if err := db.QueryRowContext(ctx, "SELECT count(*), count(*) FILTER (WHERE "+cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END", "ecosystem")+") "+baseQ, args...).Scan(&summary.Total, &summary.Matchable); err != nil {
+		return summary, err
+	}
+	var err error
+	if summary.Sources, err = db.cveReferenceGroupBuckets(ctx, "source", baseQ, args); err != nil {
+		return summary, err
+	}
+	if summary.Categories, err = db.cveReferenceGroupBuckets(ctx, "COALESCE(NULLIF(category, ''), '(uncategorized)')", baseQ, args); err != nil {
+		return summary, err
+	}
+	if summary.Ecosystems, err = db.cveReferenceGroupBuckets(ctx, "COALESCE(NULLIF(ecosystem, ''), '(unknown)')", baseQ, args); err != nil {
+		return summary, err
+	}
+	dataArgs := append([]any{}, args...)
+	dataArgs = append(dataArgs, limit)
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT %s %s ORDER BY cvss_score DESC NULLS LAST, updated_at DESC LIMIT $%d", CveCols, baseQ, len(dataArgs)), dataArgs...)
+	if err != nil {
+		return summary, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e models.CveEntry
+		if err := ScanCveEntry(rows, &e); err != nil {
+			return summary, err
+		}
+		e.MatchableAffected = cveEntryMatchableAffectedCount(e.AffectedProducts, e.Ecosystem)
+		e.Matchable = e.MatchableAffected > 0
+		e.ReferenceKeys = cveReferenceKeys(e)
+		for _, refKey := range e.ReferenceKeys {
+			summary.ReferenceKeys = appendUnique(summary.ReferenceKeys, refKey)
+		}
+		summary.Items = append(summary.Items, e)
+	}
+	return summary, rows.Err()
+}
+
+func (db *DB) cveReferenceGroupBuckets(ctx context.Context, expr, baseQ string, args []any) ([]CveReferenceGroupBucket, error) {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`SELECT %s AS name, count(*)
+		%s
+		GROUP BY name
+		ORDER BY count(*) DESC, name
+		LIMIT 20`, expr, baseQ), args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CveReferenceGroupBucket{}
+	for rows.Next() {
+		var b CveReferenceGroupBucket
+		if err := rows.Scan(&b.Name, &b.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
 }
 
 func cveReferenceKeys(e models.CveEntry) []string {
@@ -4343,6 +4407,18 @@ func cveReferenceKeyFilter(referenceKey string) (string, []string) {
 	default:
 		return "", nil
 	}
+}
+
+func cveReferenceKeyWhere(referenceKey string, start int) (string, []any, bool) {
+	filter, vals := cveReferenceKeyFilter(referenceKey)
+	if filter == "" {
+		return "", nil, false
+	}
+	args := make([]any, 0, len(vals))
+	for _, val := range vals {
+		args = append(args, val)
+	}
+	return fmt.Sprintf(filter, placeholderRange(start, len(args))...), args, true
 }
 
 func placeholderRange(start, count int) []any {
@@ -4753,6 +4829,22 @@ type CveSourceStats struct {
 	LastUpdate       *time.Time `json:"last_update"`
 }
 
+type CveReferenceGroupBucket struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type CveReferenceGroupSummary struct {
+	Key           string                    `json:"key"`
+	Total         int                       `json:"total"`
+	Matchable     int                       `json:"matchable"`
+	Sources       []CveReferenceGroupBucket `json:"sources"`
+	Categories    []CveReferenceGroupBucket `json:"categories"`
+	Ecosystems    []CveReferenceGroupBucket `json:"ecosystems"`
+	ReferenceKeys []string                  `json:"reference_keys"`
+	Items         []models.CveEntry         `json:"items"`
+}
+
 type CveAffectedPackageIndexStats struct {
 	Count                   int        `json:"count"`
 	SourceCount             int        `json:"source_count"`
@@ -4968,8 +5060,37 @@ ORDER BY source`, cveSourceMatchablePredicateSQL("affected_products", "ecosystem
 }
 
 func (db *DB) GetSecurityDBRevision(ctx context.Context) (string, error) {
-	stats, err := db.GetCveSourceStats(ctx)
+	rows, err := db.QueryContext(ctx, `
+WITH indexed AS (
+	SELECT source, count(DISTINCT cve_id) AS matchable
+	FROM cve_affected_packages
+	GROUP BY source
+)
+SELECT c.source, count(*) AS records, COALESCE(i.matchable, 0) AS matchable, MAX(c.updated_at) AS last_update
+FROM cve_database c
+LEFT JOIN indexed i ON i.source = c.source
+WHERE c.source != ''
+GROUP BY c.source, i.matchable
+ORDER BY c.source`)
 	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	type revisionSource struct {
+		source     string
+		count      int
+		matchable  int
+		lastUpdate *time.Time
+	}
+	stats := []revisionSource{}
+	for rows.Next() {
+		var s revisionSource
+		if err := rows.Scan(&s.source, &s.count, &s.matchable, &s.lastUpdate); err != nil {
+			return "", err
+		}
+		stats = append(stats, s)
+	}
+	if err := rows.Err(); err != nil {
 		return "", err
 	}
 	if len(stats) == 0 {
@@ -4978,11 +5099,10 @@ func (db *DB) GetSecurityDBRevision(ctx context.Context) (string, error) {
 	h := sha256.New()
 	for _, s := range stats {
 		lastUpdate := ""
-		if s.LastUpdate != nil {
-			lastUpdate = s.LastUpdate.UTC().Format(time.RFC3339Nano)
+		if s.lastUpdate != nil {
+			lastUpdate = s.lastUpdate.UTC().Format(time.RFC3339Nano)
 		}
-		fmt.Fprintf(h, "%s\t%d\t%d\t%d\t%d\t%d\t%d\t%s\n",
-			s.Source, s.Count, s.Matchable, s.WithEcosystem, s.WithFixed, s.WithRanges, s.WithCVSS, lastUpdate)
+		fmt.Fprintf(h, "%s\t%d\t%d\t%s\n", s.source, s.count, s.matchable, lastUpdate)
 	}
 	return hex.EncodeToString(h.Sum(nil))[:16], nil
 }

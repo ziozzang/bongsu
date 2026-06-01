@@ -207,6 +207,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/cve-db/sources", s.handleCveDbSources)
 	s.mux.HandleFunc("GET /api/cve-db/stats", s.handleCveDbStats)
 	s.mux.HandleFunc("GET /api/cve-db/search", s.handleCveDbSearch)
+	s.mux.HandleFunc("GET /api/cve-db/reference-group", s.handleCveDbReferenceGroup)
 	s.mux.HandleFunc("GET /api/cve-db/{id}/affected-packages", s.handleCveDbAffectedPackages)
 	s.serveDashboard()
 }
@@ -2928,12 +2929,25 @@ func scanRequestErrorMessage(err error) string {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	isAdmin := s.authenticateAdmin(r)
-	includeOperationalDetails := isAdmin || !s.webAuth
+	includeOperationalDetails := isAdmin
+	healthTimeout := envInt("BONGSU_HEALTH_DB_TIMEOUT_SECONDS", 2)
+	if healthTimeout < 1 {
+		healthTimeout = 1
+	}
+	if healthTimeout > 30 {
+		healthTimeout = 30
+	}
+	healthDBTimeout := time.Duration(healthTimeout) * time.Second
+	withHealthDBTimeout := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(r.Context(), healthDBTimeout)
+	}
 	recalcStatus := s.securityRecalculationStatus(isAdmin)
 	if includeOperationalDetails {
-		if last := s.securityRecalculationLastResult(r.Context(), isAdmin); last != nil {
+		dbCtx, cancel := withHealthDBTimeout()
+		if last := s.securityRecalculationLastResult(dbCtx, isAdmin); last != nil {
 			recalcStatus["last_result"] = last
 		}
+		cancel()
 	}
 	resp := map[string]any{
 		"status":                 "ok",
@@ -2942,28 +2956,44 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"security_recalculation": recalcStatus,
 	}
 	if includeOperationalDetails {
-		if last := s.cveDBRematchLastResult(r.Context(), isAdmin); last != nil {
+		dbCtx, cancel := withHealthDBTimeout()
+		if last := s.cveDBRematchLastResult(dbCtx, isAdmin); last != nil {
 			resp["cve_db_rematch"] = map[string]any{"last_result": last}
 		}
-		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(r.Context()); err == nil {
+		cancel()
+		dbCtx, cancel = withHealthDBTimeout()
+		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(dbCtx); err == nil {
 			resp["cve_affected_package_index"] = indexStats
 		} else if isAdmin {
 			resp["cve_affected_package_index"] = map[string]any{"error": err.Error()}
 		}
+		cancel()
 	}
-	if err := s.db.PingContext(r.Context()); err != nil {
+	dbCtx, cancel := withHealthDBTimeout()
+	if err := s.db.PingContext(dbCtx); err != nil {
 		resp["status"] = "degraded"
 		resp["db_error"] = "connection failed"
+		if isAdmin {
+			resp["db_error_detail"] = err.Error()
+		}
 	}
-	for k, v := range s.securityDBRevisionMeta(r.Context()) {
+	cancel()
+	dbCtx, cancel = withHealthDBTimeout()
+	for k, v := range s.securityDBRevisionMeta(dbCtx) {
 		if k == "security_db_revision" || isAdmin {
 			resp[k] = v
 		}
 	}
+	cancel()
 	if s.db != nil {
-		freshness := s.securityDBFreshnessStatus(r.Context(), isAdmin)
+		dbCtx, cancel = withHealthDBTimeout()
+		freshness := s.securityDBFreshnessStatus(dbCtx, isAdmin)
+		timedOut := dbCtx.Err() != nil
+		cancel()
 		resp["security_db_freshness"] = freshness
-		if status, _ := freshness["status"].(string); status != "" && status != "ok" {
+		if timedOut {
+			resp["security_db_freshness_timeout"] = true
+		} else if status, _ := freshness["status"].(string); status != "" && status != "ok" {
 			resp["status"] = "degraded"
 		}
 	}
@@ -5430,6 +5460,33 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 		"items": entries,
 		"total": total,
 	})
+}
+
+func (s *Server) handleCveDbReferenceGroup(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if !s.canReadCveDB(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	key := strings.TrimSpace(r.URL.Query().Get("key"))
+	if key == "" {
+		http.Error(w, "missing key", http.StatusBadRequest)
+		return
+	}
+	summary, err := s.db.GetCveReferenceGroupSummary(r.Context(), key, limitParam(r, 50))
+	if err != nil {
+		if errors.Is(err, db.ErrInvalidCveReferenceKey) {
+			http.Error(w, "invalid key", http.StatusBadRequest)
+			return
+		}
+		log.Printf("cve-db reference group: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, summary)
 }
 
 func (s *Server) handleCveDbAffectedPackages(w http.ResponseWriter, r *http.Request) {

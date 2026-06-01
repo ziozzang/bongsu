@@ -545,6 +545,22 @@ export interface CveAffectedPackage {
   updated_at: string;
 }
 
+export interface CveReferenceGroupBucket {
+  name: string;
+  count: number;
+}
+
+export interface CveReferenceGroupSummary {
+  key: string;
+  total: number;
+  matchable: number;
+  sources: CveReferenceGroupBucket[];
+  categories: CveReferenceGroupBucket[];
+  ecosystems: CveReferenceGroupBucket[];
+  reference_keys: string[];
+  items: CveDbEntry[];
+}
+
 export interface RetentionPruneResult {
   dry_run: boolean;
   scan_days: number;
@@ -587,6 +603,8 @@ export const api = {
     request<{ items: Vuln[]; total: number }>('/cve-search', params),
   cveDbSearch: (params: { q?: string; reference_key?: string; severity?: string; source?: string; min_cvss?: string; min_epss?: string; min_epss_percentile?: string; matchable?: string; include_priority_sources?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: CveDbEntry[]; total: number }>('/cve-db/search', params),
+  cveDbReferenceGroup: (params: { key: string; limit?: string }) =>
+    request<CveReferenceGroupSummary>('/cve-db/reference-group', params),
   cveDbAffectedPackages: (id: string, params?: { limit?: string; offset?: string }) =>
     request<{ items: CveAffectedPackage[]; total: number; limit?: number; offset?: number }>(`/cve-db/${id}/affected-packages`, params),
   cveDbSources: () => request<{ sources: string[] }>('/cve-db/sources'),

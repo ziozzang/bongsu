@@ -1853,22 +1853,25 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	fn := body[start : start+1+end]
 	for _, want := range []string{
 		"isAdmin := s.authenticateAdmin(r)",
-		"includeOperationalDetails := isAdmin || !s.webAuth",
+		"includeOperationalDetails := isAdmin",
 		"s.dbMgr.Status()",
 		"s.dbMgr.PublicStatus()",
 		"s.secMgr.Status()",
 		"s.secMgr.PublicStatus()",
+		`envInt("BONGSU_HEALTH_DB_TIMEOUT_SECONDS", 2)`,
+		"context.WithTimeout(r.Context()",
 		"recalcStatus := s.securityRecalculationStatus(isAdmin)",
 		"if includeOperationalDetails",
-		`s.securityRecalculationLastResult(r.Context(), isAdmin)`,
+		`s.securityRecalculationLastResult(dbCtx, isAdmin)`,
 		`recalcStatus["last_result"] = last`,
-		`s.cveDBRematchLastResult(r.Context(), isAdmin)`,
+		`s.cveDBRematchLastResult(dbCtx, isAdmin)`,
 		`resp["cve_db_rematch"]`,
 		`resp["cve_affected_package_index"]`,
 		`"security_recalculation": recalcStatus`,
-		"for k, v := range s.securityDBRevisionMeta(r.Context())",
+		"for k, v := range s.securityDBRevisionMeta(dbCtx)",
 		`k == "security_db_revision" || isAdmin`,
-		`s.securityDBFreshnessStatus(r.Context(), isAdmin)`,
+		`s.securityDBFreshnessStatus(dbCtx, isAdmin)`,
+		`resp["security_db_freshness_timeout"] = true`,
 		`resp["security_db_freshness"] = freshness`,
 	} {
 		if !strings.Contains(fn, want) {
@@ -4185,6 +4188,28 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 	}
 }
 
+func TestCveDbReferenceGroupEndpoint(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`"GET /api/cve-db/reference-group"`,
+		"func (s *Server) handleCveDbReferenceGroup",
+		"s.authenticateWeb(r)",
+		"s.canReadCveDB(r)",
+		`r.URL.Query().Get("key")`,
+		"s.db.GetCveReferenceGroupSummary",
+		"errors.Is(err, db.ErrInvalidCveReferenceKey)",
+		`http.Error(w, "invalid key", http.StatusBadRequest)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE reference group endpoint missing %q", want)
+		}
+	}
+}
+
 func TestCveDbAffectedPackageEvidenceEndpoint(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
@@ -4234,6 +4259,9 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"Reference Groups",
 		"reference_keys",
 		"searchReferenceGroup",
+		"Group Context",
+		"cveDbReferenceGroup",
+		"CveReferenceGroupSummary",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard CVE search auto-load/error UI missing %q", want)

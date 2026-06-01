@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -2599,6 +2599,7 @@ function CveSearchView() {
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [indexedAffected, setIndexedAffected] = useState<Record<string, { loading?: boolean; error?: string; items?: CveAffectedPackage[]; total?: number }>>({});
+  const [referenceGroups, setReferenceGroups] = useState<Record<string, { loading?: boolean; error?: string; data?: CveReferenceGroupSummary }>>({});
   const [sortBy, setSortBy] = useState('published_date');
   const [sortDesc, setSortDesc] = useState(true);
   const initialSearchStarted = useRef(false);
@@ -2667,11 +2668,21 @@ function CveSearchView() {
       .catch(err => setIndexedAffected(prev => ({ ...prev, [entry.id]: { ...(prev[entry.id] || {}), loading: false, error: err?.message || 'Indexed affected packages failed' } })));
   };
 
+  const loadReferenceGroup = (key: string) => {
+    if (!key || referenceGroups[key]?.data || referenceGroups[key]?.loading) return;
+    setReferenceGroups(prev => ({ ...prev, [key]: { ...(prev[key] || {}), loading: true, error: '' } }));
+    api.cveDbReferenceGroup({ key, limit: '10' })
+      .then(data => setReferenceGroups(prev => ({ ...prev, [key]: { data } })))
+      .catch(err => setReferenceGroups(prev => ({ ...prev, [key]: { loading: false, error: err?.message || 'Reference group summary failed' } })));
+  };
+
   const toggleExpand = (entry: CveDbEntry) => {
     setExpanded(prev => prev === entry.id ? null : entry.id);
     if ((entry.matchable_affected_count || 0) > 0 && !indexedAffected[entry.id]) {
       loadIndexedAffected(entry, 0);
     }
+    const canonicalKey = (entry.reference_keys || []).find(key => key.startsWith('cve:')) || (entry.reference_keys || [])[0];
+    if (canonicalKey) loadReferenceGroup(canonicalKey);
   };
 
   const formatDate = (d: string | null | undefined) => {
@@ -2836,6 +2847,8 @@ function CveSearchView() {
                 const prods = parseJson(entry.affected_products);
                 const refs = parseJson(entry.references);
                 const priorityFeed = isPriorityFeed(entry);
+                const canonicalKey = (entry.reference_keys || []).find(key => key.startsWith('cve:')) || (entry.reference_keys || [])[0];
+                const groupSummary = canonicalKey ? referenceGroups[canonicalKey] : undefined;
 
                 return (
                   <React.Fragment key={entry.id}>
@@ -2920,6 +2933,33 @@ function CveSearchView() {
                                   </button>
                                 ))}
                               </div>
+                            </div>
+                          )}
+                          {canonicalKey && (
+                            <div style={{ marginBottom: '0.75rem' }}>
+                              <strong style={{ fontSize: '0.8125rem' }}>Group Context</strong>
+                              {groupSummary?.loading && <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '0.25rem' }}>Loading...</div>}
+                              {groupSummary?.error && <div style={{ color: 'var(--critical)', fontSize: '0.8125rem', marginTop: '0.25rem' }}>{groupSummary.error}</div>}
+                              {groupSummary?.data && (
+                                <div style={{ marginTop: '0.25rem', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.5rem 0.75rem' }}>
+                                  <div className="mono" style={{ fontSize: '0.75rem', marginBottom: '0.375rem' }}>
+                                    {groupSummary.data.key} · {groupSummary.data.total.toLocaleString()} records · {groupSummary.data.matchable.toLocaleString()} matchable
+                                  </div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.375rem' }}>
+                                    {(groupSummary.data.sources || []).slice(0, 8).map(b => (
+                                      <span key={b.name} className="badge">{b.name}: {b.count.toLocaleString()}</span>
+                                    ))}
+                                  </div>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                                    {(groupSummary.data.categories || []).slice(0, 6).map(b => (
+                                      <span key={b.name} className="badge" style={{ color: 'var(--text-muted)' }}>{b.name}: {b.count.toLocaleString()}</span>
+                                    ))}
+                                    {(groupSummary.data.ecosystems || []).slice(0, 6).map(b => (
+                                      <span key={b.name} className="badge" style={{ color: 'var(--text-muted)' }}>{b.name}: {b.count.toLocaleString()}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                           {(entry.matchable_affected_count || 0) > 0 && (
