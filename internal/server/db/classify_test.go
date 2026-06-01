@@ -909,22 +909,32 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 		affectedProducts string
 		ecosystem        string
 		want             bool
+		wantCount        int
 	}{
 		{
 			name:             "package ecosystem fixed",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0.5.2"]}]`,
 			want:             true,
+			wantCount:        1,
 		},
 		{
 			name:             "cve ecosystem fixed",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","fixed":["0.5.2"]}]`,
 			ecosystem:        "Packagist",
 			want:             true,
+			wantCount:        1,
 		},
 		{
 			name:             "range fixed event",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","ranges":[{"events":[{"introduced":"0"},{"fixed":"0.5.2"}]}]}]`,
 			want:             true,
+			wantCount:        1,
+		},
+		{
+			name:             "multiple matchable affected packages",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0.5.2"]},{"name":"phenx/php-font-lib","ecosystem":"Packagist","ranges":[{"events":[{"fixed":"0.5.4"}]}]},{"name":"ignored","ecosystem":"Packagist"}]`,
+			want:             true,
+			wantCount:        2,
 		},
 		{
 			name:             "missing fixed",
@@ -946,6 +956,9 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := cveEntryHasMatchableAffectedProduct(tt.affectedProducts, tt.ecosystem); got != tt.want {
 				t.Fatalf("matchable=%v want %v", got, tt.want)
+			}
+			if got := cveEntryMatchableAffectedCount(tt.affectedProducts, tt.ecosystem); got != tt.wantCount {
+				t.Fatalf("matchable affected count=%v want %v", got, tt.wantCount)
 			}
 		})
 	}

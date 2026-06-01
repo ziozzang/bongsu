@@ -522,6 +522,7 @@ export interface CveDbEntry {
   epss_score?: number;
   epss_percentile?: number;
   matchable?: boolean;
+  matchable_affected_count?: number;
   title: string;
   description: string;
   published_date: string | null;

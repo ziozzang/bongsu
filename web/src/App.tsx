@@ -2837,6 +2837,11 @@ function CveSearchView() {
                         <span className="badge" style={{ color: entry.matchable ? '#22c55e' : priorityFeed ? 'var(--medium)' : 'var(--text-muted)' }}>
                           {entry.matchable ? 'matchable' : priorityFeed ? 'priority' : 'reference'}
                         </span>
+                        {(entry.matchable_affected_count || 0) > 0 && (
+                          <div className="mono" style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                            {entry.matchable_affected_count} affected
+                          </div>
+                        )}
                       </td>
                       <td style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {entry.title || '-'}

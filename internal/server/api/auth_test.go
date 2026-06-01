@@ -4182,6 +4182,8 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"isPriorityFeed",
 		"includePrioritySources ? 'All Sources' : 'Advisory Sources'",
 		"priorityFeed ? 'priority' : 'reference'",
+		"matchable_affected_count",
+		"affected",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard CVE search auto-load/error UI missing %q", want)

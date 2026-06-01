@@ -4174,7 +4174,8 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source str
 		if err := ScanCveEntry(rows, &e); err != nil {
 			return nil, 0, err
 		}
-		e.Matchable = cveEntryHasMatchableAffectedProduct(e.AffectedProducts, e.Ecosystem)
+		e.MatchableAffected = cveEntryMatchableAffectedCount(e.AffectedProducts, e.Ecosystem)
+		e.Matchable = e.MatchableAffected > 0
 		entries = append(entries, e)
 	}
 	return entries, total, nil
@@ -4804,11 +4805,16 @@ func cvePackageMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr, packag
 }
 
 func cveEntryHasMatchableAffectedProduct(affectedProducts, ecosystem string) bool {
+	return cveEntryMatchableAffectedCount(affectedProducts, ecosystem) > 0
+}
+
+func cveEntryMatchableAffectedCount(affectedProducts, ecosystem string) int {
 	var products []affectedProduct
 	if affectedProducts == "" || json.Unmarshal([]byte(affectedProducts), &products) != nil {
-		return false
+		return 0
 	}
 	cveEco := normalizeEcosystem(ecosystem)
+	count := 0
 	for _, p := range products {
 		if strings.TrimSpace(p.Name) == "" {
 			continue
@@ -4823,9 +4829,9 @@ func cveEntryHasMatchableAffectedProduct(affectedProducts, ecosystem string) boo
 		if len(fixedVersions(p)) == 0 {
 			continue
 		}
-		return true
+		count++
 	}
-	return false
+	return count
 }
 
 func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchResult, error) {
