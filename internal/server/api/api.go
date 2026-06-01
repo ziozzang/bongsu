@@ -3297,6 +3297,19 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		} else {
 			writePromGauge(&b, "bongsu_cve_affected_package_index_metrics_error", nil, 1)
 		}
+		if epssStats, err := s.db.GetCveEPSSMergeStats(ctx); err == nil {
+			writePromGauge(&b, "bongsu_cve_epss_records", nil, float64(epssStats.EPSSRecords))
+			writePromGauge(&b, "bongsu_cve_epss_cves", nil, float64(epssStats.EPSSCVEs))
+			writePromGauge(&b, "bongsu_cve_epss_matched_cves", nil, float64(epssStats.MatchedCVEs))
+			writePromGauge(&b, "bongsu_cve_epss_unmatched_cves", nil, float64(epssStats.UnmatchedCVEs))
+			writePromGauge(&b, "bongsu_cve_epss_enriched_records", nil, float64(epssStats.EnrichedRecords))
+			writePromGauge(&b, "bongsu_cve_epss_enriched_cves", nil, float64(epssStats.EnrichedCVEs))
+			writePromGauge(&b, "bongsu_cve_epss_enriched_sources", nil, float64(epssStats.EnrichedSourceCount))
+			writePromGauge(&b, "bongsu_cve_epss_merge_coverage_percent", nil, epssStats.MergeCoveragePercent)
+			writePromGauge(&b, "bongsu_cve_epss_loaded_without_enrichment", nil, boolMetric(epssStats.EPSSCVEs > 0 && epssStats.EnrichedRecords == 0))
+		} else {
+			writePromGauge(&b, "bongsu_cve_epss_merge_metrics_error", nil, 1)
+		}
 		if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
 			writePromGauge(&b, "bongsu_security_db_revision_info", map[string]string{"revision": revision}, 1)
 			if counts, err := s.db.CountSecurityDBRescanRequestsByStatus(ctx, nil, true, revision); err == nil {

@@ -2160,6 +2160,17 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_cve_affected_package_index_coverage_percent",
 		"bongsu_cve_affected_package_index_missing_matchable_sources",
 		"bongsu_cve_affected_package_index_orphans",
+		"GetCveEPSSMergeStats(ctx)",
+		"bongsu_cve_epss_records",
+		"bongsu_cve_epss_cves",
+		"bongsu_cve_epss_matched_cves",
+		"bongsu_cve_epss_unmatched_cves",
+		"bongsu_cve_epss_enriched_records",
+		"bongsu_cve_epss_enriched_cves",
+		"bongsu_cve_epss_enriched_sources",
+		"bongsu_cve_epss_merge_coverage_percent",
+		"bongsu_cve_epss_loaded_without_enrichment",
+		"bongsu_cve_epss_merge_metrics_error",
 		"bongsu_security_db_source_quality_metrics_error",
 	} {
 		if !strings.Contains(fn, want) {
