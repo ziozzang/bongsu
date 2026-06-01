@@ -3127,11 +3127,41 @@ func TestAgentScanRequestCompletionRequiresClaimedHost(t *testing.T) {
 	for _, want := range []string{
 		`HostID  string ` + "`json:\"host_id\"`",
 		"verifyAgentHostBinding",
+		"body.Message = normalizeScanRequestMessage(body.Message)",
 		"CompleteClaimedScanRequest",
 		"scanRequestAuditMeta(req, body.Message, body.HostID)",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("scan request completion ownership check missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestScanRequestMessageNormalization(t *testing.T) {
+	msg := normalizeScanRequestMessage("  failed\n")
+	if msg != "failed" {
+		t.Fatalf("message = %q, want trimmed", msg)
+	}
+	msg = normalizeScanRequestMessage(strings.Repeat("x", maxScanRequestMessageBytes+20))
+	if !strings.HasSuffix(msg, "...(truncated)") || len(msg) > maxScanRequestMessageBytes+len("...(truncated)") {
+		t.Fatalf("message was not bounded: len=%d value=%q", len(msg), msg)
+	}
+	msg = normalizeScanRequestMessage(strings.Repeat("한", maxScanRequestMessageBytes))
+	if !utf8.ValidString(msg) {
+		t.Fatalf("message is not valid UTF-8: %q", msg)
+	}
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"maxScanRequestMessageBytes",
+		"truncateValidUTF8(message, maxScanRequestMessageBytes)",
+		"body.Message = normalizeScanRequestMessage(body.Message)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("scan request message normalization missing %q", want)
 		}
 	}
 }

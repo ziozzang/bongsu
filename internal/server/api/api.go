@@ -61,6 +61,7 @@ type Server struct {
 const (
 	maxReportErrors                    = 32
 	maxReportErrorBytes                = 2048
+	maxScanRequestMessageBytes         = 1024
 	defaultSecurityDBMaxSourceAgeHours = 30
 )
 
@@ -2560,7 +2561,7 @@ func (s *Server) handleRequeueScanRequest(w http.ResponseWriter, r *http.Request
 		writeJSONBodyError(w, err, "invalid request body")
 		return
 	}
-	body.Message = strings.TrimSpace(body.Message)
+	body.Message = normalizeScanRequestMessage(body.Message)
 	if body.Message == "" {
 		body.Message = "requeued by admin"
 	}
@@ -2626,7 +2627,7 @@ func (s *Server) handleRequeueFilteredScanRequests(w http.ResponseWriter, r *htt
 	body.Status = strings.TrimSpace(body.Status)
 	body.ScanType = strings.TrimSpace(body.ScanType)
 	body.SecurityDBRevision = strings.TrimSpace(body.SecurityDBRevision)
-	body.Message = strings.TrimSpace(body.Message)
+	body.Message = normalizeScanRequestMessage(body.Message)
 	if body.HostID == "" && body.Status == "" && body.ScanType == "" && body.SecurityDBRevision == "" {
 		http.Error(w, "at least one filter is required", http.StatusBadRequest)
 		return
@@ -2792,6 +2793,7 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 	}
 	body.HostID = strings.TrimSpace(body.HostID)
 	body.Status = strings.TrimSpace(body.Status)
+	body.Message = normalizeScanRequestMessage(body.Message)
 	if body.Status == "" {
 		body.Status = "completed"
 	}
@@ -2808,6 +2810,14 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 	req, _ := s.db.GetScanRequest(r.Context(), id)
 	s.audit(r, "scan_request.complete", "scan_request", id, body.Status, scanRequestAuditMeta(req, body.Message, body.HostID))
 	writeJSON(w, http.StatusOK, map[string]string{"status": body.Status})
+}
+
+func normalizeScanRequestMessage(message string) string {
+	message = strings.TrimSpace(message)
+	if len(message) > maxScanRequestMessageBytes {
+		message = truncateValidUTF8(message, maxScanRequestMessageBytes) + "...(truncated)"
+	}
+	return message
 }
 
 func scanRequestAuditMeta(req *models.ScanRequest, message, completedByHostID string) map[string]any {
