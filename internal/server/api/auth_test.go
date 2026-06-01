@@ -3881,9 +3881,16 @@ func TestCveDbExportStagesCompleteJSONLBeforeResponse(t *testing.T) {
 		`http.Error(w, "invalid source", http.StatusBadRequest)`,
 		"s.writeCveJSONLTemp(r.Context(), source)",
 		"http.Error(w, \"export failed\", http.StatusInternalServerError)",
+		"os.Stat(cveFile)",
 		"os.Open(cveFile)",
+		`w.Header().Set("Content-Length"`,
+		`w.Header().Set("X-Bongsu-CVE-Records"`,
+		`w.Header().Set("X-Bongsu-SHA256"`,
+		`w.Header().Set("X-Bongsu-Security-DB-Revision"`,
 		"io.Copy(w, f)",
 		`"records": count`,
+		`"bytes": info.Size()`,
+		`"sha256": cveSHA`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("cve db export staging missing %q: %s", want, fn)

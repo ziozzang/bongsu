@@ -4425,13 +4425,19 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 	}
 	revisionMeta := s.securityDBRevisionMeta(r.Context())
 
-	cveFile, count, _, err := s.writeCveJSONLTemp(r.Context(), source)
+	cveFile, count, cveSHA, err := s.writeCveJSONLTemp(r.Context(), source)
 	if err != nil {
 		log.Printf("cve-db export: %v", err)
 		http.Error(w, "export failed", http.StatusInternalServerError)
 		return
 	}
 	defer os.Remove(cveFile)
+	info, err := os.Stat(cveFile)
+	if err != nil {
+		log.Printf("cve-db export stat: %v", err)
+		http.Error(w, "export failed", http.StatusInternalServerError)
+		return
+	}
 	f, err := os.Open(cveFile)
 	if err != nil {
 		log.Printf("cve-db export open: %v", err)
@@ -4442,12 +4448,18 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/x-ndjson")
 	w.Header().Set("Content-Disposition", "attachment; filename=cve-database.jsonl")
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	w.Header().Set("X-Bongsu-CVE-Records", strconv.Itoa(count))
+	w.Header().Set("X-Bongsu-SHA256", cveSHA)
+	if revision, ok := revisionMeta["security_db_revision"].(string); ok && revision != "" {
+		w.Header().Set("X-Bongsu-Security-DB-Revision", revision)
+	}
 	w.WriteHeader(http.StatusOK)
 	if _, err := io.Copy(w, f); err != nil {
 		log.Printf("cve-db export write: %v", err)
 		return
 	}
-	auditMeta := map[string]any{"source": source, "records": count}
+	auditMeta := map[string]any{"source": source, "records": count, "bytes": info.Size(), "sha256": cveSHA}
 	for k, v := range revisionMeta {
 		auditMeta[k] = v
 	}
