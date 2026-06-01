@@ -25,6 +25,43 @@ import (
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
+func readAllPackageGoFiles(t *testing.T) string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf strings.Builder
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), "_test.go") {
+			data, err := os.ReadFile(e.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			buf.Write(data)
+			buf.WriteByte('\n')
+		}
+	}
+	return buf.String()
+}
+
+func extractFuncBody(src string, start int) string {
+	depth := 0
+	inFunc := false
+	for i := start; i < len(src); i++ {
+		if src[i] == '{' {
+			depth++
+			inFunc = true
+		} else if src[i] == '}' {
+			depth--
+			if inFunc && depth == 0 {
+				return src[start : i+1]
+			}
+		}
+	}
+	return src[start:]
+}
+
 func TestAuthSeparation(t *testing.T) {
 	s := &Server{
 		apiKey:       "admin-key",
@@ -167,11 +204,8 @@ func TestAdminMetricsRequiresAdminAndReportsRuntimeState(t *testing.T) {
 }
 
 func TestAdminMetricsExposeActiveRiskLevelBacklog(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) adminMetrics")
 	if start < 0 {
 		t.Fatal("adminMetrics not found")
@@ -198,11 +232,8 @@ func TestAdminMetricsExposeActiveRiskLevelBacklog(t *testing.T) {
 }
 
 func TestAdminMetricsExposeStaleScanRequestBacklog(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) adminMetrics")
 	if start < 0 {
 		t.Fatal("adminMetrics not found")
@@ -226,11 +257,8 @@ func TestAdminMetricsExposeStaleScanRequestBacklog(t *testing.T) {
 }
 
 func TestAdminMetricsExposeTriageLifecycle(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) adminMetrics")
 	if start < 0 {
 		t.Fatal("adminMetrics not found")
@@ -258,11 +286,8 @@ func TestAdminMetricsExposeTriageLifecycle(t *testing.T) {
 }
 
 func TestAdminMetricsExposeAgentFleetState(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) adminMetrics")
 	if start < 0 {
 		t.Fatal("adminMetrics not found")
@@ -292,11 +317,8 @@ func TestAdminMetricsExposeAgentFleetState(t *testing.T) {
 }
 
 func TestAdminMetricsExposeInventoryQuality(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) adminMetrics")
 	if start < 0 {
 		t.Fatal("adminMetrics not found")
@@ -443,11 +465,8 @@ func TestRequestIDMiddlewarePropagatesAndGeneratesIDs(t *testing.T) {
 }
 
 func TestAuditAddsRequestIDMetadata(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) audit(")
 	if start < 0 {
 		t.Fatal("audit function not found")
@@ -525,11 +544,8 @@ func TestAccessLogMiddlewareSkipsHealthByDefault(t *testing.T) {
 }
 
 func TestReportBodyLimitIsConfigured(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`BONGSU_AGENT_REPORT_MAX_BYTES`,
 		`512<<20`,
@@ -543,11 +559,8 @@ func TestReportBodyLimitIsConfigured(t *testing.T) {
 }
 
 func TestSecurityDBUploadLimitsAreConfigured(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"maxTrivyDBUploadBytes()",
 		"maxCveDBImportBytes()",
@@ -663,11 +676,8 @@ func TestTrivyDBLoadErrorHTTPMapping(t *testing.T) {
 }
 
 func TestTrivyDBUploadAuditsLoadFailures(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleTrivyDBUpload")
 	if start < 0 {
 		t.Fatal("handleTrivyDBUpload not found")
@@ -758,11 +768,8 @@ func TestViewerKeys(t *testing.T) {
 }
 
 func TestCveDBReadUsesRBACResource(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"func (s *Server) canReadCveDB",
 		`HasResourcePermission(r.Context(), subject, "cve_db", []string{"read", "admin"})`,
@@ -967,11 +974,8 @@ func TestSecurityDBBundleManifestCarriesRevision(t *testing.T) {
 		t.Fatalf("manifest revision = %q", manifest.SecurityDBRevision)
 	}
 
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleSecurityDbExport")
 	if start < 0 {
 		t.Fatal("handleSecurityDbExport not found")
@@ -1012,11 +1016,8 @@ func TestValidateSecurityDBBundleEntryRejectsUnexpectedTarMembers(t *testing.T) 
 }
 
 func TestSecurityDBBundleImportRejectsDuplicateEntries(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleSecurityDbImport")
 	if start < 0 {
 		t.Fatal("handleSecurityDbImport not found")
@@ -1043,11 +1044,8 @@ func TestSecurityDBBundleImportRejectsDuplicateEntries(t *testing.T) {
 }
 
 func TestSecurityDBBundleImportUsesSingleCveTransaction(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"s.db.BeginTx",
 		"s.db.DeleteAllCveEntriesTx",
@@ -1064,11 +1062,8 @@ func TestSecurityDBBundleImportUsesSingleCveTransaction(t *testing.T) {
 }
 
 func TestSecurityDBBundleImportValidatesTrivyBeforeCommitAndLoadsAfter(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleSecurityDbImport")
 	if start < 0 {
 		t.Fatal("handleSecurityDbImport not found")
@@ -1098,11 +1093,8 @@ func TestSecurityDBBundleImportValidatesTrivyBeforeCommitAndLoadsAfter(t *testin
 }
 
 func TestSecurityDBBundleImportAuditsFailures(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"fail := func",
 		`"security_db.import"`,
@@ -1119,11 +1111,8 @@ func TestSecurityDBBundleImportAuditsFailures(t *testing.T) {
 }
 
 func TestInstallScriptHardensAgentCredentialFile(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"umask 077",
 		"AGENT_TOKEN=",
@@ -1173,11 +1162,8 @@ func TestAgentHostTokenBindingValidation(t *testing.T) {
 }
 
 func TestInstallerDownloadsVerifyBinaryChecksums(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`curl -fsSL --config "$curl_config" -D "$headers" "$url" -o "$output"`,
 		`curl -fsSL -D "$headers" "$url" -o "$output"`,
@@ -1222,11 +1208,8 @@ func TestInstallerDownloadsVerifyBinaryChecksums(t *testing.T) {
 }
 
 func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`"GET /api/admin/installer/status"`,
 		"func (s *Server) handleInstallerStatus",
@@ -1318,11 +1301,8 @@ func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
 	if got != want {
 		t.Fatalf("shellQuote = %q, want %q", got, want)
 	}
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"shellQuote(serverURL)",
 		"shellQuote(apiKey)",
@@ -1453,11 +1433,8 @@ func TestNormalizeScanReportCarriesBoundedCollectionErrors(t *testing.T) {
 }
 
 func TestHandleReportNormalizesScannerInput(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleReport")
 	if start < 0 {
 		t.Fatal("handleReport not found")
@@ -1485,11 +1462,8 @@ func TestHandleReportNormalizesScannerInput(t *testing.T) {
 }
 
 func TestHandleReportAppliesScanScopedCveRematch(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleReport")
 	if start < 0 {
 		t.Fatal("handleReport not found")
@@ -1557,11 +1531,8 @@ func TestHandleListVulnerabilitiesRejectsInvalidFindingSource(t *testing.T) {
 }
 
 func TestHandleListVulnerabilitiesBoundsRuntime(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleListVulnerabilities")
 	if start < 0 {
 		t.Fatal("handleListVulnerabilities not found")
@@ -1594,11 +1565,8 @@ func TestVulnFilterFromRequestRejectsInvalidRiskLevel(t *testing.T) {
 }
 
 func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) SecurityDatabaseUpdated")
 	if start < 0 {
 		t.Fatal("SecurityDatabaseUpdated not found")
@@ -1690,11 +1658,8 @@ func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 }
 
 func TestSecurityDBUpdateSurfacesTriggerBackgroundRecalculation(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	tests := []struct {
 		name string
 		fn   string
@@ -1725,11 +1690,8 @@ func TestSecurityDBUpdateSurfacesTriggerBackgroundRecalculation(t *testing.T) {
 }
 
 func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) queueSecurityDBRescans")
 	if start < 0 {
 		t.Fatal("queueSecurityDBRescans not found")
@@ -1757,11 +1719,8 @@ func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
 }
 
 func TestWebhookAuditIncludesSecurityDBRevision(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) auditWebhookResult")
 	if start < 0 {
 		t.Fatal("auditWebhookResult not found")
@@ -1777,11 +1736,8 @@ func TestWebhookAuditIncludesSecurityDBRevision(t *testing.T) {
 }
 
 func TestCveDbAdminActionsCarrySecurityDBRevision(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleCveDbRematch")
 	if start < 0 {
 		t.Fatal("handleCveDbRematch not found")
@@ -1829,11 +1785,8 @@ func TestCveDbAdminActionsCarrySecurityDBRevision(t *testing.T) {
 }
 
 func TestHostSBOMAuditIncludesLatestScanID(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleHostSBOM")
 	if start < 0 {
 		t.Fatal("handleHostSBOM not found")
@@ -1867,11 +1820,8 @@ func TestHostSBOMAuditIncludesLatestScanID(t *testing.T) {
 }
 
 func TestVulnerabilityExportRequiresExportScopeAndAuditsBeforeWrite(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleExportVulnerabilities")
 	if start < 0 {
 		t.Fatal("handleExportVulnerabilities not found")
@@ -1945,11 +1895,8 @@ func TestVulnerabilityExportMetadataCapturesProvenance(t *testing.T) {
 }
 
 func TestRBACPolicyAPIAllowsExportPermission(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleUpsertAccessPolicy")
 	if start < 0 {
 		t.Fatal("handleUpsertAccessPolicy not found")
@@ -1970,11 +1917,8 @@ func TestRBACPolicyAPIAllowsExportPermission(t *testing.T) {
 }
 
 func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleHealth")
 	if start < 0 {
 		t.Fatal("handleHealth not found")
@@ -2033,11 +1977,8 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 }
 
 func TestVulnerabilityAPIExposesExploitedFilterAndExportColumn(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`Exploited:     r.URL.Query().Get("exploited") == "true"`,
 		`MinEPSS:       floatParam(r, "min_epss", 0)`,
@@ -2073,11 +2014,8 @@ func TestSecurityRecalculationStatusIncludesAdminPendingReason(t *testing.T) {
 }
 
 func TestSecurityRecalculationLastResultUsesAuditLog(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) securityRecalculationLastResult")
 	if start < 0 {
 		t.Fatal("securityRecalculationLastResult not found")
@@ -2120,11 +2058,8 @@ func TestSecurityRecalculationLastResultUsesAuditLog(t *testing.T) {
 }
 
 func TestCveDbRematchLastResultExposesSourcePolicy(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) cveDBRematchLastResult")
 	if start < 0 {
 		t.Fatal("cveDBRematchLastResult not found")
@@ -2147,11 +2082,8 @@ func TestCveDbRematchLastResultExposesSourcePolicy(t *testing.T) {
 }
 
 func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) adminMetrics")
 	if start < 0 {
 		t.Fatal("adminMetrics not found")
@@ -2345,11 +2277,8 @@ func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
 }
 
 func TestSecurityDBFreshnessHealthAndMetricsAreExposed(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS`,
 		`BONGSU_SECURITY_DB_REQUIRED_SOURCES`,
@@ -2379,11 +2308,8 @@ func TestSecurityDBFreshnessHealthAndMetricsAreExposed(t *testing.T) {
 }
 
 func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) adminMetrics")
 	if start < 0 {
 		t.Fatal("adminMetrics not found")
@@ -2445,11 +2371,8 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 }
 
 func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleCveDbStats")
 	if start < 0 {
 		t.Fatal("handleCveDbStats not found")
@@ -3058,11 +2981,8 @@ func TestDeployEnvExampleKeepsWebAuthEnabled(t *testing.T) {
 }
 
 func TestInstallerAndBinaryDownloadsAreAudited(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`"installer.generate"`,
 		`"installer.download"`,
@@ -3080,11 +3000,8 @@ func TestInstallerAndBinaryDownloadsAreAudited(t *testing.T) {
 }
 
 func TestBinaryDownloadAuditsOnlyAfterCopySuccess(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, fnName := range []string{"handleAgentDownload", "handleTrivyDownload"} {
 		start := strings.Index(body, "func (s *Server) "+fnName)
 		if start < 0 {
@@ -3112,11 +3029,8 @@ func TestBinaryDownloadAuditsOnlyAfterCopySuccess(t *testing.T) {
 }
 
 func TestHostMetadataUpdateAuditsOnlyAfterHostReload(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleUpdateHostMetadata")
 	if start < 0 {
 		t.Fatal("handleUpdateHostMetadata not found")
@@ -3144,11 +3058,8 @@ func TestHostMetadataUpdateAuditsOnlyAfterHostReload(t *testing.T) {
 }
 
 func TestResetHostAgentTokenRequiresAdminAndAudits(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`"POST /api/hosts/{id}/agent-token/reset"`,
 		"func (s *Server) handleResetHostAgentToken",
@@ -3276,11 +3187,8 @@ func TestNormalizeVulnerabilityTriage(t *testing.T) {
 }
 
 func TestTriageHandlerValidatesScopeBeforeUpsert(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleUpsertVulnerabilityTriage")
 	if start < 0 {
 		t.Fatal("handleUpsertVulnerabilityTriage not found")
@@ -3387,11 +3295,8 @@ func TestScanRequestErrorHTTPMapping(t *testing.T) {
 }
 
 func TestRequeueScanRequestAPIRequiresAdminAndAudits(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`"POST /api/scan-requests/{id}/requeue"`,
 		"func (s *Server) handleRequeueScanRequest",
@@ -3407,11 +3312,8 @@ func TestRequeueScanRequestAPIRequiresAdminAndAudits(t *testing.T) {
 }
 
 func TestRequeueFilteredScanRequestAPIRequiresSafeFilters(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`"POST /api/scan-requests/requeue-filtered"`,
 		"func (s *Server) handleRequeueFilteredScanRequests",
@@ -3428,11 +3330,8 @@ func TestRequeueFilteredScanRequestAPIRequiresSafeFilters(t *testing.T) {
 }
 
 func TestRequeueStaleScanRequestReportsDuplicateCleanup(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"func (s *Server) handleRequeueStaleScanRequests",
 		"result.CancelledDuplicates",
@@ -3479,11 +3378,8 @@ func TestNormalizeScanRequestCreateRejectsUnknownType(t *testing.T) {
 }
 
 func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleListScanRequests")
 	if start < 0 {
 		t.Fatal("handleListScanRequests not found")
@@ -3508,11 +3404,8 @@ func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
 }
 
 func TestCreateScanRequestValidatesTargetHost(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleCreateScanRequest")
 	if start < 0 {
 		t.Fatal("handleCreateScanRequest not found")
@@ -3534,10 +3427,7 @@ func TestCreateScanRequestValidatesTargetHost(t *testing.T) {
 }
 
 func TestScanHistoryExposesIngestErrorSummary(t *testing.T) {
-	apiOut, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	apiOut := readAllPackageGoFiles(t)
 	appOut, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {
 		t.Fatal(err)
@@ -3572,11 +3462,8 @@ func TestScanHistoryExposesIngestErrorSummary(t *testing.T) {
 }
 
 func TestAgentScanRequestCompletionRequiresClaimedHost(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleCompleteScanRequest")
 	if start < 0 {
 		t.Fatal("handleCompleteScanRequest not found")
@@ -3614,11 +3501,8 @@ func TestScanRequestMessageNormalization(t *testing.T) {
 	if !utf8.ValidString(msg) {
 		t.Fatalf("message is not valid UTF-8: %q", msg)
 	}
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"maxScanRequestMessageBytes",
 		"truncateValidUTF8(message, maxScanRequestMessageBytes)",
@@ -3660,11 +3544,8 @@ func TestScanRequestAuditMetadataCarriesDBRevision(t *testing.T) {
 }
 
 func TestStatsExposeActiveFindingCounts(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"GetCurrentActionableVulnCountsByHost",
 		"GetHostInventorySummaries(ctx)",
@@ -3823,10 +3704,7 @@ func TestAuditLogDashboardCoversSecurityStatusesAndActions(t *testing.T) {
 }
 
 func TestRetentionPruneCutoffsAreExposed(t *testing.T) {
-	apiOut, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	apiOut := readAllPackageGoFiles(t)
 	appOut, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {
 		t.Fatal(err)
@@ -3856,10 +3734,7 @@ func TestRetentionPruneCutoffsAreExposed(t *testing.T) {
 }
 
 func TestAuditLogTimeRangeFiltersAreExposed(t *testing.T) {
-	apiOut, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	apiOut := readAllPackageGoFiles(t)
 	apiBody := string(apiOut)
 	for _, want := range []string{
 		`auditTimeParam(r, "created_from", false)`,
@@ -3947,11 +3822,8 @@ func TestScanRequestStalenessUsesConfiguredTimeout(t *testing.T) {
 }
 
 func TestHostsExposeActiveFindingCounts(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		"ActiveVulnCounts",
 		"GetCurrentActionableVulnRiskCountsByHost",
@@ -3969,20 +3841,13 @@ func TestHostsExposeActiveFindingCounts(t *testing.T) {
 }
 
 func TestVulnSummaryUsesActiveFindingCounts(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleVulnSummary")
 	if start < 0 {
 		t.Fatal("handleVulnSummary not found")
 	}
-	end := strings.Index(body[start:], "func (s *Server) handleStats")
-	if end < 0 {
-		t.Fatal("handleStats not found")
-	}
-	fn := body[start : start+end]
+	fn := extractFuncBody(body, start)
 	if !strings.Contains(fn, "GetCurrentActionableVulnCountsByHost") {
 		t.Fatalf("vuln summary host counts must use active findings: %s", fn)
 	}
@@ -4064,10 +3929,7 @@ func TestDashboardShowsRiskLevelSummary(t *testing.T) {
 }
 
 func TestStatsAndDashboardShowTriageExceptionLifecycle(t *testing.T) {
-	apiOut, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
+	apiOut := readAllPackageGoFiles(t)
 	appOut, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {
 		t.Fatal(err)
@@ -4083,11 +3945,7 @@ func TestStatsAndDashboardShowTriageExceptionLifecycle(t *testing.T) {
 	if start < 0 {
 		t.Fatal("handleStats not found")
 	}
-	end := strings.Index(apiBody[start:], "func scopeHostFilter")
-	if end < 0 {
-		t.Fatal("scopeHostFilter not found")
-	}
-	fn := apiBody[start : start+end]
+	fn := extractFuncBody(apiBody, start)
 	for _, want := range []string{
 		"CountVulnerabilityTriageByStatus(ctx)",
 		"CountVulnerabilityTriageExpiringSoonByStatus(ctx, triageExpiringSoonDays)",
@@ -4125,11 +3983,8 @@ func TestStatsAndDashboardShowTriageExceptionLifecycle(t *testing.T) {
 }
 
 func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) importCveJSONL(")
 	if start < 0 {
 		t.Fatal("importCveJSONL not found")
@@ -4292,11 +4147,8 @@ func TestNormalizeCveSource(t *testing.T) {
 }
 
 func TestCveDbImportAuditsFailures(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleCveDbImport")
 	if start < 0 {
 		t.Fatal("handleCveDbImport not found")
@@ -4320,11 +4172,8 @@ func TestCveDbImportAuditsFailures(t *testing.T) {
 }
 
 func TestCveDbImportAndExportAuditSecurityDBRevision(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleCveDbImport")
 	if start < 0 {
 		t.Fatal("handleCveDbImport not found")
@@ -4365,11 +4214,8 @@ func TestCveDbImportAndExportAuditSecurityDBRevision(t *testing.T) {
 }
 
 func TestSecurityDBBundleExportStagesCompleteArchiveBeforeResponse(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleSecurityDbExport")
 	if start < 0 {
 		t.Fatal("handleSecurityDbExport not found")
@@ -4401,11 +4247,8 @@ func TestSecurityDBBundleExportStagesCompleteArchiveBeforeResponse(t *testing.T)
 }
 
 func TestCveDbExportStagesCompleteJSONLBeforeResponse(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleCveDbExport")
 	if start < 0 {
 		t.Fatal("handleCveDbExport not found")
@@ -4441,11 +4284,8 @@ func TestCveDbExportStagesCompleteJSONLBeforeResponse(t *testing.T) {
 }
 
 func TestWriteCveJSONLTempSupportsSourceFilterAndRowErrors(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) writeCveJSONLTemp")
 	if start < 0 {
 		t.Fatal("writeCveJSONLTemp not found")
@@ -4471,11 +4311,8 @@ func TestWriteCveJSONLTempSupportsSourceFilterAndRowErrors(t *testing.T) {
 }
 
 func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	start := strings.Index(body, "func (s *Server) handleCveDbSearch")
 	if start < 0 {
 		t.Fatal("handleCveDbSearch not found")
@@ -4507,11 +4344,8 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 }
 
 func TestCveDbReferenceGroupEndpoint(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`"GET /api/cve-db/reference-group"`,
 		"func (s *Server) handleCveDbReferenceGroup",
@@ -4532,11 +4366,8 @@ func TestCveDbReferenceGroupEndpoint(t *testing.T) {
 }
 
 func TestCveDbAffectedPackageEvidenceEndpoint(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, want := range []string{
 		`"GET /api/cve-db/{id}/affected-packages"`,
 		"func (s *Server) handleCveDbAffectedPackages",
@@ -4621,11 +4452,8 @@ func TestCveImportErrorStatusMapsJsonErrors(t *testing.T) {
 }
 
 func TestFilterEndpointsApplyRBACScope(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	for _, fnName := range []string{"handleVulnFilters", "handlePackageFilters"} {
 		start := strings.Index(body, "func (s *Server) "+fnName)
 		if start < 0 {
@@ -4649,11 +4477,8 @@ func TestFilterEndpointsApplyRBACScope(t *testing.T) {
 }
 
 func TestInventoryAndScanEndpointsApplyRBACScope(t *testing.T) {
-	out, err := os.ReadFile("api.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out)
+	out := readAllPackageGoFiles(t)
+	body := out
 	tests := []struct {
 		name   string
 		fnName string

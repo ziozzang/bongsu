@@ -4,12 +4,54 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
+
+// readAllPackageGoFiles reads all non-test .go files in the package directory
+// and returns their concatenated content. This allows source-level tests to
+// work correctly when the package is split across multiple files.
+func readAllPackageGoFiles() ([]byte, error) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") && !strings.HasSuffix(e.Name(), "_test.go") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	var buf []byte
+	for _, n := range names {
+		data, err := os.ReadFile(n)
+		if err != nil {
+			return nil, err
+		}
+		buf = append(buf, data...)
+		buf = append(buf, '\n')
+	}
+	return buf, nil
+}
+
+// readAllPackageSources reads all package .go files and the shared models,
+// returning their concatenated content for cross-package source assertions.
+func readAllPackageSources() (string, error) {
+	pkgOut, err := readAllPackageGoFiles()
+	if err != nil {
+		return "", err
+	}
+	modelOut, err := os.ReadFile("../../shared/models/models.go")
+	if err != nil {
+		return "", err
+	}
+	return string(pkgOut) + string(modelOut), nil
+}
 
 func TestClassifySecuritySource(t *testing.T) {
 	tests := []struct {
@@ -62,15 +104,10 @@ func TestDBPoolConfigFallsBackForInvalidValues(t *testing.T) {
 }
 
 func TestAuditLogFilterSupportsTimeRanges(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	body, err := readAllPackageSources()
 	if err != nil {
 		t.Fatal(err)
 	}
-	modelOut, err := os.ReadFile("../../shared/models/models.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out) + string(modelOut)
 	for _, want := range []string{
 		`CreatedFrom  *time.Time`,
 		`CreatedTo    *time.Time`,
@@ -84,7 +121,7 @@ func TestAuditLogFilterSupportsTimeRanges(t *testing.T) {
 }
 
 func TestLatestAuditLogSupportsOperationalSummaries(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,15 +331,10 @@ func TestCalcCvssScoreVersions(t *testing.T) {
 }
 
 func TestManualCVSSRecalcUsesFullRecalculationPath(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	body, err := readAllPackageSources()
 	if err != nil {
 		t.Fatal(err)
 	}
-	modelOut, err := os.ReadFile("../../shared/models/models.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out) + string(modelOut)
 	start := strings.Index(body, "func (db *DB) RecalcCVSSFromVectors")
 	if start < 0 {
 		t.Fatal("RecalcCVSSFromVectors not found")
@@ -379,7 +411,7 @@ func TestContainerSortExprAllowlist(t *testing.T) {
 }
 
 func TestContainerSearchIncludesRiskSummary(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -413,7 +445,7 @@ func TestContainerSearchIncludesRiskSummary(t *testing.T) {
 }
 
 func TestPackagePersistencePreservesAssetOntology(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +496,7 @@ func TestPackagePersistencePreservesAssetOntology(t *testing.T) {
 }
 
 func TestContainerAssetPersistencePreservesRuntimeIdentity(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -532,7 +564,7 @@ func TestParseAccessSubjectRefSupportsTypedSubjects(t *testing.T) {
 }
 
 func TestAccessPolicyExternalSubjectResolutionRejectsAmbiguousUntypedRefs(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -559,7 +591,7 @@ func TestAccessPolicyExternalSubjectResolutionRejectsAmbiguousUntypedRefs(t *tes
 }
 
 func TestListAccessPoliciesSupportsTypedSubjectFilter(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -585,7 +617,7 @@ func TestListAccessPoliciesSupportsTypedSubjectFilter(t *testing.T) {
 }
 
 func TestAccessScopesSeparateReadAndExportPermissions(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -605,7 +637,7 @@ func TestAccessScopesSeparateReadAndExportPermissions(t *testing.T) {
 }
 
 func TestAccessScopeExpandsContainerImageAndAssetGroupPolicies(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -644,7 +676,7 @@ func TestAccessScopeExpandsContainerImageAndAssetGroupPolicies(t *testing.T) {
 }
 
 func TestAccessScopeContainerAndImagePoliciesUseLatestContainerAssets(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -694,7 +726,7 @@ func TestAccessScopeContainerAndImagePoliciesUseLatestContainerAssets(t *testing
 }
 
 func TestAccessScopeAssetGroupPoliciesResolveHostMetadataAndTags(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -765,7 +797,7 @@ func TestAccessPolicyCveDBResourceMigration(t *testing.T) {
 }
 
 func TestHasResourcePermissionSupportsGlobalResources(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -847,7 +879,7 @@ func TestQueueSecurityDBRescanInsertSQLUsesAtomicDedupe(t *testing.T) {
 }
 
 func TestQueueSecurityDBRescansReportsEligibleQueuedAndSkipped(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -895,7 +927,7 @@ func TestAutoRescanPendingUniqueMigrationAllowsClaimedFollowUp(t *testing.T) {
 }
 
 func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -927,7 +959,7 @@ func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
 }
 
 func TestGetScanRequestReturnsOperationalFields(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -958,7 +990,7 @@ func TestGetScanRequestReturnsOperationalFields(t *testing.T) {
 }
 
 func TestSecurityDBRescanCountsAreScopedByRevision(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -985,7 +1017,7 @@ func TestSecurityDBRescanCountsAreScopedByRevision(t *testing.T) {
 }
 
 func TestStaleScanRequestCountsAreScopedByTimeoutAndHost(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1031,7 +1063,7 @@ func TestScanRequestSecurityDBRevisionMigration(t *testing.T) {
 }
 
 func TestScanErrorSummaryIsStoredAndListed(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1072,7 +1104,7 @@ func TestScanErrorSummaryIsStoredAndListed(t *testing.T) {
 }
 
 func TestStaleSecurityDBRequeueCancelsDuplicateClaimedRequests(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1132,7 +1164,7 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 }
 
 func TestCveSourceStatsAvoidsAffectedProductExpansion(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1166,7 +1198,7 @@ func TestCveSourceStatsAvoidsAffectedProductExpansion(t *testing.T) {
 }
 
 func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1334,7 +1366,7 @@ func TestCveReferenceKeyFilterSupportsCanonicalGroups(t *testing.T) {
 }
 
 func TestCveReferenceGroupSummaryUsesSameCanonicalFilter(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1685,7 +1717,7 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 }
 
 func TestCveSourceStatsExposeMatchablePercent(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1703,7 +1735,7 @@ func TestCveSourceStatsExposeMatchablePercent(t *testing.T) {
 }
 
 func TestCveSourceFreshnessStatsAvoidHeavyQualityScan(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1763,7 +1795,7 @@ func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
 }
 
 func TestCveAffectedPackageIndexUsesSharedFixedVersionRules(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1803,7 +1835,7 @@ func TestCveAffectedPackageIndexUsesSharedFixedVersionRules(t *testing.T) {
 }
 
 func TestCveAffectedPackageIndexRowsAreListable(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1826,7 +1858,7 @@ func TestCveAffectedPackageIndexRowsAreListable(t *testing.T) {
 }
 
 func TestCveAffectedPackageIndexStatsUsesSingleMatchableSourcePass(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1858,7 +1890,7 @@ func TestCveAffectedPackageIndexStatsUsesSingleMatchableSourcePass(t *testing.T)
 }
 
 func TestRemoveStaleRematchedVulnerabilitiesUsesCompatibleCandidateCheck(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1894,7 +1926,7 @@ func TestRemoveStaleRematchedVulnerabilitiesUsesCompatibleCandidateCheck(t *test
 }
 
 func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1930,7 +1962,7 @@ func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
 }
 
 func TestRematchResultExposesSecurityDBRevision(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1971,7 +2003,7 @@ func TestLatestScansIncludesDegradedInventory(t *testing.T) {
 }
 
 func TestRunMigrationsRecordsAppliedFiles(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1980,7 +2012,7 @@ func TestRunMigrationsRecordsAppliedFiles(t *testing.T) {
 	if start < 0 {
 		t.Fatal("RunMigrations not found")
 	}
-	end := strings.Index(body[start:], "func (db *DB) UpsertHost")
+	end := strings.Index(body[start:], "func (db *DB) baselineMigrations")
 	if end < 0 {
 		t.Fatal("RunMigrations end not found")
 	}
@@ -2007,7 +2039,7 @@ func TestRunMigrationsRecordsAppliedFiles(t *testing.T) {
 }
 
 func TestMigrationBaselineRecordsLegacyDatabasesWithoutRerun(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2038,7 +2070,7 @@ func TestMigrationBaselineRecordsLegacyDatabasesWithoutRerun(t *testing.T) {
 }
 
 func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2082,7 +2114,7 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 }
 
 func TestHostAgentTokenBindingPersistence(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2279,7 +2311,7 @@ func TestCveAffectedPackageQualityConstraintsMigration(t *testing.T) {
 }
 
 func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2313,7 +2345,7 @@ func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T
 }
 
 func TestIndexExistsUsesPostgresRegclass(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2381,7 +2413,7 @@ func TestScanRequestErrorsAreDistinct(t *testing.T) {
 }
 
 func TestRequeueScanRequestOnlyRetriesTerminalRequests(t *testing.T) {
-	dbFile, err := os.ReadFile("db.go")
+	dbFile, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2433,7 +2465,7 @@ func TestScanRequestStatusConstraintIncludesDegraded(t *testing.T) {
 }
 
 func TestFilteredRequeueRequiresTerminalRequestsAndFilters(t *testing.T) {
-	dbFile, err := os.ReadFile("db.go")
+	dbFile, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2479,7 +2511,7 @@ func TestScanRequestClaimOwnershipIsTracked(t *testing.T) {
 		}
 	}
 
-	dbFile, err := os.ReadFile("db.go")
+	dbFile, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2529,7 +2561,7 @@ func TestAgentCompletesScanRequestWithHostID(t *testing.T) {
 
 func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
 	fn := "upsertCveEntriesTx"
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2549,7 +2581,7 @@ func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
 }
 
 func TestBulkCveAffectedPackageRefreshCanScopeBySource(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2588,7 +2620,7 @@ func TestCveReferenceKeyIndexIsMaintainedAndIndexed(t *testing.T) {
 		}
 	}
 
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2617,7 +2649,7 @@ func TestCveReferenceKeyIndexIsMaintainedAndIndexed(t *testing.T) {
 }
 
 func TestCveReplacementDeleteHelpersAreTransactional(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2684,7 +2716,7 @@ func TestAffectedPackageIndexRebuildMigrationForMatchabilityRuleChanges(t *testi
 }
 
 func TestCvePlaceholderStatsTrackInvalidAdvisoryRows(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2722,7 +2754,7 @@ func TestVulnerabilityFindingsAreUniquePerPackageScanAndCVE(t *testing.T) {
 		}
 	}
 
-	dbFile, err := os.ReadFile("db.go")
+	dbFile, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2736,7 +2768,7 @@ func TestVulnerabilityFindingsAreUniquePerPackageScanAndCVE(t *testing.T) {
 }
 
 func TestUpdateHostMetadataReportsMissingHosts(t *testing.T) {
-	dbFile, err := os.ReadFile("db.go")
+	dbFile, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2745,9 +2777,9 @@ func TestUpdateHostMetadataReportsMissingHosts(t *testing.T) {
 	if start < 0 {
 		t.Fatal("UpdateHostMetadata not found")
 	}
-	end := strings.Index(body[start:], "const latestScansSub")
+	end := strings.Index(body[start:], "\nfunc ")
 	if end < 0 {
-		t.Fatal("UpdateHostMetadata end not found")
+		end = len(body) - start
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
@@ -2898,15 +2930,10 @@ func TestCvePackageEcosystemMismatchFilterChecksAllAffectedProducts(t *testing.T
 }
 
 func TestVulnerabilityRowsExposePackageContext(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	body, err := readAllPackageSources()
 	if err != nil {
 		t.Fatal(err)
 	}
-	modelOut, err := os.ReadFile("../../shared/models/models.go")
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := string(out) + string(modelOut)
 	for _, want := range []string{
 		"(SELECT p.asset_type FROM packages p WHERE p.id = v.package_id)",
 		"(SELECT p.pkg_type FROM packages p WHERE p.id = v.package_id)",
@@ -3019,7 +3046,7 @@ func TestCurrentActionableVulnSQLUsesRemediationFilters(t *testing.T) {
 }
 
 func TestListVulnerabilitiesAlwaysUsesLatestScan(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3042,7 +3069,7 @@ func TestListVulnerabilitiesAlwaysUsesLatestScan(t *testing.T) {
 }
 
 func TestListVulnerabilitiesSupportsFindingSourceFilter(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3077,7 +3104,7 @@ func TestListVulnerabilitiesSupportsFindingSourceFilter(t *testing.T) {
 }
 
 func TestListVulnerabilitiesExposesCisaKevPrioritization(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3112,7 +3139,7 @@ func TestListVulnerabilitiesExposesCisaKevPrioritization(t *testing.T) {
 }
 
 func TestCveDatabaseStoresEPSSPriorityColumns(t *testing.T) {
-	bodyBytes, err := os.ReadFile("db.go")
+	bodyBytes, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3160,7 +3187,7 @@ func TestCveDatabaseStoresEPSSPriorityColumns(t *testing.T) {
 }
 
 func TestSearchPackagesAlwaysUsesLatestScan(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3169,9 +3196,9 @@ func TestSearchPackagesAlwaysUsesLatestScan(t *testing.T) {
 	if start < 0 {
 		t.Fatal("SearchPackages not found")
 	}
-	end := strings.Index(body[start:], "func (db *DB) GetPackageHostID")
+	end := strings.Index(body[start:], "func pkgSortExpr")
 	if end < 0 {
-		t.Fatal("GetPackageHostID not found")
+		t.Fatal("pkgSortExpr not found")
 	}
 	fn := body[start : start+end]
 	if !strings.Contains(fn, "JOIN ` + latestScansSub") {
@@ -3183,7 +3210,7 @@ func TestSearchPackagesAlwaysUsesLatestScan(t *testing.T) {
 }
 
 func TestPackageVulnJoinUsesActiveFindingFilter(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3210,7 +3237,7 @@ func TestPackageVulnJoinUsesActiveFindingFilter(t *testing.T) {
 }
 
 func TestGetVulnsByPackageIDUsesLatestActiveFindings(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3219,9 +3246,9 @@ func TestGetVulnsByPackageIDUsesLatestActiveFindings(t *testing.T) {
 	if start < 0 {
 		t.Fatal("GetVulnsByPackageID not found")
 	}
-	end := strings.Index(body[start:], "const CveCols")
+	end := strings.Index(body[start:], "\nfunc ")
 	if end < 0 {
-		t.Fatal("CveCols not found")
+		end = len(body) - start
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
@@ -3235,7 +3262,7 @@ func TestGetVulnsByPackageIDUsesLatestActiveFindings(t *testing.T) {
 }
 
 func TestVulnSummaryUsesActiveFindingFilter(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3264,7 +3291,7 @@ func TestVulnSummaryUsesActiveFindingFilter(t *testing.T) {
 }
 
 func TestStatsCanCountCurrentActionableRiskByHost(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3292,7 +3319,7 @@ func TestStatsCanCountCurrentActionableRiskByHost(t *testing.T) {
 }
 
 func TestStatsCanCountCurrentActionableOverdueRiskByHost(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3321,7 +3348,7 @@ func TestStatsCanCountCurrentActionableOverdueRiskByHost(t *testing.T) {
 }
 
 func TestScanWebhookCanCountRiskByScan(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3330,9 +3357,9 @@ func TestScanWebhookCanCountRiskByScan(t *testing.T) {
 	if start < 0 {
 		t.Fatal("GetVulnRiskCountsByScan not found")
 	}
-	end := strings.Index(body[start:], "func (db *DB) GetLatestPackages")
+	end := strings.Index(body[start:], "func (db *DB) GetVulnFilterOptions")
 	if end < 0 {
-		t.Fatal("GetLatestPackages not found")
+		t.Fatal("GetVulnFilterOptions not found")
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
@@ -3348,7 +3375,7 @@ func TestScanWebhookCanCountRiskByScan(t *testing.T) {
 }
 
 func TestTriageLifecycleCountsForMetrics(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3377,7 +3404,7 @@ func TestTriageLifecycleCountsForMetrics(t *testing.T) {
 }
 
 func TestFilterOptionsAreHostScopedAndLatestOnly(t *testing.T) {
-	out, err := os.ReadFile("db.go")
+	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3391,7 +3418,7 @@ func TestFilterOptionsAreHostScopedAndLatestOnly(t *testing.T) {
 		{
 			name:  "package filters",
 			start: "func (db *DB) GetFilterOptions",
-			end:   "func pkgSortExpr",
+			end:   "func vulnSortExpr",
 			wants: []string{
 				"hostIDs []string",
 				"p.host_id = ANY($1)",
