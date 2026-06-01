@@ -399,8 +399,15 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setUpdateMsg('');
     try {
       const r = await api.rebuildCveReferenceIndex();
-      const duration = r.duration_ms ? ` in ${(r.duration_ms / 1000).toFixed(1)}s` : '';
-      setUpdateMsg(`Reference key index rebuilt: ${r.indexed.toLocaleString()} keys${duration}`);
+      if (r.status === 'queued') {
+        setUpdateMsg('Reference key index rebuild queued');
+      } else if (r.status === 'running') {
+        setUpdateMsg('Reference key index rebuild is already running');
+      } else {
+        const duration = r.duration_ms ? ` in ${(r.duration_ms / 1000).toFixed(1)}s` : '';
+        setUpdateMsg(`Reference key index rebuilt: ${(r.indexed || 0).toLocaleString()} keys${duration}`);
+      }
+      api.rawHealth().then(setHealth).catch(() => {});
       api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); }).catch(() => {});
     } catch {
       setUpdateMsg('Reference key index rebuild failed');

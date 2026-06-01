@@ -357,6 +357,20 @@ export interface HealthStatus {
       security_db_revision_error?: string;
     };
   };
+  cve_reference_index_rebuild?: {
+    running?: boolean;
+    started_at?: string;
+    duration_ms?: number;
+    last_result?: {
+      status?: string;
+      indexed?: number;
+      duration_ms?: number;
+      finished_at?: string;
+      error?: string;
+      security_db_revision?: string;
+      security_db_revision_error?: string;
+    };
+  };
   cve_affected_package_index?: {
     count?: number;
     source_count?: number;
@@ -714,7 +728,7 @@ export const api = {
   rebuildCveAffectedIndex: () =>
     request<{status: string; indexed: number; duration_ms?: number; index?: CveDbStatsResponse['affected_package_index']; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/affected-index/rebuild', undefined, 'POST'),
   rebuildCveReferenceIndex: () =>
-    request<{status: string; indexed: number; duration_ms?: number; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/reference-index/rebuild', undefined, 'POST'),
+    request<{status: string; indexed?: number; duration_ms?: number; reference_index_rebuild?: HealthStatus['cve_reference_index_rebuild']; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/reference-index/rebuild', { async: 'true' }, 'POST'),
   recalcCveCVSS: () =>
     request<{status: string; updated: number; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/recalc-cvss', undefined, 'POST'),
   pruneRetention: (body: { dry_run: boolean; scan_days?: number; request_days?: number; audit_days?: number }) =>

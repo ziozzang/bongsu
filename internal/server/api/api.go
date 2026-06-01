@@ -57,6 +57,11 @@ type Server struct {
 	securityRecalcRunning bool
 	securityRecalcPending bool
 	securityRecalcReason  string
+
+	referenceIndexMu        sync.Mutex
+	referenceIndexRunning   bool
+	referenceIndexStartedAt time.Time
+	referenceIndexLast      map[string]any
 }
 
 const (
@@ -3084,6 +3089,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			resp["cve_reference_key_index"] = map[string]any{"error": err.Error()}
 		}
 		cancel()
+		resp["cve_reference_index_rebuild"] = s.referenceIndexRebuildStatus()
 	}
 	dbCtx, cancel := withHealthDBTimeout()
 	if err := s.db.PingContext(dbCtx); err != nil {
@@ -3667,6 +3673,28 @@ func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDet
 		if policy, ok := meta["rematch_source_policy"]; ok {
 			out["rematch_source_policy"] = policy
 		}
+	}
+	return out
+}
+
+func (s *Server) referenceIndexRebuildStatus() map[string]any {
+	s.referenceIndexMu.Lock()
+	defer s.referenceIndexMu.Unlock()
+	status := map[string]any{"running": s.referenceIndexRunning}
+	if s.referenceIndexRunning && !s.referenceIndexStartedAt.IsZero() {
+		status["started_at"] = s.referenceIndexStartedAt.UTC().Format(time.RFC3339)
+		status["duration_ms"] = time.Since(s.referenceIndexStartedAt).Milliseconds()
+	}
+	if s.referenceIndexLast != nil {
+		status["last_result"] = cloneMap(s.referenceIndexLast)
+	}
+	return status
+}
+
+func cloneMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
 	}
 	return out
 }
@@ -4921,6 +4949,15 @@ func (s *Server) handleCveDbReferenceIndexRebuild(w http.ResponseWriter, r *http
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	if r.URL.Query().Get("async") == "true" {
+		started, status := s.startReferenceIndexRebuild()
+		code := http.StatusAccepted
+		if !started {
+			code = http.StatusConflict
+		}
+		writeJSON(w, code, map[string]any{"status": status, "reference_index_rebuild": s.referenceIndexRebuildStatus()})
+		return
+	}
 	started := time.Now()
 	count, err := s.db.RebuildCveReferenceKeys(r.Context())
 	durationMS := time.Since(started).Milliseconds()
@@ -4940,6 +4977,53 @@ func (s *Server) handleCveDbReferenceIndexRebuild(w http.ResponseWriter, r *http
 		auditMeta[k] = v
 	}
 	s.audit(r, "cve_db.reference_index_rebuild", "cve_db", "reference_index", "ok", auditMeta)
+}
+
+func (s *Server) startReferenceIndexRebuild() (bool, string) {
+	s.referenceIndexMu.Lock()
+	if s.referenceIndexRunning {
+		s.referenceIndexMu.Unlock()
+		return false, "running"
+	}
+	s.referenceIndexRunning = true
+	s.referenceIndexStartedAt = time.Now()
+	s.referenceIndexMu.Unlock()
+
+	go s.runReferenceIndexRebuild()
+	return true, "queued"
+}
+
+func (s *Server) runReferenceIndexRebuild() {
+	started := time.Now()
+	log.Printf("CVE reference key index rebuild started")
+	s.auditSystem("cve_db.reference_index_rebuild", "cve_db", "reference_index", "started", map[string]any{"started_at": started.UTC().Format(time.RFC3339)})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_CVE_REFERENCE_INDEX_TIMEOUT_SECONDS", 180))*time.Second)
+	defer cancel()
+	count, err := s.db.RebuildCveReferenceKeys(ctx)
+	durationMS := time.Since(started).Milliseconds()
+	status := "ok"
+	meta := map[string]any{"indexed": count, "duration_ms": durationMS}
+	if err != nil {
+		status = "error"
+		meta["error"] = err.Error()
+		log.Printf("CVE reference key index rebuild failed after %dms: %v", durationMS, err)
+	} else {
+		log.Printf("CVE reference key index rebuild finished indexed=%d duration_ms=%d", count, durationMS)
+	}
+	ctxMeta, cancelMeta := context.WithTimeout(context.Background(), 5*time.Second)
+	for k, v := range s.securityDBRevisionMeta(ctxMeta) {
+		meta[k] = v
+	}
+	cancelMeta()
+	s.auditSystem("cve_db.reference_index_rebuild", "cve_db", "reference_index", status, meta)
+	result := cloneMap(meta)
+	result["status"] = status
+	result["finished_at"] = time.Now().UTC().Format(time.RFC3339)
+	s.referenceIndexMu.Lock()
+	s.referenceIndexRunning = false
+	s.referenceIndexStartedAt = time.Time{}
+	s.referenceIndexLast = result
+	s.referenceIndexMu.Unlock()
 }
 
 func rematchOptionsFromEnv() db.RematchOptions {
