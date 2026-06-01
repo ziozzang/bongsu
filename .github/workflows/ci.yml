@@ -36,6 +36,9 @@ jobs:
       - name: Verify requirements audit coverage
         run: ./scripts/verify-requirements-audit.sh
 
+      - name: Verify airgap package contents
+        run: ./scripts/verify-package-contents.sh
+
       - name: Verify one-line installer smoke path
         run: ./scripts/verify-installer-smoke.sh
 

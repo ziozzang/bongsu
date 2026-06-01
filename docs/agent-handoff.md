@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-01 20:01:57 KST
+Updated: 2026-06-01 20:04:57 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -50,6 +50,7 @@ This handoff commit should include:
 - `docs/requirements-audit.md`
 - `docs/operations-runbook.md`
 - `scripts/verify-requirements-audit.sh`
+- `scripts/verify-package-contents.sh`
 - `scripts/package.sh`
 - `.github/workflows/ci.yml`
 - `README.md`
@@ -64,6 +65,7 @@ This handoff commit should include:
 - Browser smoke coverage for Hosts force-scan requests and RBAC subject/policy creation, including POST body verification.
 - Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
 - RBAC enforcement regression coverage for package/container/scan/scan-request endpoint scoping and container/image/asset-group policy expansion through latest container assets and host metadata.
+- Airgap package contents verifier that checks the release package script includes static binaries, Docker images, deploy files, migrations, docs, web assets, source sync/import/export tools, loader script, and SHA256 manifests.
 
 ## Live Runtime
 
@@ -147,6 +149,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - Playwright coverage now verifies dashboard CVE DB status, CVE Search fixed-version evidence, Hosts force-scan POST bodies, and RBAC subject/policy POST bodies.
 - `docs/operations-runbook.md` is available and `scripts/package.sh` includes documentation in release archives.
 - Go tests now assert RBAC access scope expansion for host, container, image, and asset-group policies and verify inventory/scan list endpoints apply those scopes.
+- CI runs `scripts/verify-package-contents.sh` to keep air-gapped release archives from silently losing required files.
 
 ## Verification Commands
 
@@ -158,6 +161,7 @@ go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
 ./scripts/verify-requirements-audit.sh
+./scripts/verify-package-contents.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
