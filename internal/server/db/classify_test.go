@@ -814,8 +814,10 @@ func TestScanErrorSummaryIsStoredAndListed(t *testing.T) {
 	for _, want := range []string{
 		"CompleteScan(ctx context.Context, id, status, errorSummary string)",
 		"UPDATE scans SET status=$2, error_summary=$3",
-		"SELECT id, host_id, scan_type, status, error_summary",
+		"SELECT id, host_id, scan_type, status, error_summary, security_db_revision, scan_request_id",
 		"&s.ErrorSummary",
+		"&s.SecurityDBRevision",
+		"&s.ScanRequestID",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("scan error summary persistence missing %q", want)
@@ -827,6 +829,20 @@ func TestScanErrorSummaryIsStoredAndListed(t *testing.T) {
 	}
 	if !strings.Contains(string(migration), "ADD COLUMN IF NOT EXISTS error_summary TEXT NOT NULL DEFAULT ''") {
 		t.Fatalf("scan error summary migration missing column: %s", migration)
+	}
+	revisionMigration, err := os.ReadFile("../../../migrations/026_scan_security_db_revision.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"ADD COLUMN IF NOT EXISTS security_db_revision TEXT NOT NULL DEFAULT ''",
+		"ADD COLUMN IF NOT EXISTS scan_request_id TEXT NOT NULL DEFAULT ''",
+		"idx_scans_security_db_revision",
+		"idx_scans_scan_request_id",
+	} {
+		if !strings.Contains(string(revisionMigration), want) {
+			t.Fatalf("scan security DB revision migration missing %q: %s", want, revisionMigration)
+		}
 	}
 }
 

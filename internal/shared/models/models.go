@@ -30,20 +30,22 @@ type Host struct {
 }
 
 type Scan struct {
-	ID              string     `json:"id"`
-	HostID          string     `json:"host_id"`
-	ScanType        string     `json:"scan_type"` // "daily", "manual"
-	Status          string     `json:"status"`    // "running", "completed", "degraded", "failed"
-	ErrorSummary    string     `json:"error_summary,omitempty"`
-	PackageCount    int        `json:"package_count,omitempty"`
-	VulnCount       int        `json:"vulnerability_count,omitempty"`
-	ContainerCount  int        `json:"container_count,omitempty"`
-	PackagesAdded   int        `json:"packages_added,omitempty"`
-	PackagesRemoved int        `json:"packages_removed,omitempty"`
-	PackagesChanged int        `json:"packages_changed,omitempty"`
-	StartedAt       time.Time  `json:"started_at"`
-	FinishedAt      *time.Time `json:"finished_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
+	ID                 string     `json:"id"`
+	HostID             string     `json:"host_id"`
+	ScanType           string     `json:"scan_type"` // "daily", "manual"
+	Status             string     `json:"status"`    // "running", "completed", "degraded", "failed"
+	ErrorSummary       string     `json:"error_summary,omitempty"`
+	SecurityDBRevision string     `json:"security_db_revision,omitempty"`
+	ScanRequestID      string     `json:"scan_request_id,omitempty"`
+	PackageCount       int        `json:"package_count,omitempty"`
+	VulnCount          int        `json:"vulnerability_count,omitempty"`
+	ContainerCount     int        `json:"container_count,omitempty"`
+	PackagesAdded      int        `json:"packages_added,omitempty"`
+	PackagesRemoved    int        `json:"packages_removed,omitempty"`
+	PackagesChanged    int        `json:"packages_changed,omitempty"`
+	StartedAt          time.Time  `json:"started_at"`
+	FinishedAt         *time.Time `json:"finished_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 type ScanRequest struct {
@@ -256,17 +258,19 @@ type ContainerAsset struct {
 }
 
 type ScanReport struct {
-	Host       Host              `json:"host"`
-	ScanType   string            `json:"scan_type"`
-	ScanID     string            `json:"scan_id"`
-	Errors     []string          `json:"errors,omitempty"`
-	Containers []ContainerAsset  `json:"containers"`
-	Packages   []Package         `json:"packages"`
-	Vulns      []Vulnerability   `json:"vulnerabilities"`
-	Users      []UserAccount     `json:"users"`
-	Processes  []ProcessSnapshot `json:"processes"`
-	Ports      []PortInfo        `json:"ports"`
-	Timestamp  time.Time         `json:"timestamp"`
+	Host               Host              `json:"host"`
+	ScanType           string            `json:"scan_type"`
+	ScanID             string            `json:"scan_id"`
+	ScanRequestID      string            `json:"scan_request_id,omitempty"`
+	SecurityDBRevision string            `json:"security_db_revision,omitempty"`
+	Errors             []string          `json:"errors,omitempty"`
+	Containers         []ContainerAsset  `json:"containers"`
+	Packages           []Package         `json:"packages"`
+	Vulns              []Vulnerability   `json:"vulnerabilities"`
+	Users              []UserAccount     `json:"users"`
+	Processes          []ProcessSnapshot `json:"processes"`
+	Ports              []PortInfo        `json:"ports"`
+	Timestamp          time.Time         `json:"timestamp"`
 }
 
 type CveEntry struct {

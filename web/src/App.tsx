@@ -535,6 +535,13 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       : (rescanProgress.total || 0) > 0
         ? 'var(--low)'
         : 'var(--text-muted)';
+  const scanCoverage = stats?.security_db_scan_coverage || {};
+  const scanCoveragePercent = Number(scanCoverage.coverage_percent || 0);
+  const scanCoverageColor = (scanCoverage.stale_hosts || 0) > 0 || (scanCoverage.unknown_hosts || 0) > 0
+    ? 'var(--medium)'
+    : (scanCoverage.current_hosts || 0) > 0
+      ? 'var(--low)'
+      : 'var(--text-muted)';
   const triageActiveCounts = stats?.triage_active_counts || {};
   const triageExpiringSoonCounts = stats?.triage_expiring_soon_counts || {};
   const suppressedTriageCount = ['accepted_risk', 'false_positive', 'fixed', 'ignored']
@@ -992,6 +999,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div className="value" style={{ color: rescanProgressColor }}>{rescanCompletePercent.toFixed(1)}%</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             {(rescanProgress.terminal || 0).toLocaleString()} done, {(rescanProgress.open || 0).toLocaleString()} open of {(rescanProgress.total || 0).toLocaleString()}
+          </div>
+        </div>
+        <div className="stat-card" title={scanCoverage.revision ? `Latest completed/degraded scan revision coverage for ${scanCoverage.revision}` : 'Latest completed/degraded scan revision coverage'}>
+          <div className="accent-bar" style={{ background: scanCoverageColor }} />
+          <div className="label">Current DB Scan Coverage</div>
+          <div className="value" style={{ color: scanCoverageColor }}>{scanCoveragePercent.toFixed(1)}%</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {(scanCoverage.current_hosts || 0).toLocaleString()} current, {((scanCoverage.stale_hosts || 0) + (scanCoverage.unknown_hosts || 0)).toLocaleString()} stale/unknown
           </div>
         </div>
       </div>

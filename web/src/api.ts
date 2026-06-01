@@ -287,6 +287,15 @@ export interface Stats {
     complete_percent?: number;
     healthy_percent?: number;
   };
+  security_db_scan_coverage?: {
+    revision?: string;
+    total_hosts?: number;
+    current_hosts?: number;
+    stale_hosts?: number;
+    unknown_hosts?: number;
+    no_scan_hosts?: number;
+    coverage_percent?: number;
+  };
 }
 
 export interface VulnSummaryRow {

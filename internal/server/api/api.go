@@ -545,12 +545,24 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	report.SecurityDBRevision = strings.TrimSpace(report.SecurityDBRevision)
+	report.ScanRequestID = strings.TrimSpace(report.ScanRequestID)
+	if report.SecurityDBRevision == "" {
+		if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
+			report.SecurityDBRevision = revision
+		} else {
+			log.Printf("scan report security db revision: %v", err)
+		}
+	}
+
 	scan := &models.Scan{
-		ID:        report.ScanID,
-		HostID:    report.Host.ID,
-		ScanType:  report.ScanType,
-		Status:    "running",
-		StartedAt: report.Timestamp,
+		ID:                 report.ScanID,
+		HostID:             report.Host.ID,
+		ScanType:           report.ScanType,
+		Status:             "running",
+		SecurityDBRevision: report.SecurityDBRevision,
+		ScanRequestID:      report.ScanRequestID,
+		StartedAt:          report.Timestamp,
 	}
 	if err := s.db.CreateScan(ctx, scan); err != nil {
 		log.Printf("create scan: %v", err)
@@ -708,33 +720,36 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	inventoryStatus := reportInventoryStatus(len(report.Packages), scanStatus)
 	s.audit(r, "agent.report", "scan", report.ScanID, reportAuditStatus(skippedVulns, len(ingestErrors)), map[string]any{
-		"host_id":          report.Host.ID,
-		"hostname":         report.Host.Hostname,
-		"packages":         len(report.Packages),
-		"vulnerabilities":  vulnTotal,
-		"vulns_inserted":   insertedVulns,
-		"vulns_skipped":    skippedVulns,
-		"containers":       len(report.Containers),
-		"inventory_status": inventoryStatus,
-		"users":            len(report.Users),
-		"processes":        len(report.Processes),
-		"ports":            len(report.Ports),
-		"scan_status":      scanStatus,
-		"error_summary":    errorSummary,
-		"ingest_errors":    ingestErrors,
+		"host_id":              report.Host.ID,
+		"hostname":             report.Host.Hostname,
+		"packages":             len(report.Packages),
+		"vulnerabilities":      vulnTotal,
+		"vulns_inserted":       insertedVulns,
+		"vulns_skipped":        skippedVulns,
+		"containers":           len(report.Containers),
+		"inventory_status":     inventoryStatus,
+		"users":                len(report.Users),
+		"processes":            len(report.Processes),
+		"ports":                len(report.Ports),
+		"scan_status":          scanStatus,
+		"error_summary":        errorSummary,
+		"ingest_errors":        ingestErrors,
+		"scan_request_id":      report.ScanRequestID,
+		"security_db_revision": report.SecurityDBRevision,
 	})
 	if s.notifier.ShouldSendScan(sevCounts, riskCounts, inventoryStatus) {
 		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, riskCounts, ingestErrors))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":             "ok",
-		"scan_id":            report.ScanID,
-		"scan_status":        scanStatus,
-		"inventory_status":   inventoryStatus,
-		"error_summary":      errorSummary,
-		"ingest_error_count": len(ingestErrors),
-		"skipped_vuln_count": skippedVulns,
+		"status":               "ok",
+		"scan_id":              report.ScanID,
+		"scan_status":          scanStatus,
+		"inventory_status":     inventoryStatus,
+		"error_summary":        errorSummary,
+		"security_db_revision": report.SecurityDBRevision,
+		"ingest_error_count":   len(ingestErrors),
+		"skipped_vuln_count":   skippedVulns,
 	})
 }
 
@@ -878,24 +893,26 @@ func reportInventoryStatus(packageCount int, scanStatus string) string {
 
 func reportWebhookPayload(report *models.ScanReport, scanStatus, inventoryStatus string, insertedVulns, skippedVulns, vulnTotal int, sevCounts, riskCounts map[string]int, ingestErrors []string) map[string]any {
 	return map[string]any{
-		"scan_id":           report.ScanID,
-		"scan_status":       scanStatus,
-		"host_id":           report.Host.ID,
-		"hostname":          report.Host.Hostname,
-		"ip_address":        report.Host.IPAddress,
-		"os_name":           report.Host.OSName,
-		"os_version":        report.Host.OSVersion,
-		"scan_type":         report.ScanType,
-		"inventory_status":  inventoryStatus,
-		"packages":          len(report.Packages),
-		"containers":        len(report.Containers),
-		"vulnerabilities":   vulnTotal,
-		"vulns_inserted":    insertedVulns,
-		"vulns_skipped":     skippedVulns,
-		"error_summary":     scanErrorSummary(ingestErrors),
-		"ingest_errors":     ingestErrors,
-		"severity_counts":   sevCounts,
-		"risk_level_counts": riskCounts,
+		"scan_id":              report.ScanID,
+		"scan_status":          scanStatus,
+		"host_id":              report.Host.ID,
+		"hostname":             report.Host.Hostname,
+		"ip_address":           report.Host.IPAddress,
+		"os_name":              report.Host.OSName,
+		"os_version":           report.Host.OSVersion,
+		"scan_type":            report.ScanType,
+		"scan_request_id":      report.ScanRequestID,
+		"security_db_revision": report.SecurityDBRevision,
+		"inventory_status":     inventoryStatus,
+		"packages":             len(report.Packages),
+		"containers":           len(report.Containers),
+		"vulnerabilities":      vulnTotal,
+		"vulns_inserted":       insertedVulns,
+		"vulns_skipped":        skippedVulns,
+		"error_summary":        scanErrorSummary(ingestErrors),
+		"ingest_errors":        ingestErrors,
+		"severity_counts":      sevCounts,
+		"risk_level_counts":    riskCounts,
 	}
 }
 
@@ -1903,6 +1920,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	securityDBRevision := ""
 	securityDBRescanCounts := map[string]int{}
 	securityDBRescanProgress := map[string]any{}
+	var securityDBScanCoverage *db.SecurityDBScanCoverage
 	if revision, err := s.db.GetSecurityDBRevision(ctx); err != nil {
 		log.Printf("security db revision stats: %v", err)
 	} else {
@@ -1912,6 +1930,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		} else {
 			securityDBRescanCounts = counts
 			securityDBRescanProgress = securityDBRescanProgressSummary(revision, counts)
+		}
+		if coverage, err := s.db.GetSecurityDBScanCoverage(ctx, visibleHostIDs, scope.All, revision); err != nil {
+			log.Printf("security db scan coverage: %v", err)
+		} else {
+			securityDBScanCoverage = coverage
 		}
 	}
 
@@ -1940,6 +1963,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"security_db_revision":              securityDBRevision,
 		"security_db_rescan_request_counts": securityDBRescanCounts,
 		"security_db_rescan_progress":       securityDBRescanProgress,
+		"security_db_scan_coverage":         securityDBScanCoverage,
 	}
 	resp["agent_version_drift_counts"] = agentVersionDriftCounts(agentVersionCounts, fmt.Sprint(resp["latest_agent_version"]))
 	if s.authenticateAdmin(r) || !s.webAuth {
@@ -3561,6 +3585,16 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 				writePromGauge(&b, "bongsu_security_db_rescan_terminal", nil, metricNumber(progress["terminal"]))
 				writePromGauge(&b, "bongsu_security_db_rescan_complete_percent", nil, metricNumber(progress["complete_percent"]))
 				writePromGauge(&b, "bongsu_security_db_rescan_healthy_percent", nil, metricNumber(progress["healthy_percent"]))
+				if coverage, err := s.db.GetSecurityDBScanCoverage(ctx, nil, true, revision); err == nil {
+					writePromGauge(&b, "bongsu_security_db_scan_coverage_hosts_total", nil, float64(coverage.TotalHosts))
+					writePromGauge(&b, "bongsu_security_db_scan_coverage_current_hosts", nil, float64(coverage.CurrentHosts))
+					writePromGauge(&b, "bongsu_security_db_scan_coverage_stale_hosts", nil, float64(coverage.StaleHosts))
+					writePromGauge(&b, "bongsu_security_db_scan_coverage_unknown_hosts", nil, float64(coverage.UnknownHosts))
+					writePromGauge(&b, "bongsu_security_db_scan_coverage_no_scan_hosts", nil, float64(coverage.NoScanHosts))
+					writePromGauge(&b, "bongsu_security_db_scan_coverage_percent", nil, coverage.CoveragePercent)
+				} else {
+					writePromGauge(&b, "bongsu_security_db_scan_coverage_metrics_error", nil, 1)
+				}
 			} else {
 				writePromGauge(&b, "bongsu_security_db_rescan_metrics_error", nil, 1)
 			}

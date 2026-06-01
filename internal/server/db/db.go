@@ -200,6 +200,8 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "cve_affected_packages"},
 		{table: "cve_reference_keys"},
 		{table: "container_assets"},
+		{table: "scans", column: "security_db_revision"},
+		{table: "scans", column: "scan_request_id"},
 		{table: "scan_requests", column: "claimed_by_host_id"},
 		{table: "scan_requests", column: "security_db_revision"},
 		{table: "audit_logs"},
@@ -344,8 +346,8 @@ func (db *DB) ResetHostAgentToken(ctx context.Context, hostID string) error {
 }
 
 func (db *DB) CreateScan(ctx context.Context, s *models.Scan) error {
-	q := `INSERT INTO scans (id, host_id, scan_type, status, started_at, created_at) VALUES ($1, $2, $3, $4, $5, now())`
-	_, err := db.ExecContext(ctx, q, s.ID, s.HostID, s.ScanType, s.Status, s.StartedAt)
+	q := `INSERT INTO scans (id, host_id, scan_type, status, security_db_revision, scan_request_id, started_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, now())`
+	_, err := db.ExecContext(ctx, q, s.ID, s.HostID, s.ScanType, s.Status, s.SecurityDBRevision, s.ScanRequestID, s.StartedAt)
 	return err
 }
 
@@ -1323,7 +1325,7 @@ func (db *DB) ListScans(ctx context.Context, hostID string, hostIDs []string, li
 
 	dataQ := fmt.Sprintf(`
 WITH page_scans AS (
-	SELECT id, host_id, scan_type, status, error_summary, started_at, finished_at, created_at
+	SELECT id, host_id, scan_type, status, error_summary, security_db_revision, scan_request_id, started_at, finished_at, created_at
 	FROM scans
 	%s
 	ORDER BY created_at DESC
@@ -1337,7 +1339,7 @@ scan_prev AS (
 	FROM page_scans s
 )
 SELECT
-	s.id, s.host_id, s.scan_type, s.status, s.error_summary,
+	s.id, s.host_id, s.scan_type, s.status, s.error_summary, s.security_db_revision, s.scan_request_id,
 	(SELECT count(*) FROM packages p WHERE p.scan_id=s.id)::int AS package_count,
 	(SELECT count(*) FROM vulnerabilities v WHERE v.scan_id=s.id)::int AS vulnerability_count,
 	(SELECT count(*) FROM container_assets c WHERE c.scan_id=s.id)::int AS container_count,
@@ -1374,7 +1376,7 @@ ORDER BY s.created_at DESC`, baseWhere, n, n+1, packageIdentitySQL("cp", "pp"), 
 	var scans []models.Scan
 	for rows.Next() {
 		var s models.Scan
-		if err := rows.Scan(&s.ID, &s.HostID, &s.ScanType, &s.Status, &s.ErrorSummary, &s.PackageCount, &s.VulnCount, &s.ContainerCount, &s.PackagesAdded, &s.PackagesRemoved, &s.PackagesChanged, &s.StartedAt, &s.FinishedAt, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.HostID, &s.ScanType, &s.Status, &s.ErrorSummary, &s.SecurityDBRevision, &s.ScanRequestID, &s.PackageCount, &s.VulnCount, &s.ContainerCount, &s.PackagesAdded, &s.PackagesRemoved, &s.PackagesChanged, &s.StartedAt, &s.FinishedAt, &s.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		scans = append(scans, s)
@@ -1650,6 +1652,49 @@ func (db *DB) CountSecurityDBRescanRequestsByStatus(ctx context.Context, hostIDs
 		out[status] = count
 	}
 	return out, rows.Err()
+}
+
+type SecurityDBScanCoverage struct {
+	Revision        string  `json:"revision"`
+	TotalHosts      int     `json:"total_hosts"`
+	CurrentHosts    int     `json:"current_hosts"`
+	StaleHosts      int     `json:"stale_hosts"`
+	UnknownHosts    int     `json:"unknown_hosts"`
+	NoScanHosts     int     `json:"no_scan_hosts"`
+	CoveragePercent float64 `json:"coverage_percent"`
+}
+
+func (db *DB) GetSecurityDBScanCoverage(ctx context.Context, hostIDs []string, includeGlobal bool, revision string) (*SecurityDBScanCoverage, error) {
+	q := `
+SELECT
+	count(*)::int,
+	count(*) FILTER (WHERE latest.security_db_revision=$1)::int,
+	count(*) FILTER (WHERE latest.id IS NOT NULL AND latest.security_db_revision <> '' AND latest.security_db_revision <> $1)::int,
+	count(*) FILTER (WHERE latest.id IS NOT NULL AND latest.security_db_revision = '')::int,
+	count(*) FILTER (WHERE latest.id IS NULL)::int
+FROM hosts h
+LEFT JOIN LATERAL (
+	SELECT id, security_db_revision
+	FROM scans s
+	WHERE s.host_id=h.id AND s.status IN ('completed','degraded')
+	ORDER BY s.created_at DESC
+	LIMIT 1
+) latest ON true`
+	args := []any{revision}
+	if len(hostIDs) > 0 {
+		q += ` WHERE h.id = ANY($2)`
+		args = append(args, pqStringArray(hostIDs))
+	} else if !includeGlobal {
+		q += ` WHERE false`
+	}
+	stats := &SecurityDBScanCoverage{Revision: revision}
+	if err := db.QueryRowContext(ctx, q, args...).Scan(&stats.TotalHosts, &stats.CurrentHosts, &stats.StaleHosts, &stats.UnknownHosts, &stats.NoScanHosts); err != nil {
+		return nil, err
+	}
+	if stats.TotalHosts > 0 {
+		stats.CoveragePercent = math.Round(float64(stats.CurrentHosts)*1000/float64(stats.TotalHosts)) / 10
+	}
+	return stats, nil
 }
 
 func (db *DB) RequeueStaleScanRequests(ctx context.Context, timeout time.Duration) (*StaleScanRequestRequeueResult, error) {

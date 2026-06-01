@@ -94,7 +94,7 @@ func main() {
 		return
 	}
 
-	if _, err := run(*serverURL, *apiKey, agentToken, *workDir, *scanType, *packagesOnly); err != nil {
+	if _, err := run(*serverURL, *apiKey, agentToken, *workDir, *scanType, *packagesOnly, "", ""); err != nil {
 		log.Fatalf("scan failed: %v", err)
 	}
 }
@@ -191,7 +191,7 @@ func runDaemon(serverURL, apiKey, agentToken, workDir string, pollInterval time.
 			continue
 		}
 		log.Printf("claimed scan request %s type=%s packages_only=%v", req.ID, req.ScanType, req.PackagesOnly)
-		result, err := run(serverURL, apiKey, agentToken, workDir, req.ScanType, req.PackagesOnly)
+		result, err := run(serverURL, apiKey, agentToken, workDir, req.ScanType, req.PackagesOnly, req.ID, req.SecurityDBRevision)
 		if err != nil {
 			log.Printf("scan request %s failed: %v", req.ID, err)
 			_ = rep.CompleteScanRequest(req.ID, host.ID, "failed", err.Error())
@@ -204,7 +204,7 @@ func runDaemon(serverURL, apiKey, agentToken, workDir string, pollInterval time.
 	}
 }
 
-func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly bool) (*reporter.ReportResult, error) {
+func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly bool, scanRequestID, securityDBRevision string) (*reporter.ReportResult, error) {
 	log.Println("=== Bongsu Agent Starting ===")
 	log.Printf("Server: %s", serverURL)
 	log.Printf("Work dir: %s", workDir)
@@ -325,16 +325,18 @@ func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly b
 
 	// 8. Build and send report
 	report := &models.ScanReport{
-		Host:       *host,
-		ScanType:   scanType,
-		ScanID:     scanID,
-		Errors:     collectionErrors,
-		Containers: containers,
-		Packages:   allPkgs,
-		Users:      users,
-		Processes:  procs,
-		Ports:      ports,
-		Timestamp:  now,
+		Host:               *host,
+		ScanType:           scanType,
+		ScanID:             scanID,
+		ScanRequestID:      scanRequestID,
+		SecurityDBRevision: securityDBRevision,
+		Errors:             collectionErrors,
+		Containers:         containers,
+		Packages:           allPkgs,
+		Users:              users,
+		Processes:          procs,
+		Ports:              ports,
+		Timestamp:          now,
 	}
 	if !packagesOnly {
 		report.Vulns = allVulns
