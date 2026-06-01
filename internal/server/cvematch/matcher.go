@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
@@ -35,9 +34,8 @@ func (m *Matcher) Match(ctx context.Context, pkgs []models.Package, host models.
 		return nil, fmt.Errorf("generate SBOM: %w", err)
 	}
 
-	tmpDir := os.TempDir()
-	sbomFile := filepath.Join(tmpDir, fmt.Sprintf("bongsu-sbom-%d.cdx.json", time.Now().UnixNano()))
-	if err := os.WriteFile(sbomFile, sbomData, 0644); err != nil {
+	sbomFile, err := writeTempSBOM(sbomData)
+	if err != nil {
 		return nil, fmt.Errorf("write SBOM: %w", err)
 	}
 	defer os.Remove(sbomFile)
@@ -126,6 +124,24 @@ func (m *Matcher) Match(ctx context.Context, pkgs []models.Package, host models.
 
 func matchPackageKey(target, name string) string {
 	return target + "\x00" + name
+}
+
+func writeTempSBOM(data []byte) (string, error) {
+	f, err := os.CreateTemp("", "bongsu-sbom-*.cdx.json")
+	if err != nil {
+		return "", err
+	}
+	path := f.Name()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", err
+	}
+	return path, nil
 }
 
 func (m *Matcher) acquire(ctx context.Context) error {
