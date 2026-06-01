@@ -490,6 +490,17 @@ th.clickable { white-space: nowrap; }
 }
 .host-link:hover { color: var(--primary-hover); text-decoration: underline; }
 
+.link-button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+}
+.link-button:hover { color: var(--primary-hover); text-decoration: underline; }
+
 .back-btn {
   display: inline-flex;
   align-items: center;

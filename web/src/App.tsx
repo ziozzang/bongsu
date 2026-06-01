@@ -165,7 +165,7 @@ function parseCvssVector(vector: string) {
 
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
-type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string; triageStatus?: string };
+type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
 type HostFilters = { agent_status?: string; inventory_status?: string };
 
 export default function App() {
@@ -1032,10 +1032,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {retentionMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: retentionMsg.includes('failed') ? 'var(--critical)' : 'var(--text-muted)' }}>{retentionMsg}</div>}
       {(ownerSummary.length > 0 || teamSummary.length > 0 || environmentSummary.length > 0 || criticalitySummary.length > 0) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '1rem', marginTop: '1rem' }}>
-          <SummaryTable title="Owner Remediation Queue" rows={ownerSummary} />
-          <SummaryTable title="Team Remediation Queue" rows={teamSummary} />
-          <SummaryTable title="Environment Risk Queue" rows={environmentSummary} />
-          <SummaryTable title="Criticality Risk Queue" rows={criticalitySummary} />
+          <SummaryTable title="Owner Remediation Queue" groupBy="owner" rows={ownerSummary} onOpenVulnerabilities={onOpenVulnerabilities} />
+          <SummaryTable title="Team Remediation Queue" groupBy="team" rows={teamSummary} onOpenVulnerabilities={onOpenVulnerabilities} />
+          <SummaryTable title="Environment Risk Queue" groupBy="environment" rows={environmentSummary} onOpenVulnerabilities={onOpenVulnerabilities} />
+          <SummaryTable title="Criticality Risk Queue" groupBy="criticality" rows={criticalitySummary} onOpenVulnerabilities={onOpenVulnerabilities} />
         </div>
       )}
       {cveSources.length > 0 && (
@@ -1104,8 +1104,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   );
 }
 
-function SummaryTable({ title, rows }: { title: string; rows: VulnSummaryRow[] }) {
+function SummaryTable({ title, groupBy, rows, onOpenVulnerabilities }: { title: string; groupBy: 'owner' | 'team' | 'environment' | 'criticality'; rows: VulnSummaryRow[]; onOpenVulnerabilities: (filters: VulnerabilityFilters) => void }) {
   const topRows = rows.slice(0, 8);
+  const openRow = (row: VulnSummaryRow, extra?: VulnerabilityFilters) => {
+    onOpenVulnerabilities({ [groupBy]: row.group, ...extra });
+  };
   return (
     <div className="card">
       <div className="card-header"><h2>{title}</h2></div>
@@ -1116,11 +1119,11 @@ function SummaryTable({ title, rows }: { title: string; rows: VulnSummaryRow[] }
         <tbody>
           {topRows.map(row => (
             <tr key={row.group}>
-              <td>{row.group}</td>
-              <td className="mono">{row.total.toLocaleString()}</td>
-              <td className="mono" style={{ color: 'var(--critical)', fontWeight: row.risk?.critical ? 700 : 400 }}>{row.risk?.critical || 0}</td>
-              <td className="mono" style={{ color: 'var(--high)', fontWeight: row.risk?.high ? 700 : 400 }}>{row.risk?.high || 0}</td>
-              <td className="mono" style={{ color: row.overdue ? 'var(--critical)' : 'var(--text-muted)', fontWeight: row.overdue ? 700 : 400 }}>{row.overdue || 0}</td>
+              <td><button type="button" className="link-button" onClick={() => openRow(row)}>{row.group}</button></td>
+              <td className="mono"><button type="button" className="link-button mono" onClick={() => openRow(row)}>{row.total.toLocaleString()}</button></td>
+              <td className="mono" style={{ color: 'var(--critical)', fontWeight: row.risk?.critical ? 700 : 400 }}><button type="button" className="link-button mono" onClick={() => openRow(row, { riskLevel: 'critical' })}>{row.risk?.critical || 0}</button></td>
+              <td className="mono" style={{ color: 'var(--high)', fontWeight: row.risk?.high ? 700 : 400 }}><button type="button" className="link-button mono" onClick={() => openRow(row, { riskLevel: 'high' })}>{row.risk?.high || 0}</button></td>
+              <td className="mono" style={{ color: row.overdue ? 'var(--critical)' : 'var(--text-muted)', fontWeight: row.overdue ? 700 : 400 }}><button type="button" className="link-button mono" onClick={() => openRow(row, { overdueOnly: true })}>{row.overdue || 0}</button></td>
             </tr>
           ))}
           {topRows.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No findings</td></tr>}
@@ -1483,10 +1486,10 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const [hostIds, setHostIds] = useState<string[]>([]);
   const [containers, setContainers] = useState<string[]>([]);
   const [findingSources, setFindingSources] = useState<string[]>([]);
-  const [owner, setOwner] = useState('');
-  const [team, setTeam] = useState('');
-  const [environment, setEnvironment] = useState('');
-  const [criticality, setCriticality] = useState('');
+  const [owner, setOwner] = useState(initialFilters?.owner || '');
+  const [team, setTeam] = useState(initialFilters?.team || '');
+  const [environment, setEnvironment] = useState(initialFilters?.environment || '');
+  const [criticality, setCriticality] = useState(initialFilters?.criticality || '');
   const [showNoFix, setShowNoFix] = useState(false);
   const [showMismatch, setShowMismatch] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(!!initialFilters?.overdueOnly);
