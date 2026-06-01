@@ -3746,6 +3746,11 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusBadRequest, "no valid cve entries found", "import_cve", errNoValidCveEntries)
 		return
 	}
+	if err := validateSecurityDBBundleImportedCount(manifest, imported); err != nil {
+		tx.Rollback()
+		fail(http.StatusBadRequest, err.Error(), "validate_cve_count", err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		fail(http.StatusInternalServerError, "cve import commit failed", "commit_cve", err)
 		return
@@ -3765,7 +3770,7 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		"security_db_revision": manifest.SecurityDBRevision,
 	})
 	s.SecurityDatabaseUpdated("security-db bundle import")
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "imported": imported, "trivy_db_loaded": trivyLoaded})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "imported": imported, "trivy_db_loaded": trivyLoaded, "security_db_revision": manifest.SecurityDBRevision})
 }
 
 type securityDBBundleManifest struct {
@@ -3828,6 +3833,16 @@ func validateSecurityDBBundle(manifest *securityDBBundleManifest, cveFile, cveSH
 		if !strings.EqualFold(manifest.TrivyDBSHA256, trivySHA) {
 			return fmt.Errorf("trivy db checksum mismatch")
 		}
+	}
+	return nil
+}
+
+func validateSecurityDBBundleImportedCount(manifest *securityDBBundleManifest, imported int) error {
+	if manifest == nil {
+		return fmt.Errorf("missing bundle manifest")
+	}
+	if manifest.CveRecords != imported {
+		return fmt.Errorf("bundle cve record count mismatch: manifest=%d imported=%d", manifest.CveRecords, imported)
 	}
 	return nil
 }

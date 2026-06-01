@@ -919,6 +919,19 @@ func TestValidateSecurityDBBundleChecksums(t *testing.T) {
 	}
 }
 
+func TestValidateSecurityDBBundleImportedCount(t *testing.T) {
+	manifest := &securityDBBundleManifest{CveRecords: 2}
+	if err := validateSecurityDBBundleImportedCount(manifest, 2); err != nil {
+		t.Fatalf("validateSecurityDBBundleImportedCount: %v", err)
+	}
+	if err := validateSecurityDBBundleImportedCount(manifest, 1); err == nil || !strings.Contains(err.Error(), "record count mismatch") {
+		t.Fatalf("expected record count mismatch, got %v", err)
+	}
+	if err := validateSecurityDBBundleImportedCount(nil, 1); err == nil || !strings.Contains(err.Error(), "manifest") {
+		t.Fatalf("expected missing manifest error, got %v", err)
+	}
+}
+
 func TestSecurityDBBundleManifestCarriesRevision(t *testing.T) {
 	manifest := securityDBBundleManifest{SecurityDBRevision: "rev-123"}
 	if manifest.SecurityDBRevision != "rev-123" {
@@ -1010,6 +1023,7 @@ func TestSecurityDBBundleImportUsesSingleCveTransaction(t *testing.T) {
 		"s.db.BeginTx",
 		"s.db.DeleteAllCveEntriesTx",
 		"s.importCveJSONLTx",
+		"validateSecurityDBBundleImportedCount(manifest, imported)",
 		"tx.Rollback()",
 		"tx.Commit()",
 	} {
