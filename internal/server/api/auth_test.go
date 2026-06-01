@@ -1961,6 +1961,8 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		`s.cveDBRematchLastResult(dbCtx, isAdmin)`,
 		`resp["cve_db_rematch"]`,
 		`resp["cve_affected_package_index"]`,
+		`resp["cve_reference_key_index"]`,
+		"GetCveReferenceKeyIndexStats",
 		`"security_recalculation": recalcStatus`,
 		"for k, v := range s.securityDBRevisionMeta(dbCtx)",
 		`k == "security_db_revision" || isAdmin`,

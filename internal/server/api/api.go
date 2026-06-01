@@ -3077,6 +3077,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			resp["cve_affected_package_index"] = map[string]any{"error": err.Error()}
 		}
 		cancel()
+		dbCtx, cancel = withHealthDBTimeout()
+		if referenceIndexStats, err := s.db.GetCveReferenceKeyIndexStats(dbCtx); err == nil {
+			resp["cve_reference_key_index"] = referenceIndexStats
+		} else if isAdmin {
+			resp["cve_reference_key_index"] = map[string]any{"error": err.Error()}
+		}
+		cancel()
 	}
 	dbCtx, cancel := withHealthDBTimeout()
 	if err := s.db.PingContext(dbCtx); err != nil {

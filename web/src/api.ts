@@ -370,6 +370,20 @@ export interface HealthStatus {
     orphans?: number;
     error?: string;
   };
+  cve_reference_key_index?: {
+    count?: number;
+    indexed_cves?: number;
+    total_cves?: number;
+    canonical_cves?: number;
+    vendor_keys?: number;
+    repository_keys?: number;
+    coverage_percent?: number;
+    last_update?: string;
+    latest_cve_update?: string;
+    stale?: boolean;
+    orphans?: number;
+    error?: string;
+  };
   security_db?: {
     configured: boolean;
     running: boolean;
