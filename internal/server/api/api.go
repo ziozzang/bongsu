@@ -189,6 +189,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/security-db/export", s.handleSecurityDbExport)
 	s.mux.HandleFunc("POST /api/admin/security-db/import", s.handleSecurityDbImport)
 	s.mux.HandleFunc("POST /api/admin/security-db/update", s.handleSecurityDbUpdate)
+	s.mux.HandleFunc("POST /api/admin/security-db/recalculate", s.handleSecurityDbRecalculate)
 	s.mux.HandleFunc("POST /api/admin/cve-db/rematch", s.handleCveDbRematch)
 	s.mux.HandleFunc("POST /api/admin/cve-db/affected-index/rebuild", s.handleCveDbAffectedIndexRebuild)
 	s.mux.HandleFunc("POST /api/admin/cve-db/recalc-cvss", s.handleCveDbRecalcCVSS)
@@ -3649,6 +3650,39 @@ func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 	s.audit(r, "security_db.update", "security_db", "aggregate", "ok", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "security_db": s.secMgr.Status()})
+}
+
+func (s *Server) handleSecurityDbRecalculate(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	reason := "manual security-db recalculation"
+	var body struct {
+		Reason string `json:"reason"`
+	}
+	if r.Body != nil {
+		if err := decodeJSONBody(w, r, &body, true); err != nil {
+			writeJSONBodyError(w, err, "invalid json")
+			return
+		}
+		if trimmed := strings.TrimSpace(body.Reason); trimmed != "" {
+			reason = truncateValidUTF8(trimmed, 200)
+		}
+	}
+	s.recalculateSecurityFindings(reason)
+	status := s.securityRecalculationStatus(true)
+	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	out := map[string]any{"status": "queued", "reason": reason, "security_recalculation": status}
+	for k, v := range revisionMeta {
+		out[k] = v
+	}
+	writeJSON(w, http.StatusOK, out)
+	auditMeta := map[string]any{"reason": reason}
+	for k, v := range revisionMeta {
+		auditMeta[k] = v
+	}
+	s.audit(r, "security_db.recalculation.request", "security_db", "aggregate", "queued", auditMeta)
 }
 
 func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) {

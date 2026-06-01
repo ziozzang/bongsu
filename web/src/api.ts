@@ -590,6 +590,8 @@ export const api = {
   deleteRbacPolicy: (id: string) => requestEmpty<{ status: string }>(`/admin/rbac/policies/${encodeURIComponent(id)}`, 'DELETE'),
   updateTrivyDB: () => request<{status: string; message: string; trivy_db_ready: boolean; last_update: string}>('/admin/trivy-db/update', undefined, 'POST'),
   updateSecurityDB: () => request<{status: string; security_db: HealthStatus['security_db']}>('/admin/security-db/update', undefined, 'POST'),
+  recalculateSecurityDB: (body?: { reason?: string }) =>
+    requestJSON<{status: string; reason: string; security_recalculation?: HealthStatus['security_recalculation']; security_db_revision?: string; security_db_revision_error?: string}>('/admin/security-db/recalculate', body || {}),
   exportSecurityDBBundle: (includeTrivy = true) =>
     download('/admin/security-db/export', 'bongsu-security-db-bundle.tar.gz', { include_trivy: includeTrivy ? 'true' : 'false' }),
   importSecurityDBBundle: (file: File) => {

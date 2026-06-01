@@ -303,6 +303,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [rematchCandidateLimit, setRematchCandidateLimit] = useState('');
   const [cvssRecalcBusy, setCvssRecalcBusy] = useState(false);
   const [cvssRecalcMsg, setCvssRecalcMsg] = useState('');
+  const [securityRecalcBusy, setSecurityRecalcBusy] = useState(false);
+  const [securityRecalcMsg, setSecurityRecalcMsg] = useState('');
   const [retentionMsg, setRetentionMsg] = useState('');
   const [retentionBusy, setRetentionBusy] = useState(false);
   const [securityBundleMsg, setSecurityBundleMsg] = useState('');
@@ -504,6 +506,21 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     }
     setCvssRecalcBusy(false);
   };
+
+  const handleSecurityRecalc = async () => {
+    setSecurityRecalcBusy(true);
+    setSecurityRecalcMsg('');
+    try {
+      const r = await api.recalculateSecurityDB({ reason: 'manual dashboard recalculation' });
+      const revisionMsg = r.security_db_revision ? `, DB rev ${r.security_db_revision}` : r.security_db_revision_error ? ', DB revision unavailable' : '';
+      setSecurityRecalcMsg(`Security recalculation ${r.status}${revisionMsg}`);
+      api.rawHealth().then(setHealth).catch(() => {});
+    } catch {
+      setSecurityRecalcMsg('Security recalculation queue failed or requires admin API key');
+    }
+    setSecurityRecalcBusy(false);
+  };
+
   const openCurrentDBRescans = (status: string) => {
     const revision = stats?.security_db_revision || health?.security_db_revision || '';
     if (!revision) return;
@@ -971,6 +988,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         </button>
         <button
           className="update-btn"
+          onClick={handleSecurityRecalc}
+          disabled={securityRecalcBusy}
+          style={{ marginLeft: '0.5rem' }}
+        >
+          {securityRecalcBusy ? 'Queueing...' : 'Full Recalc'}
+        </button>
+        <button
+          className="update-btn"
           onClick={handleAffectedIndexRebuild}
           disabled={updating}
           style={{ marginLeft: '0.5rem' }}
@@ -1083,6 +1108,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {updateMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: updateMsg.includes('fail') ? 'var(--critical)' : 'var(--low)' }}>{updateMsg}</div>}
       {rematchMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: rematchMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{rematchMsg}</div>}
       {cvssRecalcMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: cvssRecalcMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{cvssRecalcMsg}</div>}
+      {securityRecalcMsg && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: securityRecalcMsg.includes('fail') ? 'var(--critical)' : '#4ade80' }}>{securityRecalcMsg}</div>}
       <div className="db-status-bar" style={{ marginTop: '1rem' }}>
         <h3>Airgap Security Bundle</h3>
         <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Export outside, import inside air-gapped environments</span>

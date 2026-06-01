@@ -1511,6 +1511,26 @@ func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 	if strings.LastIndex(fn, `s.auditSystem("security_db.recalculation"`) > strings.Index(fn, "s.queueSecurityDBRescans(reason, status)") {
 		t.Fatalf("rescan queueing must happen after recalculation audit: %s", fn)
 	}
+
+	start = strings.Index(body, "func (s *Server) handleSecurityDbRecalculate")
+	if start < 0 {
+		t.Fatal("handleSecurityDbRecalculate not found")
+	}
+	end = strings.Index(body[start:], "func (s *Server) handleSecurityDbExport")
+	if end < 0 {
+		t.Fatal("handleSecurityDbRecalculate end not found")
+	}
+	fn = body[start : start+end]
+	for _, want := range []string{
+		"s.authenticateAdmin(r)",
+		"s.recalculateSecurityFindings(reason)",
+		`"security_db.recalculation.request"`,
+		`"status": "queued"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("manual security recalculation endpoint missing %q: %s", want, fn)
+		}
+	}
 }
 
 func TestSecurityDBUpdateSurfacesTriggerBackgroundRecalculation(t *testing.T) {
@@ -2003,6 +2023,8 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"CVE rematch hit candidate limit",
 		"rematch_candidates",
 		"rematch_candidate_limit",
+		"Full Recalc",
+		"handleSecurityRecalc",
 		"Security Sync",
 		"securitySyncNext",
 		"securitySyncLast",
@@ -2232,7 +2254,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "rebuildCveAffectedIndex", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "rebuildCveAffectedIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
