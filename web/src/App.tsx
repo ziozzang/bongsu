@@ -454,10 +454,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const cveRematchPolicyText = cveRematchPolicy
     ? `${cveRematchPolicy.sources?.length ? `${cveRematchPolicy.sources.length} allowlisted` : 'all sources'}, min ${(cveRematchPolicy.min_source_matchable_percent || 0).toFixed(1)}%`
     : 'policy pending';
-  const epssMergeCoverage = cveEpssMerge?.merge_coverage_percent ?? 0;
+  const epssMergeCoverage = cveEpssMerge?.non_epss_coverage_percent ?? cveEpssMerge?.merge_coverage_percent ?? 0;
+  const epssUniverseCoverage = cveEpssMerge?.epss_universe_match_percent ?? cveEpssMerge?.merge_coverage_percent ?? 0;
   const epssMergeColor = !cveEpssMerge || cveEpssMerge.epss_cves === 0
     ? 'var(--medium)'
-    : epssMergeCoverage < 50
+    : epssMergeCoverage < 90
       ? 'var(--high)'
       : 'var(--low)';
   const cveAffectedIndexIndexedOnly = cveAffectedIndex?.summary_mode === 'indexed-only';
@@ -1197,7 +1198,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div className="label">EPSS Merge</div>
           <div className="value" style={{ color: epssMergeColor }}>{epssMergeCoverage.toFixed(1)}%</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            {(cveEpssMerge?.enriched_records || 0).toLocaleString()} CVE rows enriched from {(cveEpssMerge?.epss_cves || 0).toLocaleString()} EPSS CVEs
+            {(cveEpssMerge?.non_epss_cves_with_epss || 0).toLocaleString()} / {(cveEpssMerge?.non_epss_cves || 0).toLocaleString()} local CVEs, {epssUniverseCoverage.toFixed(1)}% EPSS universe
           </div>
         </div>
         <div className="stat-card">

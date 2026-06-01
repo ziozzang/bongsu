@@ -5258,14 +5258,18 @@ type CveAffectedPackage struct {
 }
 
 type CveEPSSMergeStats struct {
-	EPSSRecords          int     `json:"epss_records"`
-	EPSSCVEs             int     `json:"epss_cves"`
-	MatchedCVEs          int     `json:"matched_cves"`
-	UnmatchedCVEs        int     `json:"unmatched_cves"`
-	EnrichedRecords      int     `json:"enriched_records"`
-	EnrichedCVEs         int     `json:"enriched_cves"`
-	EnrichedSourceCount  int     `json:"enriched_source_count"`
-	MergeCoveragePercent float64 `json:"merge_coverage_percent"`
+	EPSSRecords              int     `json:"epss_records"`
+	EPSSCVEs                 int     `json:"epss_cves"`
+	MatchedCVEs              int     `json:"matched_cves"`
+	UnmatchedCVEs            int     `json:"unmatched_cves"`
+	NonEPSSCVEs              int     `json:"non_epss_cves"`
+	NonEPSSCVEsWithEPSS      int     `json:"non_epss_cves_with_epss"`
+	NonEPSSCoveragePercent   float64 `json:"non_epss_coverage_percent"`
+	EnrichedRecords          int     `json:"enriched_records"`
+	EnrichedCVEs             int     `json:"enriched_cves"`
+	EnrichedSourceCount      int     `json:"enriched_source_count"`
+	EPSSUniverseMatchPercent float64 `json:"epss_universe_match_percent"`
+	MergeCoveragePercent     float64 `json:"merge_coverage_percent"`
 }
 
 type CvePlaceholderStats struct {
@@ -5442,7 +5446,7 @@ non_epss AS (
 		count(*) FILTER (WHERE epss_score > 0 OR epss_percentile > 0) AS enriched_records
 	FROM cve_database
 	WHERE source != 'epss'
-	  AND vulnerability_id != ''
+	  AND vulnerability_id ~ '^CVE-[0-9]{4}-[0-9]{4,}$'
 	GROUP BY vulnerability_id
 )
 SELECT
@@ -5450,18 +5454,24 @@ SELECT
 	(SELECT count(*) FROM epss),
 	count(n.vulnerability_id),
 	count(*) - count(n.vulnerability_id),
+	(SELECT count(*) FROM non_epss),
+	count(n.vulnerability_id),
 	COALESCE(sum(n.enriched_records), 0),
 	count(n.vulnerability_id) FILTER (WHERE n.enriched_records > 0),
 	COALESCE((SELECT count(DISTINCT source) FROM cve_database WHERE source != 'epss' AND vulnerability_id != '' AND (epss_score > 0 OR epss_percentile > 0)), 0)
 FROM epss e
 LEFT JOIN non_epss n ON n.vulnerability_id = e.vulnerability_id`).Scan(
 		&stats.EPSSRecords, &stats.EPSSCVEs, &stats.MatchedCVEs, &stats.UnmatchedCVEs,
-		&stats.EnrichedRecords, &stats.EnrichedCVEs, &stats.EnrichedSourceCount)
+		&stats.NonEPSSCVEs, &stats.NonEPSSCVEsWithEPSS, &stats.EnrichedRecords, &stats.EnrichedCVEs, &stats.EnrichedSourceCount)
 	if err != nil {
 		return nil, err
 	}
 	if stats.EPSSCVEs > 0 {
-		stats.MergeCoveragePercent = math.Round(float64(stats.MatchedCVEs)*1000/float64(stats.EPSSCVEs)) / 10
+		stats.EPSSUniverseMatchPercent = math.Round(float64(stats.MatchedCVEs)*1000/float64(stats.EPSSCVEs)) / 10
+		stats.MergeCoveragePercent = stats.EPSSUniverseMatchPercent
+	}
+	if stats.NonEPSSCVEs > 0 {
+		stats.NonEPSSCoveragePercent = math.Round(float64(stats.NonEPSSCVEsWithEPSS)*1000/float64(stats.NonEPSSCVEs)) / 10
 	}
 	return &stats, nil
 }

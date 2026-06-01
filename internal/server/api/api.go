@@ -3613,10 +3613,14 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			writePromGauge(&b, "bongsu_cve_epss_cves", nil, float64(epssStats.EPSSCVEs))
 			writePromGauge(&b, "bongsu_cve_epss_matched_cves", nil, float64(epssStats.MatchedCVEs))
 			writePromGauge(&b, "bongsu_cve_epss_unmatched_cves", nil, float64(epssStats.UnmatchedCVEs))
+			writePromGauge(&b, "bongsu_cve_epss_non_epss_cves", nil, float64(epssStats.NonEPSSCVEs))
+			writePromGauge(&b, "bongsu_cve_epss_non_epss_cves_with_epss", nil, float64(epssStats.NonEPSSCVEsWithEPSS))
+			writePromGauge(&b, "bongsu_cve_epss_non_epss_coverage_percent", nil, epssStats.NonEPSSCoveragePercent)
 			writePromGauge(&b, "bongsu_cve_epss_enriched_records", nil, float64(epssStats.EnrichedRecords))
 			writePromGauge(&b, "bongsu_cve_epss_enriched_cves", nil, float64(epssStats.EnrichedCVEs))
 			writePromGauge(&b, "bongsu_cve_epss_enriched_sources", nil, float64(epssStats.EnrichedSourceCount))
 			writePromGauge(&b, "bongsu_cve_epss_merge_coverage_percent", nil, epssStats.MergeCoveragePercent)
+			writePromGauge(&b, "bongsu_cve_epss_universe_match_percent", nil, epssStats.EPSSUniverseMatchPercent)
 			writePromGauge(&b, "bongsu_cve_epss_loaded_without_enrichment", nil, boolMetric(epssStats.EPSSCVEs > 0 && epssStats.EnrichedRecords == 0))
 		} else {
 			writePromGauge(&b, "bongsu_cve_epss_merge_metrics_error", nil, 1)
@@ -6180,10 +6184,11 @@ func buildCveDBQualitySummary(input cveDBQualityInput) map[string]any {
 	}
 	if input.EPSS != nil {
 		out["epss_merge_coverage_percent"] = input.EPSS.MergeCoveragePercent
+		out["epss_non_epss_coverage_percent"] = input.EPSS.NonEPSSCoveragePercent
 		if input.EPSS.EPSSCVEs > 0 && input.EPSS.EnrichedRecords == 0 {
 			addWarning(2, "EPSS records loaded without CVE enrichment")
-		} else if input.EPSS.EPSSCVEs > 0 && input.EPSS.MergeCoveragePercent < 50 {
-			addWarning(1, "EPSS merge coverage below 50%")
+		} else if input.EPSS.NonEPSSCVEs > 0 && input.EPSS.NonEPSSCoveragePercent < 90 {
+			addWarning(1, "EPSS applicable CVE coverage below 90%")
 		}
 	} else if input.EPSSMergeError != nil {
 		out["epss_merge_error"] = input.EPSSMergeError.Error()

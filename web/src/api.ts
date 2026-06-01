@@ -476,9 +476,13 @@ export interface CveEpssMergeStats {
   epss_cves: number;
   matched_cves: number;
   unmatched_cves: number;
+  non_epss_cves?: number;
+  non_epss_cves_with_epss?: number;
+  non_epss_coverage_percent?: number;
   enriched_records: number;
   enriched_cves: number;
   enriched_source_count: number;
+  epss_universe_match_percent?: number;
   merge_coverage_percent: number;
 }
 
@@ -500,6 +504,7 @@ export interface CveDbQuality {
   reference_index_orphans?: number;
   reference_index_stale?: boolean;
   epss_merge_coverage_percent?: number;
+  epss_non_epss_coverage_percent?: number;
   placeholder_stats_error?: string;
   affected_index_error?: string;
   reference_index_error?: string;

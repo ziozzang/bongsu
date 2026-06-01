@@ -2366,10 +2366,14 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_cve_epss_cves",
 		"bongsu_cve_epss_matched_cves",
 		"bongsu_cve_epss_unmatched_cves",
+		"bongsu_cve_epss_non_epss_cves",
+		"bongsu_cve_epss_non_epss_cves_with_epss",
+		"bongsu_cve_epss_non_epss_coverage_percent",
 		"bongsu_cve_epss_enriched_records",
 		"bongsu_cve_epss_enriched_cves",
 		"bongsu_cve_epss_enriched_sources",
 		"bongsu_cve_epss_merge_coverage_percent",
+		"bongsu_cve_epss_universe_match_percent",
 		"bongsu_cve_epss_loaded_without_enrichment",
 		"bongsu_cve_epss_merge_metrics_error",
 		"bongsu_cve_db_quality_status",
@@ -2481,7 +2485,8 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"older than matchable CVE rows",
 		"EPSS Merge",
 		"epssMergeCoverage",
-		"cveEpssMerge?.enriched_records",
+		"epssUniverseCoverage",
+		"cveEpssMerge?.non_epss_cves_with_epss",
 		"EPSS source is loaded but no non-EPSS CVE rows are enriched",
 		"handleAffectedIndexRebuild",
 		"Rebuild Affected Index",
@@ -2514,7 +2519,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
