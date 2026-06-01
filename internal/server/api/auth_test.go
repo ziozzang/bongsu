@@ -4487,7 +4487,10 @@ func TestCveDbAffectedPackageEvidenceEndpoint(t *testing.T) {
 		"s.authenticateWeb(r)",
 		`r.PathValue("id")`,
 		"offsetParam(r)",
+		`envInt("BONGSU_CVE_AFFECTED_PACKAGES_TIMEOUT_SECONDS", 10)`,
+		"context.WithTimeout(r.Context()",
 		"s.db.ListCveAffectedPackages",
+		`http.Error(w, "affected packages timeout", http.StatusGatewayTimeout)`,
 		`"items": items`,
 		`"offset": offset`,
 	} {

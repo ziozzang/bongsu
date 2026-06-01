@@ -6426,8 +6426,19 @@ func (s *Server) handleCveDbAffectedPackages(w http.ResponseWriter, r *http.Requ
 	}
 	limit := limitParam(r, 100)
 	offset := offsetParam(r)
-	items, total, err := s.db.ListCveAffectedPackages(r.Context(), id, limit, offset)
+	affectedTimeout := envInt("BONGSU_CVE_AFFECTED_PACKAGES_TIMEOUT_SECONDS", 10)
+	if affectedTimeout <= 0 {
+		affectedTimeout = 10
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(affectedTimeout)*time.Second)
+	defer cancel()
+	items, total, err := s.db.ListCveAffectedPackages(ctx, id, limit, offset)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			log.Printf("cve-db affected packages timeout after %ds: %v", affectedTimeout, err)
+			http.Error(w, "affected packages timeout", http.StatusGatewayTimeout)
+			return
+		}
 		log.Printf("cve-db affected packages: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
