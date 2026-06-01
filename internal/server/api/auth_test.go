@@ -2371,8 +2371,12 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 	for _, want := range []string{
 		"rematchOptionsFromEnv()",
 		"getCveStatsCache",
+		"beginCveStatsBuild",
+		"finishCveStatsBuild",
 		"setCveStatsCache",
+		"cveStatsCacheGen",
 		`X-Bongsu-Cache`,
+		`"shared"`,
 		`r.URL.Query().Get("refresh") != "true"`,
 		"rematchSourcePolicySummary(stats, opts)",
 		"totalRecords += stat.Count",
