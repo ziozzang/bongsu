@@ -1556,6 +1556,33 @@ func TestHandleListVulnerabilitiesRejectsInvalidFindingSource(t *testing.T) {
 	}
 }
 
+func TestHandleListVulnerabilitiesBoundsRuntime(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (s *Server) handleListVulnerabilities")
+	if start < 0 {
+		t.Fatal("handleListVulnerabilities not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) vulnFilterFromRequest")
+	if end < 0 {
+		t.Fatal("vulnFilterFromRequest not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`envInt("BONGSU_VULNERABILITY_LIST_TIMEOUT_SECONDS", 15)`,
+		"context.WithTimeout(r.Context()",
+		"s.db.ListVulnerabilities(ctx, filter, limit, offset)",
+		`http.Error(w, "vulnerability list timeout", http.StatusGatewayTimeout)`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("list vulnerabilities timeout handling missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestVulnFilterFromRequestRejectsInvalidRiskLevel(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/vulnerabilities?risk_level=urgent", nil)
 	req.Header.Set("X-API-Key", "admin")

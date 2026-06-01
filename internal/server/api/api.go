@@ -1251,7 +1251,12 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	ctx := r.Context()
+	timeout := envInt("BONGSU_VULNERABILITY_LIST_TIMEOUT_SECONDS", 15)
+	if timeout <= 0 {
+		timeout = 15
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(timeout)*time.Second)
+	defer cancel()
 
 	filter, forbidden, empty, err := s.vulnFilterFromRequest(r)
 	if err != nil {
@@ -1271,6 +1276,11 @@ func (s *Server) handleListVulnerabilities(w http.ResponseWriter, r *http.Reques
 
 	vulns, total, err := s.db.ListVulnerabilities(ctx, filter, limit, offset)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			log.Printf("list vulns timeout after %ds: %v", timeout, err)
+			http.Error(w, "vulnerability list timeout", http.StatusGatewayTimeout)
+			return
+		}
 		log.Printf("list vulns: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
