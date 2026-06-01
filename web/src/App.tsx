@@ -432,12 +432,17 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       ? 'var(--medium)'
       : 'var(--low)';
   const lastRecalc = health?.security_recalculation?.last_result;
+  const lastRecalcLimited = !!lastRecalc?.rematch_limited;
   const lastRecalcColor = lastRecalc?.status === 'error'
     ? 'var(--critical)'
+    : lastRecalcLimited
+      ? 'var(--high)'
     : lastRecalc?.status === 'ok'
       ? 'var(--low)'
       : 'var(--medium)';
-  const lastRecalcTitle = lastRecalc?.errors?.length ? lastRecalc.errors.join('\n') : lastRecalc?.reason || '';
+  const lastRecalcTitle = lastRecalcLimited
+    ? `Rematch hit candidate limit ${lastRecalc?.rematch_candidate_limit || 0}`
+    : lastRecalc?.errors?.length ? lastRecalc.errors.join('\n') : lastRecalc?.reason || '';
   const triageActiveCounts = stats?.triage_active_counts || {};
   const triageExpiringSoonCounts = stats?.triage_expiring_soon_counts || {};
   const suppressedTriageCount = ['accepted_risk', 'false_positive', 'fixed', 'ignored']
@@ -974,7 +979,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div className="label">Last Recalculation</div>
           <div className="value" style={{ color: lastRecalcColor }}>{lastRecalc?.status || '-'}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            {lastRecalc?.finished_at ? `${new Date(lastRecalc.finished_at).toLocaleString()} · ${lastRecalc.rematch_new_vulns || 0} new` : 'waiting for audit result'}
+            {lastRecalc?.finished_at
+              ? lastRecalcLimited
+                ? `limited at ${(lastRecalc.rematch_candidates || 0).toLocaleString()} candidates`
+                : `${new Date(lastRecalc.finished_at).toLocaleString()} · ${lastRecalc.rematch_new_vulns || 0} new`
+              : 'waiting for audit result'}
           </div>
         </div>
         <div className="stat-card">
@@ -990,6 +999,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {health?.security_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security sources: {health.security_db.last_error}</div>}
       {health?.security_db_revision_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB revision: {health.security_db_revision_error}</div>}
       {health?.security_db_freshness?.error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB freshness: {health.security_db_freshness.error}</div>}
+      {lastRecalcLimited && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>CVE rematch hit candidate limit: {(lastRecalc?.rematch_candidates || 0).toLocaleString()} / {(lastRecalc?.rematch_candidate_limit || 0).toLocaleString()}</div>}
       {missingCveSources.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Missing CVE sources: {missingCveSources.join(', ')}</div>}
       {health?.security_db_freshness?.oldest_last_update && (
         <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>

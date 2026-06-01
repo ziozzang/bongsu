@@ -3074,6 +3074,9 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_security_recalculation_last_cvss_updated", nil, metricNumber(last["cvss_updated"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_findings_enriched", nil, metricNumber(last["findings_enriched"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_new_vulns", nil, metricNumber(last["rematch_new_vulns"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_limited", nil, boolMetric(last["rematch_limited"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_candidates", nil, metricNumber(last["rematch_candidates"]))
+		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_candidate_limit", nil, metricNumber(last["rematch_candidate_limit"]))
 	}
 	if s.dbMgr != nil && s.dbMgr.IsReady() {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 1)
