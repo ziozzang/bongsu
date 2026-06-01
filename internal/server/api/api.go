@@ -5319,6 +5319,9 @@ func rematchSourcePolicy(stats []db.CveSourceStats, opts db.RematchOptions) map[
 		if len(allowlist) > 0 && !allowlist[stat.Source] {
 			eligible = false
 			reason = "source not in rematch allowlist"
+		} else if stat.Matchable == 0 {
+			eligible = false
+			reason = "source has no matchable affected packages"
 		} else if opts.MinSourceMatchablePercent > 0 && stat.MatchablePercent < opts.MinSourceMatchablePercent {
 			eligible = false
 			reason = fmt.Sprintf("matchable %.1f%% below %.1f%% policy", stat.MatchablePercent, opts.MinSourceMatchablePercent)

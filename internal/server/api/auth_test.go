@@ -2219,6 +2219,7 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		`"eligible_sources"`,
 		`"excluded_sources"`,
 		"source not in rematch allowlist",
+		"source has no matchable affected packages",
 		"below %.1f%% policy",
 	} {
 		if !strings.Contains(fn, want) {
