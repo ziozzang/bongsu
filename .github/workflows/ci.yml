@@ -27,6 +27,9 @@ jobs:
       - name: Run Go tests
         run: go test ./...
 
+      - name: Verify migration ordering
+        run: ./scripts/verify-migrations.sh
+
       - name: Verify static release binaries
         run: ./scripts/verify-static-binaries.sh
 
