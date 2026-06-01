@@ -3687,6 +3687,36 @@ func TestCveJSONLImportOverridesDirectSource(t *testing.T) {
 	}
 }
 
+func TestCveJSONLImportNormalizesEntryIdentity(t *testing.T) {
+	seen := []models.CveEntry{}
+	input := strings.NewReader(strings.Join([]string{
+		`{"id":" row-1 ","vulnerability_id":" CVE-2026-0001 ","source":" OSV ","category":" code-library ","ecosystem":" PyPI ","severity":" moderate ","cvss_vector":" CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H ","title":" title ","description":" desc "}`,
+		`{"vulnerability_id":" cga-2026-0002 ","source":"osv","severity":"high"}`,
+	}, "\n"))
+	count, err := (&Server{}).importCveJSONLWithUpsert(context.Background(), input, "", func(ctx context.Context, batch []models.CveEntry) (int, error) {
+		seen = append(seen, batch...)
+		return len(batch), nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 || len(seen) != 1 {
+		t.Fatalf("count=%d seen=%#v, want one non-CGA entry", count, seen)
+	}
+	got := seen[0]
+	if got.ID != "row-1" ||
+		got.VulnerabilityID != "CVE-2026-0001" ||
+		got.Source != "osv" ||
+		got.Category != "code-library" ||
+		got.Ecosystem != "PyPI" ||
+		got.Severity != "MODERATE" ||
+		got.CVSSVector != "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" ||
+		got.Title != "title" ||
+		got.Description != "desc" {
+		t.Fatalf("normalized entry = %#v", got)
+	}
+}
+
 func TestNormalizeCveSource(t *testing.T) {
 	tests := []struct {
 		name     string

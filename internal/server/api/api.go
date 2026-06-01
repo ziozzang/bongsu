@@ -4197,7 +4197,8 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 			}
 			return total, err
 		}
-		if e.VulnerabilityID == "" || strings.HasPrefix(e.VulnerabilityID, "CGA-") {
+		normalizeCveEntry(&e)
+		if e.VulnerabilityID == "" || strings.HasPrefix(strings.ToUpper(e.VulnerabilityID), "CGA-") {
 			continue
 		}
 		if source != "" {
@@ -4217,6 +4218,18 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 		}
 	}
 	return total, flush()
+}
+
+func normalizeCveEntry(e *models.CveEntry) {
+	e.ID = strings.TrimSpace(e.ID)
+	e.VulnerabilityID = strings.TrimSpace(e.VulnerabilityID)
+	e.Source = strings.TrimSpace(e.Source)
+	e.Category = strings.TrimSpace(e.Category)
+	e.Ecosystem = strings.TrimSpace(e.Ecosystem)
+	e.Severity = strings.ToUpper(strings.TrimSpace(e.Severity))
+	e.CVSSVector = strings.TrimSpace(e.CVSSVector)
+	e.Title = strings.TrimSpace(e.Title)
+	e.Description = strings.TrimSpace(e.Description)
 }
 
 func normalizeCveSource(source, fallback string) (string, error) {
