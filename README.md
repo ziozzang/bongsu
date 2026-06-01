@@ -67,6 +67,9 @@ BONGSU_SECURITY_DB_SYNC_CMD="./scripts/sync-all-cvedb.sh http://localhost:8080"
 BONGSU_SECURITY_DB_SYNC_ON_START=true
 BONGSU_SECURITY_DB_INTERVAL_HOURS=6
 
+# 개발 대시보드 프록시 대상. 8080에 다른 로컬 서비스가 있으면 bongsu 백엔드 포트로 바꿉니다.
+BONGSU_API_TARGET=http://localhost:8080 npm --prefix web run dev -- --host 0.0.0.0 --port 5678
+
 # Airgap export/import bundle
 ./scripts/export-security-db-bundle.sh http://server:8080 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz
 ./scripts/import-security-db-bundle.sh http://airgap-server:8080 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz

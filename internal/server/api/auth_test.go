@@ -2121,6 +2121,14 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 	for _, want := range []string{
 		"rematchOptionsFromEnv()",
 		"rematchSourcePolicy(stats, opts)",
+		"totalRecords += stat.Count",
+		"totalMatchable += stat.Matchable",
+		`"generated_at"`,
+		`"source_count"`,
+		`"total_records"`,
+		`"total_matchable"`,
+		`"total_matchable_percent"`,
+		"s.securityDBRevisionMeta(r.Context())",
 		`"rematch_eligible"`,
 		`"rematch_exclusion"`,
 		`"rematch_policy"`,
@@ -2172,7 +2180,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string"} {
+	for _, want := range []string{"CveDbStatsResponse", "generated_at?: string", "total_matchable_percent?: number", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
@@ -3690,7 +3698,7 @@ func TestCveJSONLImportOverridesDirectSource(t *testing.T) {
 func TestCveJSONLImportNormalizesEntryIdentity(t *testing.T) {
 	seen := []models.CveEntry{}
 	input := strings.NewReader(strings.Join([]string{
-		`{"id":" row-1 ","vulnerability_id":" CVE-2026-0001 ","source":" OSV ","category":" code-library ","ecosystem":" PyPI ","severity":" moderate ","cvss_vector":" CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H ","title":" title ","description":" desc "}`,
+		`{"id":" row-1 ","vulnerability_id":" CVE-2026-0001 ","source":" OSV ","category":" code-library ","ecosystem":" PyPI ","severity":" moderate ","cvss_vector":" CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H ","title":" title ","description":" desc ","published_date":"2026-01-02T03:04:05.123","modified_date":"2026-01-03"}`,
 		`{"vulnerability_id":" cga-2026-0002 ","source":"osv","severity":"high"}`,
 	}, "\n"))
 	count, err := (&Server{}).importCveJSONLWithUpsert(context.Background(), input, "", func(ctx context.Context, batch []models.CveEntry) (int, error) {
@@ -3712,8 +3720,32 @@ func TestCveJSONLImportNormalizesEntryIdentity(t *testing.T) {
 		got.Severity != "MODERATE" ||
 		got.CVSSVector != "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H" ||
 		got.Title != "title" ||
-		got.Description != "desc" {
+		got.Description != "desc" ||
+		got.PublishedDate == nil ||
+		got.PublishedDate.Location() != time.UTC ||
+		got.ModifiedDate == nil ||
+		got.ModifiedDate.Location() != time.UTC {
 		t.Fatalf("normalized entry = %#v", got)
+	}
+}
+
+func TestFlexibleCveTimeAcceptsNvdTimestamps(t *testing.T) {
+	tests := []string{
+		`"2023-01-01T01:15:10.057"`,
+		`"2023-11-09T05:15:09.047Z"`,
+		`"2023-01-01"`,
+		`""`,
+		`null`,
+	}
+	for _, input := range tests {
+		var ts flexibleCveTime
+		if err := json.Unmarshal([]byte(input), &ts); err != nil {
+			t.Fatalf("timestamp %s rejected: %v", input, err)
+		}
+	}
+	var ts flexibleCveTime
+	if err := json.Unmarshal([]byte(`"bad-time"`), &ts); err == nil {
+		t.Fatal("expected invalid timestamp error")
 	}
 }
 

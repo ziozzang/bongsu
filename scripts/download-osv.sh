@@ -10,8 +10,10 @@ OUTPUT="${1:-osv-cve.jsonl}"
 ECOSYSTEMS="${2:-PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,Alpine,Debian,SUSE,AlmaLinux,Chainguard}"
 OUTPUT_TMP="${OUTPUT}.tmp.$$"
 
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "${TMPDIR}"; rm -f "${OUTPUT_TMP}"' EXIT
+TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "${TMP_PARENT}"
+WORKDIR=$(mktemp -d "${TMP_PARENT%/}/bongsu-osv.XXXXXX")
+trap 'rm -rf "${WORKDIR}"; rm -f "${OUTPUT_TMP}"' EXIT
 
 echo "Downloading OSV.dev data for: ${ECOSYSTEMS}"
 
@@ -25,19 +27,19 @@ for eco in "${ECO_ARRAY[@]}"; do
     echo "  Downloading ${eco}..."
     # URL-encode spaces for curl
     encoded_eco=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${eco}'))")
-    if ! curl -fsSL "https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip" -o "${TMPDIR}/${eco}.zip"; then
+    if ! curl -fsSL "https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip" -o "${WORKDIR}/${eco}.zip"; then
         echo "  ERROR: ${eco} download failed"
         FAILED_ECOSYSTEMS+=("${eco}:download")
         continue
     fi
-    if [ ! -s "${TMPDIR}/${eco}.zip" ]; then
+    if [ ! -s "${WORKDIR}/${eco}.zip" ]; then
         echo "  ERROR: ${eco} download was empty"
         FAILED_ECOSYSTEMS+=("${eco}:empty-zip")
         continue
     fi
 
-    mkdir -p "${TMPDIR}/${eco}"
-    if ! unzip -q -o "${TMPDIR}/${eco}.zip" -d "${TMPDIR}/${eco}"; then
+    mkdir -p "${WORKDIR}/${eco}"
+    if ! unzip -q -o "${WORKDIR}/${eco}.zip" -d "${WORKDIR}/${eco}"; then
         echo "  ERROR: ${eco} zip extraction failed"
         FAILED_ECOSYSTEMS+=("${eco}:unzip")
         continue
@@ -46,7 +48,7 @@ for eco in "${ECO_ARRAY[@]}"; do
     COUNT=$(python3 << PYEOF
 import json, os, glob, re
 
-eco_dir = "${TMPDIR}/${eco}"
+eco_dir = "${WORKDIR}/${eco}"
 count = 0
 with open("${OUTPUT_TMP}", "a") as out:
     for f in sorted(glob.glob(os.path.join(eco_dir, "*.json"))):
@@ -178,6 +180,6 @@ fi
 
 mv "${OUTPUT_TMP}" "${OUTPUT}"
 trap - EXIT
-rm -rf "${TMPDIR}"
+rm -rf "${WORKDIR}"
 echo "Total: ${TOTAL} CVE entries written to ${OUTPUT}"
 echo "Import: curl -F 'file=@${OUTPUT}' -F 'source=osv' -H 'X-API-Key: YOUR_KEY' http://YOUR_SERVER:8080/api/admin/cve-db/import"

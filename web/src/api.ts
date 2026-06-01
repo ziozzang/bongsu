@@ -351,6 +351,18 @@ export interface CveRematchPolicy {
   excluded_sources?: number;
 }
 
+export interface CveDbStatsResponse {
+  generated_at?: string;
+  security_db_revision?: string;
+  security_db_revision_error?: string;
+  source_count?: number;
+  total_records?: number;
+  total_matchable?: number;
+  total_matchable_percent?: number;
+  sources: CveSourceStat[];
+  rematch_policy?: CveRematchPolicy;
+}
+
 export interface Scan {
   id: string;
   host_id: string;
@@ -482,7 +494,7 @@ export const api = {
   cveDbSearch: (params: { q?: string; severity?: string; source?: string; min_cvss?: string; limit?: string; offset?: string }) =>
     request<{ items: CveDbEntry[]; total: number }>('/cve-db/search', params),
   cveDbSources: () => request<string[]>('/admin/cve-db/sources'),
-  cveDbStats: () => request<{ sources: CveSourceStat[]; rematch_policy?: CveRematchPolicy }>('/cve-db/stats'),
+  cveDbStats: () => request<CveDbStatsResponse>('/cve-db/stats'),
   packages: (params: { host_id?: string; container?: string; pkg_type?: string; source?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Pkg[]; total: number }>('/packages', params),
   containers: (params: { host_id?: string; runtime?: string; state?: string; image?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>

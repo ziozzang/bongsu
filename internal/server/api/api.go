@@ -4190,13 +4190,14 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 		return nil
 	}
 	for {
-		var e models.CveEntry
-		if err := decoder.Decode(&e); err != nil {
+		var input cveEntryJSON
+		if err := decoder.Decode(&input); err != nil {
 			if err == io.EOF {
 				break
 			}
 			return total, err
 		}
+		e := input.toModel()
 		normalizeCveEntry(&e)
 		if e.VulnerabilityID == "" || strings.HasPrefix(strings.ToUpper(e.VulnerabilityID), "CGA-") {
 			continue
@@ -4218,6 +4219,96 @@ func (s *Server) importCveJSONLWithUpsert(ctx context.Context, reader io.Reader,
 		}
 	}
 	return total, flush()
+}
+
+type cveEntryJSON struct {
+	ID               string          `json:"id"`
+	VulnerabilityID  string          `json:"vulnerability_id"`
+	Source           string          `json:"source"`
+	Category         string          `json:"category,omitempty"`
+	Ecosystem        string          `json:"ecosystem,omitempty"`
+	Severity         string          `json:"severity"`
+	CVSSScore        float64         `json:"cvss_score"`
+	CVSSVector       string          `json:"cvss_vector"`
+	EPSSScore        float64         `json:"epss_score,omitempty"`
+	EPSSPercentile   float64         `json:"epss_percentile,omitempty"`
+	Title            string          `json:"title"`
+	Description      string          `json:"description"`
+	PublishedDate    flexibleCveTime `json:"published_date,omitempty"`
+	ModifiedDate     flexibleCveTime `json:"modified_date,omitempty"`
+	AffectedProducts string          `json:"affected_products"`
+	References       string          `json:"references"`
+	RawData          string          `json:"raw_data"`
+	UpdatedAt        flexibleCveTime `json:"updated_at"`
+}
+
+func (e cveEntryJSON) toModel() models.CveEntry {
+	return models.CveEntry{
+		ID:               e.ID,
+		VulnerabilityID:  e.VulnerabilityID,
+		Source:           e.Source,
+		Category:         e.Category,
+		Ecosystem:        e.Ecosystem,
+		Severity:         e.Severity,
+		CVSSScore:        e.CVSSScore,
+		CVSSVector:       e.CVSSVector,
+		EPSSScore:        e.EPSSScore,
+		EPSSPercentile:   e.EPSSPercentile,
+		Title:            e.Title,
+		Description:      e.Description,
+		PublishedDate:    e.PublishedDate.Time,
+		ModifiedDate:     e.ModifiedDate.Time,
+		AffectedProducts: e.AffectedProducts,
+		References:       e.References,
+		RawData:          e.RawData,
+		UpdatedAt:        e.UpdatedAt.Value(),
+	}
+}
+
+type flexibleCveTime struct {
+	Time *time.Time
+}
+
+func (t *flexibleCveTime) UnmarshalJSON(data []byte) error {
+	raw := strings.TrimSpace(string(data))
+	if raw == "" || raw == "null" {
+		t.Time = nil
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		t.Time = nil
+		return nil
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02T15:04:05.999999999",
+		"2006-01-02T15:04:05.999999",
+		"2006-01-02T15:04:05.999",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+	} {
+		parsed, err := time.Parse(layout, s)
+		if err == nil {
+			if layout != time.RFC3339Nano {
+				parsed = time.Date(parsed.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), parsed.Nanosecond(), time.UTC)
+			}
+			t.Time = &parsed
+			return nil
+		}
+	}
+	return fmt.Errorf("invalid CVE timestamp %q", s)
+}
+
+func (t flexibleCveTime) Value() time.Time {
+	if t.Time == nil {
+		return time.Time{}
+	}
+	return *t.Time
 }
 
 func normalizeCveEntry(e *models.CveEntry) {
@@ -4888,7 +4979,11 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	policy := rematchSourcePolicy(stats, opts)
 	sources := make([]map[string]any, 0, len(stats))
 	eligible := 0
+	totalRecords := 0
+	totalMatchable := 0
 	for _, stat := range stats {
+		totalRecords += stat.Count
+		totalMatchable += stat.Matchable
 		source := map[string]any{
 			"source":            stat.Source,
 			"count":             stat.Count,
@@ -4907,8 +5002,17 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		}
 		sources = append(sources, source)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"sources": sources,
+	totalMatchablePercent := 0.0
+	if totalRecords > 0 {
+		totalMatchablePercent = float64(totalMatchable) / float64(totalRecords) * 100
+	}
+	resp := map[string]any{
+		"generated_at":            time.Now().UTC().Format(time.RFC3339),
+		"source_count":            len(stats),
+		"total_records":           totalRecords,
+		"total_matchable":         totalMatchable,
+		"total_matchable_percent": totalMatchablePercent,
+		"sources":                 sources,
 		"rematch_policy": map[string]any{
 			"sources":                      opts.Sources,
 			"min_source_matchable_percent": opts.MinSourceMatchablePercent,
@@ -4916,7 +5020,11 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 			"eligible_sources":             eligible,
 			"excluded_sources":             len(stats) - eligible,
 		},
-	})
+	}
+	for k, v := range s.securityDBRevisionMeta(r.Context()) {
+		resp[k] = v
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func rematchSourcePolicy(stats []db.CveSourceStats, opts db.RematchOptions) map[string]map[string]any {

@@ -26,6 +26,14 @@ years = [y.strip() for y in "${YEARS}".split(",")]
 
 total_written = 0
 
+def rfc3339_utc(value):
+    value = (value or "").strip()
+    if not value:
+        return ""
+    if value.endswith("Z") or value.endswith("+00:00"):
+        return value
+    return value + "Z"
+
 for year in years:
     quarters = [
         (f"{year}-01-01", f"{year}-03-31"),
@@ -101,8 +109,8 @@ for year in years:
                             cvss_vector = v3.get("vectorString", "")
                             break
 
-                    published = cve.get("published", "")
-                    modified = cve.get("lastModified", "")
+                    published = rfc3339_utc(cve.get("published", ""))
+                    modified = rfc3339_utc(cve.get("lastModified", ""))
 
                     refs = [{"url": r.get("url", ""), "source": r.get("source", "")} for r in cve.get("references", [])[:20]]
 
