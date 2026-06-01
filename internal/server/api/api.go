@@ -3089,6 +3089,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 		cancel()
 		dbCtx, cancel = withHealthDBTimeout()
+		if last := s.securityDBAutoRescanLastResult(dbCtx, isAdmin); last != nil {
+			resp["security_db_auto_rescan"] = map[string]any{"last_result": last}
+		}
+		cancel()
+		dbCtx, cancel = withHealthDBTimeout()
 		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(dbCtx); err == nil {
 			resp["cve_affected_package_index"] = indexStats
 		} else if isAdmin {
@@ -3328,6 +3333,16 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_new_vulns", nil, metricNumber(last["new_vulns"]))
 		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_eligible_sources", nil, metricNumber(last["eligible_sources"]))
 		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_excluded_sources", nil, metricNumber(last["excluded_sources"]))
+	}
+	if last := s.securityDBAutoRescanLastResult(ctx, true); last != nil {
+		if ts, ok := last["finished_at_unix"].(float64); ok {
+			writePromGauge(&b, "bongsu_security_db_auto_rescan_last_finished_timestamp_seconds", nil, ts)
+		}
+		writePromGauge(&b, "bongsu_security_db_auto_rescan_last_error", nil, boolMetric(last["status"] == "error"))
+		writePromGauge(&b, "bongsu_security_db_auto_rescan_last_disabled", nil, boolMetric(last["status"] == "disabled"))
+		writePromGauge(&b, "bongsu_security_db_auto_rescan_last_eligible", nil, metricNumber(last["eligible"]))
+		writePromGauge(&b, "bongsu_security_db_auto_rescan_last_queued", nil, metricNumber(last["queued"]))
+		writePromGauge(&b, "bongsu_security_db_auto_rescan_last_already_pending", nil, metricNumber(last["already_pending"]))
 	}
 	if s.dbMgr != nil && s.dbMgr.IsReady() {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 1)
@@ -3670,6 +3685,7 @@ func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDet
 		out["reason"] = reason
 	}
 	for _, key := range []string{
+		"security_db_revision",
 		"cvss_updated",
 		"findings_enriched",
 		"stale_rematch_removed",
@@ -3693,6 +3709,57 @@ func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDet
 		}
 		if policy, ok := meta["rematch_source_policy"]; ok {
 			out["rematch_source_policy"] = policy
+		}
+	}
+	return out
+}
+
+func (s *Server) securityDBAutoRescanLastResult(ctx context.Context, includeDetails bool) map[string]any {
+	if s.db == nil {
+		return nil
+	}
+	item, err := s.db.GetLatestAuditLog(ctx, db.AuditLogFilter{
+		Action:       "security_db.auto_rescan",
+		ResourceType: "scan_request",
+		ResourceID:   "security-db-update",
+	}, nil)
+	if err != nil {
+		if includeDetails {
+			return map[string]any{"status": "error", "error": err.Error()}
+		}
+		return nil
+	}
+	if item == nil {
+		return nil
+	}
+	meta := map[string]any{}
+	if len(item.Metadata) > 0 {
+		_ = json.Unmarshal(item.Metadata, &meta)
+	}
+	out := map[string]any{
+		"status":           item.Status,
+		"finished_at":      item.CreatedAt.Format(time.RFC3339),
+		"finished_at_unix": float64(item.CreatedAt.Unix()),
+	}
+	for _, key := range []string{
+		"reason",
+		"recalculation_status",
+		"eligible",
+		"queued",
+		"already_pending",
+		"security_db_revision",
+		"last_seen_hours",
+		"stage",
+	} {
+		if v, ok := meta[key]; ok {
+			out[key] = v
+		}
+	}
+	if includeDetails {
+		for _, key := range []string{"last_seen_after", "error"} {
+			if v, ok := meta[key]; ok {
+				out[key] = v
+			}
 		}
 	}
 	return out
@@ -4402,9 +4469,14 @@ func (s *Server) runSecurityRecalculation(reason string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Hour)
 	defer cancel()
 	log.Printf("security recalculation started (%s)", reason)
-	s.auditSystem("security_db.recalculation", "security_db", "aggregate", "started", map[string]any{"reason": reason})
 	meta := map[string]any{"reason": reason}
 	failures := []string{}
+	if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
+		meta["security_db_revision"] = revision
+	} else {
+		failures = append(failures, "security_db_revision: "+err.Error())
+	}
+	s.auditSystem("security_db.recalculation", "security_db", "aggregate", "started", meta)
 	if n, err := s.db.CalcCvssScores(ctx); err != nil {
 		log.Printf("security recalculation cvss failed: %v", err)
 		failures = append(failures, "cvss: "+err.Error())

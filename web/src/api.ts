@@ -357,6 +357,21 @@ export interface HealthStatus {
       security_db_revision_error?: string;
     };
   };
+  security_db_auto_rescan?: {
+    last_result?: {
+      status: string;
+      finished_at?: string;
+      reason?: string;
+      recalculation_status?: string;
+      eligible?: number;
+      queued?: number;
+      already_pending?: number;
+      security_db_revision?: string;
+      last_seen_hours?: number;
+      error?: string;
+      stage?: string;
+    };
+  };
   cve_reference_index_rebuild?: {
     running?: boolean;
     started_at?: string;

@@ -499,6 +499,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       : 'var(--low)';
   const lastRecalc = health?.security_recalculation?.last_result;
   const lastManualRematch = health?.cve_db_rematch?.last_result;
+  const lastAutoRescan = health?.security_db_auto_rescan?.last_result;
   const lastRecalcLimited = !!lastRecalc?.rematch_limited;
   const lastManualRematchLimited = !!lastManualRematch?.limited;
   const lastRecalcColor = lastRecalc?.status === 'error'
@@ -516,6 +517,13 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     : lastManualRematchLimited
       ? 'var(--high)'
       : lastManualRematch?.status === 'ok'
+        ? 'var(--low)'
+        : 'var(--medium)';
+  const lastAutoRescanColor = lastAutoRescan?.status === 'error'
+    ? 'var(--critical)'
+    : lastAutoRescan?.status === 'disabled'
+      ? 'var(--medium)'
+      : lastAutoRescan?.status === 'ok'
         ? 'var(--low)'
         : 'var(--medium)';
   const triageActiveCounts = stats?.triage_active_counts || {};
@@ -1179,6 +1187,16 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             {lastManualRematch?.finished_at
               ? `${(lastManualRematch.matched || 0).toLocaleString()} matches, ${(lastManualRematch.scanned_candidates || 0).toLocaleString()} scanned${lastManualRematch.eligible_sources !== undefined ? ` · ${lastManualRematch.eligible_sources} src` : ''}`
               : 'no manual run yet'}
+          </div>
+        </div>
+        <div className="stat-card" title={lastAutoRescan?.error || lastAutoRescan?.reason || ''}>
+          <div className="accent-bar" style={{ background: lastAutoRescanColor }} />
+          <div className="label">Auto Rescan Queue</div>
+          <div className="value" style={{ color: lastAutoRescanColor }}>{lastAutoRescan?.status || '-'}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {lastAutoRescan?.finished_at
+              ? `${(lastAutoRescan.queued || 0).toLocaleString()} queued, ${(lastAutoRescan.already_pending || 0).toLocaleString()} pending of ${(lastAutoRescan.eligible || 0).toLocaleString()} hosts`
+              : 'waiting for DB update'}
           </div>
         </div>
         <div className="stat-card">
