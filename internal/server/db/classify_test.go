@@ -1056,6 +1056,28 @@ func TestCveAffectedPackageIndexUsesSharedFixedVersionRules(t *testing.T) {
 	}
 }
 
+func TestCveAffectedPackageIndexRowsAreListable(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"type CveAffectedPackage struct",
+		`json:"package_name"`,
+		`json:"fixed_version"`,
+		"func (db *DB) ListCveAffectedPackages",
+		"SELECT count(*) FROM cve_affected_packages WHERE cve_id=$1",
+		"FROM cve_affected_packages",
+		"WHERE cve_id=$1",
+		"ORDER BY package_name, ecosystem, fixed_version",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("affected package index listing missing %q", want)
+		}
+	}
+}
+
 func TestRemoveStaleRematchedVulnerabilitiesUsesSourceQualityFixedPredicate(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {

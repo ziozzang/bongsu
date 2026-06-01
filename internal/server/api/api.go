@@ -207,6 +207,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/cve-db/sources", s.handleCveDbSources)
 	s.mux.HandleFunc("GET /api/cve-db/stats", s.handleCveDbStats)
 	s.mux.HandleFunc("GET /api/cve-db/search", s.handleCveDbSearch)
+	s.mux.HandleFunc("GET /api/cve-db/{id}/affected-packages", s.handleCveDbAffectedPackages)
 	s.serveDashboard()
 }
 
@@ -5398,6 +5399,29 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": entries,
+		"total": total,
+	})
+}
+
+func (s *Server) handleCveDbAffectedPackages(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		http.Error(w, "missing cve id", http.StatusBadRequest)
+		return
+	}
+	limit := limitParam(r, 100)
+	items, total, err := s.db.ListCveAffectedPackages(r.Context(), id, limit)
+	if err != nil {
+		log.Printf("cve-db affected packages: %v", err)
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
 		"total": total,
 	})
 }

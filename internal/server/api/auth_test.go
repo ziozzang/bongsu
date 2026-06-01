@@ -4165,6 +4165,26 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 	}
 }
 
+func TestCveDbAffectedPackageEvidenceEndpoint(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`"GET /api/cve-db/{id}/affected-packages"`,
+		"func (s *Server) handleCveDbAffectedPackages",
+		"s.authenticateWeb(r)",
+		`r.PathValue("id")`,
+		"s.db.ListCveAffectedPackages",
+		`"items": items`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE affected package evidence endpoint missing %q", want)
+		}
+	}
+}
+
 func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 	out, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {
@@ -4184,6 +4204,8 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"priorityFeed ? 'priority' : 'reference'",
 		"matchable_affected_count",
 		"affected",
+		"cveDbAffectedPackages",
+		"Indexed Match Evidence",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard CVE search auto-load/error UI missing %q", want)

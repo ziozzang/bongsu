@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -2597,6 +2597,7 @@ function CveSearchView() {
   const [error, setError] = useState('');
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [indexedAffected, setIndexedAffected] = useState<Record<string, { loading?: boolean; error?: string; items?: CveAffectedPackage[] }>>({});
   const [sortBy, setSortBy] = useState('published_date');
   const [sortDesc, setSortDesc] = useState(true);
   const initialSearchStarted = useRef(false);
@@ -2650,8 +2651,14 @@ function CveSearchView() {
   const badge = (s: string) => "badge badge-" + (s || "unknown").toLowerCase();
   const cvssClr = (n: number) => n >= 9 ? "var(--critical)" : n >= 7 ? "var(--high)" : n >= 4 ? "var(--medium)" : "inherit";
 
-  const toggleExpand = (id: string) => {
-    setExpanded(prev => prev === id ? null : id);
+  const toggleExpand = (entry: CveDbEntry) => {
+    setExpanded(prev => prev === entry.id ? null : entry.id);
+    if ((entry.matchable_affected_count || 0) > 0 && !indexedAffected[entry.id]) {
+      setIndexedAffected(prev => ({ ...prev, [entry.id]: { loading: true } }));
+      api.cveDbAffectedPackages(entry.id, { limit: '200' })
+        .then(r => setIndexedAffected(prev => ({ ...prev, [entry.id]: { items: r.items || [] } })))
+        .catch(err => setIndexedAffected(prev => ({ ...prev, [entry.id]: { error: err?.message || 'Indexed affected packages failed' } })));
+    }
   };
 
   const formatDate = (d: string | null | undefined) => {
@@ -2809,7 +2816,7 @@ function CveSearchView() {
                   <React.Fragment key={entry.id}>
                     <tr
                       style={{ cursor: 'pointer' }}
-                      onClick={() => toggleExpand(entry.id)}
+                      onClick={() => toggleExpand(entry)}
                     >
                       <td className="mono">
                         <span className="host-link" style={{ color: 'var(--primary)' }}>
@@ -2867,6 +2874,22 @@ function CveSearchView() {
                               <code style={{ background: 'var(--bg)', padding: '2px 6px', borderRadius: 3 }}>
                                 {entry.cvss_vector}
                               </code>
+                            </div>
+                          )}
+                          {(entry.matchable_affected_count || 0) > 0 && (
+                            <div style={{ marginBottom: '0.75rem' }}>
+                              <strong style={{ fontSize: '0.8125rem' }}>Indexed Match Evidence</strong>
+                              <div style={{ marginTop: '0.25rem' }}>
+                                {indexedAffected[entry.id]?.loading && <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>Loading...</div>}
+                                {indexedAffected[entry.id]?.error && <div style={{ color: 'var(--critical)', fontSize: '0.8125rem' }}>{indexedAffected[entry.id]?.error}</div>}
+                                {(indexedAffected[entry.id]?.items || []).map((item, idx) => (
+                                  <div key={`${item.package_name}-${item.ecosystem}-${item.fixed_version}-${idx}`} style={{ background: 'var(--bg)', padding: '0.4rem 0.75rem', borderRadius: 4, border: '1px solid var(--border)', marginBottom: '0.25rem' }}>
+                                    <span style={{ fontWeight: 600, fontSize: '0.8125rem' }}>{item.package_name}</span>
+                                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>{item.ecosystem}</span>
+                                    <span style={{ fontSize: '0.6875rem', color: '#22c55e', background: 'rgba(34,197,94,0.1)', padding: '1px 6px', borderRadius: 3, fontWeight: 600, marginLeft: '0.5rem' }}>Fixed: {item.fixed_version}</span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           )}
                           {prods.length > 0 && (

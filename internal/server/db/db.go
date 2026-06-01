@@ -4586,6 +4586,17 @@ type CveAffectedPackageIndexStats struct {
 	Orphans                 int        `json:"orphans"`
 }
 
+type CveAffectedPackage struct {
+	CveID           string    `json:"cve_id"`
+	VulnerabilityID string    `json:"vulnerability_id"`
+	Source          string    `json:"source"`
+	PackageName     string    `json:"package_name"`
+	Ecosystem       string    `json:"ecosystem"`
+	FixedVersion    string    `json:"fixed_version"`
+	AffectedProduct string    `json:"affected_product"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
 type CveEPSSMergeStats struct {
 	EPSSRecords          int     `json:"epss_records"`
 	EPSSCVEs             int     `json:"epss_cves"`
@@ -4643,6 +4654,38 @@ ORDER BY source`, matchablePredicate))
 		stats.MissingMatchableSources = []string{}
 	}
 	return &stats, nil
+}
+
+func (db *DB) ListCveAffectedPackages(ctx context.Context, cveID string, limit int) ([]CveAffectedPackage, int, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	var total int
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM cve_affected_packages WHERE cve_id=$1`, cveID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := db.QueryContext(ctx, `
+SELECT cve_id, vulnerability_id, source, package_name, ecosystem, fixed_version, affected_product::text, updated_at
+FROM cve_affected_packages
+WHERE cve_id=$1
+ORDER BY package_name, ecosystem, fixed_version
+LIMIT $2`, cveID, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := []CveAffectedPackage{}
+	for rows.Next() {
+		var item CveAffectedPackage
+		if err := rows.Scan(&item.CveID, &item.VulnerabilityID, &item.Source, &item.PackageName, &item.Ecosystem, &item.FixedVersion, &item.AffectedProduct, &item.UpdatedAt); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
 }
 
 func (db *DB) GetCveEPSSMergeStats(ctx context.Context) (*CveEPSSMergeStats, error) {
