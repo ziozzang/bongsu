@@ -1,6 +1,6 @@
 # Bongsu Requirements Audit
 
-Updated: 2026-06-01 20:04:57 KST
+Updated: 2026-06-01 20:10:00 KST
 
 This audit keeps the original product requirements tied to implementation evidence, verification commands, and remaining gaps. It is not a completion claim; the goal remains open until every item has authoritative evidence from code, tests, deployment, and live behavior.
 
@@ -17,7 +17,7 @@ This audit keeps the original product requirements tied to implementation eviden
 | --- | --- | --- | --- | --- |
 | R1 | Build and continuously update a security database every 6 hours, with import/export for air-gapped transfer. | Verified | `scripts/sync-all-cvedb.sh`, `scripts/export-security-db-bundle.sh`, `scripts/import-security-db-bundle.sh`, `deploy/docker-compose.yml`, `deploy/docker-compose.airgap.yml`, `docs/architecture.md` | `./scripts/verify-deploy-config.sh`, compose config checks |
 | R2 | Classify security sources by OS package vs code package/library and match to compatible sources only. | Implemented | `docs/vulnerability-matching-rules.md`, `internal/server/db`, `migrations/022_cve_affected_packages.sql`, package ecosystem fields in API models | `go test ./...` |
-| R3 | Collect installed OS/library packages, host metadata, running containers, images, and relationship context, then send SBOM to the server. | Implemented | `internal/agent/collector`, `internal/agent/reporter`, `internal/shared/models`, SBOM export paths in server API | `go test ./...`; live agent enrollment still needs environment-specific validation |
+| R3 | Collect installed OS/library packages, host metadata, running containers, images, and relationship context, then send SBOM to the server. | Implemented | `internal/agent/collector`, `cmd/agent`, `internal/agent/reporter`, `internal/shared/models`, DB package/container persistence, SBOM export paths in server API, source-level ontology preservation tests | `go test ./...`; live agent enrollment still needs environment-specific validation |
 | R4 | RBAC by UserID/GroupID for host/container/system access. | Implemented | access subject/policy migrations, `/api/admin/rbac-*` handlers, dashboard RBAC view, viewer-key flow, browser smoke for subject/policy creation, source-level scope enforcement tests for host/container/image/asset-group policies | `go test ./...`, `npm --prefix web run test:e2e`; live multi-tenant enforcement fixtures remain useful |
 | R5 | Provide a sufficiently good web interface. | Partial | Vite dashboard, CVE DB status card, CVE Search, vulnerability/host/RBAC/audit/admin views | `npm --prefix web run build`, `npm --prefix web run test:e2e`; visual live audit at `http://10.2.2.10:5678/` remains required |
 | R6 | Deploy fully in air-gapped environments; update externally, export, import internally. | Verified | airgap compose file, bundle import/export, package script, packaged docs, static binary verification, trivy archive validation, package contents verifier | `./scripts/verify-deploy-config.sh`, `./scripts/verify-package-contents.sh`, `./scripts/verify-static-binaries.sh`, compose config checks |

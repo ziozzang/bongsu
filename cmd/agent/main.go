@@ -285,6 +285,7 @@ func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly b
 		for i := range pkgs {
 			pkgs[i].AssetType = "container"
 			pkgs[i].AssetID = assetID
+			pkgs[i].Container = c.Name
 			pkgs[i].ContainerID = c.ContainerID
 			pkgs[i].ImageName = c.ImageName
 			pkgs[i].ImageID = c.ImageID

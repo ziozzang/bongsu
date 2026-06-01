@@ -412,6 +412,96 @@ func TestContainerSearchIncludesRiskSummary(t *testing.T) {
 	}
 }
 
+func TestPackagePersistencePreservesAssetOntology(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"p.asset_type",
+		"p.asset_id",
+		"p.source",
+		"p.container",
+		"p.container_id",
+		"p.image_name",
+		"p.image_id",
+		"p.purl",
+		"p.src_name",
+		"p.file_path",
+		"p.layer_id",
+		"p.target",
+		"asset_type, asset_id, source, container, container_id, image_name, image_id",
+		"purl, src_name, file_path, layer_id, target",
+		"&p.AssetType",
+		"&p.AssetID",
+		"&p.Source",
+		"&p.Container",
+		"&p.ContainerID",
+		"&p.ImageName",
+		"&p.ImageID",
+		"&p.PURL",
+		"&p.SrcName",
+		"&p.FilePath",
+		"&p.LayerID",
+		"&p.Target",
+		"defaultString(pkgs[i].AssetType, \"host\")",
+		"pkgs[i].AssetID",
+		"pkgs[i].Container",
+		"pkgs[i].ContainerID",
+		"pkgs[i].ImageName",
+		"pkgs[i].ImageID",
+		"pkgs[i].PURL",
+		"pkgs[i].SrcName",
+		"pkgs[i].FilePath",
+		"pkgs[i].LayerID",
+		"pkgs[i].Target",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("package persistence missing ontology field %q", want)
+		}
+	}
+}
+
+func TestContainerAssetPersistencePreservesRuntimeIdentity(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) InsertContainers")
+	if start < 0 {
+		t.Fatal("InsertContainers not found")
+	}
+	end := strings.Index(body[start:], "const vulnCols")
+	if end < 0 {
+		t.Fatal("InsertContainers end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"container_assets",
+		"runtime",
+		"container_id",
+		"image_name",
+		"image_id",
+		"image_digest",
+		"labels",
+		"started_at",
+		"defaultString(containers[i].Runtime, \"docker\")",
+		"containers[i].ContainerID",
+		"containers[i].Name",
+		"containers[i].ImageName",
+		"containers[i].ImageID",
+		"containers[i].ImageDigest",
+		"containers[i].State",
+		"containers[i].StartedAt",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("container asset persistence missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestAppendUnique(t *testing.T) {
 	items := []string{"host-1"}
 	items = appendUnique(items, "host-1")

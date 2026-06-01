@@ -118,6 +118,36 @@ func TestAppendCollectionErrorBoundsReportErrors(t *testing.T) {
 	}
 }
 
+func TestContainerScanAnnotatesPackagesWithRuntimeIdentity(t *testing.T) {
+	data, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	start := strings.Index(body, "for _, c := range containers")
+	if start < 0 {
+		t.Fatal("container scan loop not found")
+	}
+	end := strings.Index(body[start:], "// 6. OSQuery packages")
+	if end < 0 {
+		t.Fatal("container scan loop end not found")
+	}
+	loop := body[start : start+end]
+	for _, want := range []string{
+		`pkgs[i].AssetType = "container"`,
+		"pkgs[i].AssetID = assetID",
+		"pkgs[i].Container = c.Name",
+		"pkgs[i].ContainerID = c.ContainerID",
+		"pkgs[i].ImageName = c.ImageName",
+		"pkgs[i].ImageID = c.ImageID",
+		"vulns[i].Container = c.Name",
+	} {
+		if !strings.Contains(loop, want) {
+			t.Fatalf("container package ontology annotation missing %q: %s", want, loop)
+		}
+	}
+}
+
 func TestScanRequestCompletionFromReportPreservesDegradedScans(t *testing.T) {
 	status, message := scanRequestCompletionFromReport(&reporter.ReportResult{
 		ScanStatus:       "degraded",

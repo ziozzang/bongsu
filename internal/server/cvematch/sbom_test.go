@@ -30,12 +30,17 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 		Container:   "api",
 		ContainerID: "sha256:abc",
 		ImageName:   "example/api:1.0",
+		ImageID:     "sha256:image",
 		Name:        "openssl",
 		Version:     "3.0.13",
 		Arch:        "amd64",
 		PkgType:     "deb",
 		Ecosystem:   "Ubuntu",
+		PURL:        "pkg:deb/ubuntu/openssl@3.0.13?arch=amd64",
+		SrcName:     "openssl",
 		FilePath:    "/usr/lib",
+		LayerID:     "sha256:layer",
+		Target:      "ubuntu:24.04",
 	}}
 
 	data, err := GenerateCycloneDX(pkgs, host)
@@ -65,22 +70,30 @@ func TestGenerateCycloneDXIncludesBongsuContext(t *testing.T) {
 		t.Fatal("CycloneDX bom-ref must be a bongsu-stable identity, not a potentially duplicated purl")
 	}
 	props := component["properties"].([]any)
-	foundAsset := false
-	foundPkgScan := false
+	propMap := map[string]string{}
 	for _, item := range props {
 		prop := item.(map[string]any)
-		if prop["name"] == "bongsu:asset_type" && prop["value"] == "container" {
-			foundAsset = true
-		}
-		if prop["name"] == "bongsu:scan_id" && prop["value"] == "scan-1" {
-			foundPkgScan = true
-		}
+		propMap[prop["name"].(string)] = prop["value"].(string)
 	}
-	if !foundAsset {
-		t.Fatal("bongsu asset context property missing")
-	}
-	if !foundPkgScan {
-		t.Fatal("bongsu package scan_id property missing")
+	for name, want := range map[string]string{
+		"bongsu:package_id":   "pkg-1",
+		"bongsu:scan_id":      "scan-1",
+		"bongsu:host_id":      "host-1",
+		"bongsu:asset_type":   "container",
+		"bongsu:asset_id":     "container-1",
+		"bongsu:source":       "trivy",
+		"bongsu:pkg_type":     "deb",
+		"bongsu:ecosystem":    "Ubuntu",
+		"bongsu:container":    "api",
+		"bongsu:container_id": "sha256:abc",
+		"bongsu:image_name":   "example/api:1.0",
+		"bongsu:image_id":     "sha256:image",
+		"bongsu:file_path":    "/usr/lib",
+		"bongsu:target":       "ubuntu:24.04",
+	} {
+		if got := propMap[name]; got != want {
+			t.Fatalf("CycloneDX package property %s = %q, want %q", name, got, want)
+		}
 	}
 	metadata := doc["metadata"].(map[string]any)
 	root := metadata["component"].(map[string]any)
@@ -172,17 +185,23 @@ func TestGenerateCycloneDXUsesUniqueBOMRefsForDuplicatePURLs(t *testing.T) {
 func TestGenerateSPDXIncludesPackagePURLAndRelationships(t *testing.T) {
 	host := models.Host{ID: "host-1", Hostname: "build-node-1", OSName: "Ubuntu", OSVersion: "24.04"}
 	pkgs := []models.Package{{
-		ID:        "pkg-1",
-		ScanID:    "scan-1",
-		HostID:    "host-1",
-		AssetType: "host",
-		AssetID:   "host-1",
-		Source:    "trivy",
-		Name:      "openssl",
-		Version:   "3.0.13",
-		Arch:      "amd64",
-		PkgType:   "deb",
-		Ecosystem: "Ubuntu",
+		ID:          "pkg-1",
+		ScanID:      "scan-1",
+		HostID:      "host-1",
+		AssetType:   "container",
+		AssetID:     "container-1",
+		Source:      "trivy",
+		Container:   "api",
+		ContainerID: "sha256:abc",
+		ImageName:   "example/api:1.0",
+		ImageID:     "sha256:image",
+		Name:        "openssl",
+		Version:     "3.0.13",
+		Arch:        "amd64",
+		PkgType:     "deb",
+		Ecosystem:   "Ubuntu",
+		FilePath:    "/usr/lib",
+		Target:      "ubuntu:24.04",
 	}}
 
 	data, err := GenerateSPDX(pkgs, host)
@@ -210,6 +229,23 @@ func TestGenerateSPDXIncludesPackagePURLAndRelationships(t *testing.T) {
 	}
 	if !strings.Contains(pkg["comment"].(string), "scan_id=scan-1") {
 		t.Fatalf("SPDX package comment missing scan id: %q", pkg["comment"])
+	}
+	for _, want := range []string{
+		"asset_type=container",
+		"asset_id=container-1",
+		"source=trivy",
+		"pkg_type=deb",
+		"ecosystem=Ubuntu",
+		"container=api",
+		"container_id=sha256:abc",
+		"image_name=example/api:1.0",
+		"image_id=sha256:image",
+		"file_path=/usr/lib",
+		"target=ubuntu:24.04",
+	} {
+		if !strings.Contains(pkg["comment"].(string), want) {
+			t.Fatalf("SPDX package comment missing %q: %q", want, pkg["comment"])
+		}
 	}
 	if !strings.Contains(doc["documentNamespace"].(string), "scan-1") {
 		t.Fatalf("SPDX document namespace missing scan id: %q", doc["documentNamespace"])

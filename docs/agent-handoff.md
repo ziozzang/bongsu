@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-01 20:04:57 KST
+Updated: 2026-06-01 20:10:00 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,24 +24,20 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head before this continuation:
 
 ```text
-b168e2b (master, origin/main) Verify deployment safety defaults
+7a9762a (master, origin/main) Verify airgap package contents
 ```
 
 Important recent commits:
 
 ```text
-b168e2b Verify deployment safety defaults
-9361764 Expose installer readiness metrics
-6905acf Add migration quality verification
-ebacaf2 Harden airgap package contents
-3625c5c Verify static release binaries in CI
-b6b717c Add CI quality gates
-dec2ee6 Reject placeholder CVE identifiers
-7948ed4 Add CVE dashboard browser smoke tests
-a1a4ba4 Document agent handoff state
-48015b1 Serve stale CVE stats during refresh
-b7e7361 Reduce CVE stats cold path latency
-993cb03 Optimize vulnerability mismatch filtering
+7a9762a Verify airgap package contents
+c3fa8e0 Add RBAC scope enforcement tests
+725c748 Add operations runbook
+ad6d146 Add force scan and RBAC browser smoke tests
+b832cad Add requirements audit gate
+ab5ccb7 Verify installer systemd mode
+5d40f0f Verify installer download checksums
+7d61e20 Add installer smoke verification
 ```
 
 This handoff commit should include:
@@ -66,6 +62,7 @@ This handoff commit should include:
 - Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
 - RBAC enforcement regression coverage for package/container/scan/scan-request endpoint scoping and container/image/asset-group policy expansion through latest container assets and host metadata.
 - Airgap package contents verifier that checks the release package script includes static binaries, Docker images, deploy files, migrations, docs, web assets, source sync/import/export tools, loader script, and SHA256 manifests.
+- Agent package annotation, DB persistence, and CycloneDX/SPDX export tests that preserve host/container/image/package target relationship context for SBOM and inventory data.
 
 ## Live Runtime
 
@@ -150,6 +147,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - `docs/operations-runbook.md` is available and `scripts/package.sh` includes documentation in release archives.
 - Go tests now assert RBAC access scope expansion for host, container, image, and asset-group policies and verify inventory/scan list endpoints apply those scopes.
 - CI runs `scripts/verify-package-contents.sh` to keep air-gapped release archives from silently losing required files.
+- Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
 
 ## Verification Commands
 
