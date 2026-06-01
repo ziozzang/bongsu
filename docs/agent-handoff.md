@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-01 19:57:17 KST
+Updated: 2026-06-01 20:01:57 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -54,6 +54,8 @@ This handoff commit should include:
 - `.github/workflows/ci.yml`
 - `README.md`
 - `web/tests/e2e/cve-db.spec.ts`
+- `internal/server/api/auth_test.go`
+- `internal/server/db/classify_test.go`
 - `scripts/verify-installer-smoke.sh`
 - A cron-mode one-line installer smoke verification that installs local packaged agent/Trivy binaries into a temporary work directory, generates and reuses a persistent agent token, writes `0600` config/token files, replaces the bongsu cron entry on reinstall, and runs the first agent scan without requiring root, systemd, network access, or Caddy changes.
 - Download-path installer verification that fetches agent and Trivy binaries through header-authenticated `curl`, rejects token-bearing URLs, requires the `X-Bongsu-SHA256` header, and fails closed while removing a checksum-mismatched binary.
@@ -61,6 +63,7 @@ This handoff commit should include:
 - Requirements audit coverage that maps the original product requirements to evidence, verification commands, and remaining commercial-readiness gaps without declaring the overall goal complete.
 - Browser smoke coverage for Hosts force-scan requests and RBAC subject/policy creation, including POST body verification.
 - Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
+- RBAC enforcement regression coverage for package/container/scan/scan-request endpoint scoping and container/image/asset-group policy expansion through latest container assets and host metadata.
 
 ## Live Runtime
 
@@ -143,6 +146,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
 - Playwright coverage now verifies dashboard CVE DB status, CVE Search fixed-version evidence, Hosts force-scan POST bodies, and RBAC subject/policy POST bodies.
 - `docs/operations-runbook.md` is available and `scripts/package.sh` includes documentation in release archives.
+- Go tests now assert RBAC access scope expansion for host, container, image, and asset-group policies and verify inventory/scan list endpoints apply those scopes.
 
 ## Verification Commands
 

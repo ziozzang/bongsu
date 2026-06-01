@@ -514,6 +514,131 @@ func TestAccessScopesSeparateReadAndExportPermissions(t *testing.T) {
 	}
 }
 
+func TestAccessScopeExpandsContainerImageAndAssetGroupPolicies(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) getAccessScopeForPermissions")
+	if start < 0 {
+		t.Fatal("getAccessScopeForPermissions not found")
+	}
+	end := strings.Index(body[start:], "func parseAccessSubjectRef")
+	if end < 0 {
+		t.Fatal("getAccessScopeForPermissions end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"parseAccessSubjectRef(subjectRef)",
+		"typeFilter = \" AND s.subject_type=$3\"",
+		"p.permission = ANY($2)",
+		"case \"container\":",
+		"containerWildcard = true",
+		"containerRefs = append(containerRefs, rid)",
+		"case \"image\":",
+		"imageWildcard = true",
+		"imageRefs = append(imageRefs, rid)",
+		"case \"asset_group\":",
+		"assetGroupWildcard = true",
+		"assetGroupRefs = append(assetGroupRefs, rid)",
+		"hostIDsForContainerPolicies",
+		"hostIDsForImagePolicies",
+		"hostIDsForAssetGroupPolicies",
+		"appendUnique(scope.HostIDs, id)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("access scope expansion missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestAccessScopeContainerAndImagePoliciesUseLatestContainerAssets(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	tests := []struct {
+		name   string
+		fnName string
+		wants  []string
+	}{
+		{
+			name:   "container",
+			fnName: "hostIDsForContainerPolicies",
+			wants: []string{
+				"SELECT DISTINCT c.host_id FROM container_assets c JOIN ",
+				"latestScansSub",
+				"c.scan_id = ls.id",
+				"c.container_id = ANY($1) OR c.name = ANY($1)",
+			},
+		},
+		{
+			name:   "image",
+			fnName: "hostIDsForImagePolicies",
+			wants: []string{
+				"SELECT DISTINCT c.host_id FROM container_assets c JOIN ",
+				"latestScansSub",
+				"c.scan_id = ls.id",
+				"c.image_name = ANY($1) OR c.image_id = ANY($1) OR c.image_digest = ANY($1)",
+			},
+		},
+	}
+	for _, tt := range tests {
+		start := strings.Index(body, "func (db *DB) "+tt.fnName)
+		if start < 0 {
+			t.Fatalf("%s not found", tt.fnName)
+		}
+		next := strings.Index(body[start+1:], "\nfunc ")
+		if next < 0 {
+			t.Fatalf("%s body end not found", tt.fnName)
+		}
+		fn := body[start : start+1+next]
+		for _, want := range tt.wants {
+			if !strings.Contains(fn, want) {
+				t.Fatalf("%s policy lookup missing %q: %s", tt.name, want, fn)
+			}
+		}
+	}
+}
+
+func TestAccessScopeAssetGroupPoliciesResolveHostMetadataAndTags(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) hostIDsForAssetGroupPolicies")
+	if start < 0 {
+		t.Fatal("hostIDsForAssetGroupPolicies not found")
+	}
+	end := strings.Index(body[start:], "func parseAssetGroupRef")
+	if end < 0 {
+		t.Fatal("hostIDsForAssetGroupPolicies end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"SELECT id FROM hosts",
+		"parseAssetGroupRef(ref)",
+		"case \"owner\":",
+		"WHERE owner=$1",
+		"case \"team\":",
+		"WHERE team=$1",
+		"case \"environment\":",
+		"WHERE environment=$1",
+		"case \"criticality\":",
+		"WHERE criticality=$1",
+		"case \"tag\":",
+		"tags ->> $1 = $2",
+		"appendUnique(hostIDs, id)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("asset-group scope expansion missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestAccessPolicyExportPermissionMigration(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/018_access_policy_export_permission.sql")
 	if err != nil {

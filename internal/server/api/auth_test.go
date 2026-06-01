@@ -4648,6 +4648,77 @@ func TestFilterEndpointsApplyRBACScope(t *testing.T) {
 	}
 }
 
+func TestInventoryAndScanEndpointsApplyRBACScope(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	tests := []struct {
+		name   string
+		fnName string
+		wants  []string
+	}{
+		{
+			name:   "packages",
+			fnName: "handleSearchPackages",
+			wants: []string{
+				"scope := s.accessScope(r)",
+				"scope.Empty()",
+				`http.Error(w, "forbidden", http.StatusForbidden)`,
+				"HostIDs:    scope.HostIDs",
+			},
+		},
+		{
+			name:   "containers",
+			fnName: "handleSearchContainers",
+			wants: []string{
+				"scope := s.accessScope(r)",
+				"scope.Empty()",
+				`http.Error(w, "forbidden", http.StatusForbidden)`,
+				"HostIDs:    scope.HostIDs",
+			},
+		},
+		{
+			name:   "scans",
+			fnName: "handleListScans",
+			wants: []string{
+				"scope := s.accessScope(r)",
+				"scope.Empty()",
+				`http.Error(w, "forbidden", http.StatusForbidden)`,
+				"ListScans(ctx, hostID, scope.HostIDs",
+			},
+		},
+		{
+			name:   "scan requests",
+			fnName: "handleListScanRequests",
+			wants: []string{
+				"scope := s.accessScope(r)",
+				"scope.Empty()",
+				`http.Error(w, "forbidden", http.StatusForbidden)`,
+				"scope.HostIDs",
+				"ListScanRequests(",
+			},
+		},
+	}
+	for _, tt := range tests {
+		start := strings.Index(body, "func (s *Server) "+tt.fnName)
+		if start < 0 {
+			t.Fatalf("%s handler not found", tt.fnName)
+		}
+		next := strings.Index(body[start+1:], "\nfunc ")
+		if next < 0 {
+			t.Fatalf("%s body end not found", tt.fnName)
+		}
+		fn := body[start : start+1+next]
+		for _, want := range tt.wants {
+			if !strings.Contains(fn, want) {
+				t.Fatalf("%s endpoint must apply RBAC scope, missing %q: %s", tt.name, want, fn)
+			}
+		}
+	}
+}
+
 func TestWriteVulnerabilityCSV(t *testing.T) {
 	var b strings.Builder
 	err := writeVulnerabilityCSV(&b, []models.Vulnerability{{
