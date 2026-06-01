@@ -647,9 +647,11 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scanStatus := reportScanStatus(skippedVulns, len(ingestErrors))
-	if err := s.db.CompleteScan(ctx, report.ScanID, scanStatus); err != nil {
+	errorSummary := scanErrorSummary(ingestErrors)
+	if err := s.db.CompleteScan(ctx, report.ScanID, scanStatus, errorSummary); err != nil {
 		log.Printf("complete scan: %v", err)
 		ingestErrors = append(ingestErrors, "complete_scan: "+err.Error())
+		errorSummary = scanErrorSummary(ingestErrors)
 	}
 	sevCounts, vulnTotal, err := s.db.GetVulnCountsByScan(ctx, report.ScanID)
 	if err != nil {
@@ -675,6 +677,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"processes":        len(report.Processes),
 		"ports":            len(report.Ports),
 		"scan_status":      scanStatus,
+		"error_summary":    errorSummary,
 		"ingest_errors":    ingestErrors,
 	})
 	if s.notifier.ShouldSendScan(sevCounts, riskCounts, inventoryStatus) {
@@ -686,6 +689,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		"scan_id":            report.ScanID,
 		"scan_status":        scanStatus,
 		"inventory_status":   inventoryStatus,
+		"error_summary":      errorSummary,
 		"ingest_error_count": len(ingestErrors),
 		"skipped_vuln_count": skippedVulns,
 	})
@@ -807,6 +811,18 @@ func reportScanStatus(skippedVulns, ingestErrorCount int) string {
 	return "completed"
 }
 
+func scanErrorSummary(errors []string) string {
+	if len(errors) == 0 {
+		return ""
+	}
+	const maxSummaryBytes = 512
+	summary := fmt.Sprintf("%d error(s): %s", len(errors), strings.Join(errors, "; "))
+	if len(summary) > maxSummaryBytes {
+		return truncateValidUTF8(summary, maxSummaryBytes) + "...(truncated)"
+	}
+	return summary
+}
+
 func reportInventoryStatus(packageCount int, scanStatus string) string {
 	if packageCount == 0 {
 		return "empty"
@@ -833,6 +849,7 @@ func reportWebhookPayload(report *models.ScanReport, scanStatus, inventoryStatus
 		"vulnerabilities":   vulnTotal,
 		"vulns_inserted":    insertedVulns,
 		"vulns_skipped":     skippedVulns,
+		"error_summary":     scanErrorSummary(ingestErrors),
 		"ingest_errors":     ingestErrors,
 		"severity_counts":   sevCounts,
 		"risk_level_counts": riskCounts,

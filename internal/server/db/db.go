@@ -333,15 +333,15 @@ func (db *DB) CreateScan(ctx context.Context, s *models.Scan) error {
 	return err
 }
 
-func (db *DB) CompleteScan(ctx context.Context, id, status string) error {
+func (db *DB) CompleteScan(ctx context.Context, id, status, errorSummary string) error {
 	if status == "" {
 		status = "completed"
 	}
 	if status != "completed" && status != "degraded" {
 		return fmt.Errorf("invalid scan status: %s", status)
 	}
-	q := `UPDATE scans SET status=$2, finished_at=now() WHERE id=$1`
-	_, err := db.ExecContext(ctx, q, id, status)
+	q := `UPDATE scans SET status=$2, error_summary=$3, finished_at=now() WHERE id=$1`
+	_, err := db.ExecContext(ctx, q, id, status, errorSummary)
 	return err
 }
 
@@ -1223,7 +1223,7 @@ func (db *DB) ListScans(ctx context.Context, hostID string, hostIDs []string, li
 
 	dataQ := fmt.Sprintf(`
 WITH page_scans AS (
-	SELECT id, host_id, scan_type, status, started_at, finished_at, created_at
+	SELECT id, host_id, scan_type, status, error_summary, started_at, finished_at, created_at
 	FROM scans
 	%s
 	ORDER BY created_at DESC
@@ -1237,7 +1237,7 @@ scan_prev AS (
 	FROM page_scans s
 )
 SELECT
-	s.id, s.host_id, s.scan_type, s.status,
+	s.id, s.host_id, s.scan_type, s.status, s.error_summary,
 	(SELECT count(*) FROM packages p WHERE p.scan_id=s.id)::int AS package_count,
 	(SELECT count(*) FROM vulnerabilities v WHERE v.scan_id=s.id)::int AS vulnerability_count,
 	(SELECT count(*) FROM container_assets c WHERE c.scan_id=s.id)::int AS container_count,
@@ -1274,7 +1274,7 @@ ORDER BY s.created_at DESC`, baseWhere, n, n+1, packageIdentitySQL("cp", "pp"), 
 	var scans []models.Scan
 	for rows.Next() {
 		var s models.Scan
-		if err := rows.Scan(&s.ID, &s.HostID, &s.ScanType, &s.Status, &s.PackageCount, &s.VulnCount, &s.ContainerCount, &s.PackagesAdded, &s.PackagesRemoved, &s.PackagesChanged, &s.StartedAt, &s.FinishedAt, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.HostID, &s.ScanType, &s.Status, &s.ErrorSummary, &s.PackageCount, &s.VulnCount, &s.ContainerCount, &s.PackagesAdded, &s.PackagesRemoved, &s.PackagesChanged, &s.StartedAt, &s.FinishedAt, &s.CreatedAt); err != nil {
 			return nil, 0, err
 		}
 		scans = append(scans, s)

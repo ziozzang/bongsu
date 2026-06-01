@@ -2845,7 +2845,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
         {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
           <table>
             <thead>
-              <tr><th>Date</th><th>Host</th><th>Type</th><th>Status</th><th>Inventory</th><th>Delta</th><th>Started</th><th>Finished</th><th></th></tr>
+              <tr><th>Date</th><th>Host</th><th>Type</th><th>Status</th><th>Issue</th><th>Inventory</th><th>Delta</th><th>Started</th><th>Finished</th><th></th></tr>
             </thead>
             <tbody>
               {scans.map(s => (
@@ -2854,6 +2854,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
                   <td><span className="host-link" title={`IP: ${hostIPMap[s.host_id] || ''}`}>{hostMap[s.host_id] || s.host_id}</span></td>
                   <td>{s.scan_type}</td>
                   <td style={{ color: statusColor(s.status), fontWeight: 600 }}>{s.status}</td>
+                  <td className="path-cell" style={{ maxWidth: '18rem' }}>{s.error_summary || '-'}{s.error_summary && <span className="path-tip">{s.error_summary}</span>}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{s.package_count || 0} pkgs / {s.vulnerability_count || 0} vulns / {s.container_count || 0} ctrs</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>+{s.packages_added || 0} / -{s.packages_removed || 0} / ~{s.packages_changed || 0}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{s.started_at ? new Date(s.started_at).toLocaleString() : '-'}</td>
@@ -2870,7 +2871,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
                   }}>Delete</button></td>
                 </tr>
               ))}
-              {scans.length === 0 && <tr><td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scans recorded</td></tr>}
+              {scans.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scans recorded</td></tr>}
             </tbody>
           </table>
         )}

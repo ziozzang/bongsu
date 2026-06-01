@@ -765,6 +765,31 @@ func TestScanRequestSecurityDBRevisionMigration(t *testing.T) {
 	}
 }
 
+func TestScanErrorSummaryIsStoredAndListed(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"CompleteScan(ctx context.Context, id, status, errorSummary string)",
+		"UPDATE scans SET status=$2, error_summary=$3",
+		"SELECT id, host_id, scan_type, status, error_summary",
+		"&s.ErrorSummary",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("scan error summary persistence missing %q", want)
+		}
+	}
+	migration, err := os.ReadFile("../../../migrations/021_scan_error_summary.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(migration), "ADD COLUMN IF NOT EXISTS error_summary TEXT NOT NULL DEFAULT ''") {
+		t.Fatalf("scan error summary migration missing column: %s", migration)
+	}
+}
+
 func TestStaleSecurityDBRequeueCancelsDuplicateClaimedRequests(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {

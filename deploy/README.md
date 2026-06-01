@@ -259,7 +259,7 @@ spec:
 | `GET` | `/api/packages/filters` | List package filter options scoped to the caller's latest-scan RBAC visibility |
 | `GET` | `/api/packages/{id}/vulnerabilities` | Latest-scan active package vulnerability details |
 | `GET` | `/api/containers` | List latest container/image assets with host-scoped RBAC |
-| `GET` | `/api/scans` | Scan history with inventory counts and package delta |
+| `GET` | `/api/scans` | Scan history with inventory counts, package delta, and degraded scan error summaries |
 | `DELETE` | `/api/scans/{id}` | Delete scan and associated data |
 | `POST` | `/api/admin/trivy-db` | Upload trivy-db (air-gapped update) |
 | `POST` | `/api/admin/security-db/update` | Run configured source sync command |

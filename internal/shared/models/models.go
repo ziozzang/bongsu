@@ -34,6 +34,7 @@ type Scan struct {
 	HostID          string     `json:"host_id"`
 	ScanType        string     `json:"scan_type"` // "daily", "manual"
 	Status          string     `json:"status"`    // "running", "completed", "degraded", "failed"
+	ErrorSummary    string     `json:"error_summary,omitempty"`
 	PackageCount    int        `json:"package_count,omitempty"`
 	VulnCount       int        `json:"vulnerability_count,omitempty"`
 	ContainerCount  int        `json:"container_count,omitempty"`

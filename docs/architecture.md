@@ -84,7 +84,7 @@ Running container metadata is stored separately from package rows in `container_
 
 ## Scan Inventory Drift
 
-`/api/scans` includes package, vulnerability, and container counts for each scan plus package inventory delta against the previous completed or degraded scan for the same host. Delta identity uses asset/source/container/package metadata without the version field, so version movement is reported as `packages_changed`, while new or missing identities are reported as added/removed. The Scan History dashboard exposes these counters to help operators spot broken collectors, unexpected package churn, or container image drift.
+`/api/scans` includes package, vulnerability, and container counts for each scan plus package inventory delta against the previous completed or degraded scan for the same host. Delta identity uses asset/source/container/package metadata without the version field, so version movement is reported as `packages_changed`, while new or missing identities are reported as added/removed. Degraded scans persist a bounded `error_summary` derived from agent collection and ingest errors, and the Scan History dashboard exposes it beside scan status so operators can spot broken collectors, unexpected package churn, container image drift, or partial persistence failures without pivoting into audit logs first.
 
 ## Asset Metadata
 

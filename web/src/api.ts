@@ -355,6 +355,7 @@ export interface Scan {
   host_id: string;
   scan_type: string;
   status: string;
+  error_summary?: string;
   package_count?: number;
   vulnerability_count?: number;
   container_count?: number;

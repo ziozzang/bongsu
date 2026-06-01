@@ -3043,6 +3043,40 @@ func TestCreateScanRequestValidatesTargetHost(t *testing.T) {
 	}
 }
 
+func TestScanHistoryExposesIngestErrorSummary(t *testing.T) {
+	apiOut, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	typeOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiBody := string(apiOut)
+	appBody := string(appOut)
+	typeBody := string(typeOut)
+	for _, want := range []string{
+		"scanErrorSummary(ingestErrors)",
+		"CompleteScan(ctx, report.ScanID, scanStatus, errorSummary)",
+		`"error_summary":    errorSummary`,
+		`"error_summary":      errorSummary`,
+		"truncateValidUTF8(summary, maxSummaryBytes)",
+	} {
+		if !strings.Contains(apiBody, want) {
+			t.Fatalf("scan ingest error summary API missing %q", want)
+		}
+	}
+	for _, want := range []string{"error_summary?: string", "Issue", "s.error_summary", "colSpan={10}"} {
+		if !strings.Contains(typeBody, want) && !strings.Contains(appBody, want) {
+			t.Fatalf("scan ingest error summary UI/type missing %q", want)
+		}
+	}
+}
+
 func TestAgentScanRequestCompletionRequiresClaimedHost(t *testing.T) {
 	out, err := os.ReadFile("api.go")
 	if err != nil {
