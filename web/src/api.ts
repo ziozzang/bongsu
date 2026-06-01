@@ -334,6 +334,20 @@ export interface HealthStatus {
       errors?: string[];
     };
   };
+  cve_db_rematch?: {
+    last_result?: {
+      status: string;
+      finished_at?: string;
+      matched?: number;
+      new_vulns?: number;
+      skipped?: number;
+      scanned_candidates?: number;
+      candidate_limit?: number;
+      limited?: boolean;
+      security_db_revision?: string;
+      security_db_revision_error?: string;
+    };
+  };
   security_db?: {
     configured: boolean;
     running: boolean;

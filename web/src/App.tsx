@@ -440,7 +440,9 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       ? 'var(--medium)'
       : 'var(--low)';
   const lastRecalc = health?.security_recalculation?.last_result;
+  const lastManualRematch = health?.cve_db_rematch?.last_result;
   const lastRecalcLimited = !!lastRecalc?.rematch_limited;
+  const lastManualRematchLimited = !!lastManualRematch?.limited;
   const lastRecalcColor = lastRecalc?.status === 'error'
     ? 'var(--critical)'
     : lastRecalcLimited
@@ -451,6 +453,13 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const lastRecalcTitle = lastRecalcLimited
     ? `Rematch hit candidate limit ${lastRecalc?.rematch_candidate_limit || 0}`
     : lastRecalc?.errors?.length ? lastRecalc.errors.join('\n') : lastRecalc?.reason || '';
+  const lastManualRematchColor = lastManualRematch?.status === 'error'
+    ? 'var(--critical)'
+    : lastManualRematchLimited
+      ? 'var(--high)'
+      : lastManualRematch?.status === 'ok'
+        ? 'var(--low)'
+        : 'var(--medium)';
   const triageActiveCounts = stats?.triage_active_counts || {};
   const triageExpiringSoonCounts = stats?.triage_expiring_soon_counts || {};
   const suppressedTriageCount = ['accepted_risk', 'false_positive', 'fixed', 'ignored']
@@ -1007,6 +1016,16 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           </div>
         </div>
         <div className="stat-card">
+          <div className="accent-bar" style={{ background: lastManualRematchColor }} />
+          <div className="label">Manual Rematch</div>
+          <div className="value" style={{ color: lastManualRematchColor }}>{lastManualRematch?.status || '-'}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {lastManualRematch?.finished_at
+              ? `${(lastManualRematch.matched || 0).toLocaleString()} matches, ${(lastManualRematch.scanned_candidates || 0).toLocaleString()} scanned`
+              : 'no manual run yet'}
+          </div>
+        </div>
+        <div className="stat-card">
           <div className="accent-bar" style={{ background: cveFreshnessColor }} />
           <div className="label">CVE Source Alerts</div>
           <div className="value" style={{ color: cveFreshnessColor }}>{cveSourceAlertCount}</div>
@@ -1020,6 +1039,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {health?.security_db_revision_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB revision: {health.security_db_revision_error}</div>}
       {health?.security_db_freshness?.error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB freshness: {health.security_db_freshness.error}</div>}
       {lastRecalcLimited && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>CVE rematch hit candidate limit: {(lastRecalc?.rematch_candidates || 0).toLocaleString()} / {(lastRecalc?.rematch_candidate_limit || 0).toLocaleString()} matches, {(lastRecalc?.rematch_scanned_candidates || 0).toLocaleString()} raw candidates scanned</div>}
+      {lastManualRematchLimited && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>Manual CVE rematch hit candidate limit: {(lastManualRematch?.matched || 0).toLocaleString()} / {(lastManualRematch?.candidate_limit || 0).toLocaleString()} matches, {(lastManualRematch?.scanned_candidates || 0).toLocaleString()} raw candidates scanned</div>}
       {missingCveSources.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Missing CVE sources: {missingCveSources.join(', ')}</div>}
       {health?.security_db_freshness?.oldest_last_update && (
         <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>

@@ -2919,6 +2919,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"web_auth":               s.webAuth,
 		"security_recalculation": recalcStatus,
 	}
+	if last := s.cveDBRematchLastResult(r.Context(), isAdmin); last != nil {
+		resp["cve_db_rematch"] = map[string]any{"last_result": last}
+	}
 	if err := s.db.PingContext(r.Context()); err != nil {
 		resp["status"] = "degraded"
 		resp["db_error"] = "connection failed"
@@ -3109,6 +3112,16 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_candidates", nil, metricNumber(last["rematch_candidates"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_scanned_candidates", nil, metricNumber(last["rematch_scanned_candidates"]))
 		writePromGauge(&b, "bongsu_security_recalculation_last_rematch_candidate_limit", nil, metricNumber(last["rematch_candidate_limit"]))
+	}
+	if last := s.cveDBRematchLastResult(ctx, true); last != nil {
+		if ts, ok := last["finished_at_unix"].(float64); ok {
+			writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_timestamp_seconds", nil, ts)
+		}
+		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_limited", nil, boolMetric(last["limited"]))
+		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_matches", nil, metricNumber(last["matched"]))
+		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_scanned_candidates", nil, metricNumber(last["scanned_candidates"]))
+		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_candidate_limit", nil, metricNumber(last["candidate_limit"]))
+		writePromGauge(&b, "bongsu_cve_db_last_manual_rematch_new_vulns", nil, metricNumber(last["new_vulns"]))
 	}
 	if s.dbMgr != nil && s.dbMgr.IsReady() {
 		writePromGauge(&b, "bongsu_trivy_db_ready", nil, 1)
@@ -3415,6 +3428,63 @@ func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDet
 	if includeDetails {
 		if errors, ok := meta["errors"]; ok {
 			out["errors"] = errors
+		}
+	}
+	return out
+}
+
+func (s *Server) cveDBRematchLastResult(ctx context.Context, includeDetails bool) map[string]any {
+	if s.db == nil {
+		return nil
+	}
+	item, err := s.db.GetLatestAuditLog(ctx, db.AuditLogFilter{
+		Action:       "cve_db.rematch",
+		ResourceType: "cve_db",
+		ResourceID:   "all",
+	}, []string{"started", "queued"})
+	if err != nil {
+		if includeDetails {
+			return map[string]any{"status": "error", "error": err.Error()}
+		}
+		return nil
+	}
+	if item == nil {
+		return nil
+	}
+	meta := map[string]any{}
+	if len(item.Metadata) > 0 {
+		_ = json.Unmarshal(item.Metadata, &meta)
+	}
+	out := map[string]any{
+		"status":           item.Status,
+		"finished_at":      item.CreatedAt.Format(time.RFC3339),
+		"finished_at_unix": float64(item.CreatedAt.Unix()),
+	}
+	for _, key := range []string{
+		"matched",
+		"new_vulns",
+		"skipped",
+		"scanned_candidates",
+		"candidate_limit",
+		"limited",
+		"security_db_revision",
+	} {
+		if v, ok := meta[key]; ok {
+			out[key] = v
+		}
+	}
+	if includeDetails {
+		if sources, ok := meta["sources"]; ok {
+			out["sources"] = sources
+		}
+		if minQuality, ok := meta["min_source_matchable_percent"]; ok {
+			out["min_source_matchable_percent"] = minQuality
+		}
+		if scanID, ok := meta["scan_id"]; ok {
+			out["scan_id"] = scanID
+		}
+		if errMsg, _ := meta["security_db_revision_error"].(string); errMsg != "" {
+			out["security_db_revision_error"] = errMsg
 		}
 	}
 	return out
