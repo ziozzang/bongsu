@@ -1294,6 +1294,15 @@ func TestAgentVersionDriftCountsClassifyFleet(t *testing.T) {
 	if got["current"] != 0 || got["outdated"] != 1 || got["unknown"] != 0 {
 		t.Fatalf("missing latest version should classify known agents as outdated: %#v", got)
 	}
+	if got := agentVersionState("", "1.0.0"); got != "unknown" {
+		t.Fatalf("empty version state = %q", got)
+	}
+	if got := agentVersionState("1.0.0", "1.0.0"); got != "current" {
+		t.Fatalf("current version state = %q", got)
+	}
+	if got := agentVersionState("0.9.0", "1.0.0"); got != "outdated" {
+		t.Fatalf("outdated version state = %q", got)
+	}
 }
 
 func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
@@ -3501,6 +3510,8 @@ func TestStatsExposeActiveFindingCounts(t *testing.T) {
 		"latest_agent_version",
 		"agent_version_drift_counts",
 		"agentVersionDriftCounts(agentVersionCounts",
+		"agent_version_state",
+		"agentVersionState(h.AgentVersion, latestAgentVersion)",
 		"inventory_status_counts",
 		`if summary.ScanID != ""`,
 		"inventory_coverage_percent",
@@ -3532,10 +3543,12 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"onOpenScanRequests",
 		"onOpenHosts",
 		"type HostFilters",
+		"agent_version_state?: string",
 		"setHostFilters(filters)",
 		"initialFilters={hostFilters}",
 		"initialFilters.agent_status || ''",
 		"initialFilters.inventory_status || ''",
+		"initialFilters.agent_version_state || ''",
 		"openCurrentDBRescans",
 		"setScanRequestFilters(filters)",
 		"initialRequestFilters={scanRequestFilters}",
@@ -3562,6 +3575,9 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"stats.inventory_latest_packages",
 		"agent_status: 'offline'",
 		"agent_status: 'stale'",
+		"agent_version_state: 'outdated'",
+		"All Agent Versions",
+		"Outdated Agent",
 		"inventory_status: 'healthy'",
 		"inventory_status: 'degraded'",
 		"inventory_status: 'stale'",
@@ -4349,6 +4365,7 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"reference_keys",
 		"searchReferenceGroup",
 		"Group Context",
+		"source_groups",
 		"cveDbReferenceGroup",
 		"CveReferenceGroupSummary",
 	} {

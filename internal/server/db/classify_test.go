@@ -991,6 +991,7 @@ func TestCveReferenceGroupSummaryUsesSameCanonicalFilter(t *testing.T) {
 		"summary.Sources",
 		"summary.Categories",
 		"summary.Ecosystems",
+		"summary.SourceGroups",
 		"summary.ReferenceKeys",
 		"summary.Items",
 	} {
@@ -1002,6 +1003,7 @@ func TestCveReferenceGroupSummaryUsesSameCanonicalFilter(t *testing.T) {
 		"type CveReferenceGroupSummary struct",
 		"type CveReferenceGroupBucket struct",
 		`json:"reference_keys"`,
+		`json:"source_groups"`,
 		`json:"matchable"`,
 	} {
 		if !strings.Contains(body, want) {

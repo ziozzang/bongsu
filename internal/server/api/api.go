@@ -890,6 +890,8 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 	scope := s.accessScope(r)
 	statusFilter := r.URL.Query().Get("agent_status")
 	inventoryStatusFilter := r.URL.Query().Get("inventory_status")
+	agentVersionStateFilter := r.URL.Query().Get("agent_version_state")
+	latestAgentVersion := binaryVersion(agentBinaryPath())
 	inventoryStaleAfter := time.Duration(envInt("BONGSU_INVENTORY_STALE_HOURS", 48)) * time.Hour
 	hosts, err := s.db.ListHosts(ctx)
 	if err != nil {
@@ -929,6 +931,9 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		}
 		applyAgentStatus(&h, now)
 		if statusFilter != "" && h.AgentStatus != statusFilter {
+			continue
+		}
+		if agentVersionStateFilter != "" && agentVersionState(h.AgentVersion, latestAgentVersion) != agentVersionStateFilter {
 			continue
 		}
 		item := hostWithVulns{Host: h, VulnCounts: vulnCounts[h.ID], ActiveVulnCounts: activeVulnCounts[h.ID], LatestInventory: inventory[h.ID]}
@@ -2417,18 +2422,21 @@ func agentVersionDriftCounts(versionCounts map[string]int, latestVersion string)
 	out := map[string]int{"current": 0, "outdated": 0, "unknown": 0}
 	latestVersion = strings.TrimSpace(latestVersion)
 	for version, count := range versionCounts {
-		version = strings.TrimSpace(version)
-		if version == "" || version == "unknown" {
-			out["unknown"] += count
-			continue
-		}
-		if latestVersion != "" && version == latestVersion {
-			out["current"] += count
-		} else {
-			out["outdated"] += count
-		}
+		out[agentVersionState(version, latestVersion)] += count
 	}
 	return out
+}
+
+func agentVersionState(version, latestVersion string) string {
+	version = strings.TrimSpace(version)
+	latestVersion = strings.TrimSpace(latestVersion)
+	if version == "" || version == "unknown" {
+		return "unknown"
+	}
+	if latestVersion != "" && version == latestVersion {
+		return "current"
+	}
+	return "outdated"
 }
 
 func fileSHA256Hex(f *os.File) (string, error) {

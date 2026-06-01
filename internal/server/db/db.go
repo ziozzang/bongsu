@@ -4261,6 +4261,9 @@ func (db *DB) GetCveReferenceGroupSummary(ctx context.Context, key string, limit
 	if summary.Ecosystems, err = db.cveReferenceGroupBuckets(ctx, "COALESCE(NULLIF(ecosystem, ''), '(unknown)')", baseQ, args); err != nil {
 		return summary, err
 	}
+	if summary.SourceGroups, err = db.cveReferenceGroupBuckets(ctx, "COALESCE(NULLIF(source, ''), '(unknown)') || ' / ' || COALESCE(NULLIF(category, ''), '(uncategorized)') || ' / ' || COALESCE(NULLIF(ecosystem, ''), '(unknown)')", baseQ, args); err != nil {
+		return summary, err
+	}
 	dataArgs := append([]any{}, args...)
 	dataArgs = append(dataArgs, limit)
 	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT %s %s ORDER BY cvss_score DESC NULLS LAST, updated_at DESC LIMIT $%d", CveCols, baseQ, len(dataArgs)), dataArgs...)
@@ -4847,6 +4850,7 @@ type CveReferenceGroupSummary struct {
 	Sources       []CveReferenceGroupBucket `json:"sources"`
 	Categories    []CveReferenceGroupBucket `json:"categories"`
 	Ecosystems    []CveReferenceGroupBucket `json:"ecosystems"`
+	SourceGroups  []CveReferenceGroupBucket `json:"source_groups"`
 	ReferenceKeys []string                  `json:"reference_keys"`
 	Items         []models.CveEntry         `json:"items"`
 }

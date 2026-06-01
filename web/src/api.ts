@@ -560,6 +560,7 @@ export interface CveReferenceGroupSummary {
   sources: CveReferenceGroupBucket[];
   categories: CveReferenceGroupBucket[];
   ecosystems: CveReferenceGroupBucket[];
+  source_groups: CveReferenceGroupBucket[];
   reference_keys: string[];
   items: CveDbEntry[];
 }
@@ -601,7 +602,7 @@ export interface InstallerStatus {
 }
 
 export const api = {
-  hosts: (params?: { agent_status?: string; inventory_status?: string }) => request<Host[]>('/hosts', params),
+  hosts: (params?: { agent_status?: string; inventory_status?: string; agent_version_state?: string }) => request<Host[]>('/hosts', params),
   host: (id: string) => request<Host>(`/hosts/${id}`),
   updateHostMetadata: (id: string, body: { owner?: string; team?: string; environment?: string; criticality?: string; tags?: string }) =>
     requestJSON<Host>(`/hosts/${id}/metadata`, body),

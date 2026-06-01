@@ -166,7 +166,7 @@ function parseCvssVector(vector: string) {
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
 type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
-type HostFilters = { agent_status?: string; inventory_status?: string };
+type HostFilters = { agent_status?: string; inventory_status?: string; agent_version_state?: string };
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard');
@@ -768,7 +768,15 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         <div className="stat-card">
           <div className="accent-bar" style={{ background: outdatedAgentCount || unknownAgentVersionCount ? 'var(--medium)' : 'var(--low)' }} />
           <div className="label">Agent Version Drift</div>
-          <div className="value" style={{ color: outdatedAgentCount ? 'var(--medium)' : 'var(--low)' }}>{outdatedAgentCount}</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => onOpenHosts({ agent_version_state: 'outdated' })}
+            style={{ color: outdatedAgentCount ? 'var(--medium)' : 'var(--low)', background: 'transparent', border: 0, padding: 0, cursor: 'pointer' }}
+            title="Open hosts running an older agent than the installer binary"
+          >
+            {outdatedAgentCount}
+          </button>
           <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
             current {currentAgentCount} / unknown {unknownAgentVersionCount}
           </div>
@@ -1312,13 +1320,14 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
   const [scanMsg, setScanMsg] = useState('');
   const [agentStatus, setAgentStatus] = useState(initialFilters.agent_status || '');
   const [inventoryStatus, setInventoryStatus] = useState(initialFilters.inventory_status || '');
-  const load = useCallback((status: string, inventory: string) => {
+  const [agentVersionState, setAgentVersionState] = useState(initialFilters.agent_version_state || '');
+  const load = useCallback((status: string, inventory: string, versionState: string) => {
     setLoading(true);
-    api.hosts({ ...(status ? { agent_status: status } : {}), ...(inventory ? { inventory_status: inventory } : {}) })
+    api.hosts({ ...(status ? { agent_status: status } : {}), ...(inventory ? { inventory_status: inventory } : {}), ...(versionState ? { agent_version_state: versionState } : {}) })
       .then(h => { setHosts(h || []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
-  useEffect(() => { load(agentStatus, inventoryStatus); }, [load, agentStatus, inventoryStatus]);
+  useEffect(() => { load(agentStatus, inventoryStatus, agentVersionState); }, [load, agentStatus, inventoryStatus, agentVersionState]);
 
   if (loading) return <div>Loading...</div>;
 
@@ -1359,6 +1368,12 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
             <option value="stale">Stale SBOM</option>
             <option value="empty">Empty SBOM</option>
             <option value="none">No Completed Scan</option>
+          </select>
+          <select value={agentVersionState} onChange={(e) => setAgentVersionState(e.target.value)}>
+            <option value="">All Agent Versions</option>
+            <option value="current">Current Agent</option>
+            <option value="outdated">Outdated Agent</option>
+            <option value="unknown">Unknown Version</option>
           </select>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             Agent status uses last_seen; inventory status uses latest completed or degraded scan
@@ -2982,6 +2997,13 @@ function CveSearchView() {
                                       <span key={b.name} className="badge">{b.name}: {b.count.toLocaleString()}</span>
                                     ))}
                                   </div>
+                                  {(groupSummary.data.source_groups || []).length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.375rem' }}>
+                                      {(groupSummary.data.source_groups || []).slice(0, 8).map(b => (
+                                        <span key={b.name} className="badge" style={{ color: '#22c55e' }}>{b.name}: {b.count.toLocaleString()}</span>
+                                      ))}
+                                    </div>
+                                  )}
                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
                                     {(groupSummary.data.categories || []).slice(0, 6).map(b => (
                                       <span key={b.name} className="badge" style={{ color: 'var(--text-muted)' }}>{b.name}: {b.count.toLocaleString()}</span>
