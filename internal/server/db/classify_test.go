@@ -2013,6 +2013,29 @@ func TestRejectTempCVEIdentifiersMigration(t *testing.T) {
 	}
 }
 
+func TestRejectPlaceholderCVEIdentifiersMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/041_reject_placeholder_cve_identifiers.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DELETE FROM cve_database",
+		"DELETE FROM cve_affected_packages",
+		"DELETE FROM cve_reference_keys",
+		"LIKE 'TEMP-%'",
+		"LIKE 'CVD-%'",
+		"LIKE '%CVD-%'",
+		"cve_database_no_temp_identifier_check",
+		"cve_affected_packages_no_temp_identifier_check",
+		"cve_reference_keys_no_temp_identifier_check",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("placeholder CVE identifier migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestCveAffectedPackageQualityConstraintsMigration(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/036_cve_affected_package_quality_constraints.sql")
 	if err != nil {
@@ -2458,6 +2481,7 @@ func TestCvePlaceholderStatsTrackInvalidAdvisoryRows(t *testing.T) {
 		"EmptyVulnerabilityIDs",
 		"EmptySources",
 		"LIKE 'TEMP-%'",
+		"LIKE 'CVD-%'",
 		"count(*) FILTER",
 	} {
 		if !strings.Contains(body, want) {

@@ -127,7 +127,7 @@ The dashboard shows CVE DB status on the first page. Treat that card as the oper
 
 - `status=ok` means no temporary placeholder IDs, no empty vulnerability IDs/sources, current affected-package and reference-key indexes, and enough local EPSS enrichment coverage.
 - `matchable` means the row has affected package name, ecosystem/package type, and package fixed-version evidence. A fixed version may come from a direct fixed field or a fixed event inside an affected range. Hash-only fixed evidence, such as git commit hashes, is not treated as a package version and is not eligible for rematch.
-- `TEMP-*` IDs are rejected during import and removed by migration. They are placeholders, not usable vulnerability identities.
+- `TEMP-*` and `CVD-*` IDs are rejected during import and removed by migration. They are placeholders, not usable vulnerability identities.
 - Priority-only feeds such as CISA KEV and FIRST EPSS enrich existing CVE rows but do not create package-name matches by themselves. EPSS is merged onto matching CVE rows as `epss_score` and `epss_percentile`.
 - Reference groups intentionally keep vendor/category context while grouping related advisories under canonical keys such as `cve:CVE-...`, so Debian/Ubuntu/RHEL/OSV/NVD evidence can be audited together without losing ecosystem boundaries.
 

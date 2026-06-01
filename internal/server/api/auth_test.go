@@ -4173,6 +4173,8 @@ func TestCveJSONLImportNormalizesEntryIdentity(t *testing.T) {
 		`{"vulnerability_id":" cga-2026-0002 ","source":"osv","severity":"high"}`,
 		`{"vulnerability_id":" TEMP-0000000-F7A20F ","source":"trivy","severity":"low"}`,
 		`{"id":"TEMP-NOTHEX","vulnerability_id":"CVE-2026-0003","source":"osv","severity":"high"}`,
+		`{"vulnerability_id":" CVD-0000000-F7A20F ","source":"trivy","severity":"low"}`,
+		`{"id":"CVD-NOTHEX","vulnerability_id":"CVE-2026-0004","source":"osv","severity":"high"}`,
 	}, "\n"))
 	count, err := (&Server{}).importCveJSONLWithUpsert(context.Background(), input, "", func(ctx context.Context, batch []models.CveEntry) (int, error) {
 		seen = append(seen, batch...)
@@ -4211,6 +4213,10 @@ func TestTemporaryCvePlaceholder(t *testing.T) {
 		{id: " temp-0841856-b18baf ", want: true},
 		{id: "TEMP-", want: false},
 		{id: "TEMP-NOTHEX", want: true},
+		{id: "CVD-0000000-F7A20F", want: true},
+		{id: " cvd-0841856-b18baf ", want: true},
+		{id: "CVD-", want: false},
+		{id: "CVD-NOTHEX", want: true},
 		{id: "CVE-2026-0001", want: false},
 	}
 	for _, tt := range tests {

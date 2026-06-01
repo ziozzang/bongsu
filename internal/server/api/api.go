@@ -5081,11 +5081,13 @@ func normalizeCveEntry(e *models.CveEntry) {
 
 func temporaryCvePlaceholder(id string) bool {
 	vulnID := strings.ToUpper(strings.TrimSpace(id))
-	if !strings.HasPrefix(vulnID, "TEMP-") {
-		return false
+	for _, prefix := range []string{"TEMP-", "CVD-"} {
+		if strings.HasPrefix(vulnID, prefix) {
+			rest := strings.TrimPrefix(vulnID, prefix)
+			return strings.TrimSpace(rest) != ""
+		}
 	}
-	rest := strings.TrimPrefix(vulnID, "TEMP-")
-	return strings.TrimSpace(rest) != ""
+	return false
 }
 
 func normalizeCveSource(source, fallback string) (string, error) {

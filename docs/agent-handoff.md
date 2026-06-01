@@ -15,7 +15,7 @@ This document is the handoff point for the next agent session. Continue from the
 - Docker Compose deployment must remain available for the management server.
 - Air-gapped deployment is required: update outside, export bundle, import inside.
 - CVE matching must use only matchable affected package evidence: package name, ecosystem/target such as `Packagist`, and fixed-version/range data. Name-only or priority-only records must remain searchable but must not create rematch/rescan findings.
-- `TEMP-*` and `CVD-*` placeholder vulnerabilities are invalid for the CVE DB and should not appear in `cve_database`, `cve_affected_packages`, or rematch candidates.
+- `TEMP-*` and `CVD-*` placeholder vulnerabilities are invalid for the CVE DB and should not appear in `cve_database`, `cve_affected_packages`, reference keys, or rematch candidates.
 - EPSS belongs on matching CVE/advisory rows as columns, not only as separate EPSS source records.
 
 ## Current Git State
@@ -153,7 +153,11 @@ select 'cve_database' as table_name, count(*) from cve_database
 where vulnerability_id like 'TEMP-%' or vulnerability_id like 'CVD-%'
 union all
 select 'cve_affected_packages', count(*) from cve_affected_packages
-where vulnerability_id like 'TEMP-%' or vulnerability_id like 'CVD-%';
+where vulnerability_id like 'TEMP-%' or vulnerability_id like 'CVD-%'
+union all
+select 'cve_reference_keys', count(*) from cve_reference_keys
+where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
+   or reference_key like '%TEMP-%' or reference_key like '%CVD-%';
 "
 ```
 
