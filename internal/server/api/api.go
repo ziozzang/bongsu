@@ -2591,17 +2591,18 @@ func (s *Server) handleRequeueStaleScanRequests(w http.ResponseWriter, r *http.R
 	if body.TimeoutMinutes <= 0 {
 		body.TimeoutMinutes = 60
 	}
-	count, err := s.db.RequeueStaleScanRequests(r.Context(), time.Duration(body.TimeoutMinutes)*time.Minute)
+	result, err := s.db.RequeueStaleScanRequests(r.Context(), time.Duration(body.TimeoutMinutes)*time.Minute)
 	if err != nil {
 		log.Printf("requeue stale scan requests: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
 	s.audit(r, "scan_request.requeue_stale", "scan_request", "stale_claims", "ok", map[string]any{
-		"timeout_minutes": body.TimeoutMinutes,
-		"requeued":        count,
+		"timeout_minutes":      body.TimeoutMinutes,
+		"requeued":             result.Requeued,
+		"cancelled_duplicates": result.CancelledDuplicates,
 	})
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "requeued": count, "timeout_minutes": body.TimeoutMinutes})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "requeued": result.Requeued, "cancelled_duplicates": result.CancelledDuplicates, "timeout_minutes": body.TimeoutMinutes})
 }
 
 func (s *Server) handleRequeueFilteredScanRequests(w http.ResponseWriter, r *http.Request) {
@@ -2745,17 +2746,18 @@ func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	timeoutMinutes := int(scanRequestClaimTimeoutSeconds() / 60)
-	req, requeued, err := s.db.ClaimScanRequest(r.Context(), hostID, time.Duration(timeoutMinutes)*time.Minute)
+	req, requeueResult, err := s.db.ClaimScanRequest(r.Context(), hostID, time.Duration(timeoutMinutes)*time.Minute)
 	if err != nil {
 		log.Printf("claim scan request: %v", err)
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
 	}
-	if requeued > 0 {
+	if requeueResult != nil && (requeueResult.Requeued > 0 || requeueResult.CancelledDuplicates > 0) {
 		s.audit(r, "scan_request.requeue_stale", "scan_request", "stale_claims", "ok", map[string]any{
-			"timeout_minutes": timeoutMinutes,
-			"requeued":        requeued,
-			"trigger":         "agent_claim",
+			"timeout_minutes":      timeoutMinutes,
+			"requeued":             requeueResult.Requeued,
+			"cancelled_duplicates": requeueResult.CancelledDuplicates,
+			"trigger":              "agent_claim",
 		})
 	}
 	if req == nil {

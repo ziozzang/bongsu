@@ -2712,7 +2712,8 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
     setRequestMsg('');
     try {
       const r = await api.requeueStaleScanRequests();
-      setRequestMsg(`Requeued ${r.requeued} stale claimed requests`);
+      const cancelled = r.cancelled_duplicates ? `; cancelled ${r.cancelled_duplicates} duplicate DB requests` : '';
+      setRequestMsg(`Requeued ${r.requeued} stale claimed requests${cancelled}`);
       loadRequests(requestStatus, requestType, requestRevision, requestStale);
     } catch {
       setRequestMsg('Requeue failed');

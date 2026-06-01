@@ -2959,6 +2959,25 @@ func TestRequeueFilteredScanRequestAPIRequiresSafeFilters(t *testing.T) {
 	}
 }
 
+func TestRequeueStaleScanRequestReportsDuplicateCleanup(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"func (s *Server) handleRequeueStaleScanRequests",
+		"result.CancelledDuplicates",
+		`"cancelled_duplicates"`,
+		"requeueResult.CancelledDuplicates",
+		`"trigger":              "agent_claim"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stale requeue duplicate cleanup reporting missing %q", want)
+		}
+	}
+}
+
 func TestNormalizeScanRequestCreateForcesPendingState(t *testing.T) {
 	claimedAt := time.Now()
 	completedAt := time.Now()

@@ -1313,6 +1313,11 @@ type SecurityDBRescanQueueResult struct {
 	AlreadyPending int
 }
 
+type StaleScanRequestRequeueResult struct {
+	Requeued            int
+	CancelledDuplicates int
+}
+
 func (db *DB) QueueSecurityDBRescans(ctx context.Context, requestedBy, reason, securityDBRevision string, lastSeenAfter time.Time) (*SecurityDBRescanQueueResult, error) {
 	q := `SELECT id FROM hosts`
 	args := []any{}
@@ -1547,56 +1552,64 @@ func (db *DB) CountSecurityDBRescanRequestsByStatus(ctx context.Context, hostIDs
 	return out, rows.Err()
 }
 
-func (db *DB) RequeueStaleScanRequests(ctx context.Context, timeout time.Duration) (int, error) {
+func (db *DB) RequeueStaleScanRequests(ctx context.Context, timeout time.Duration) (*StaleScanRequestRequeueResult, error) {
 	if timeout <= 0 {
 		timeout = time.Hour
 	}
 	cutoff := time.Now().Add(-timeout)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer tx.Rollback()
-	if err := cancelStaleSecurityDBDuplicates(ctx, tx, cutoff); err != nil {
-		return 0, err
+	result := &StaleScanRequestRequeueResult{}
+	cancelled, err := cancelStaleSecurityDBDuplicates(ctx, tx, cutoff)
+	if err != nil {
+		return result, err
 	}
+	result.CancelledDuplicates = cancelled
 	res, err := tx.ExecContext(ctx, `UPDATE scan_requests
 SET status='pending', claimed_at=NULL, claimed_by_host_id='', error_message='requeued after claim timeout'
 WHERE status='claimed' AND claimed_at < $1`, cutoff)
 	if err != nil {
-		return 0, err
+		return result, err
 	}
 	n, err := res.RowsAffected()
 	if err != nil {
-		return 0, err
+		return result, err
 	}
-	return int(n), tx.Commit()
+	result.Requeued = int(n)
+	return result, tx.Commit()
 }
 
-func (db *DB) ClaimScanRequest(ctx context.Context, hostID string, timeout time.Duration) (*models.ScanRequest, int, error) {
+func (db *DB) ClaimScanRequest(ctx context.Context, hostID string, timeout time.Duration) (*models.ScanRequest, *StaleScanRequestRequeueResult, error) {
 	if timeout <= 0 {
 		timeout = time.Hour
 	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	defer tx.Rollback()
 
 	cutoff := time.Now().Add(-timeout)
-	if err := cancelStaleSecurityDBDuplicates(ctx, tx, cutoff); err != nil {
-		return nil, 0, err
+	result := &StaleScanRequestRequeueResult{}
+	cancelled, err := cancelStaleSecurityDBDuplicates(ctx, tx, cutoff)
+	if err != nil {
+		return nil, result, err
 	}
+	result.CancelledDuplicates = cancelled
 	requeued, err := tx.ExecContext(ctx, `UPDATE scan_requests
 SET status='pending', claimed_at=NULL, claimed_by_host_id='', error_message='requeued after claim timeout'
 WHERE status='claimed' AND claimed_at < $1`, cutoff)
 	if err != nil {
-		return nil, 0, err
+		return nil, result, err
 	}
 	requeuedCount, err := requeued.RowsAffected()
 	if err != nil {
-		return nil, 0, err
+		return nil, result, err
 	}
+	result.Requeued = int(requeuedCount)
 
 	q := `UPDATE scan_requests
 SET status='claimed', claimed_at=now(), claimed_by_host_id=$1, error_message=''
@@ -1611,16 +1624,16 @@ RETURNING id, host_id, requested_by, scan_type, packages_only, reason, security_
 	var r models.ScanRequest
 	err = tx.QueryRowContext(ctx, q, hostID).Scan(&r.ID, &r.HostID, &r.RequestedBy, &r.ScanType, &r.PackagesOnly, &r.Reason, &r.SecurityDBRevision, &r.Status, &r.ErrorMessage, &r.ClaimedByHostID, &r.ClaimedAt, &r.CompletedAt, &r.CreatedAt)
 	if err == sql.ErrNoRows {
-		return nil, int(requeuedCount), tx.Commit()
+		return nil, result, tx.Commit()
 	}
 	if err != nil {
-		return nil, int(requeuedCount), err
+		return nil, result, err
 	}
-	return &r, int(requeuedCount), tx.Commit()
+	return &r, result, tx.Commit()
 }
 
-func cancelStaleSecurityDBDuplicates(ctx context.Context, tx *sql.Tx, cutoff time.Time) error {
-	_, err := tx.ExecContext(ctx, `WITH stale AS (
+func cancelStaleSecurityDBDuplicates(ctx context.Context, tx *sql.Tx, cutoff time.Time) (int, error) {
+	res, err := tx.ExecContext(ctx, `WITH stale AS (
 	SELECT
 		sr.id,
 		row_number() OVER (PARTITION BY sr.host_id ORDER BY sr.claimed_at DESC, sr.created_at DESC, sr.id DESC) AS rn,
@@ -1643,7 +1656,11 @@ SET status='cancelled',
 FROM stale
 WHERE sr.id=stale.id
   AND (stale.has_pending OR stale.rn > 1)`, cutoff)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
 }
 
 func (db *DB) CompleteScanRequest(ctx context.Context, id, status, message string) error {

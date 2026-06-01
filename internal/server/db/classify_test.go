@@ -806,10 +806,20 @@ func TestStaleSecurityDBRequeueCancelsDuplicateClaimedRequests(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
+		"type StaleScanRequestRequeueResult struct",
+		"CancelledDuplicates int",
+		"result.CancelledDuplicates = cancelled",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stale requeue accounting missing %q", want)
+		}
+	}
+	for _, want := range []string{
 		"row_number() OVER (PARTITION BY sr.host_id",
 		"has_pending",
 		"stale.rn > 1",
 		"pending.status='pending'",
+		"RowsAffected()",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("stale security-db duplicate cleanup missing %q: %s", want, fn)

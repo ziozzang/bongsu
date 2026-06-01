@@ -502,7 +502,7 @@ export const api = {
   requeueFilteredScanRequests: (body: { host_id?: string; status?: string; scan_type?: string; security_db_revision?: string; message?: string }) =>
     requestJSON<{ status: string; requeued: number }>('/scan-requests/requeue-filtered', body),
   requeueStaleScanRequests: (body?: { timeout_minutes?: number }) =>
-    requestJSON<{ status: string; requeued: number; timeout_minutes: number }>('/scan-requests/requeue-stale', body || {}),
+    requestJSON<{ status: string; requeued: number; cancelled_duplicates: number; timeout_minutes: number }>('/scan-requests/requeue-stale', body || {}),
   stats: () => request<Stats>('/stats'),
   rawHealth: () => request<HealthStatus>('/health'),
   deleteScan: (id: string, force = false) => request<{status: string}>(`/scans/${id}`, force ? { force: 'true' } : undefined, 'DELETE'),
