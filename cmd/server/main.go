@@ -44,10 +44,15 @@ func main() {
 			log.Fatalf("run migrations: %v", err)
 		}
 		log.Println("Database migrations applied")
-		if n, err := database.EnsureCveAffectedPackages(ctx); err != nil {
+		indexCtx, indexCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS", 180))*time.Second)
+		if n, err := database.EnsureCveAffectedPackages(indexCtx); err != nil {
+			indexCancel()
 			log.Fatalf("prepare CVE affected package index: %v", err)
 		} else if n > 0 {
+			indexCancel()
 			log.Printf("Indexed %d CVE affected packages", n)
+		} else {
+			indexCancel()
 		}
 		go func() {
 			refCtx, refCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_CVE_REFERENCE_INDEX_TIMEOUT_SECONDS", 180))*time.Second)

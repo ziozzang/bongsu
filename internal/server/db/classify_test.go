@@ -2139,6 +2139,22 @@ func TestHashFixedAffectedPackageIndexRowsAreRemovedByMigration(t *testing.T) {
 	}
 }
 
+func TestAffectedPackageIndexRebuildMigrationForMatchabilityRuleChanges(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/029_rebuild_cve_affected_packages_after_matchability_change.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DELETE FROM cve_affected_packages",
+		"server rebuilds this index after migrations when it is empty",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("affected-package rebuild migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestCvePlaceholderStatsTrackInvalidAdvisoryRows(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
