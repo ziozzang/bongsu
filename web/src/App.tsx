@@ -326,6 +326,19 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     }).catch(() => {});
   }, [updating]);
   useEffect(() => {
+    if (!health?.cve_reference_index_rebuild?.running) return;
+    const timer = window.setInterval(() => {
+      api.rawHealth().then(h => {
+        setHealth(h);
+        setSecurityDbConfigured(!!h.security_db?.configured);
+        setCveAffectedIndex(h.cve_affected_package_index || null);
+        setCveDbQuality(h.cve_db_quality || null);
+      }).catch(() => {});
+      api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); setCveReferenceIndex(r.reference_key_index || null); setCveDbQuality(r.cve_db_quality || null); }).catch(() => {});
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [health?.cve_reference_index_rebuild?.running]);
+  useEffect(() => {
     api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); setCveReferenceIndex(r.reference_key_index || null); setCveDbQuality(r.cve_db_quality || null); }).catch(() => {});
     api.installerStatus().then(setInstallerStatus).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
@@ -409,6 +422,9 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         const duration = r.duration_ms ? ` in ${(r.duration_ms / 1000).toFixed(1)}s` : '';
         setUpdateMsg(`Reference key index rebuilt: ${(r.indexed || 0).toLocaleString()} keys${duration}`);
       }
+      if (r.reference_index_rebuild) {
+        setHealth(prev => ({ ...(prev || {} as HealthStatus), cve_reference_index_rebuild: r.reference_index_rebuild }));
+      }
       api.rawHealth().then(setHealth).catch(() => {});
       api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); setCveDbQuality(x.cve_db_quality || null); }).catch(() => {});
     } catch {
@@ -466,6 +482,16 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const cveAffectedIndexColor = cveAffectedIndexUnhealthy ? 'var(--high)' : cveAffectedIndexIndexedOnly ? 'var(--medium)' : 'var(--low)';
   const cveReferenceIndexUnhealthy = !!(!cveReferenceIndex || cveReferenceIndex.stale || (cveReferenceIndex.orphans || 0) > 0 || (cveReferenceIndex.coverage_percent ?? 0) < 90);
   const cveReferenceIndexColor = cveReferenceIndexUnhealthy ? 'var(--high)' : 'var(--low)';
+  const referenceRebuild = health?.cve_reference_index_rebuild;
+  const referenceRebuildLast = referenceRebuild?.last_result;
+  const referenceRebuildRunning = !!referenceRebuild?.running;
+  const referenceRebuildColor = referenceRebuildRunning
+    ? 'var(--medium)'
+    : referenceRebuildLast?.status === 'error'
+      ? 'var(--critical)'
+      : referenceRebuildLast?.status === 'ok'
+        ? 'var(--low)'
+        : 'var(--text-muted)';
   const cveQualityStatus = cveDbQuality?.status || 'pending';
   const cveQualityColor = cveQualityStatus === 'degraded'
     ? 'var(--critical)'
@@ -1191,6 +1217,20 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div className="value" style={{ color: cveReferenceIndexColor }}>{cveReferenceIndex?.stale ? 'stale' : `${(cveReferenceIndex?.coverage_percent ?? 0).toFixed(1)}%`}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             {(cveReferenceIndex?.count || 0).toLocaleString()} keys, {(cveReferenceIndex?.canonical_cves || 0).toLocaleString()} canonical CVEs
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: referenceRebuildColor }} />
+          <div className="label">Reference Rebuild</div>
+          <div className="value" style={{ color: referenceRebuildColor }}>
+            {referenceRebuildRunning ? 'running' : referenceRebuildLast?.status || 'idle'}
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {referenceRebuildRunning
+              ? `${Math.round((referenceRebuild?.duration_ms || 0) / 1000)}s elapsed`
+              : referenceRebuildLast?.finished_at
+                ? `${(referenceRebuildLast.indexed || 0).toLocaleString()} keys, ${(referenceRebuildLast.duration_ms || 0) > 0 ? `${((referenceRebuildLast.duration_ms || 0) / 1000).toFixed(1)}s` : 'duration pending'}`
+                : 'no recent rebuild'}
           </div>
         </div>
         <div className="stat-card">
