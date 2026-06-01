@@ -307,12 +307,13 @@ func GenerateSPDX(pkgs []models.Package, host models.Host) ([]byte, error) {
 	if scanID != "" {
 		namespaceID += "-" + sanitizeSPDXID(scanID)
 	}
+	namespaceSuffix := spdxDocumentNamespaceSuffix(host, pkgs)
 	doc := spdxDocument{
 		SPDXID:            docID,
 		SPDXVersion:       "SPDX-2.3",
 		Name:              docName,
 		DataLicense:       "CC0-1.0",
-		DocumentNamespace: fmt.Sprintf("https://bongsu.local/spdx/%s/%d", namespaceID, time.Now().UnixNano()),
+		DocumentNamespace: fmt.Sprintf("https://bongsu.local/spdx/%s/%s", namespaceID, namespaceSuffix),
 		CreationInfo: spdxCreationInfo{
 			Created:  now,
 			Creators: []string{"Tool: bongsu-0.1.0"},
@@ -395,6 +396,17 @@ func spdxPackageIdentity(pkg models.Package) []string {
 		pkg.Name, pkg.Version, pkg.Arch, pkg.PkgType, pkg.Ecosystem,
 		pkg.PURL, pkg.SrcName, pkg.FilePath, pkg.Target,
 	}
+}
+
+func spdxDocumentNamespaceSuffix(host models.Host, pkgs []models.Package) string {
+	parts := []string{host.ID, host.Hostname, host.OSName, host.OSVersion, latestScanID(pkgs)}
+	for _, pkg := range pkgs {
+		if pkg.Name == "" || pkg.Version == "" {
+			continue
+		}
+		parts = append(parts, spdxPackageIdentity(pkg)...)
+	}
+	return stableRef(strings.Join(parts, "\x00"))
 }
 
 func defaultSPDXName(primary, fallback string) string {

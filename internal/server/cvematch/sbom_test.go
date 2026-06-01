@@ -265,6 +265,55 @@ func TestSPDXPackageVerificationCodeIgnoresRowIDs(t *testing.T) {
 	}
 }
 
+func TestGenerateSPDXNamespaceIsStableForSameInventory(t *testing.T) {
+	host := models.Host{ID: "host-1", Hostname: "build-node-1", OSName: "Ubuntu", OSVersion: "24.04"}
+	pkgs := []models.Package{{
+		ID:        "pkg-1",
+		ScanID:    "scan-1",
+		HostID:    "host-1",
+		AssetType: "host",
+		AssetID:   "host-1",
+		Source:    "trivy",
+		Name:      "openssl",
+		Version:   "3.0.13",
+		Arch:      "amd64",
+		PkgType:   "deb",
+		Ecosystem: "Ubuntu",
+	}}
+
+	first, err := GenerateSPDX(pkgs, host)
+	if err != nil {
+		t.Fatalf("GenerateSPDX first: %v", err)
+	}
+	second, err := GenerateSPDX(pkgs, host)
+	if err != nil {
+		t.Fatalf("GenerateSPDX second: %v", err)
+	}
+	var firstDoc, secondDoc map[string]any
+	if err := json.Unmarshal(first, &firstDoc); err != nil {
+		t.Fatalf("unmarshal first spdx: %v", err)
+	}
+	if err := json.Unmarshal(second, &secondDoc); err != nil {
+		t.Fatalf("unmarshal second spdx: %v", err)
+	}
+	if firstDoc["documentNamespace"] != secondDoc["documentNamespace"] {
+		t.Fatalf("SPDX namespace must be stable for the same inventory: %v != %v", firstDoc["documentNamespace"], secondDoc["documentNamespace"])
+	}
+
+	pkgs[0].Version = "3.0.14"
+	changed, err := GenerateSPDX(pkgs, host)
+	if err != nil {
+		t.Fatalf("GenerateSPDX changed: %v", err)
+	}
+	var changedDoc map[string]any
+	if err := json.Unmarshal(changed, &changedDoc); err != nil {
+		t.Fatalf("unmarshal changed spdx: %v", err)
+	}
+	if changedDoc["documentNamespace"] == firstDoc["documentNamespace"] {
+		t.Fatal("SPDX namespace should change when package inventory changes")
+	}
+}
+
 func TestGenerateSPDXSanitizesDocumentIdentity(t *testing.T) {
 	host := models.Host{ID: "host/with spaces", Hostname: "build node/1", OSName: "Ubuntu"}
 	pkgs := []models.Package{{Name: "openssl", Version: "3.0.13", PkgType: "deb"}}
