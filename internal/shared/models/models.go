@@ -286,6 +286,7 @@ type CveEntry struct {
 	EPSSPercentile          float64    `json:"epss_percentile,omitempty"`
 	Matchable               bool       `json:"matchable"`
 	MatchableAffected       int        `json:"matchable_affected_count"`
+	MatchabilityReason      string     `json:"matchability_reason,omitempty"`
 	ReferenceGroupTotal     int        `json:"reference_group_total,omitempty"`
 	ReferenceGroupMatchable int        `json:"reference_group_matchable,omitempty"`
 	ReferenceGroupSources   int        `json:"reference_group_sources,omitempty"`

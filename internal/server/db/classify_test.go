@@ -972,6 +972,8 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 		"enrichCveReferenceGroupCounts",
 		"ReferenceGroupTotal",
 		"ReferenceGroupMatchable",
+		"MatchabilityReason",
+		"cveEntryMatchabilityReason",
 		"ReferenceGroupSources",
 		"ReferenceGroupStatus",
 		"context.WithTimeout",
@@ -1179,12 +1181,14 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 		ecosystem        string
 		want             bool
 		wantCount        int
+		wantReason       string
 	}{
 		{
 			name:             "package ecosystem fixed",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0.5.2"]}]`,
 			want:             true,
 			wantCount:        1,
+			wantReason:       "matchable",
 		},
 		{
 			name:             "cve ecosystem fixed",
@@ -1192,45 +1196,53 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 			ecosystem:        "Packagist",
 			want:             true,
 			wantCount:        1,
+			wantReason:       "matchable",
 		},
 		{
 			name:             "range fixed event",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","ranges":[{"events":[{"introduced":"0"},{"fixed":"0.5.2"}]}]}]`,
 			want:             true,
 			wantCount:        1,
+			wantReason:       "matchable",
 		},
 		{
 			name:             "multiple matchable affected packages",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0.5.2"]},{"name":"phenx/php-font-lib","ecosystem":"Packagist","ranges":[{"events":[{"fixed":"0.5.4"}]}]},{"name":"ignored","ecosystem":"Packagist"}]`,
 			want:             true,
 			wantCount:        2,
+			wantReason:       "matchable",
 		},
 		{
 			name:             "ambiguous multi fixed without ranges",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0.5.2","1.0.0"]}]`,
 			want:             false,
 			wantCount:        0,
+			wantReason:       "ambiguous fixed versions",
 		},
 		{
 			name:             "multi fixed with range fixed event",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0.5.2","1.0.0"],"ranges":[{"events":[{"introduced":"0"},{"fixed":"0.5.2"}]}]}]`,
 			want:             true,
 			wantCount:        1,
+			wantReason:       "matchable",
 		},
 		{
 			name:             "missing fixed",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist"}]`,
 			want:             false,
+			wantReason:       "missing fixed version",
 		},
 		{
 			name:             "missing ecosystem",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","fixed":["0.5.2"]}]`,
 			want:             false,
+			wantReason:       "missing ecosystem",
 		},
 		{
 			name:             "missing package name",
 			affectedProducts: `[{"ecosystem":"Packagist","fixed":["0.5.2"]}]`,
 			want:             false,
+			wantReason:       "missing package name",
 		},
 	}
 	for _, tt := range tests {
@@ -1240,6 +1252,9 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 			}
 			if got := cveEntryMatchableAffectedCount(tt.affectedProducts, tt.ecosystem); got != tt.wantCount {
 				t.Fatalf("matchable affected count=%v want %v", got, tt.wantCount)
+			}
+			if got := cveEntryMatchabilityReason(tt.affectedProducts, tt.ecosystem); got != tt.wantReason {
+				t.Fatalf("matchability reason=%q want %q", got, tt.wantReason)
 			}
 		})
 	}

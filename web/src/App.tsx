@@ -3052,6 +3052,11 @@ function CveSearchView() {
                             {entry.matchable_affected_count} affected
                           </div>
                         )}
+                        {!entry.matchable && entry.matchability_reason && (
+                          <div style={{ fontSize: '0.625rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                            {entry.matchability_reason}
+                          </div>
+                        )}
                       </td>
                       <td style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {entry.title || '-'}
@@ -3156,13 +3161,16 @@ function CveSearchView() {
                                         {(groupSummary.data.items || []).slice(0, 8).map(item => {
                                           const itemPriority = isPriorityFeed(item);
                                           return (
-                                            <div key={item.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(8rem, 1.4fr) minmax(6rem, 0.8fr) minmax(7rem, 1fr) minmax(6rem, 1fr) auto auto auto', gap: '0.5rem', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                            <div key={item.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(8rem, 1.4fr) minmax(6rem, 0.8fr) minmax(7rem, 1fr) minmax(6rem, 1fr) auto minmax(7rem, 1fr) auto auto', gap: '0.5rem', alignItems: 'center', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                                               <span className="mono" style={{ color: 'var(--text)' }}>{item.vulnerability_id}</span>
                                               <span>{item.source || '-'}</span>
                                               <span>{item.category || '-'}</span>
                                               <span className="mono">{item.ecosystem || '-'}</span>
                                               <span className="badge" style={{ color: item.matchable ? '#22c55e' : itemPriority ? 'var(--medium)' : 'var(--text-muted)' }}>
                                                 {item.matchable ? 'matchable' : itemPriority ? 'priority' : 'reference'}
+                                              </span>
+                                              <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {item.matchability_reason || ''}
                                               </span>
                                               <span className="mono" style={{ color: cvssClr(item.cvss_score), justifySelf: 'end' }}>
                                                 CVSS {item.cvss_score > 0 ? item.cvss_score.toFixed(1) : '-'}

@@ -607,6 +607,7 @@ export interface CveDbEntry {
   epss_percentile?: number;
   matchable?: boolean;
   matchable_affected_count?: number;
+  matchability_reason?: string;
   reference_group_total?: number;
   reference_group_matchable?: number;
   reference_group_sources?: number;

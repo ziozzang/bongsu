@@ -4395,6 +4395,7 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 		}
 		e.MatchableAffected = cveEntryMatchableAffectedCount(e.AffectedProducts, e.Ecosystem)
 		e.Matchable = e.MatchableAffected > 0
+		e.MatchabilityReason = cveEntryMatchabilityReason(e.AffectedProducts, e.Ecosystem)
 		e.ReferenceKeys = cveReferenceKeys(e)
 		entries = append(entries, e)
 	}
@@ -4531,6 +4532,7 @@ func (db *DB) GetCveReferenceGroupSummary(ctx context.Context, key string, limit
 		}
 		e.MatchableAffected = cveEntryMatchableAffectedCount(e.AffectedProducts, e.Ecosystem)
 		e.Matchable = e.MatchableAffected > 0
+		e.MatchabilityReason = cveEntryMatchabilityReason(e.AffectedProducts, e.Ecosystem)
 		e.ReferenceKeys = cveReferenceKeys(e)
 		for _, refKey := range e.ReferenceKeys {
 			summary.ReferenceKeys = appendUnique(summary.ReferenceKeys, refKey)
@@ -5580,6 +5582,57 @@ func cvePackageMatchablePredicateSQL(affectedProductsExpr, ecosystemExpr, packag
 
 func cveEntryHasMatchableAffectedProduct(affectedProducts, ecosystem string) bool {
 	return cveEntryMatchableAffectedCount(affectedProducts, ecosystem) > 0
+}
+
+func cveEntryMatchabilityReason(affectedProducts, ecosystem string) string {
+	var products []affectedProduct
+	if strings.TrimSpace(affectedProducts) == "" {
+		return "no affected packages"
+	}
+	if json.Unmarshal([]byte(affectedProducts), &products) != nil {
+		return "invalid affected_products"
+	}
+	if len(products) == 0 {
+		return "no affected packages"
+	}
+	cveEco := normalizeEcosystem(ecosystem)
+	hasName := false
+	hasEcosystem := false
+	hasFixedEvidence := false
+	hasAmbiguousFixed := false
+	for _, p := range products {
+		if strings.TrimSpace(p.Name) == "" {
+			continue
+		}
+		hasName = true
+		effectiveEco := normalizeEcosystem(p.Ecosystem)
+		if effectiveEco == "" {
+			effectiveEco = cveEco
+		}
+		if effectiveEco == "" {
+			continue
+		}
+		hasEcosystem = true
+		if hasSafeFixedEvidence(p) {
+			hasFixedEvidence = true
+			return "matchable"
+		}
+		if len(uniqueFixedVersions(p.Fixed)) > 1 {
+			hasAmbiguousFixed = true
+		}
+	}
+	switch {
+	case !hasName:
+		return "missing package name"
+	case !hasEcosystem:
+		return "missing ecosystem"
+	case hasAmbiguousFixed:
+		return "ambiguous fixed versions"
+	case !hasFixedEvidence:
+		return "missing fixed version"
+	default:
+		return "not matchable"
+	}
 }
 
 func cveEntryMatchableAffectedCount(affectedProducts, ecosystem string) int {
