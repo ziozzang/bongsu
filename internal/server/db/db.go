@@ -4236,7 +4236,8 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 		entries = append(entries, e)
 	}
 	if err := db.enrichCveReferenceGroupCounts(ctx, entries); err != nil {
-		return nil, 0, err
+		log.Printf("WARNING: CVE reference group summary enrichment skipped: %v", err)
+		markCveReferenceGroupStatus(entries, "unavailable")
 	}
 	return entries, total, nil
 }
@@ -4265,8 +4266,11 @@ func (db *DB) enrichCveReferenceGroupCounts(ctx context.Context, entries []model
 	if len(cves) == 0 {
 		return nil
 	}
+	timeout := time.Duration(envPositiveInt("BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS", 1500)) * time.Millisecond
+	groupCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")
-	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+	rows, err := db.QueryContext(groupCtx, fmt.Sprintf(`
 WITH keys AS (SELECT unnest($1::text[]) AS cve)
 SELECT k.cve,
 	count(c.id),
@@ -4275,9 +4279,6 @@ SELECT k.cve,
 FROM keys k
 JOIN cve_database c ON (
 	c.vulnerability_id ILIKE ('%%' || k.cve || '%%')
-	OR c.title ILIKE ('%%' || k.cve || '%%')
-	OR c.description ILIKE ('%%' || k.cve || '%%')
-	OR c.refs::text ILIKE ('%%' || k.cve || '%%')
 )
 GROUP BY k.cve`, matchablePredicate), pq.Array(cves))
 	if err != nil {
@@ -4304,8 +4305,20 @@ GROUP BY k.cve`, matchablePredicate), pq.Array(cves))
 		entries[i].ReferenceGroupTotal = c.Total
 		entries[i].ReferenceGroupMatchable = c.Matchable
 		entries[i].ReferenceGroupSources = c.Sources
+		entries[i].ReferenceGroupStatus = "ok"
 	}
 	return nil
+}
+
+func markCveReferenceGroupStatus(entries []models.CveEntry, status string) {
+	for i := range entries {
+		for _, key := range entries[i].ReferenceKeys {
+			if strings.HasPrefix(key, "cve:") {
+				entries[i].ReferenceGroupStatus = status
+				break
+			}
+		}
+	}
 }
 
 func (db *DB) GetCveReferenceGroupSummary(ctx context.Context, key string, limit int) (CveReferenceGroupSummary, error) {

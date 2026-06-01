@@ -2920,6 +2920,11 @@ function CveSearchView() {
                             </span>
                           </div>
                         )}
+                        {entry.reference_group_status === 'unavailable' && (
+                          <div className="badge" style={{ marginTop: 3, color: 'var(--medium)' }}>
+                            group summary unavailable
+                          </div>
+                        )}
                       </td>
                       <td>
                         <span className={badge(entry.severity)}>

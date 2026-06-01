@@ -285,6 +285,7 @@ type CveEntry struct {
 	ReferenceGroupTotal     int        `json:"reference_group_total,omitempty"`
 	ReferenceGroupMatchable int        `json:"reference_group_matchable,omitempty"`
 	ReferenceGroupSources   int        `json:"reference_group_sources,omitempty"`
+	ReferenceGroupStatus    string     `json:"reference_group_status,omitempty"`
 	Title                   string     `json:"title"`
 	Description             string     `json:"description"`
 	PublishedDate           *time.Time `json:"published_date,omitempty"`

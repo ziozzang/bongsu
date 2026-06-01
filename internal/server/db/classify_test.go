@@ -921,11 +921,22 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 		"ReferenceGroupTotal",
 		"ReferenceGroupMatchable",
 		"ReferenceGroupSources",
+		"ReferenceGroupStatus",
+		"context.WithTimeout",
+		"BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS",
+		"markCveReferenceGroupStatus(entries, \"unavailable\")",
+		"c.vulnerability_id ILIKE",
 		"pq.Array(cves)",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search missing %q: %s", want, fn)
 		}
+	}
+	if strings.Contains(fn, "c.title ILIKE ('%%' || k.cve") || strings.Contains(fn, "c.description ILIKE ('%%' || k.cve") {
+		t.Fatalf("CVE group count enrichment must avoid broad title/description scans: %s", fn)
+	}
+	if strings.Contains(fn, "c.refs::text ILIKE ('%%' || k.cve") {
+		t.Fatalf("CVE group count enrichment must avoid broad reference text scans until reference keys are indexed: %s", fn)
 	}
 }
 
