@@ -7,7 +7,7 @@
 set -euo pipefail
 
 OUTPUT="${1:-trivy-cve.jsonl}"
-TRIVY_BIN="${TRIVY_BIN:-}"
+TRIVY_BIN="${TRIVY_BIN:-${BONGSU_TRIVY_PATH:-}}"
 TRIVY_CACHE_DIR="${TRIVY_CACHE_DIR:-${BONGSU_TRIVY_CACHE_DIR:-}}"
 
 # Find trivy binary
@@ -16,10 +16,16 @@ if [ -z "${TRIVY_BIN}" ]; then
         TRIVY_BIN="trivy"
     elif [ -x /opt/bongsu/bin/trivy ]; then
         TRIVY_BIN="/opt/bongsu/bin/trivy"
+    elif [ -x "${PWD}/trivy" ]; then
+        TRIVY_BIN="${PWD}/trivy"
+    elif [ -x "${SCRIPT_DIR:-$(cd "$(dirname "$0")" && pwd)}/../bin/trivy" ]; then
+        TRIVY_BIN="${SCRIPT_DIR:-$(cd "$(dirname "$0")" && pwd)}/../bin/trivy"
+    elif [ -x "${SCRIPT_DIR:-$(cd "$(dirname "$0")" && pwd)}/trivy" ]; then
+        TRIVY_BIN="${SCRIPT_DIR:-$(cd "$(dirname "$0")" && pwd)}/trivy"
     elif [ -x ./trivy ]; then
         TRIVY_BIN="./trivy"
     else
-        echo "ERROR: trivy binary not found. Install trivy or set TRIVY_BIN."
+        echo "ERROR: trivy binary not found. Install trivy or set TRIVY_BIN/BONGSU_TRIVY_PATH."
         exit 1
     fi
 fi
@@ -31,8 +37,10 @@ $TRIVY_BIN --version 2>/dev/null | head -1
 # We scan a minimal image and extract the CVE metadata
 # Alternative: use trivy db commands if available
 
-TMPDIR=$(mktemp -d)
-trap "rm -rf ${TMPDIR}" EXIT
+TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "${TMP_PARENT}"
+WORKDIR=$(mktemp -d "${TMP_PARENT%/}/bongsu-trivy-cve.XXXXXX")
+trap 'rm -rf "${WORKDIR}"' EXIT
 
 echo "Extracting CVE data from Trivy database..."
 
@@ -188,7 +196,7 @@ IMAGES=(
 
 for img in "${IMAGES[@]}"; do
     echo "  Scanning ${img}..."
-    ${TRIVY_BIN} image --cache-dir "${TRIVY_CACHE_DIR}" --format json --scanners vuln --skip-db-update "${img}" > "${TMPDIR}/scan-$(echo ${img} | tr '/:' '-').json" 2>/dev/null || echo "  SKIP: ${img}"
+    ${TRIVY_BIN} image --cache-dir "${TRIVY_CACHE_DIR}" --format json --scanners vuln --skip-db-update "${img}" > "${WORKDIR}/scan-$(echo ${img} | tr '/:' '-').json" 2>/dev/null || echo "  SKIP: ${img}"
 done
 
 # Merge all scan results, deduplicating by CVE ID
@@ -208,7 +216,7 @@ with open("${OUTPUT}", "r") as f:
 
 added = 0
 with open("${OUTPUT}", "a") as out:
-    for scan_file in glob.glob("${TMPDIR}/scan-*.json"):
+    for scan_file in glob.glob("${WORKDIR}/scan-*.json"):
         try:
             data = json.load(open(scan_file))
         except:

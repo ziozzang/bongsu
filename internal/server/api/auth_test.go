@@ -2467,6 +2467,10 @@ func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`REQUIRE_TRIVY_SOURCE="${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-true}"`,
+		`TRIVY_BIN_FOR_SYNC="${TRIVY_BIN:-${BONGSU_TRIVY_PATH:-}}"`,
+		`find_trivy_binary()`,
+		`"${SCRIPT_DIR}/../bin/trivy"`,
+		`TRIVY_BIN="${TRIVY_BIN_FOR_SYNC}" "${SCRIPT_DIR}/extract-trivy-cvedb.sh"`,
 		`TRIVY_FAILED=0`,
 		`FAILED_SOURCES+=("trivy:extract")`,
 		`FAILED_SOURCES+=("trivy:no-data")`,
@@ -2485,7 +2489,10 @@ func TestTrivyCveExtractionUsesConfiguredCacheDir(t *testing.T) {
 	}
 	body := string(out)
 	for _, want := range []string{
+		`TRIVY_BIN="${TRIVY_BIN:-${BONGSU_TRIVY_PATH:-}}"`,
 		`TRIVY_CACHE_DIR="${TRIVY_CACHE_DIR:-${BONGSU_TRIVY_CACHE_DIR:-}}"`,
+		`BONGSU_TMPDIR`,
+		`WORKDIR=$(mktemp -d`,
 		`DB_PATH="${TRIVY_CACHE_DIR}/db/trivy.db"`,
 		`--download-db-only --cache-dir "${TRIVY_CACHE_DIR}"`,
 		`"--cache-dir", "${TRIVY_CACHE_DIR}"`,

@@ -23,6 +23,28 @@ IMPORT_URL="${SERVER_URL}/api/admin/cve-db/import"
 TOTAL_IMPORTED=0
 FAILED_SOURCES=()
 REQUIRE_TRIVY_SOURCE="${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-true}"
+TRIVY_BIN_FOR_SYNC="${TRIVY_BIN:-${BONGSU_TRIVY_PATH:-}}"
+
+find_trivy_binary() {
+    if [ -n "${TRIVY_BIN_FOR_SYNC}" ] && [ -x "${TRIVY_BIN_FOR_SYNC}" ]; then
+        return 0
+    fi
+    if command -v trivy &>/dev/null; then
+        TRIVY_BIN_FOR_SYNC="$(command -v trivy)"
+        return 0
+    fi
+    for candidate in \
+        /opt/bongsu/bin/trivy \
+        "${SCRIPT_DIR}/../bin/trivy" \
+        "${SCRIPT_DIR}/trivy" \
+        "${PWD}/trivy"; do
+        if [ -x "${candidate}" ]; then
+            TRIVY_BIN_FOR_SYNC="${candidate}"
+            return 0
+        fi
+    done
+    return 1
+}
 
 import_cve_file() {
     local file="$1"
@@ -145,8 +167,8 @@ echo ""
 echo "[5/5] Extracting Trivy DB CVE data..."
 TRIVY_FILE="${TMPDIR}/trivy-cve.jsonl"
 TRIVY_FAILED=0
-if command -v trivy &>/dev/null || [ -x /opt/bongsu/bin/trivy ]; then
-    if ! "${SCRIPT_DIR}/extract-trivy-cvedb.sh" "${TRIVY_FILE}"; then
+if find_trivy_binary; then
+    if ! TRIVY_BIN="${TRIVY_BIN_FOR_SYNC}" "${SCRIPT_DIR}/extract-trivy-cvedb.sh" "${TRIVY_FILE}"; then
         echo "  ERROR: trivy extraction failed"
         FAILED_SOURCES+=("trivy:extract")
         TRIVY_FAILED=1
