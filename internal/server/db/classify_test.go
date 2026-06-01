@@ -1880,6 +1880,33 @@ func TestRejectTempCVEIdentifiersMigration(t *testing.T) {
 	}
 }
 
+func TestCveAffectedPackageQualityConstraintsMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/036_cve_affected_package_quality_constraints.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DELETE FROM cve_affected_packages",
+		"trim(package_name) = ''",
+		"trim(ecosystem) = ''",
+		"trim(fixed_version) = ''",
+		"LIKE 'TEMP-%'",
+		"fixed_version ~* '^[0-9a-f]{40}$'",
+		"cve_affected_packages_match_identity_check",
+		"trim(package_name) <> ''",
+		"trim(ecosystem) <> ''",
+		"trim(fixed_version) <> ''",
+		"cve_affected_packages_no_temp_identifier_check",
+		"cve_affected_packages_fixed_version_not_hash_check",
+		"CHECK (fixed_version !~* '^[0-9a-f]{40}$')",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE affected package quality migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T) {
 	out, err := os.ReadFile("db.go")
 	if err != nil {
