@@ -2195,6 +2195,9 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		`"total_matchable_percent"`,
 		`"affected_package_index"`,
 		"GetCveAffectedPackageIndexStats",
+		"GetCveEPSSMergeStats",
+		`"epss_merge"`,
+		`"epss_merge_error"`,
 		"s.securityDBRevisionMeta(r.Context())",
 		`"rematch_eligible"`,
 		`"rematch_exclusion"`,
@@ -2231,6 +2234,10 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"CVE DB Status",
 		"CVE Matchable",
 		"Affected Index",
+		"EPSS Merge",
+		"epssMergeCoverage",
+		"cveEpssMerge?.enriched_records",
+		"EPSS source is loaded but no non-EPSS CVE rows are enriched",
 		"handleAffectedIndexRebuild",
 		"Rebuild Index",
 		"missing_matchable_sources",
@@ -2254,7 +2261,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "rebuildCveAffectedIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "epss_merge", "merge_coverage_percent", "rebuildCveAffectedIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}

@@ -4559,6 +4559,17 @@ type CveAffectedPackageIndexStats struct {
 	Orphans                 int        `json:"orphans"`
 }
 
+type CveEPSSMergeStats struct {
+	EPSSRecords          int     `json:"epss_records"`
+	EPSSCVEs             int     `json:"epss_cves"`
+	MatchedCVEs          int     `json:"matched_cves"`
+	UnmatchedCVEs        int     `json:"unmatched_cves"`
+	EnrichedRecords      int     `json:"enriched_records"`
+	EnrichedCVEs         int     `json:"enriched_cves"`
+	EnrichedSourceCount  int     `json:"enriched_source_count"`
+	MergeCoveragePercent float64 `json:"merge_coverage_percent"`
+}
+
 func (db *DB) GetCveAffectedPackageIndexStats(ctx context.Context) (*CveAffectedPackageIndexStats, error) {
 	var stats CveAffectedPackageIndexStats
 	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")
@@ -4601,6 +4612,41 @@ ORDER BY source`, matchablePredicate))
 	}
 	if stats.MissingMatchableSources == nil {
 		stats.MissingMatchableSources = []string{}
+	}
+	return &stats, nil
+}
+
+func (db *DB) GetCveEPSSMergeStats(ctx context.Context) (*CveEPSSMergeStats, error) {
+	var stats CveEPSSMergeStats
+	err := db.QueryRowContext(ctx, `
+WITH epss AS (
+	SELECT DISTINCT vulnerability_id
+	FROM cve_database
+	WHERE source = 'epss'
+	  AND vulnerability_id != ''
+	  AND (epss_score > 0 OR epss_percentile > 0)
+),
+non_epss AS (
+	SELECT vulnerability_id, source, epss_score, epss_percentile
+	FROM cve_database
+	WHERE source != 'epss'
+	  AND vulnerability_id != ''
+)
+SELECT
+	(SELECT count(*) FROM cve_database WHERE source = 'epss' AND (epss_score > 0 OR epss_percentile > 0)),
+	(SELECT count(*) FROM epss),
+	(SELECT count(*) FROM epss e WHERE EXISTS (SELECT 1 FROM non_epss n WHERE n.vulnerability_id = e.vulnerability_id)),
+	(SELECT count(*) FROM epss e WHERE NOT EXISTS (SELECT 1 FROM non_epss n WHERE n.vulnerability_id = e.vulnerability_id)),
+	(SELECT count(*) FROM non_epss WHERE epss_score > 0 OR epss_percentile > 0),
+	(SELECT count(DISTINCT vulnerability_id) FROM non_epss WHERE epss_score > 0 OR epss_percentile > 0),
+	(SELECT count(DISTINCT source) FROM non_epss WHERE epss_score > 0 OR epss_percentile > 0)`).Scan(
+		&stats.EPSSRecords, &stats.EPSSCVEs, &stats.MatchedCVEs, &stats.UnmatchedCVEs,
+		&stats.EnrichedRecords, &stats.EnrichedCVEs, &stats.EnrichedSourceCount)
+	if err != nil {
+		return nil, err
+	}
+	if stats.EPSSCVEs > 0 {
+		stats.MergeCoveragePercent = math.Round(float64(stats.MatchedCVEs)*1000/float64(stats.EPSSCVEs)) / 10
 	}
 	return &stats, nil
 }

@@ -393,6 +393,17 @@ export interface CveRematchPolicy {
   excluded_sources?: number;
 }
 
+export interface CveEpssMergeStats {
+  epss_records: number;
+  epss_cves: number;
+  matched_cves: number;
+  unmatched_cves: number;
+  enriched_records: number;
+  enriched_cves: number;
+  enriched_source_count: number;
+  merge_coverage_percent: number;
+}
+
 export interface CveDbStatsResponse {
   generated_at?: string;
   security_db_revision?: string;
@@ -412,6 +423,8 @@ export interface CveDbStatsResponse {
     orphans: number;
   };
   affected_package_index_error?: string;
+  epss_merge?: CveEpssMergeStats;
+  epss_merge_error?: string;
   sources: CveSourceStat[];
   rematch_policy?: CveRematchPolicy;
 }

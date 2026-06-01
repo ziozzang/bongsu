@@ -5258,6 +5258,7 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		totalMatchablePercent = float64(totalMatchable) / float64(totalRecords) * 100
 	}
 	indexStats, indexErr := s.db.GetCveAffectedPackageIndexStats(r.Context())
+	epssStats, epssErr := s.db.GetCveEPSSMergeStats(r.Context())
 	resp := map[string]any{
 		"generated_at":            time.Now().UTC().Format(time.RFC3339),
 		"source_count":            len(stats),
@@ -5277,6 +5278,11 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		resp["affected_package_index"] = indexStats
 	} else {
 		resp["affected_package_index_error"] = indexErr.Error()
+	}
+	if epssErr == nil {
+		resp["epss_merge"] = epssStats
+	} else {
+		resp["epss_merge_error"] = epssErr.Error()
 	}
 	for k, v := range s.securityDBRevisionMeta(r.Context()) {
 		resp[k] = v

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type CveRematchPolicy, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -288,6 +288,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [cveSources, setCveSources] = useState<CveSourceStat[]>([]);
   const [cveRematchPolicy, setCveRematchPolicy] = useState<CveRematchPolicy | null>(null);
   const [cveAffectedIndex, setCveAffectedIndex] = useState<HealthStatus['cve_affected_package_index'] | null>(null);
+  const [cveEpssMerge, setCveEpssMerge] = useState<CveEpssMergeStats | null>(null);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
   const [inventoryCounts, setInventoryCounts] = useState<Record<string, number>>({});
   const [totalPkgs, setTotalPkgs] = useState(0);
@@ -320,7 +321,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     }).catch(() => {});
   }, [updating]);
   useEffect(() => {
-    api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); }).catch(() => {});
+    api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); }).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
     api.hosts().then(items => {
       setAgentCounts(items.reduce((acc, h) => {
@@ -366,7 +367,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     try {
       await api.updateSecurityDB();
       setUpdateMsg('Security sources sync started/completed');
-      api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); }).catch(() => {});
+      api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); }).catch(() => {});
     } catch {
       setUpdateMsg('Security source sync failed or is not configured');
     }
@@ -380,7 +381,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       const r = await api.rebuildCveAffectedIndex();
       setCveAffectedIndex(r.index || null);
       setUpdateMsg(`Affected package index rebuilt: ${r.indexed.toLocaleString()} entries`);
-      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); }).catch(() => {});
+      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); }).catch(() => {});
     } catch {
       setUpdateMsg('Affected package index rebuild failed');
     }
@@ -423,6 +424,12 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const cveRematchPolicyText = cveRematchPolicy
     ? `${cveRematchPolicy.sources?.length ? `${cveRematchPolicy.sources.length} allowlisted` : 'all sources'}, min ${(cveRematchPolicy.min_source_matchable_percent || 0).toFixed(1)}%`
     : 'policy pending';
+  const epssMergeCoverage = cveEpssMerge?.merge_coverage_percent ?? 0;
+  const epssMergeColor = !cveEpssMerge || cveEpssMerge.epss_cves === 0
+    ? 'var(--medium)'
+    : epssMergeCoverage < 50
+      ? 'var(--high)'
+      : 'var(--low)';
   const weakestCveSource = cveSources.reduce<CveSourceStat | null>((worst, source) =>
     !worst || (source.matchable_percent ?? 0) < (worst.matchable_percent ?? 0) ? source : worst, null);
   const staleCveSources = health?.security_db_freshness?.stale_sources || [];
@@ -500,7 +507,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       const r = await api.recalcCveCVSS();
       const revisionMsg = r.security_db_revision ? `, DB rev ${r.security_db_revision}` : r.security_db_revision_error ? ', DB revision unavailable' : '';
       setCvssRecalcMsg(`Recalculated ${r.updated.toLocaleString()} CVSS records${revisionMsg}`);
-      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); }).catch(() => {});
+      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); }).catch(() => {});
     } catch {
       setCvssRecalcMsg('CVSS recalculation failed or requires admin API key');
     }
@@ -567,7 +574,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         setHealth(h);
         setSecurityDbConfigured(!!h.security_db?.configured);
       }).catch(() => {});
-      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); }).catch(() => {});
+      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); }).catch(() => {});
       api.stats().then(setStats).catch(() => {});
     } catch {
       setSecurityBundleMsg('Security DB bundle import failed or requires admin API key');
@@ -1045,6 +1052,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           </div>
         </div>
         <div className="stat-card">
+          <div className="accent-bar" style={{ background: epssMergeColor }} />
+          <div className="label">EPSS Merge</div>
+          <div className="value" style={{ color: epssMergeColor }}>{epssMergeCoverage.toFixed(1)}%</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {(cveEpssMerge?.enriched_records || 0).toLocaleString()} CVE rows enriched from {(cveEpssMerge?.epss_cves || 0).toLocaleString()} EPSS CVEs
+          </div>
+        </div>
+        <div className="stat-card">
           <div className="accent-bar" style={{ background: weakestCveSource && (weakestCveSource.matchable_percent ?? 0) < 50 ? 'var(--medium)' : 'var(--low)' }} />
           <div className="label">Weakest CVE Source</div>
           <div className="value">{weakestCveSource ? weakestCveSource.source.toUpperCase() : '-'}</div>
@@ -1095,6 +1110,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {health?.security_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security sources: {health.security_db.last_error}</div>}
       {health?.security_db_revision_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB revision: {health.security_db_revision_error}</div>}
       {health?.security_db_freshness?.error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB freshness: {health.security_db_freshness.error}</div>}
+      {cveEpssMerge && cveEpssMerge.epss_cves > 0 && cveEpssMerge.enriched_records === 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>EPSS source is loaded but no non-EPSS CVE rows are enriched.</div>}
       {(cveAffectedIndex?.missing_matchable_sources?.length || 0) > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>Affected index missing matchable sources: {cveAffectedIndex?.missing_matchable_sources?.join(', ')}</div>}
       {(cveAffectedIndex?.orphans || 0) > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>Affected index orphan rows: {(cveAffectedIndex?.orphans || 0).toLocaleString()}</div>}
       {lastRecalcLimited && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>CVE rematch hit candidate limit: {(lastRecalc?.rematch_candidates || 0).toLocaleString()} / {(lastRecalc?.rematch_candidate_limit || 0).toLocaleString()} matches, {(lastRecalc?.rematch_scanned_candidates || 0).toLocaleString()} raw candidates scanned</div>}
