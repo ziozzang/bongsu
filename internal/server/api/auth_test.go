@@ -4179,6 +4179,9 @@ func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
 		"setError(err?.message || 'CVE source list failed')",
 		"disabled={loading}",
 		"{loading ? 'Searching...' : 'Search'}",
+		"isPriorityFeed",
+		"includePrioritySources ? 'All Sources' : 'Advisory Sources'",
+		"priorityFeed ? 'priority' : 'reference'",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("dashboard CVE search auto-load/error UI missing %q", want)

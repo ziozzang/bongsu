@@ -2697,6 +2697,7 @@ function CveSearchView() {
     const target = typeof pkg?.ecosystem === 'string' && pkg.ecosystem.trim() ? pkg.ecosystem : entry.ecosystem;
     return typeof target === 'string' ? target.trim() : '';
   };
+  const isPriorityFeed = (entry: CveDbEntry): boolean => entry.source === 'epss' || entry.source === 'cisa-kev';
   const isMatchableAffectedPackage = (pkg: any, entry: CveDbEntry): boolean =>
     typeof pkg?.name === 'string' && pkg.name.trim() !== '' &&
     affectedPackageTarget(pkg, entry) !== '' &&
@@ -2724,7 +2725,7 @@ function CveSearchView() {
             <option value="LOW">Low</option>
           </select>
           <select value={source} onChange={e => setSource(e.target.value)}>
-            <option value="">All Sources</option>
+            <option value="">{includePrioritySources ? 'All Sources' : 'Advisory Sources'}</option>
             {sources.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
           <input
@@ -2802,6 +2803,7 @@ function CveSearchView() {
                 const isExpanded = expanded === entry.id;
                 const prods = parseJson(entry.affected_products);
                 const refs = parseJson(entry.references);
+                const priorityFeed = isPriorityFeed(entry);
 
                 return (
                   <React.Fragment key={entry.id}>
@@ -2827,10 +2829,13 @@ function CveSearchView() {
                       </td>
                       <td style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                         {entry.source}
+                        {priorityFeed && (
+                          <span className="badge" style={{ marginLeft: '0.375rem', color: 'var(--medium)' }}>priority</span>
+                        )}
                       </td>
                       <td>
-                        <span className="badge" style={{ color: entry.matchable ? '#22c55e' : 'var(--text-muted)' }}>
-                          {entry.matchable ? 'matchable' : 'reference'}
+                        <span className="badge" style={{ color: entry.matchable ? '#22c55e' : priorityFeed ? 'var(--medium)' : 'var(--text-muted)' }}>
+                          {entry.matchable ? 'matchable' : priorityFeed ? 'priority' : 'reference'}
                         </span>
                       </td>
                       <td style={{ maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
