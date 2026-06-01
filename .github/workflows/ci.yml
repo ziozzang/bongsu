@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Go tests
+        run: go test ./...
+
+  web:
+    name: Web Build And E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: Build dashboard
+        working-directory: web
+        run: npm run build
+
+      - name: Run browser smoke tests
+        working-directory: web
+        run: npm run test:e2e
+
+  compose:
+    name: Compose Config
+    runs-on: ubuntu-latest
+    env:
+      BONGSU_DB_PASSWORD: test-db-password-0123456789
+      BONGSU_API_KEY: test-admin-key-0123456789
+      BONGSU_AGENT_API_KEY: test-agent-key-0123456789
+      BONGSU_INSTALL_TOKEN: test-install-token-0123456789
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate connected compose config
+        run: docker compose -f deploy/docker-compose.yml config >/tmp/bongsu-compose.yml
+
+      - name: Validate airgap compose config
+        run: docker compose -f deploy/docker-compose.airgap.yml config >/tmp/bongsu-compose-airgap.yml
