@@ -2769,8 +2769,8 @@ function CveSearchView() {
     if ((entry.matchable_affected_count || 0) > 0 && !indexedAffected[entry.id]) {
       loadIndexedAffected(entry, 0);
     }
-    const canonicalKey = (entry.reference_keys || []).find(key => key.startsWith('cve:')) || (entry.reference_keys || [])[0];
-    if (canonicalKey) loadReferenceGroup(canonicalKey);
+    const groupKey = entry.reference_group_key || (entry.reference_keys || []).find(key => key.startsWith('cve:')) || (entry.reference_keys || [])[0];
+    if (groupKey) loadReferenceGroup(groupKey);
   };
 
   const formatDate = (d: string | null | undefined) => {
@@ -2935,8 +2935,8 @@ function CveSearchView() {
                 const prods = parseJson(entry.affected_products);
                 const refs = parseJson(entry.references);
                 const priorityFeed = isPriorityFeed(entry);
-                const canonicalKey = (entry.reference_keys || []).find(key => key.startsWith('cve:')) || (entry.reference_keys || [])[0];
-                const groupSummary = canonicalKey ? referenceGroups[canonicalKey] : undefined;
+                const groupKey = entry.reference_group_key || (entry.reference_keys || []).find(key => key.startsWith('cve:')) || (entry.reference_keys || [])[0];
+                const groupSummary = groupKey ? referenceGroups[groupKey] : undefined;
 
                 return (
                   <React.Fragment key={entry.id}>
@@ -2948,11 +2948,16 @@ function CveSearchView() {
                         <span className="host-link" style={{ color: 'var(--primary)' }}>
                           {entry.vulnerability_id}
                         </span>
-                        {(entry.reference_group_total || 0) > 1 && (
+                        {(entry.reference_group_total || 0) > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginTop: 3 }}>
                             <span className="badge" style={{ color: '#22c55e' }}>
                               group {entry.reference_group_total}
                             </span>
+                            {entry.reference_group_key && (
+                              <span className="badge" style={{ color: 'var(--text-muted)' }}>
+                                {entry.reference_group_key}
+                              </span>
+                            )}
                             <span className="badge" style={{ color: 'var(--text-muted)' }}>
                               {entry.reference_group_sources || 0} src
                             </span>
@@ -3041,7 +3046,7 @@ function CveSearchView() {
                               </div>
                             </div>
                           )}
-                          {canonicalKey && (
+                          {groupKey && (
                             <div style={{ marginBottom: '0.75rem' }}>
                               <strong style={{ fontSize: '0.8125rem' }}>Group Context</strong>
                               {groupSummary?.loading && <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '0.25rem' }}>Loading...</div>}

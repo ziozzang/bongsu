@@ -572,6 +572,7 @@ export interface CveDbEntry {
   reference_group_matchable?: number;
   reference_group_sources?: number;
   reference_group_status?: string;
+  reference_group_key?: string;
   title: string;
   description: string;
   published_date: string | null;

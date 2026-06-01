@@ -4414,6 +4414,7 @@ GROUP BY k.reference_key`, matchablePredicate), pq.Array(keys))
 		if !ok {
 			continue
 		}
+		entries[i].ReferenceGroupKey = entryKeys[i]
 		entries[i].ReferenceGroupTotal = c.Total
 		entries[i].ReferenceGroupMatchable = c.Matchable
 		entries[i].ReferenceGroupSources = c.Sources
@@ -4435,7 +4436,8 @@ func preferredReferenceGroupKey(keys []string) string {
 
 func markCveReferenceGroupStatus(entries []models.CveEntry, status string) {
 	for i := range entries {
-		if preferredReferenceGroupKey(entries[i].ReferenceKeys) != "" {
+		if key := preferredReferenceGroupKey(entries[i].ReferenceKeys); key != "" {
+			entries[i].ReferenceGroupKey = key
 			entries[i].ReferenceGroupStatus = status
 		}
 	}
