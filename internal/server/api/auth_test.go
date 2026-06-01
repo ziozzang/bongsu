@@ -1211,6 +1211,58 @@ func TestInstallerDownloadsVerifyBinaryChecksums(t *testing.T) {
 	}
 }
 
+func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
+	out, err := os.ReadFile("api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`"GET /api/admin/installer/status"`,
+		"func (s *Server) handleInstallerStatus",
+		"s.authenticateAdmin(r)",
+		"install_token_configured",
+		"installerBinaryReadiness(\"bongsu-agent\", agentBinaryPath())",
+		"installerBinaryReadiness(\"trivy\", trivyBinaryPath())",
+		"type installerBinaryStatus struct",
+		`SHA256 string ` + "`json:\"sha256,omitempty\"`",
+		"fileSHA256Hex(f)",
+		"agentBinaryPath()",
+		"trivyBinaryPath()",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("installer status missing %q", want)
+		}
+	}
+	webAPI, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	webApp, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"InstallerStatus",
+		"InstallerBinaryStatus",
+		"installerStatus: () => request<InstallerStatus>('/admin/installer/status')",
+	} {
+		if !strings.Contains(string(webAPI), want) {
+			t.Fatalf("web installer status API missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"api.installerStatus().then(setInstallerStatus)",
+		"installerStatus.ready",
+		"installerStatus.agent.ready",
+		"installerStatus.trivy.ready",
+	} {
+		if !strings.Contains(string(webApp), want) {
+			t.Fatalf("dashboard installer status missing %q", want)
+		}
+	}
+}
+
 func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
 	got := shellQuote(`agent'key"$HOME`)
 	want := `'agent'"'"'key"$HOME'`

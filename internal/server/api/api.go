@@ -180,6 +180,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/install.sh", s.handleInstallScript)
 	s.mux.HandleFunc("GET /api/downloads/bongsu-agent", s.handleAgentDownload)
 	s.mux.HandleFunc("GET /api/downloads/trivy", s.handleTrivyDownload)
+	s.mux.HandleFunc("GET /api/admin/installer/status", s.handleInstallerStatus)
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("DELETE /api/scans/{id}", s.handleDeleteScan)
@@ -2213,14 +2214,7 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	agentPath := os.Getenv("BONGSU_AGENT_BIN")
-	if agentPath == "" {
-		exe, _ := os.Executable()
-		agentPath = filepath.Join(filepath.Dir(exe), "bongsu-agent")
-		if _, err := os.Stat(agentPath); err != nil {
-			agentPath = "/app/bin/bongsu-agent"
-		}
-	}
+	agentPath := agentBinaryPath()
 
 	f, err := os.Open(agentPath)
 	if err != nil {
@@ -2277,10 +2271,7 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	trivyPath := os.Getenv("BONGSU_TRIVY_PATH")
-	if trivyPath == "" {
-		trivyPath = "/usr/local/bin/trivy"
-	}
+	trivyPath := trivyBinaryPath()
 	f, err := os.Open(trivyPath)
 	if err != nil {
 		s.audit(r, "installer.download", "binary", "trivy", "error", map[string]any{
@@ -2329,6 +2320,75 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 		"bytes":  info.Size(),
 		"sha256": digest,
 	})
+}
+
+type installerBinaryStatus struct {
+	Name   string `json:"name"`
+	Ready  bool   `json:"ready"`
+	Path   string `json:"path,omitempty"`
+	Bytes  int64  `json:"bytes,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+func (s *Server) handleInstallerStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	agent := installerBinaryReadiness("bongsu-agent", agentBinaryPath())
+	trivy := installerBinaryReadiness("trivy", trivyBinaryPath())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"install_token_configured": s.installToken != "",
+		"agent":                    agent,
+		"trivy":                    trivy,
+		"ready":                    s.installToken != "" && agent.Ready,
+	})
+}
+
+func agentBinaryPath() string {
+	agentPath := os.Getenv("BONGSU_AGENT_BIN")
+	if agentPath != "" {
+		return agentPath
+	}
+	exe, _ := os.Executable()
+	agentPath = filepath.Join(filepath.Dir(exe), "bongsu-agent")
+	if _, err := os.Stat(agentPath); err != nil {
+		return "/app/bin/bongsu-agent"
+	}
+	return agentPath
+}
+
+func trivyBinaryPath() string {
+	trivyPath := os.Getenv("BONGSU_TRIVY_PATH")
+	if trivyPath == "" {
+		trivyPath = "/usr/local/bin/trivy"
+	}
+	return trivyPath
+}
+
+func installerBinaryReadiness(name, path string) installerBinaryStatus {
+	status := installerBinaryStatus{Name: name, Path: path}
+	f, err := os.Open(path)
+	if err != nil {
+		status.Error = "not found"
+		return status
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		status.Error = "not readable"
+		return status
+	}
+	digest, err := fileSHA256Hex(f)
+	if err != nil {
+		status.Error = "checksum failed"
+		return status
+	}
+	status.Ready = true
+	status.Bytes = info.Size()
+	status.SHA256 = digest
+	return status
 }
 
 func fileSHA256Hex(f *os.File) (string, error) {

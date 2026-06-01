@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type InstallerStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -289,6 +289,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [cveRematchPolicy, setCveRematchPolicy] = useState<CveRematchPolicy | null>(null);
   const [cveAffectedIndex, setCveAffectedIndex] = useState<HealthStatus['cve_affected_package_index'] | null>(null);
   const [cveEpssMerge, setCveEpssMerge] = useState<CveEpssMergeStats | null>(null);
+  const [installerStatus, setInstallerStatus] = useState<InstallerStatus | null>(null);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
   const [inventoryCounts, setInventoryCounts] = useState<Record<string, number>>({});
   const [totalPkgs, setTotalPkgs] = useState(0);
@@ -322,6 +323,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   }, [updating]);
   useEffect(() => {
     api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); }).catch(() => {});
+    api.installerStatus().then(setInstallerStatus).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
     api.hosts().then(items => {
       setAgentCounts(items.reduce((acc, h) => {
@@ -601,6 +603,19 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         <div className="install-box">
           <div className="label">One-line agent install</div>
           <code>curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "{window.location.origin}/api/install.sh" | sudo bash</code>
+          {installerStatus && (
+            <div style={{ marginTop: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.375rem' }}>
+              <span className="badge" style={{ color: installerStatus.ready ? 'var(--low)' : 'var(--critical)' }}>
+                installer {installerStatus.ready ? 'ready' : 'not ready'}
+              </span>
+              <span className="badge" style={{ color: installerStatus.agent.ready ? 'var(--low)' : 'var(--critical)' }}>
+                agent {installerStatus.agent.ready ? `${Math.round((installerStatus.agent.bytes || 0) / 1024 / 1024)}MB` : installerStatus.agent.error || 'missing'}
+              </span>
+              <span className="badge" style={{ color: installerStatus.trivy.ready ? 'var(--low)' : 'var(--medium)' }}>
+                trivy {installerStatus.trivy.ready ? `${Math.round((installerStatus.trivy.bytes || 0) / 1024 / 1024)}MB` : installerStatus.trivy.error || 'optional'}
+              </span>
+            </div>
+          )}
         </div>
       </section>
       <div className="stats-grid">

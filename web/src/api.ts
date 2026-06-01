@@ -580,6 +580,22 @@ export interface RetentionPruneResult {
   audit_logs: number;
 }
 
+export interface InstallerBinaryStatus {
+  name: string;
+  ready: boolean;
+  path?: string;
+  bytes?: number;
+  sha256?: string;
+  error?: string;
+}
+
+export interface InstallerStatus {
+  ready: boolean;
+  install_token_configured: boolean;
+  agent: InstallerBinaryStatus;
+  trivy: InstallerBinaryStatus;
+}
+
 export const api = {
   hosts: (params?: { agent_status?: string; inventory_status?: string }) => request<Host[]>('/hosts', params),
   host: (id: string) => request<Host>(`/hosts/${id}`),
@@ -632,6 +648,7 @@ export const api = {
     requestJSON<{ status: string; requeued: number; cancelled_duplicates: number; timeout_minutes: number }>('/scan-requests/requeue-stale', body || {}),
   stats: () => request<Stats>('/stats'),
   rawHealth: () => request<HealthStatus>('/health'),
+  installerStatus: () => request<InstallerStatus>('/admin/installer/status'),
   deleteScan: (id: string, force = false) => request<{status: string}>(`/scans/${id}`, force ? { force: 'true' } : undefined, 'DELETE'),
   auditLogs: (params: { actor_type?: string; actor_id?: string; action?: string; resource_type?: string; resource_id?: string; status?: string; created_from?: string; created_to?: string; limit?: string; offset?: string }) =>
     request<{ items: AuditLog[]; total: number }>('/admin/audit-logs', params),
