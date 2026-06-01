@@ -147,6 +147,14 @@ curl -X POST -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/cv
 
 Progress is visible in admin `/api/health`, `/api/cve-db/stats`, metrics, and the dashboard rebuild cards.
 
+## Release Binary Verification
+
+Air-gapped packages and one-line installers depend on static Linux binaries. Before packaging a release, verify both server and agent binaries:
+
+```bash
+./scripts/verify-static-binaries.sh
+```
+
 ## Agent Installation
 
 ### On Bare-Metal/VM Host

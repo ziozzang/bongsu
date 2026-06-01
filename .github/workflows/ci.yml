@@ -27,6 +27,9 @@ jobs:
       - name: Run Go tests
         run: go test ./...
 
+      - name: Verify static release binaries
+        run: ./scripts/verify-static-binaries.sh
+
   web:
     name: Web Build And E2E
     runs-on: ubuntu-latest
