@@ -291,6 +291,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [cveReferenceIndex, setCveReferenceIndex] = useState<CveDbStatsResponse['reference_key_index'] | null>(null);
   const [cveEpssMerge, setCveEpssMerge] = useState<CveEpssMergeStats | null>(null);
   const [cveDbQuality, setCveDbQuality] = useState<CveDbQuality | null>(null);
+  const [cveStatsMeta, setCveStatsMeta] = useState<Pick<CveDbStatsResponse, 'cache_status' | 'generated_at' | 'durations_ms'> | null>(null);
   const [installerStatus, setInstallerStatus] = useState<InstallerStatus | null>(null);
   const [dashboardHosts, setDashboardHosts] = useState<Host[]>([]);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
@@ -315,6 +316,15 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [securityBundleMsg, setSecurityBundleMsg] = useState('');
   const [securityBundleBusy, setSecurityBundleBusy] = useState(false);
   const [securityBundleIncludeTrivy, setSecurityBundleIncludeTrivy] = useState(true);
+  const applyCveStats = useCallback((r: CveDbStatsResponse) => {
+    setCveSources(r.sources || []);
+    setCveRematchPolicy(r.rematch_policy || null);
+    setCveAffectedIndex(r.affected_package_index || null);
+    setCveEpssMerge(r.epss_merge || null);
+    setCveReferenceIndex(r.reference_key_index || null);
+    setCveDbQuality(r.cve_db_quality || null);
+    setCveStatsMeta({ cache_status: r.cache_status, generated_at: r.generated_at, durations_ms: r.durations_ms });
+  }, []);
 
   useEffect(() => { api.stats().then(setStats).catch(() => {}); }, []);
   useEffect(() => {
@@ -334,12 +344,12 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         setCveAffectedIndex(h.cve_affected_package_index || null);
         setCveDbQuality(h.cve_db_quality || null);
       }).catch(() => {});
-      api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); setCveReferenceIndex(r.reference_key_index || null); setCveDbQuality(r.cve_db_quality || null); }).catch(() => {});
+      api.cveDbStats().then(applyCveStats).catch(() => {});
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [health?.cve_reference_index_rebuild?.running, health?.cve_affected_index_rebuild?.running]);
+  }, [health?.cve_reference_index_rebuild?.running, health?.cve_affected_index_rebuild?.running, applyCveStats]);
   useEffect(() => {
-    api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); setCveReferenceIndex(r.reference_key_index || null); setCveDbQuality(r.cve_db_quality || null); }).catch(() => {});
+    api.cveDbStats().then(applyCveStats).catch(() => {});
     api.installerStatus().then(setInstallerStatus).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
     api.hosts().then(items => {
@@ -367,7 +377,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     api.vulnSummary({ group_by: 'team' }).then(r => setTeamSummary(r.items || [])).catch(() => {});
     api.vulnSummary({ group_by: 'environment' }).then(r => setEnvironmentSummary(r.items || [])).catch(() => {});
     api.vulnSummary({ group_by: 'criticality' }).then(r => setCriticalitySummary(r.items || [])).catch(() => {});
-  }, []);
+  }, [applyCveStats]);
 
   const handleUpdate = async () => {
     setUpdating(true);
@@ -387,7 +397,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     try {
       await api.updateSecurityDB();
       setUpdateMsg('Security sources sync started/completed');
-      api.cveDbStats().then(r => { setCveSources(r.sources || []); setCveRematchPolicy(r.rematch_policy || null); setCveAffectedIndex(r.affected_package_index || null); setCveEpssMerge(r.epss_merge || null); setCveReferenceIndex(r.reference_key_index || null); setCveDbQuality(r.cve_db_quality || null); }).catch(() => {});
+      api.cveDbStats().then(applyCveStats).catch(() => {});
     } catch {
       setUpdateMsg('Security source sync failed or is not configured');
     }
@@ -412,7 +422,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         setHealth(prev => ({ ...(prev || {} as HealthStatus), cve_affected_index_rebuild: r.affected_index_rebuild }));
       }
       api.rawHealth().then(setHealth).catch(() => {});
-      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); setCveDbQuality(x.cve_db_quality || null); }).catch(() => {});
+      api.cveDbStats().then(applyCveStats).catch(() => {});
     } catch {
       setUpdateMsg('Affected package index rebuild failed');
     }
@@ -436,7 +446,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         setHealth(prev => ({ ...(prev || {} as HealthStatus), cve_reference_index_rebuild: r.reference_index_rebuild }));
       }
       api.rawHealth().then(setHealth).catch(() => {});
-      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); setCveDbQuality(x.cve_db_quality || null); }).catch(() => {});
+      api.cveDbStats().then(applyCveStats).catch(() => {});
     } catch {
       setUpdateMsg('Reference key index rebuild failed');
     }
@@ -519,6 +529,9 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       ? 'var(--medium)'
       : 'var(--low)';
   const cveQualityWarnings = cveDbQuality?.warnings || [];
+  const cveStatsCacheStatus = cveStatsMeta?.cache_status || 'unknown';
+  const cveStatsGeneratedAt = cveStatsMeta?.generated_at ? new Date(cveStatsMeta.generated_at).toLocaleString() : 'not loaded';
+  const cveStatsDuration = cveStatsMeta?.durations_ms?.total;
   const weakestCveSource = cveSources.reduce<CveSourceStat | null>((worst, source) =>
     !worst || (source.matchable_percent ?? 0) < (worst.matchable_percent ?? 0) ? source : worst, null);
   const staleCveSources = health?.security_db_freshness?.stale_sources || [];
@@ -624,7 +637,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       const r = await api.recalcCveCVSS();
       const revisionMsg = r.security_db_revision ? `, DB rev ${r.security_db_revision}` : r.security_db_revision_error ? ', DB revision unavailable' : '';
       setCvssRecalcMsg(`Recalculated ${r.updated.toLocaleString()} CVSS records${revisionMsg}`);
-      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); setCveDbQuality(x.cve_db_quality || null); }).catch(() => {});
+      api.cveDbStats().then(applyCveStats).catch(() => {});
     } catch {
       setCvssRecalcMsg('CVSS recalculation failed or requires admin API key');
     }
@@ -691,7 +704,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         setHealth(h);
         setSecurityDbConfigured(!!h.security_db?.configured);
       }).catch(() => {});
-      api.cveDbStats().then(x => { setCveSources(x.sources || []); setCveRematchPolicy(x.rematch_policy || null); setCveAffectedIndex(x.affected_package_index || null); setCveEpssMerge(x.epss_merge || null); setCveReferenceIndex(x.reference_key_index || null); setCveDbQuality(x.cve_db_quality || null); }).catch(() => {});
+      api.cveDbStats().then(applyCveStats).catch(() => {});
       api.stats().then(setStats).catch(() => {});
     } catch {
       setSecurityBundleMsg('Security DB bundle import failed or requires admin API key');
@@ -1187,6 +1200,9 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div className="value" style={{ color: cveDbStatusColor }}>{cveDbStatus}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             {health?.security_db_revision ? `rev ${health.security_db_revision}` : `${cveSources.length || 0} sources tracked`}
+          </div>
+          <div style={{ color: cveStatsCacheStatus === 'stale' ? 'var(--medium)' : 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+            stats {cveStatsCacheStatus}{cveStatsDuration !== undefined ? ` · ${cveStatsDuration}ms` : ''} · {cveStatsGeneratedAt}
           </div>
         </div>
         <div className="stat-card">

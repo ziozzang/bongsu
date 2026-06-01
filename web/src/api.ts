@@ -47,9 +47,27 @@ async function request<T>(path: string, params?: Record<string, string>, method?
   return res.json();
 }
 
-async function requestJSON<T>(path: string, body: unknown): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+async function requestCveDbStats(): Promise<CveDbStatsResponse> {
+  const res = await fetch(API_BASE + '/cve-db/stats', { headers: apiHeaders() });
+  if (res.status === 401) {
+    clearApiKey();
+    if (onUnauthorized) onUnauthorized();
+    throw new Error('Unauthorized');
+  }
+  if (!res.ok) throw await responseError(res);
+  const body = await res.json() as CveDbStatsResponse;
+  body.cache_status = res.headers.get('X-Bongsu-Cache') || undefined;
+  return body;
+}
+
+function apiHeaders(extra?: Record<string, string>): Record<string, string> {
+  const headers: Record<string, string> = { ...(extra || {}) };
   if (apiKey) headers['X-API-Key'] = apiKey;
+  return headers;
+}
+
+async function requestJSON<T>(path: string, body: unknown): Promise<T> {
+  const headers = apiHeaders({ 'Content-Type': 'application/json' });
   const res = await fetch(API_BASE + path, { method: 'POST', headers, body: JSON.stringify(body) });
   if (res.status === 401) {
     clearApiKey();
@@ -61,8 +79,7 @@ async function requestJSON<T>(path: string, body: unknown): Promise<T> {
 }
 
 async function requestEmpty<T>(path: string, method: string): Promise<T> {
-  const headers: Record<string, string> = {};
-  if (apiKey) headers['X-API-Key'] = apiKey;
+  const headers = apiHeaders();
   const res = await fetch(API_BASE + path, { method, headers });
   if (res.status === 401) {
     clearApiKey();
@@ -74,8 +91,7 @@ async function requestEmpty<T>(path: string, method: string): Promise<T> {
 }
 
 async function download(path: string, filename: string, params?: Record<string, string>): Promise<void> {
-  const headers: Record<string, string> = {};
-  if (apiKey) headers['X-API-Key'] = apiKey;
+  const headers = apiHeaders();
   const url = new URL(API_BASE + path, window.location.origin);
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
@@ -534,6 +550,7 @@ export interface CveDbQuality {
 
 export interface CveDbStatsResponse {
   generated_at?: string;
+  cache_status?: string;
   security_db_revision?: string;
   security_db_revision_error?: string;
   source_count?: number;
@@ -771,7 +788,7 @@ export const api = {
   cveDbAffectedPackages: (id: string, params?: { limit?: string; offset?: string }) =>
     request<{ items: CveAffectedPackage[]; total: number; limit?: number; offset?: number }>(`/cve-db/${id}/affected-packages`, params),
   cveDbSources: () => request<{ sources: string[] }>('/cve-db/sources'),
-  cveDbStats: () => request<CveDbStatsResponse>('/cve-db/stats'),
+  cveDbStats: requestCveDbStats,
   packages: (params: { host_id?: string; container?: string; pkg_type?: string; source?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Pkg[]; total: number }>('/packages', params),
   containers: (params: { host_id?: string; runtime?: string; state?: string; image?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
