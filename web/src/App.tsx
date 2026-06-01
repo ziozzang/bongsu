@@ -2588,7 +2588,10 @@ function CveSearchView() {
   const [source, setSource] = useState('');
   const [sources, setSources] = useState<string[]>([]);
   const [minCvss, setMinCvss] = useState('');
+  const [minEpss, setMinEpss] = useState('');
+  const [minEpssPercentile, setMinEpssPercentile] = useState('');
   const [matchableOnly, setMatchableOnly] = useState(false);
+  const [includePrioritySources, setIncludePrioritySources] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
@@ -2612,7 +2615,10 @@ function CveSearchView() {
     if (severity) params.severity = severity;
     if (source) params.source = source;
     if (minCvss) params.min_cvss = minCvss;
+    if (minEpss) params.min_epss = minEpss;
+    if (minEpssPercentile) params.min_epss_percentile = minEpssPercentile;
     if (matchableOnly) params.matchable = 'true';
+    if (includePrioritySources) params.include_priority_sources = 'true';
     params.sort_by = sb;
     params.sort_order = sd ? 'desc' : 'asc';
     api.cveDbSearch(params)
@@ -2627,7 +2633,7 @@ function CveSearchView() {
         setSearched(true);
         setLoading(false);
       });
-  }, [query, severity, source, minCvss, matchableOnly, sortBy, sortDesc]);
+  }, [query, severity, source, minCvss, minEpss, minEpssPercentile, matchableOnly, includePrioritySources, sortBy, sortDesc]);
 
   useEffect(() => {
     api.cveDbSources().then(data => {
@@ -2729,6 +2735,22 @@ function CveSearchView() {
             min="0" max="10" step="0.1"
             style={{ width: 90 }}
           />
+          <input
+            type="number"
+            placeholder="Min EPSS"
+            value={minEpss}
+            onChange={e => setMinEpss(e.target.value)}
+            min="0" max="1" step="0.01"
+            style={{ width: 90 }}
+          />
+          <input
+            type="number"
+            placeholder="Min EPSS %ile"
+            value={minEpssPercentile}
+            onChange={e => setMinEpssPercentile(e.target.value)}
+            min="0" max="1" step="0.01"
+            style={{ width: 120 }}
+          />
           <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
             <input
               type="checkbox"
@@ -2736,6 +2758,14 @@ function CveSearchView() {
               onChange={e => setMatchableOnly(e.target.checked)}
             />
             Matchable only
+          </label>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+            <input
+              type="checkbox"
+              checked={includePrioritySources}
+              onChange={e => setIncludePrioritySources(e.target.checked)}
+            />
+            Include priority feeds
           </label>
           <button className="filter-btn" onClick={() => doSearch(0)} disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
           {searched && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{results.total.toLocaleString()} results</span>}

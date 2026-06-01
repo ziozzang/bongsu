@@ -4089,7 +4089,7 @@ func (db *DB) SyncEPSSPriorityColumnsTx(ctx context.Context, tx *sql.Tx) (int, e
 	return int(clearN + setN), nil
 }
 
-func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source string, minCVSS float64, matchableOnly bool, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {
+func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source string, minCVSS, minEPSS, minEPSSPercentile float64, matchableOnly, includePrioritySources bool, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {
 	baseQ := `FROM cve_database WHERE 1=1`
 	args := []any{}
 	argN := 1
@@ -4117,10 +4117,22 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, severity, source str
 		baseQ += fmt.Sprintf(" AND source=$%d", argN)
 		args = append(args, source)
 		argN++
+	} else if !includePrioritySources {
+		baseQ += " AND source NOT IN ('cisa-kev', 'epss')"
 	}
 	if minCVSS > 0 {
 		baseQ += fmt.Sprintf(" AND cvss_score>=$%d", argN)
 		args = append(args, minCVSS)
+		argN++
+	}
+	if minEPSS > 0 {
+		baseQ += fmt.Sprintf(" AND epss_score>=$%d", argN)
+		args = append(args, minEPSS)
+		argN++
+	}
+	if minEPSSPercentile > 0 {
+		baseQ += fmt.Sprintf(" AND epss_percentile>=$%d", argN)
+		args = append(args, minEPSSPercentile)
 		argN++
 	}
 	if matchableOnly {

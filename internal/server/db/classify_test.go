@@ -864,11 +864,17 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		"matchableOnly bool",
+		"matchableOnly, includePrioritySources bool",
+		"minEPSS",
+		"minEPSSPercentile",
+		"includePrioritySources",
 		"jsonb_array_elements(CASE WHEN jsonb_typeof(affected_products) = 'array'",
 		"ap->>'name' ILIKE",
 		"COALESCE(NULLIF(ap->>'ecosystem', ''), ecosystem) ILIKE",
 		"ap::text ILIKE",
+		"epss_score>=$",
+		"epss_percentile>=$",
+		"source NOT IN ('cisa-kev', 'epss')",
 		"if matchableOnly",
 		"cveSourceMatchablePredicateSQL",
 	} {

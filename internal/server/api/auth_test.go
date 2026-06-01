@@ -4152,9 +4152,12 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 		`normalizeCveSource(r.URL.Query().Get("source"), "")`,
 		`http.Error(w, "invalid source", http.StatusBadRequest)`,
 		`floatParam(r, "min_cvss", 0)`,
+		`floatParam(r, "min_epss", 0)`,
+		`floatParam(r, "min_epss_percentile", 0)`,
 		`boolQuery(r, "matchable")`,
+		`boolQuery(r, "include_priority_sources")`,
 		"s.db.SearchCveDatabase(ctx, query, severity, source",
-		"minCVSS, matchableOnly",
+		"minCVSS, minEPSS, minEPSSPercentile, matchableOnly, includePrioritySources",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search source normalization missing %q: %s", want, fn)
