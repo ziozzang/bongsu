@@ -2145,6 +2145,10 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"s.rematch_eligible === false",
 		"Stale CVE Sources",
 		"oldestCveAgeDays",
+		"staleCveSourceByName",
+		"staleSource?.age_seconds",
+		"missing last update",
+		">stale</span>",
 	} {
 		if !strings.Contains(appBody, want) {
 			t.Fatalf("dashboard source quality gate missing %q", want)

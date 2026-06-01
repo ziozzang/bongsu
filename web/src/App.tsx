@@ -399,7 +399,9 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     : 'policy pending';
   const weakestCveSource = cveSources.reduce<CveSourceStat | null>((worst, source) =>
     !worst || (source.matchable_percent ?? 0) < (worst.matchable_percent ?? 0) ? source : worst, null);
-  const staleCveSourceCount = health?.security_db_freshness?.stale_sources?.length || 0;
+  const staleCveSources = health?.security_db_freshness?.stale_sources || [];
+  const staleCveSourceByName = new Map(staleCveSources.map(s => [s.source.toLowerCase(), s]));
+  const staleCveSourceCount = staleCveSources.length;
   const oldestCveAgeDays = health?.security_db_freshness?.oldest_age_seconds
     ? health.security_db_freshness.oldest_age_seconds / 86400
     : 0;
@@ -1050,10 +1052,13 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
               {cveSources.map(s => {
                 const belowQuality = sourceBelowQuality(s);
                 const excludedByPolicy = s.rematch_eligible === false;
+                const staleSource = staleCveSourceByName.get(s.source.toLowerCase());
+                const rowWarn = belowQuality || excludedByPolicy || staleSource;
                 return (
-                  <tr key={s.source} style={belowQuality || excludedByPolicy ? { background: 'rgba(224, 176, 32, 0.08)' } : undefined}>
+                  <tr key={s.source} style={rowWarn ? { background: staleSource ? 'rgba(248, 113, 113, 0.08)' : 'rgba(224, 176, 32, 0.08)' } : undefined}>
                     <td>
                       <span style={{ fontWeight: 600 }}>{s.source.toUpperCase()}</span>
+                      {staleSource && <span className="badge" title={staleSource.last_update ? `last update ${new Date(staleSource.last_update).toLocaleString()}` : 'missing last update'} style={{ marginLeft: 6, color: 'var(--critical)' }}>stale</span>}
                       {belowQuality && <span className="badge" style={{ marginLeft: 6, color: 'var(--medium)' }}>below gate</span>}
                       {excludedByPolicy && <span className="badge" title={s.rematch_exclusion || ''} style={{ marginLeft: 6, color: 'var(--medium)' }}>policy excluded</span>}
                     </td>
@@ -1069,7 +1074,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
                     <td className="mono">{(s.with_fixed || 0).toLocaleString()}</td>
                     <td className="mono">{(s.with_ranges || 0).toLocaleString()}</td>
                     <td className="mono">{(s.with_cvss || 0).toLocaleString()}</td>
-                    <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.last_update ? new Date(s.last_update).toLocaleString() : '-'}</td>
+                    <td className="mono" style={{ fontSize: '0.8125rem', color: staleSource ? 'var(--critical)' : undefined }}>
+                      {s.last_update ? new Date(s.last_update).toLocaleString() : '-'}
+                      {staleSource?.age_seconds !== undefined && <div style={{ fontSize: '0.75rem' }}>{formatAge(staleSource.age_seconds)} old</div>}
+                    </td>
                   </tr>
                 );
               })}
