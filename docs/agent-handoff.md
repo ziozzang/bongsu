@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-01 19:45:00 KST
+Updated: 2026-06-01 19:47:22 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -51,6 +51,7 @@ This handoff commit should include:
 - `.github/workflows/ci.yml`
 - A cron-mode one-line installer smoke verification that installs local packaged agent/Trivy binaries into a temporary work directory, generates and reuses a persistent agent token, writes `0600` config/token files, replaces the bongsu cron entry on reinstall, and runs the first agent scan without requiring root, systemd, network access, or Caddy changes.
 - Download-path installer verification that fetches agent and Trivy binaries through header-authenticated `curl`, rejects token-bearing URLs, requires the `X-Bongsu-SHA256` header, and fails closed while removing a checksum-mismatched binary.
+- Systemd-mode installer verification that writes service/timer/daemon unit files into a test systemd directory, validates hardening directives and daemon polling command, calls `systemctl daemon-reload` plus timer/daemon enablement, and runs the first scan without touching `/etc/systemd` during tests.
 
 ## Live Runtime
 
@@ -130,6 +131,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - CVSS v2/v3.x/v4 recalculation support exists and startup recalculation is timeout-bounded.
 - Background stale-while-revalidate cache for `/api/cve-db/stats` is implemented.
 - The dashboard API client now reads `X-Bongsu-Cache` for CVE DB stats and the dashboard card exposes cache state, generated timestamp, and stats duration.
+- `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
 
 ## Verification Commands
 
@@ -180,7 +182,7 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 3. Open the web UI at `http://10.2.2.10:5678/` and visually verify dashboard, CVE Search, vulnerability list, RBAC/admin pages, and force scan controls.
 4. Add a lightweight browser/E2E test for the CVE Search menu and dashboard CVE DB status card.
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
-6. Improve one-line installer end-to-end tests for root/systemd service installation paths.
+6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.
 
 ## Matching Rules Reminder

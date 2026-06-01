@@ -279,3 +279,74 @@ if [ -e "$BAD_SHA_WORK_DIR/bin/bongsu-agent" ]; then
 fi
 
 echo "Installer download verification passed"
+
+SYSTEMD_INSTALLER_DIR="$TMP_DIR/systemd-installer"
+SYSTEMD_WORK_DIR="$TMP_DIR/systemd-work"
+SYSTEMD_STUB_DIR="$TMP_DIR/systemd-stubs"
+SYSTEMD_DIR="$TMP_DIR/systemd-units"
+SYSTEMCTL_LOG="$TMP_DIR/systemctl.log"
+
+mkdir -p "$SYSTEMD_INSTALLER_DIR/bin" "$SYSTEMD_STUB_DIR"
+cp "$ROOT_DIR/scripts/install-agent.sh" "$SYSTEMD_INSTALLER_DIR/install-agent.sh"
+
+cat > "$SYSTEMD_INSTALLER_DIR/bin/bongsu-agent" <<'AGENT'
+#!/bin/sh
+echo "systemd bongsu-agent smoke run: $*"
+exit 0
+AGENT
+chmod +x "$SYSTEMD_INSTALLER_DIR/bin/bongsu-agent"
+
+cat > "$SYSTEMD_INSTALLER_DIR/bin/trivy" <<'TRIVY'
+#!/bin/sh
+echo "systemd trivy smoke"
+exit 0
+TRIVY
+chmod +x "$SYSTEMD_INSTALLER_DIR/bin/trivy"
+
+cp "$STUB_DIR/openssl" "$SYSTEMD_STUB_DIR/openssl"
+cat > "$SYSTEMD_STUB_DIR/id" <<'ID'
+#!/bin/sh
+if [ "${1:-}" = "-u" ]; then
+    echo 0
+    exit 0
+fi
+/usr/bin/id "$@"
+ID
+chmod +x "$SYSTEMD_STUB_DIR/id"
+
+cat > "$SYSTEMD_STUB_DIR/systemctl" <<'SYSTEMCTL'
+#!/bin/sh
+printf '%s\n' "$*" >> "$BONGSU_TEST_SYSTEMCTL_LOG"
+SYSTEMCTL
+chmod +x "$SYSTEMD_STUB_DIR/systemctl"
+
+PATH="$SYSTEMD_STUB_DIR:/usr/bin:/bin" \
+BONGSU_WORK_DIR="$SYSTEMD_WORK_DIR" \
+BONGSU_PACKAGES_ONLY=true \
+BONGSU_INSTALL_MODE=systemd \
+BONGSU_FORCE_SCAN_DAEMON=true \
+BONGSU_SYSTEMD_DIR="$SYSTEMD_DIR" \
+BONGSU_SYSTEMCTL_BIN=systemctl \
+BONGSU_TEST_AGENT_TOKEN="$TOKEN" \
+BONGSU_TEST_SYSTEMCTL_LOG="$SYSTEMCTL_LOG" \
+bash "$SYSTEMD_INSTALLER_DIR/install-agent.sh" "$SERVER_URL" "$API_KEY" > "$TMP_DIR/systemd-install.out"
+
+assert_file "$SYSTEMD_DIR/bongsu-agent.service"
+assert_file "$SYSTEMD_DIR/bongsu-agent.timer"
+assert_file "$SYSTEMD_DIR/bongsu-agent-daemon.service"
+assert_contains "$SYSTEMD_DIR/bongsu-agent.service" "ExecStart=$SYSTEMD_WORK_DIR/bin/bongsu-agent --config $SYSTEMD_WORK_DIR/config.yaml --type daily --packages-only"
+assert_contains "$SYSTEMD_DIR/bongsu-agent.service" "ProtectSystem=strict"
+assert_contains "$SYSTEMD_DIR/bongsu-agent.service" "ReadWritePaths=$SYSTEMD_WORK_DIR"
+assert_contains "$SYSTEMD_DIR/bongsu-agent.service" "PrivateTmp=true"
+assert_contains "$SYSTEMD_DIR/bongsu-agent.timer" "OnCalendar=*-*-* 03:00:00"
+assert_contains "$SYSTEMD_DIR/bongsu-agent.timer" "Persistent=true"
+assert_contains "$SYSTEMD_DIR/bongsu-agent-daemon.service" "ExecStart=$SYSTEMD_WORK_DIR/bin/bongsu-agent --config $SYSTEMD_WORK_DIR/config.yaml --daemon --poll-interval 60s"
+assert_contains "$SYSTEMD_DIR/bongsu-agent-daemon.service" "Restart=always"
+assert_contains "$SYSTEMCTL_LOG" "daemon-reload"
+assert_contains "$SYSTEMCTL_LOG" "enable --now bongsu-agent.timer"
+assert_contains "$SYSTEMCTL_LOG" "enable --now bongsu-agent-daemon.service"
+assert_contains "$TMP_DIR/systemd-install.out" "Systemd timer installed: bongsu-agent.timer"
+assert_contains "$TMP_DIR/systemd-install.out" "Systemd daemon installed: bongsu-agent-daemon.service"
+assert_contains "$TMP_DIR/systemd-install.out" "systemd bongsu-agent smoke run:"
+
+echo "Installer systemd verification passed"

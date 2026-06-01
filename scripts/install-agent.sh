@@ -13,6 +13,8 @@ INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
 INSTALL_TOKEN="${BONGSU_INSTALL_TOKEN:-}"
 AGENT_TOKEN="${BONGSU_AGENT_TOKEN:-}"
+SYSTEMD_DIR="${BONGSU_SYSTEMD_DIR:-/etc/systemd/system}"
+SYSTEMCTL_BIN="${BONGSU_SYSTEMCTL_BIN:-systemctl}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -109,6 +111,8 @@ if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "  BONGSU_FORCE_SCAN_DAEMON  Install force scan daemon in systemd mode (default: true)"
     echo "  BONGSU_INSTALL_TOKEN  Optional server install/download token"
     echo "  BONGSU_AGENT_TOKEN    Optional persistent per-host token"
+    echo "  BONGSU_SYSTEMD_DIR    Systemd unit directory (default: /etc/systemd/system)"
+    echo "  BONGSU_SYSTEMCTL_BIN  systemctl command path/name (default: systemctl)"
     exit 1
 fi
 
@@ -205,8 +209,9 @@ if [ "$PACKAGES_ONLY" = "true" ]; then
     AGENT_CMD="$AGENT_CMD --packages-only"
 fi
 
-if [ "$INSTALL_MODE" = "systemd" ] && command -v systemctl >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
-    cat > /etc/systemd/system/bongsu-agent.service << SERVICE
+if [ "$INSTALL_MODE" = "systemd" ] && command -v "$SYSTEMCTL_BIN" >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
+    mkdir -p "$SYSTEMD_DIR"
+    cat > "$SYSTEMD_DIR/bongsu-agent.service" << SERVICE
 [Unit]
 Description=Bongsu package inventory agent
 After=network-online.target docker.service
@@ -222,7 +227,7 @@ ProtectSystem=strict
 ReadWritePaths=$WORK_DIR
 PrivateTmp=true
 SERVICE
-    cat > /etc/systemd/system/bongsu-agent.timer << TIMER
+    cat > "$SYSTEMD_DIR/bongsu-agent.timer" << TIMER
 [Unit]
 Description=Run Bongsu package inventory agent
 
@@ -233,11 +238,11 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 TIMER
-    systemctl daemon-reload
-    systemctl enable --now bongsu-agent.timer
+    "$SYSTEMCTL_BIN" daemon-reload
+    "$SYSTEMCTL_BIN" enable --now bongsu-agent.timer
     echo "Systemd timer installed: bongsu-agent.timer"
     if [ "$FORCE_SCAN_DAEMON" = "true" ]; then
-        cat > /etc/systemd/system/bongsu-agent-daemon.service << SERVICE
+        cat > "$SYSTEMD_DIR/bongsu-agent-daemon.service" << SERVICE
 [Unit]
 Description=Bongsu force scan polling agent
 After=network-online.target docker.service
@@ -258,8 +263,8 @@ PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
 SERVICE
-        systemctl daemon-reload
-        systemctl enable --now bongsu-agent-daemon.service
+        "$SYSTEMCTL_BIN" daemon-reload
+        "$SYSTEMCTL_BIN" enable --now bongsu-agent-daemon.service
         echo "Systemd daemon installed: bongsu-agent-daemon.service"
     fi
 else
