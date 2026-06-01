@@ -3578,6 +3578,13 @@ func safeAffectedFixedVersionSQL(affectedExpr string) string {
 		END`, affectedExpr, affectedExpr, affectedExpr)
 }
 
+func cveAffectedPackageFixedVersionSQL(affectedExpr string) string {
+	return fmt.Sprintf(`COALESCE(
+		%s,
+		NULLIF(jsonb_path_query_first(%s, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
+	)`, safeAffectedFixedVersionSQL(affectedExpr), affectedExpr)
+}
+
 func affectedProductEcosystemSQL(cveAlias, affectedAlias string) string {
 	cvePrefix := ""
 	if cveAlias != "" {
@@ -3918,10 +3925,7 @@ func (db *DB) insertCveAffectedPackagesTx(ctx context.Context, tx *sql.Tx, sourc
 		args = append(args, source)
 		filter = " AND c.source = $1"
 	}
-	fixedExpr := fmt.Sprintf(`COALESCE(
-		%s,
-		NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
-	)`, safeAffectedFixedVersionSQL("ap"))
+	fixedExpr := cveAffectedPackageFixedVersionSQL("ap")
 	ecosystemExpr := affectedProductEcosystemSQL("c", "ap")
 	res, err := tx.ExecContext(ctx, fmt.Sprintf(`
 INSERT INTO cve_affected_packages (cve_id, vulnerability_id, source, package_name, ecosystem, fixed_version, affected_product, updated_at)
@@ -3955,10 +3959,7 @@ func (db *DB) RefreshCveAffectedPackagesForCveTx(ctx context.Context, tx *sql.Tx
 	if _, err := tx.ExecContext(ctx, `DELETE FROM cve_affected_packages WHERE cve_id=$1`, cveID); err != nil {
 		return 0, err
 	}
-	fixedExpr := fmt.Sprintf(`COALESCE(
-		%s,
-		NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
-	)`, safeAffectedFixedVersionSQL("ap"))
+	fixedExpr := cveAffectedPackageFixedVersionSQL("ap")
 	ecosystemExpr := affectedProductEcosystemSQL("c", "ap")
 	res, err := tx.ExecContext(ctx, fmt.Sprintf(`
 INSERT INTO cve_affected_packages (cve_id, vulnerability_id, source, package_name, ecosystem, fixed_version, affected_product, updated_at)
@@ -3997,10 +3998,7 @@ func (db *DB) RebuildCveAffectedPackages(ctx context.Context) (int, error) {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM cve_affected_packages`); err != nil {
 		return 0, err
 	}
-	fixedExpr := fmt.Sprintf(`COALESCE(
-		%s,
-		NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
-	)`, safeAffectedFixedVersionSQL("ap"))
+	fixedExpr := cveAffectedPackageFixedVersionSQL("ap")
 	ecosystemExpr := affectedProductEcosystemSQL("c", "ap")
 	res, err := tx.ExecContext(ctx, fmt.Sprintf(`
 INSERT INTO cve_affected_packages (cve_id, vulnerability_id, source, package_name, ecosystem, fixed_version, affected_product, updated_at)

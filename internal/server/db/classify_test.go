@@ -999,6 +999,7 @@ func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
 		"contextual": cveContextualFixedVersionSQL("c", "v"),
 		"safe":       cveSafeFixedVersionSQL("c"),
 		"fixed":      cveFixedVersionSQL("c"),
+		"affected":   cveAffectedPackageFixedVersionSQL("ap"),
 	} {
 		for _, want := range []string{
 			"jsonb_array_length",
@@ -1012,6 +1013,45 @@ func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
 		if strings.Contains(got, "jsonb_array_length(ap->'fixed') > 0") ||
 			strings.Contains(got, "affected_products->0->'fixed'->>0") && !strings.Contains(got, "jsonb_array_length") {
 			t.Fatalf("%s CVE fixed enrichment can select ambiguous fixed versions: %s", name, got)
+		}
+	}
+}
+
+func TestCveAffectedPackageIndexUsesSharedFixedVersionRules(t *testing.T) {
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, fnName := range []string{
+		"insertCveAffectedPackagesTx",
+		"RefreshCveAffectedPackagesForCveTx",
+		"RebuildCveAffectedPackages",
+	} {
+		start := strings.Index(body, "func (db *DB) "+fnName)
+		if start < 0 {
+			t.Fatalf("%s not found", fnName)
+		}
+		next := strings.Index(body[start+1:], "\nfunc ")
+		if next < 0 {
+			t.Fatalf("%s body end not found", fnName)
+		}
+		fn := body[start : start+1+next]
+		if !strings.Contains(fn, `fixedExpr := cveAffectedPackageFixedVersionSQL("ap")`) {
+			t.Fatalf("%s must use shared affected-package fixed version SQL: %s", fnName, fn)
+		}
+		if strings.Contains(fn, "jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed") {
+			t.Fatalf("%s must not inline affected fixed extraction: %s", fnName, fn)
+		}
+	}
+	got := cveAffectedPackageFixedVersionSQL("ap")
+	for _, want := range []string{
+		"jsonb_array_length",
+		"= 1",
+		"$.ranges[*].events[*].fixed",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("affected-package fixed SQL missing %q: %s", want, got)
 		}
 	}
 }
