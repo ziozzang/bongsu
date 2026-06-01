@@ -2122,7 +2122,7 @@ func TestCveReplacementDeleteHelpersAreTransactional(t *testing.T) {
 }
 
 func TestTempCvePlaceholdersAreRemovedByMigration(t *testing.T) {
-	migration, err := os.ReadFile("../../../migrations/027_remove_temp_cve_placeholders.sql")
+	migration, err := os.ReadFile("../../../migrations/030_remove_all_temp_cve_placeholders.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
