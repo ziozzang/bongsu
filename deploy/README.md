@@ -249,7 +249,7 @@ spec:
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/api/report` | Agent scan report submission, including bounded optional `errors[]` collection failures that mark scans degraded |
-| `GET` | `/api/stats` | Dashboard totals, raw vulnerability rows, active remediation finding/risk-level counts, and scan request backlog counts |
+| `GET` | `/api/stats` | Dashboard totals, raw vulnerability rows, active remediation finding/risk-level counts, SBOM coverage/freshness, and scan request backlog counts |
 | `GET` | `/api/hosts` | List hosts with `agent_status` and `inventory_status` filters (`healthy`,`degraded`,`stale`,`empty`,`none`), RBAC scope, raw and active vulnerability counts, and latest inventory summary |
 | `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
 | `POST` | `/api/hosts/{id}/agent-token/reset` | Admin-only reset of a host's bound agent token for reinstall or token-loss recovery |

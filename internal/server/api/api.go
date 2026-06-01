@@ -1734,6 +1734,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	totalInventoryVulnerabilities := 0
 	totalInventoryContainers := 0
 	inventoryCoveredHosts := 0
+	inventoryFreshHosts := 0
 	inventoryStaleAfter := time.Duration(envInt("BONGSU_INVENTORY_STALE_HOURS", 48)) * time.Hour
 	now := time.Now()
 	for _, h := range hosts {
@@ -1749,8 +1750,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		summary := inventory[h.ID]
 		inventoryStatus := hostInventoryStatus(summary, now, inventoryStaleAfter)
 		inventoryStatusCounts[inventoryStatus]++
-		if inventoryStatus == "healthy" || inventoryStatus == "degraded" {
+		if summary.ScanID != "" {
 			inventoryCoveredHosts++
+		}
+		if inventoryStatus == "healthy" || inventoryStatus == "degraded" {
+			inventoryFreshHosts++
 		}
 		totalInventoryPackages += summary.PackageCount
 		totalInventoryVulnerabilities += summary.VulnCount
@@ -1840,6 +1844,8 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"inventory_status_counts":           inventoryStatusCounts,
 		"inventory_covered_hosts":           inventoryCoveredHosts,
 		"inventory_coverage_percent":        percent(inventoryCoveredHosts, visibleHosts),
+		"inventory_fresh_hosts":             inventoryFreshHosts,
+		"inventory_fresh_percent":           percent(inventoryFreshHosts, visibleHosts),
 		"inventory_latest_packages":         totalInventoryPackages,
 		"inventory_latest_vulnerabilities":  totalInventoryVulnerabilities,
 		"inventory_latest_containers":       totalInventoryContainers,

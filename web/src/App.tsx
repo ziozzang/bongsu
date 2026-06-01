@@ -451,6 +451,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const effectiveAgentCounts = stats?.agent_status_counts || agentCounts;
   const effectiveInventoryCounts = stats?.inventory_status_counts || inventoryCounts;
   const inventoryCoveragePercent = stats?.inventory_coverage_percent ?? 0;
+  const inventoryFreshPercent = stats?.inventory_fresh_percent ?? 0;
   const inventoryCoverageColor = inventoryCoveragePercent < 70
     ? 'var(--critical)'
     : inventoryCoveragePercent < 90
@@ -696,7 +697,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             {inventoryCoveragePercent.toFixed(1)}%
           </button>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            {stats.inventory_covered_hosts || 0} / {stats.total_hosts} hosts
+            {stats.inventory_covered_hosts || 0} / {stats.total_hosts} hosts, {inventoryFreshPercent.toFixed(1)}% fresh
           </div>
         </div>
         <div className="stat-card">

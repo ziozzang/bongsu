@@ -243,6 +243,8 @@ export interface Stats {
   inventory_status_counts?: Record<string, number>;
   inventory_covered_hosts?: number;
   inventory_coverage_percent?: number;
+  inventory_fresh_hosts?: number;
+  inventory_fresh_percent?: number;
   inventory_latest_packages?: number;
   inventory_latest_vulnerabilities?: number;
   inventory_latest_containers?: number;
