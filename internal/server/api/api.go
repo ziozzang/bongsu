@@ -194,6 +194,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/admin/security-db/recalculate", s.handleSecurityDbRecalculate)
 	s.mux.HandleFunc("POST /api/admin/cve-db/rematch", s.handleCveDbRematch)
 	s.mux.HandleFunc("POST /api/admin/cve-db/affected-index/rebuild", s.handleCveDbAffectedIndexRebuild)
+	s.mux.HandleFunc("POST /api/admin/cve-db/reference-index/rebuild", s.handleCveDbReferenceIndexRebuild)
 	s.mux.HandleFunc("POST /api/admin/cve-db/recalc-cvss", s.handleCveDbRecalcCVSS)
 	s.mux.HandleFunc("GET /api/admin/cve-db/export", s.handleCveDbExport)
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
@@ -4885,6 +4886,30 @@ func (s *Server) handleCveDbAffectedIndexRebuild(w http.ResponseWriter, r *http.
 		auditMeta[k] = v
 	}
 	s.audit(r, "cve_db.affected_index_rebuild", "cve_db", "affected_index", "ok", auditMeta)
+}
+
+func (s *Server) handleCveDbReferenceIndexRebuild(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	count, err := s.db.RebuildCveReferenceKeys(r.Context())
+	if err != nil {
+		log.Printf("cve reference key index rebuild: %v", err)
+		http.Error(w, "rebuild failed", http.StatusInternalServerError)
+		return
+	}
+	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	out := map[string]any{"status": "ok", "indexed": count}
+	for k, v := range revisionMeta {
+		out[k] = v
+	}
+	writeJSON(w, http.StatusOK, out)
+	auditMeta := map[string]any{"indexed": count}
+	for k, v := range revisionMeta {
+		auditMeta[k] = v
+	}
+	s.audit(r, "cve_db.reference_index_rebuild", "cve_db", "reference_index", "ok", auditMeta)
 }
 
 func rematchOptionsFromEnv() db.RematchOptions {

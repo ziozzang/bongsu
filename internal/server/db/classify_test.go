@@ -925,7 +925,7 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 		"context.WithTimeout",
 		"BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS",
 		"markCveReferenceGroupStatus(entries, \"unavailable\")",
-		"c.vulnerability_id ILIKE",
+		"JOIN cve_reference_keys crk",
 		"pq.Array(cves)",
 	} {
 		if !strings.Contains(fn, want) {
@@ -950,20 +950,20 @@ func TestCveReferenceKeyFilterSupportsCanonicalGroups(t *testing.T) {
 		{
 			name:       "canonical cve",
 			key:        "cve:CVE-2026-48840",
-			wantFilter: "vulnerability_id ILIKE $%d",
-			wantVals:   []string{"%CVE-2026-48840%", "%CVE-2026-48840%", "%CVE-2026-48840%", "%CVE-2026-48840%"},
+			wantFilter: "cve_reference_keys",
+			wantVals:   []string{"cve:CVE-2026-48840"},
 		},
 		{
 			name:       "debian vendor",
 			key:        "vendor:debian",
-			wantFilter: "vulnerability_id ILIKE $%d",
-			wantVals:   []string{"%debian.org%", "%DEBIAN-CVE-%"},
+			wantFilter: "cve_reference_keys",
+			wantVals:   []string{"vendor:debian"},
 		},
 		{
 			name:       "github repo",
 			key:        "repo:github.com/mervinpraison/praisonai",
-			wantFilter: "refs::text ILIKE $%d",
-			wantVals:   []string{"%github.com/mervinpraison/praisonai%"},
+			wantFilter: "cve_reference_keys",
+			wantVals:   []string{"repo:github.com/mervinpraison/praisonai"},
 		},
 		{
 			name:       "invalid",
@@ -1476,6 +1476,7 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		`{table: "vulnerabilities", column: "finding_source"}`,
 		`{table: "cve_database", column: "category"}`,
 		`{table: "cve_database", column: "epss_score"}`,
+		`{table: "cve_reference_keys"}`,
 		`{table: "container_assets"}`,
 		`{table: "scan_requests", column: "claimed_by_host_id"}`,
 		`{table: "scan_requests", column: "security_db_revision"}`,
@@ -1484,6 +1485,7 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		`{index: "idx_scan_requests_pending_security_db_host"}`,
 		`{index: "idx_vulnerabilities_package_scan_vuln"}`,
 		`{index: "idx_vulnerabilities_finding_source"}`,
+		`{index: "idx_cve_reference_keys_key"}`,
 		"db.columnExists",
 		"db.indexExists",
 		"db.tableExists",
@@ -1812,6 +1814,46 @@ func TestBulkCveAffectedPackageRefreshCanScopeBySource(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("bulk affected package index refresh missing %q", want)
+		}
+	}
+}
+
+func TestCveReferenceKeyIndexIsMaintainedAndIndexed(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/024_cve_reference_keys.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationBody := string(migration)
+	for _, want := range []string{
+		"CREATE TABLE IF NOT EXISTS cve_reference_keys",
+		"cve_id TEXT NOT NULL",
+		"REFERENCES cve_database(id) ON DELETE CASCADE",
+		"PRIMARY KEY (cve_id, reference_key)",
+		"idx_cve_reference_keys_key",
+	} {
+		if !strings.Contains(migrationBody, want) {
+			t.Fatalf("CVE reference key migration missing %q: %s", want, migrationBody)
+		}
+	}
+
+	out, err := os.ReadFile("db.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"RefreshCveReferenceKeysForCveTx",
+		"RebuildCveReferenceKeys",
+		"EnsureCveReferenceKeys",
+		"SELECT id, vulnerability_id, title, description, refs::text FROM cve_database",
+		"DELETE FROM cve_reference_keys",
+		"INSERT INTO cve_reference_keys",
+		"cveReferenceKeys(e)",
+		"JOIN cve_reference_keys crk",
+		"crk.reference_key = ('cve:' || k.cve)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE reference key index support missing %q", want)
 		}
 	}
 }

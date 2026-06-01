@@ -685,6 +685,8 @@ export const api = {
     requestJSON<{matched: number; new_vulns: number; skipped: number; scanned_candidates?: number; candidate_limit: number; limited: boolean; eligible_sources?: number; excluded_sources?: number; source_policy?: Record<string, { eligible?: boolean; reason?: string }>; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),
   rebuildCveAffectedIndex: () =>
     request<{status: string; indexed: number; index?: CveDbStatsResponse['affected_package_index']; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/affected-index/rebuild', undefined, 'POST'),
+  rebuildCveReferenceIndex: () =>
+    request<{status: string; indexed: number; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/reference-index/rebuild', undefined, 'POST'),
   recalcCveCVSS: () =>
     request<{status: string; updated: number; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/recalc-cvss', undefined, 'POST'),
   pruneRetention: (body: { dry_run: boolean; scan_days?: number; request_days?: number; audit_days?: number }) =>

@@ -197,6 +197,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "cve_database", column: "category"},
 		{table: "cve_database", column: "epss_score"},
 		{table: "cve_affected_packages"},
+		{table: "cve_reference_keys"},
 		{table: "container_assets"},
 		{table: "scan_requests", column: "claimed_by_host_id"},
 		{table: "scan_requests", column: "security_db_revision"},
@@ -206,6 +207,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{index: "idx_vulnerabilities_package_scan_vuln"},
 		{index: "idx_vulnerabilities_finding_source"},
 		{index: "idx_cve_affected_pkg_name_ecosystem"},
+		{index: "idx_cve_reference_keys_key"},
 	}
 	for _, check := range checks {
 		var ok bool
@@ -3927,6 +3929,13 @@ RETURNING id`)
 		} else {
 			_ = cveID
 		}
+		if _, err := db.RefreshCveReferenceKeysForCveTx(ctx, tx, cveID, *e); err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("refresh reference keys %s: %w", e.VulnerabilityID, err)
+			}
+			log.Printf("refresh CVE reference key index: %v", err)
+			continue
+		}
 		count++
 	}
 	if firstErr != nil {
@@ -3951,6 +3960,32 @@ WHERE cap.cve_id = c.id
 		return 0, err
 	}
 	return db.insertCveAffectedPackagesTx(ctx, tx, source)
+}
+
+func (db *DB) RefreshCveReferenceKeysForCveTx(ctx context.Context, tx *sql.Tx, cveID string, entry models.CveEntry) (int, error) {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cve_reference_keys WHERE cve_id=$1`, cveID); err != nil {
+		return 0, err
+	}
+	keys := cveReferenceKeys(entry)
+	if len(keys) == 0 {
+		return 0, nil
+	}
+	stmt, err := tx.PrepareContext(ctx, `
+INSERT INTO cve_reference_keys (cve_id, reference_key, updated_at)
+VALUES ($1, $2, now())
+ON CONFLICT (cve_id, reference_key) DO UPDATE SET updated_at=now()`)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+	count := 0
+	for _, key := range keys {
+		if _, err := stmt.ExecContext(ctx, cveID, key); err != nil {
+			return count, err
+		}
+		count++
+	}
+	return count, nil
 }
 
 func (db *DB) insertCveAffectedPackagesTx(ctx context.Context, tx *sql.Tx, source string) (int, error) {
@@ -4075,6 +4110,75 @@ func (db *DB) EnsureCveAffectedPackages(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	return db.RebuildCveAffectedPackages(ctx)
+}
+
+func (db *DB) RebuildCveReferenceKeys(ctx context.Context) (int, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, vulnerability_id, title, description, refs::text FROM cve_database`)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	type indexedEntry struct {
+		cveID string
+		keys  []string
+	}
+	entries := []indexedEntry{}
+	for rows.Next() {
+		var e models.CveEntry
+		if err := rows.Scan(&e.ID, &e.VulnerabilityID, &e.Title, &e.Description, &e.References); err != nil {
+			return 0, err
+		}
+		keys := cveReferenceKeys(e)
+		if len(keys) == 0 {
+			continue
+		}
+		entries = append(entries, indexedEntry{cveID: e.ID, keys: keys})
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cve_reference_keys`); err != nil {
+		return 0, err
+	}
+	stmt, err := tx.PrepareContext(ctx, `
+INSERT INTO cve_reference_keys (cve_id, reference_key, updated_at)
+VALUES ($1, $2, now())
+ON CONFLICT (cve_id, reference_key) DO UPDATE SET updated_at=now()`)
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+	count := 0
+	for _, entry := range entries {
+		for _, key := range entry.keys {
+			if _, err := stmt.ExecContext(ctx, entry.cveID, key); err != nil {
+				return 0, err
+			}
+			count++
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (db *DB) EnsureCveReferenceKeys(ctx context.Context) (int, error) {
+	var cveCount, keyCount int
+	if err := db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM cve_database), (SELECT count(*) FROM cve_reference_keys)`).Scan(&cveCount, &keyCount); err != nil {
+		return 0, err
+	}
+	if cveCount == 0 || keyCount > 0 {
+		return 0, nil
+	}
+	return db.RebuildCveReferenceKeys(ctx)
 }
 
 func (db *DB) DeleteCveEntriesBySourceTx(ctx context.Context, tx *sql.Tx, source string) (int, error) {
@@ -4277,9 +4381,8 @@ SELECT k.cve,
 	count(c.id) FILTER (WHERE %s),
 	count(DISTINCT NULLIF(c.source, ''))
 FROM keys k
-JOIN cve_database c ON (
-	c.vulnerability_id ILIKE ('%%' || k.cve || '%%')
-)
+JOIN cve_reference_keys crk ON crk.reference_key = ('cve:' || k.cve)
+JOIN cve_database c ON c.id = crk.cve_id
 GROUP BY k.cve`, matchablePredicate), pq.Array(cves))
 	if err != nil {
 		return err
@@ -4442,54 +4545,50 @@ func cveReferenceKeyFilter(referenceKey string) (string, []string) {
 		return "", nil
 	}
 	lower := strings.ToLower(key)
-	textFilter := `(vulnerability_id ILIKE $%d OR title ILIKE $%d OR description ILIKE $%d OR refs::text ILIKE $%d)`
-	textVals := func(value string) []string {
-		pat := "%" + value + "%"
-		return []string{pat, pat, pat, pat}
-	}
+	indexFilter := `EXISTS (SELECT 1 FROM cve_reference_keys crk WHERE crk.cve_id = id AND crk.reference_key = $%d)`
 	switch {
 	case strings.HasPrefix(lower, "cve:"):
 		cve := strings.ToUpper(strings.TrimSpace(key[len("cve:"):]))
 		if !cveReferenceKeyRe.MatchString(cve) {
 			return "", nil
 		}
-		return textFilter, textVals(cve)
+		return indexFilter, []string{"cve:" + cve}
 	case strings.HasPrefix(lower, "ghsa:"):
 		ghsa := strings.TrimSpace(key[len("ghsa:"):])
 		if !ghsaReferenceKeyRe.MatchString(ghsa) {
 			return "", nil
 		}
-		return textFilter, textVals(ghsa)
+		return indexFilter, []string{"ghsa:" + ghsa}
 	case strings.HasPrefix(lower, "rustsec:"):
 		id := strings.ToUpper(strings.TrimSpace(key[len("rustsec:"):]))
 		if !rustsecReferenceKeyRe.MatchString(id) {
 			return "", nil
 		}
-		return textFilter, textVals(id)
+		return indexFilter, []string{"rustsec:" + id}
 	case strings.HasPrefix(lower, "pysec:"):
 		id := strings.ToUpper(strings.TrimSpace(key[len("pysec:"):]))
 		if !pysecReferenceKeyRe.MatchString(id) {
 			return "", nil
 		}
-		return textFilter, textVals(id)
+		return indexFilter, []string{"pysec:" + id}
 	case strings.HasPrefix(lower, "go:"):
 		id := strings.ToUpper(strings.TrimSpace(key[len("go:"):]))
 		if !goReferenceKeyRe.MatchString(id) {
 			return "", nil
 		}
-		return textFilter, textVals(id)
+		return indexFilter, []string{"go:" + id}
 	case strings.HasPrefix(lower, "repo:"):
 		repo := strings.TrimSpace(strings.TrimPrefix(lower, "repo:"))
 		if !strings.HasPrefix(repo, "github.com/") || strings.Count(repo, "/") < 2 {
 			return "", nil
 		}
-		return `refs::text ILIKE $%d`, []string{"%" + repo + "%"}
+		return indexFilter, []string{"repo:" + repo}
 	case lower == "vendor:debian":
-		return `(refs::text ILIKE $%d OR vulnerability_id ILIKE $%d)`, []string{"%debian.org%", "%DEBIAN-CVE-%"}
+		return indexFilter, []string{"vendor:debian"}
 	case lower == "vendor:ubuntu":
-		return `refs::text ILIKE $%d`, []string{"%ubuntu.com%"}
+		return indexFilter, []string{"vendor:ubuntu"}
 	case lower == "vendor:redhat":
-		return `refs::text ILIKE $%d`, []string{"%redhat.com%"}
+		return indexFilter, []string{"vendor:redhat"}
 	default:
 		return "", nil
 	}
