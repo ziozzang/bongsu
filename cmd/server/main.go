@@ -44,6 +44,11 @@ func main() {
 			log.Fatalf("run migrations: %v", err)
 		}
 		log.Println("Database migrations applied")
+		if n, err := database.EnsureCveAffectedPackages(ctx); err != nil {
+			log.Fatalf("prepare CVE affected package index: %v", err)
+		} else if n > 0 {
+			log.Printf("Indexed %d CVE affected packages", n)
+		}
 	}
 
 	// Trivy DB manager and CVE matcher (optional)

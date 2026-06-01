@@ -1026,7 +1026,10 @@ func TestRematchCVEsSupportsScanScopedMatching(t *testing.T) {
 	for _, want := range []string{
 		"opts.ScanID",
 		"opts.CandidateLimit+1",
-		"cvePackageMatchablePredicateSQL(candidateAffectedProducts, \"c.ecosystem\", \"p.name\", \"COALESCE(NULLIF(p.ecosystem, ''), NULLIF(p.pkg_type, ''))\")",
+		"JOIN cve_affected_packages cap",
+		"cap.package_name = lower(p.name)",
+		"cap.ecosystem = %s",
+		"JOIN cve_database c ON c.id = cap.cve_id",
 		"result.Limited = true",
 		"matches = matches[:opts.CandidateLimit]",
 		"AND p.scan_id =",

@@ -299,6 +299,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [rematching, setRematching] = useState(false);
   const [rematchMsg, setRematchMsg] = useState('');
   const [rematchMinQuality, setRematchMinQuality] = useState('');
+  const [rematchCandidateLimit, setRematchCandidateLimit] = useState('');
   const [cvssRecalcBusy, setCvssRecalcBusy] = useState(false);
   const [cvssRecalcMsg, setCvssRecalcMsg] = useState('');
   const [retentionMsg, setRetentionMsg] = useState('');
@@ -373,12 +374,18 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setRematchMsg('');
     try {
       const minQuality = Number(rematchMinQuality);
-      const body = Number.isFinite(minQuality) && minQuality > 0 ? { min_source_matchable_percent: minQuality } : {};
+      const candidateLimit = Number(rematchCandidateLimit);
+      const body: { min_source_matchable_percent?: number; candidate_limit?: number } = {};
+      if (Number.isFinite(minQuality) && minQuality > 0) body.min_source_matchable_percent = minQuality;
+      if (Number.isFinite(candidateLimit) && candidateLimit > 0) body.candidate_limit = Math.floor(candidateLimit);
       const r = await api.rematchCVEs(body);
       const qualityMsg = minQuality > 0 ? ` with source quality >= ${minQuality}%` : '';
+      const limitMsg = candidateLimit > 0 ? `, candidate limit ${Math.floor(candidateLimit).toLocaleString()}` : '';
       const limitedMsg = r.limited ? `, limited at ${r.candidate_limit.toLocaleString()} candidates` : '';
+      const scanned = r.matched + r.skipped;
+      const skippedPct = scanned > 0 ? `, ${(r.skipped * 100 / scanned).toFixed(1)}% skipped` : '';
       const revisionMsg = r.security_db_revision ? `, DB rev ${r.security_db_revision}` : r.security_db_revision_error ? ', DB revision unavailable' : '';
-      setRematchMsg(`Matched ${r.matched.toLocaleString()} packages${qualityMsg}, found ${r.new_vulns.toLocaleString()} new vulnerabilities (${r.skipped} skipped${limitedMsg}${revisionMsg})`);
+      setRematchMsg(`Matched ${r.matched.toLocaleString()} packages${qualityMsg}${limitMsg}, found ${r.new_vulns.toLocaleString()} new vulnerabilities (${r.skipped.toLocaleString()} skipped${skippedPct}${limitedMsg}${revisionMsg})`);
       api.stats().then(setStats).catch(() => {});
     } catch {
       setRematchMsg('Rematch failed (check server logs)');
@@ -908,6 +915,17 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           placeholder="Min matchable %"
           title="Only use CVE sources whose matchable record ratio is at least this percent"
           style={{ width: '9rem', marginLeft: '0.5rem' }}
+        />
+        <input
+          className="compact-input"
+          type="number"
+          min="1"
+          step="10000"
+          value={rematchCandidateLimit}
+          onChange={(e) => setRematchCandidateLimit(e.target.value)}
+          placeholder={`Limit ${cveRematchPolicy?.candidate_limit?.toLocaleString() || 'default'}`}
+          title="Maximum CVE-package candidates to evaluate for this manual rematch"
+          style={{ width: '11rem', marginLeft: '0.5rem' }}
         />
         <button
           className="update-btn"

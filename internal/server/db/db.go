@@ -185,6 +185,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "vulnerabilities", column: "finding_source"},
 		{table: "cve_database", column: "category"},
 		{table: "cve_database", column: "epss_score"},
+		{table: "cve_affected_packages"},
 		{table: "container_assets"},
 		{table: "scan_requests", column: "claimed_by_host_id"},
 		{table: "scan_requests", column: "security_db_revision"},
@@ -193,6 +194,7 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{index: "idx_scan_requests_pending_security_db_host"},
 		{index: "idx_vulnerabilities_package_scan_vuln"},
 		{index: "idx_vulnerabilities_finding_source"},
+		{index: "idx_cve_affected_pkg_name_ecosystem"},
 	}
 	for _, check := range checks {
 		var ok bool
@@ -3806,7 +3808,8 @@ ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 	title=EXCLUDED.title, description=EXCLUDED.description,
 	published_date=EXCLUDED.published_date, modified_date=EXCLUDED.modified_date,
 	affected_products=EXCLUDED.affected_products, refs=EXCLUDED.refs,
-	raw_data=EXCLUDED.raw_data, updated_at=now()`)
+	raw_data=EXCLUDED.raw_data, updated_at=now()
+RETURNING id`)
 	if err != nil {
 		return 0, fmt.Errorf("prepare insert: %w", err)
 	}
@@ -3838,13 +3841,21 @@ ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 		if e.Category == "" || e.Ecosystem == "" {
 			e.Category, e.Ecosystem = ClassifySecuritySource(e.Source, e.AffectedProducts)
 		}
-		if _, err := stmt.ExecContext(ctx, e.ID, e.VulnerabilityID, e.Source, e.Category, e.Ecosystem, e.Severity,
+		var cveID string
+		if err := stmt.QueryRowContext(ctx, e.ID, e.VulnerabilityID, e.Source, e.Category, e.Ecosystem, e.Severity,
 			e.CVSSScore, e.CVSSVector, e.EPSSScore, e.EPSSPercentile, e.Title, e.Description,
-			e.PublishedDate, e.ModifiedDate, e.AffectedProducts, e.References, e.RawData); err != nil {
+			e.PublishedDate, e.ModifiedDate, e.AffectedProducts, e.References, e.RawData).Scan(&cveID); err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("insert %s: %w", e.VulnerabilityID, err)
 			}
 			log.Printf("rematch scan row: %v", err)
+			continue
+		}
+		if _, err := db.RefreshCveAffectedPackagesForCveTx(ctx, tx, cveID); err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("refresh affected packages %s: %w", e.VulnerabilityID, err)
+			}
+			log.Printf("refresh affected package index: %v", err)
 			continue
 		}
 		count++
@@ -3853,6 +3864,98 @@ ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 		return 0, firstErr
 	}
 	return count, nil
+}
+
+func (db *DB) RefreshCveAffectedPackagesForCveTx(ctx context.Context, tx *sql.Tx, cveID string) (int, error) {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cve_affected_packages WHERE cve_id=$1`, cveID); err != nil {
+		return 0, err
+	}
+	fixedExpr := fmt.Sprintf(`COALESCE(
+		%s,
+		NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
+	)`, safeAffectedFixedVersionSQL("ap"))
+	ecosystemExpr := affectedProductEcosystemSQL("c", "ap")
+	res, err := tx.ExecContext(ctx, fmt.Sprintf(`
+INSERT INTO cve_affected_packages (cve_id, vulnerability_id, source, package_name, ecosystem, fixed_version, affected_product, updated_at)
+SELECT DISTINCT ON (c.id, lower(ap->>'name'), %s, %s)
+       c.id,
+       c.vulnerability_id,
+       c.source,
+       lower(ap->>'name') AS package_name,
+       %s AS ecosystem,
+       %s AS fixed_version,
+       ap AS affected_product,
+       now()
+FROM cve_database c
+JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap ON true
+WHERE c.id=$1
+  AND COALESCE(ap->>'name', '') != ''
+  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
+  AND %s IS NOT NULL
+  AND %s != ''
+ON CONFLICT (cve_id, package_name, ecosystem, fixed_version) DO UPDATE SET
+	affected_product=EXCLUDED.affected_product,
+	updated_at=now()`, ecosystemExpr, fixedExpr, ecosystemExpr, fixedExpr, fixedExpr, fixedExpr), cveID)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+func (db *DB) RebuildCveAffectedPackages(ctx context.Context) (int, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cve_affected_packages`); err != nil {
+		return 0, err
+	}
+	fixedExpr := fmt.Sprintf(`COALESCE(
+		%s,
+		NULLIF(jsonb_path_query_first(ap, '$.ranges[*].events[*].fixed ? (@ != "")') #>> '{}', '')
+	)`, safeAffectedFixedVersionSQL("ap"))
+	ecosystemExpr := affectedProductEcosystemSQL("c", "ap")
+	res, err := tx.ExecContext(ctx, fmt.Sprintf(`
+INSERT INTO cve_affected_packages (cve_id, vulnerability_id, source, package_name, ecosystem, fixed_version, affected_product, updated_at)
+SELECT DISTINCT ON (c.id, lower(ap->>'name'), %s, %s)
+       c.id,
+       c.vulnerability_id,
+       c.source,
+       lower(ap->>'name') AS package_name,
+       %s AS ecosystem,
+       %s AS fixed_version,
+       ap AS affected_product,
+       now()
+FROM cve_database c
+JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap ON true
+WHERE COALESCE(ap->>'name', '') != ''
+  AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
+  AND %s IS NOT NULL
+  AND %s != ''
+ON CONFLICT (cve_id, package_name, ecosystem, fixed_version) DO UPDATE SET
+	affected_product=EXCLUDED.affected_product,
+	updated_at=now()`, ecosystemExpr, fixedExpr, ecosystemExpr, fixedExpr, fixedExpr, fixedExpr))
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
+
+func (db *DB) EnsureCveAffectedPackages(ctx context.Context) (int, error) {
+	var cveCount, affectedCount int
+	if err := db.QueryRowContext(ctx, `SELECT (SELECT count(*) FROM cve_database), (SELECT count(*) FROM cve_affected_packages)`).Scan(&cveCount, &affectedCount); err != nil {
+		return 0, err
+	}
+	if cveCount == 0 || affectedCount > 0 {
+		return 0, nil
+	}
+	return db.RebuildCveAffectedPackages(ctx)
 }
 
 func (db *DB) DeleteCveEntriesBySourceTx(ctx context.Context, tx *sql.Tx, source string) (int, error) {
@@ -4540,11 +4643,26 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 	}
 	args := []any{}
 	filters := ""
+	qualityCTE := ""
+	qualityJoin := ""
 	if len(opts.Sources) > 0 {
 		args = append(args, pq.Array(opts.Sources))
 		filters += fmt.Sprintf(" AND c.source = ANY($%d)", len(args))
 	}
 	if opts.MinSourceMatchablePercent > 0 {
+		affectedProducts := `CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END`
+		qualityCTE = fmt.Sprintf(`WITH source_quality AS (
+			SELECT
+				source,
+				COUNT(*) AS total,
+				COUNT(*) FILTER (
+					WHERE %s
+				) AS matchable
+			FROM cve_database
+			WHERE source != ''
+			GROUP BY source
+		)`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"))
+		qualityJoin = "JOIN source_quality sq ON sq.source = c.source"
 		args = append(args, opts.MinSourceMatchablePercent)
 		filters += fmt.Sprintf(" AND (100.0 * sq.matchable / NULLIF(sq.total, 0)) >= $%d", len(args))
 	}
@@ -4557,31 +4675,22 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 	args = append(args, opts.CandidateLimit+1)
 	limitPlaceholder := fmt.Sprintf("$%d", len(args))
 
-	affectedProducts := `CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END`
-	candidateAffectedProducts := `CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END`
 	query := fmt.Sprintf(`
-		WITH source_quality AS (
-			SELECT
-				source,
-				COUNT(*) AS total,
-				COUNT(*) FILTER (
-					WHERE %s
-				) AS matchable
-			FROM cve_database
-			WHERE source != ''
-			GROUP BY source
-		)
+		%s
 		SELECT p.id, p.name, p.version, p.host_id, p.scan_id, p.container, p.file_path,
 		       p.pkg_type, p.ecosystem,
 		       c.vulnerability_id, c.severity, c.cvss_score, c.cvss_vector,
 		       c.title, c.description, c.refs, c.category, c.ecosystem, c.affected_products
 		FROM packages p
 		%s
-		JOIN cve_database c ON %s
-		JOIN source_quality sq ON sq.source = c.source
+		JOIN cve_affected_packages cap
+		  ON cap.package_name = lower(p.name)
+		 AND cap.ecosystem = %s
+		JOIN cve_database c ON c.id = cap.cve_id
+		%s
 		WHERE 1=1%s
 		LIMIT %s
-	`, cveSourceMatchablePredicateSQL(affectedProducts, "ecosystem"), scanJoin, cvePackageMatchablePredicateSQL(candidateAffectedProducts, "c.ecosystem", "p.name", "COALESCE(NULLIF(p.ecosystem, ''), NULLIF(p.pkg_type, ''))"), filters, limitPlaceholder)
+	`, qualityCTE, scanJoin, packageEcosystemSQL("p"), qualityJoin, filters, limitPlaceholder)
 
 	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
