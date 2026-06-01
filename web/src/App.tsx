@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveSourceStat, type CveRematchPolicy, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
 
 const verCmp = (a: string, b: string): number => {
@@ -2424,20 +2424,17 @@ function CveSearchView() {
   const [minCvss, setMinCvss] = useState('');
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [error, setError] = useState('');
   const [page, setPage] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState('published_date');
   const [sortDesc, setSortDesc] = useState(true);
+  const initialSearchStarted = useRef(false);
   const limit = 50;
-
-  useEffect(() => {
-    api.cveDbSources().then(data => {
-      setSources(data.sources || []);
-    }).catch(() => {});
-  }, []);
 
   const doSearch = useCallback((p: number, sBy?: string, sDesc?: boolean) => {
     setLoading(true);
+    setError('');
     const sb = sBy ?? sortBy;
     const sd = sDesc ?? sortDesc;
     const params: Record<string, string> = {
@@ -2457,8 +2454,24 @@ function CveSearchView() {
         setSearched(true);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch((err) => {
+        setError(err?.message || 'CVE database search failed');
+        setSearched(true);
+        setLoading(false);
+      });
   }, [query, severity, source, minCvss, sortBy, sortDesc]);
+
+  useEffect(() => {
+    api.cveDbSources().then(data => {
+      setSources(data.sources || []);
+    }).catch((err) => setError(err?.message || 'CVE source list failed'));
+  }, []);
+
+  useEffect(() => {
+    if (initialSearchStarted.current) return;
+    initialSearchStarted.current = true;
+    doSearch(0, 'published_date', true);
+  }, [doSearch]);
 
   const badge = (s: string) => "badge badge-" + (s || "unknown").toLowerCase();
   const cvssClr = (n: number) => n >= 9 ? "var(--critical)" : n >= 7 ? "var(--high)" : n >= 4 ? "var(--medium)" : "inherit";
@@ -2522,10 +2535,12 @@ function CveSearchView() {
             min="0" max="10" step="0.1"
             style={{ width: 90 }}
           />
-          <button className="filter-btn" onClick={() => doSearch(0)}>Search</button>
+          <button className="filter-btn" onClick={() => doSearch(0)} disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
           {searched && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{results.total.toLocaleString()} results</span>}
         </div>
       </div>
+
+      {error && <div className="card" style={{ padding: '1rem', marginBottom: '1rem', color: 'var(--critical)' }}>{error}</div>}
 
       {!searched && !loading && (
         <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>

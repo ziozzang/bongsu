@@ -1641,7 +1641,7 @@ func (s *Server) handleCveSearch(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	pkgName := r.URL.Query().Get("pkg_name")
 	severity := r.URL.Query().Get("severity")
-	minCVSS := floatParam(r, "min_cvss", 0.1)
+	minCVSS := floatParam(r, "min_cvss", 0)
 	limit := limitParam(r, 50)
 	offset := offsetParam(r)
 	sortBy := r.URL.Query().Get("sort_by")
@@ -5098,7 +5098,7 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid source", http.StatusBadRequest)
 		return
 	}
-	minCVSS := floatParam(r, "min_cvss", 0.1)
+	minCVSS := floatParam(r, "min_cvss", 0)
 	sortBy := r.URL.Query().Get("sort_by")
 	sortOrder := r.URL.Query().Get("sort_order")
 	limit := limitParam(r, 50)

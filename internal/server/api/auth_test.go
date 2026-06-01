@@ -4008,10 +4008,32 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 	for _, want := range []string{
 		`normalizeCveSource(r.URL.Query().Get("source"), "")`,
 		`http.Error(w, "invalid source", http.StatusBadRequest)`,
+		`floatParam(r, "min_cvss", 0)`,
 		"s.db.SearchCveDatabase(ctx, query, severity, source",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search source normalization missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
+	out, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"useRef",
+		"initialSearchStarted",
+		"doSearch(0, 'published_date', true)",
+		"setError(err?.message || 'CVE database search failed')",
+		"setError(err?.message || 'CVE source list failed')",
+		"disabled={loading}",
+		"{loading ? 'Searching...' : 'Search'}",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("dashboard CVE search auto-load/error UI missing %q", want)
 		}
 	}
 }
