@@ -1307,15 +1307,11 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 		}
 	}
 	format := strings.ToLower(r.URL.Query().Get("format"))
-	auditMeta := map[string]any{
-		"format":   exportFormatLabel(format),
-		"exported": len(vulns),
-		"total":    total,
-		"max_rows": maxRows,
-	}
+	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	auditMeta := vulnerabilityExportMetadata(format, filter, total, len(vulns), maxRows, revisionMeta, time.Now().UTC())
 	var body bytes.Buffer
 	if format == "json" {
-		if err := json.NewEncoder(&body).Encode(map[string]any{"items": vulns, "total": total, "exported": len(vulns)}); err != nil {
+		if err := json.NewEncoder(&body).Encode(map[string]any{"metadata": auditMeta, "items": vulns, "total": total, "exported": len(vulns)}); err != nil {
 			log.Printf("encode vulnerability export json: %v", err)
 			errMeta := cloneMetadata(auditMeta)
 			errMeta["error"] = "json encode failed"
@@ -1341,6 +1337,11 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="bongsu-vulnerabilities.csv"`)
 	}
+	if revision, ok := auditMeta["security_db_revision"].(string); ok && revision != "" {
+		w.Header().Set("X-Bongsu-Security-DB-Revision", revision)
+	}
+	w.Header().Set("X-Bongsu-Export-Truncated", strconv.FormatBool(total > len(vulns)))
+	w.Header().Set("X-Bongsu-Exported-Rows", strconv.Itoa(len(vulns)))
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(body.Bytes()); err != nil {
 		log.Printf("write vulnerability export response: %v", err)
@@ -1350,6 +1351,66 @@ func (s *Server) handleExportVulnerabilities(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	s.audit(r, "vulnerability.export", "vulnerability", "filtered", "ok", auditMeta)
+}
+
+func vulnerabilityExportMetadata(format string, filter db.VulnFilter, total, exported, maxRows int, revisionMeta map[string]any, generatedAt time.Time) map[string]any {
+	meta := map[string]any{
+		"format":       exportFormatLabel(format),
+		"generated_at": generatedAt.Format(time.RFC3339),
+		"exported":     exported,
+		"total":        total,
+		"max_rows":     maxRows,
+		"truncated":    total > exported,
+		"filters":      vulnerabilityExportFilterMetadata(filter),
+	}
+	for k, v := range revisionMeta {
+		meta[k] = v
+	}
+	return meta
+}
+
+func vulnerabilityExportFilterMetadata(f db.VulnFilter) map[string]any {
+	out := map[string]any{}
+	addString := func(key, value string) {
+		if value != "" {
+			out[key] = value
+		}
+	}
+	addFloat := func(key string, value float64) {
+		if value > 0 {
+			out[key] = value
+		}
+	}
+	addBool := func(key string, value bool) {
+		if value {
+			out[key] = value
+		}
+	}
+	addString("host_id", f.HostID)
+	if len(f.HostIDs) > 0 {
+		out["scope_host_count"] = len(f.HostIDs)
+	}
+	addString("severity", f.Severity)
+	addString("triage_status", f.TriageStatus)
+	addString("finding_source", f.FindingSource)
+	addString("risk_level", f.RiskLevel)
+	addBool("overdue", f.Overdue)
+	addBool("exploited", f.Exploited)
+	addFloat("min_epss", f.MinEPSS)
+	addFloat("min_epss_percentile", f.MinEPSSPct)
+	addString("pkg_name", f.PkgName)
+	addString("container", f.Container)
+	addString("owner", f.Owner)
+	addString("team", f.Team)
+	addString("environment", f.Environment)
+	addString("criticality", f.Criticality)
+	addFloat("min_cvss", f.MinCVSS)
+	addString("sort_by", f.SortBy)
+	addBool("sort_desc", f.SortDesc)
+	addBool("hide_fixed", f.HideFixed)
+	addBool("hide_no_fix", f.HideNoFix)
+	addBool("hide_mismatch", f.HideMismatch)
+	return out
 }
 
 func writeVulnerabilityCSV(w io.Writer, vulns []models.Vulnerability) error {

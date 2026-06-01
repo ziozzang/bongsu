@@ -1666,6 +1666,11 @@ func TestVulnerabilityExportRequiresExportScopeAndAuditsBeforeWrite(t *testing.T
 		"exportScope := s.exportScope(r)",
 		"exportScope.Empty()",
 		"vulnFilterFromRequestWithScope(r, exportScope)",
+		"revisionMeta := s.securityDBRevisionMeta(r.Context())",
+		"vulnerabilityExportMetadata(format, filter",
+		`"metadata": auditMeta`,
+		`"X-Bongsu-Security-DB-Revision"`,
+		`"X-Bongsu-Export-Truncated"`,
 		`s.audit(r, "vulnerability.export", "vulnerability", "filtered", "forbidden"`,
 		`s.audit(r, "vulnerability.export", "vulnerability", "filtered", "started"`,
 		`w.WriteHeader(http.StatusOK)`,
@@ -1677,6 +1682,45 @@ func TestVulnerabilityExportRequiresExportScopeAndAuditsBeforeWrite(t *testing.T
 	}
 	if strings.Index(fn, `"started"`) > strings.Index(fn, `w.WriteHeader(http.StatusOK)`) {
 		t.Fatalf("vulnerability export must audit start before writing response: %s", fn)
+	}
+}
+
+func TestVulnerabilityExportMetadataCapturesProvenance(t *testing.T) {
+	generatedAt := time.Date(2026, 6, 1, 2, 3, 4, 0, time.UTC)
+	meta := vulnerabilityExportMetadata("json", db.VulnFilter{
+		HostID:        "host-1",
+		HostIDs:       []string{"host-1", "host-2"},
+		Severity:      "CRITICAL",
+		TriageStatus:  "open",
+		FindingSource: "cve-db",
+		RiskLevel:     "critical",
+		Overdue:       true,
+		Exploited:     true,
+		MinEPSS:       0.7,
+		PkgName:       "openssl",
+		Owner:         "platform",
+		Team:          "infra",
+		Environment:   "prod",
+		Criticality:   "critical",
+		MinCVSS:       7,
+		SortBy:        "risk_score",
+		SortDesc:      true,
+		HideFixed:     true,
+		HideNoFix:     true,
+		HideMismatch:  true,
+	}, 250, 100, 100, map[string]any{"security_db_revision": "rev-123"}, generatedAt)
+
+	if meta["security_db_revision"] != "rev-123" || meta["generated_at"] != "2026-06-01T02:03:04Z" || meta["truncated"] != true {
+		t.Fatalf("unexpected export metadata: %#v", meta)
+	}
+	filters, ok := meta["filters"].(map[string]any)
+	if !ok {
+		t.Fatalf("filters metadata has unexpected type: %#v", meta["filters"])
+	}
+	for _, want := range []string{"host_id", "scope_host_count", "severity", "triage_status", "finding_source", "risk_level", "overdue", "exploited", "min_epss", "pkg_name", "owner", "team", "environment", "criticality", "min_cvss", "sort_by", "sort_desc", "hide_fixed", "hide_no_fix", "hide_mismatch"} {
+		if _, ok := filters[want]; !ok {
+			t.Fatalf("export filter metadata missing %q: %#v", want, filters)
+		}
 	}
 }
 
