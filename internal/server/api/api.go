@@ -140,6 +140,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	s.routes()
 	s.bootstrapAdmin()
 	s.startSessionCleanup()
+	s.startScheduler()
 	return s
 }
 
@@ -263,6 +264,18 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 	s.mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
 	s.mux.HandleFunc("POST /api/auth/change-password", s.handleChangePassword)
+	s.mux.HandleFunc("GET /api/admin/schedules", s.handleListScheduledScans)
+	s.mux.HandleFunc("POST /api/admin/schedules", s.handleCreateScheduledScan)
+	s.mux.HandleFunc("GET /api/admin/schedules/{id}", s.handleGetScheduledScan)
+	s.mux.HandleFunc("PUT /api/admin/schedules/{id}", s.handleUpdateScheduledScan)
+	s.mux.HandleFunc("DELETE /api/admin/schedules/{id}", s.handleDeleteScheduledScan)
+	s.mux.HandleFunc("GET /api/asset-groups", s.handleListAssetGroups)
+	s.mux.HandleFunc("POST /api/asset-groups", s.handleCreateAssetGroup)
+	s.mux.HandleFunc("GET /api/asset-groups/{id}", s.handleGetAssetGroup)
+	s.mux.HandleFunc("DELETE /api/asset-groups/{id}", s.handleDeleteAssetGroup)
+	s.mux.HandleFunc("POST /api/asset-groups/{id}/hosts", s.handleAddHostToAssetGroup)
+	s.mux.HandleFunc("DELETE /api/asset-groups/{id}/hosts/{hostId}", s.handleRemoveHostFromAssetGroup)
+	s.mux.HandleFunc("POST /api/asset-groups/{id}/scan", s.handleTriggerAssetGroupScan)
 	s.serveDashboard()
 }
 

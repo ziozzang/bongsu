@@ -2358,6 +2358,372 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  # ── Schedules ────────────────────────────────────────────────────────────
+
+  /api/admin/schedules:
+    get:
+      operationId: listScheduledScans
+      tags: [schedules]
+      summary: List scheduled scans
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of scheduled scans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ScheduledScan"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createScheduledScan
+      tags: [schedules]
+      summary: Create scheduled scan
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledScanCreate"
+      responses:
+        "201":
+          description: Scheduled scan created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledScan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/schedules/{id}:
+    get:
+      operationId: getScheduledScan
+      tags: [schedules]
+      summary: Get scheduled scan
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scheduled scan details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledScan"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: updateScheduledScan
+      tags: [schedules]
+      summary: Update scheduled scan
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledScanUpdate"
+      responses:
+        "200":
+          description: Scheduled scan updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduledScan"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteScheduledScan
+      tags: [schedules]
+      summary: Delete scheduled scan
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scheduled scan deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Asset Groups ─────────────────────────────────────────────────────────
+
+  /api/asset-groups:
+    get:
+      operationId: listAssetGroups
+      tags: [asset-groups]
+      summary: List asset groups
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of asset groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AssetGroup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createAssetGroup
+      tags: [asset-groups]
+      summary: Create asset group
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssetGroupCreate"
+      responses:
+        "201":
+          description: Asset group created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetGroup"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/asset-groups/{id}:
+    get:
+      operationId: getAssetGroup
+      tags: [asset-groups]
+      summary: Get asset group with member host IDs
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Asset group with host IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  group:
+                    $ref: "#/components/schemas/AssetGroup"
+                  host_ids:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteAssetGroup
+      tags: [asset-groups]
+      summary: Delete asset group
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Asset group deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/asset-groups/{id}/hosts:
+    post:
+      operationId: addHostToAssetGroup
+      tags: [asset-groups]
+      summary: Add host to static asset group
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [host_id]
+              properties:
+                host_id:
+                  type: string
+      responses:
+        "200":
+          description: Host added
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: added
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/asset-groups/{id}/hosts/{hostId}:
+    delete:
+      operationId: removeHostFromAssetGroup
+      tags: [asset-groups]
+      summary: Remove host from asset group
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: hostId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Host removed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: removed
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/asset-groups/{id}/scan:
+    post:
+      operationId: triggerAssetGroupScan
+      tags: [asset-groups]
+      summary: Trigger scan for all hosts in asset group
+      description: >
+        Creates scan requests for all hosts in the group. For dynamic groups,
+        expands the rule to find matching hosts first.
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Scan triggered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  queued:
+                    type: integer
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   # ── Security Schemes ──────────────────────────────────────────────────
 
@@ -3469,3 +3835,126 @@ components:
             $ref: "#/components/schemas/AuditLog"
         total:
           type: integer
+
+    # ── Scheduled Scan ──────────────────────────────────────────────────
+
+    ScheduledScan:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        cron_expr:
+          type: string
+          example: "0 2 * * *"
+        scan_type:
+          type: string
+          enum: [manual, daily, security-db-update]
+          default: manual
+        host_filter:
+          type: string
+        packages_only:
+          type: boolean
+          default: true
+        enabled:
+          type: boolean
+          default: true
+        last_run:
+          type: string
+          format: date-time
+          nullable: true
+        next_run:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ScheduledScanCreate:
+      type: object
+      required: [name, cron_expr]
+      properties:
+        name:
+          type: string
+        cron_expr:
+          type: string
+          example: "0 2 * * *"
+        scan_type:
+          type: string
+          enum: [manual, daily, security-db-update]
+          default: manual
+        host_filter:
+          type: string
+        packages_only:
+          type: boolean
+          default: true
+        enabled:
+          type: boolean
+          default: true
+
+    ScheduledScanUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        cron_expr:
+          type: string
+        scan_type:
+          type: string
+          enum: [manual, daily, security-db-update]
+        host_filter:
+          type: string
+        packages_only:
+          type: boolean
+        enabled:
+          type: boolean
+
+    # ── Asset Group ─────────────────────────────────────────────────────
+
+    AssetGroup:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        rule_type:
+          type: string
+          enum: [static, dynamic]
+          default: static
+        rule_expr:
+          type: string
+          description: >
+            Comma-separated conditions for dynamic groups.
+            Examples: "environment=production", "tags:tier=frontend",
+            "owner=alice,environment=production"
+        host_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AssetGroupCreate:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        rule_type:
+          type: string
+          enum: [static, dynamic]
+          default: static
+        rule_expr:
+          type: string

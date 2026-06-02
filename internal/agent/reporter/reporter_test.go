@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
@@ -29,5 +32,137 @@ func TestReporterSendsAgentIdentityHeaders(t *testing.T) {
 	}
 	if seenToken != "agent-token" || seenHostID != "host-1" {
 		t.Fatalf("headers = (%q, %q), want agent-token host-1", seenToken, seenHostID)
+	}
+}
+
+func TestRetryConfigFromEnvDefaults(t *testing.T) {
+	cfg := retryConfigFromEnv()
+	if cfg.maxAttempts != 5 {
+		t.Fatalf("default maxAttempts = %d, want 5", cfg.maxAttempts)
+	}
+	if cfg.maxBackoff != 30*time.Second {
+		t.Fatalf("default maxBackoff = %v, want 30s", cfg.maxBackoff)
+	}
+}
+
+func TestRetryConfigFromEnvCustom(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_RETRY_ATTEMPTS", "3")
+	t.Setenv("BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS", "10")
+	cfg := retryConfigFromEnv()
+	if cfg.maxAttempts != 3 {
+		t.Fatalf("custom maxAttempts = %d, want 3", cfg.maxAttempts)
+	}
+	if cfg.maxBackoff != 10*time.Second {
+		t.Fatalf("custom maxBackoff = %v, want 10s", cfg.maxBackoff)
+	}
+}
+
+func TestRetryConfigFromEnvBounds(t *testing.T) {
+	for _, v := range []string{"0", "-1", "invalid"} {
+		t.Setenv("BONGSU_AGENT_RETRY_ATTEMPTS", v)
+		cfg := retryConfigFromEnv()
+		if cfg.maxAttempts != 5 {
+			t.Fatalf("BONGSU_AGENT_RETRY_ATTEMPTS=%q gave %d, want 5", v, cfg.maxAttempts)
+		}
+	}
+}
+
+func TestShouldRetryHTTP(t *testing.T) {
+	for _, code := range []int{500, 502, 503, 504, 429} {
+		if !shouldRetryHTTP(code) {
+			t.Fatalf("shouldRetryHTTP(%d) = false, want true", code)
+		}
+	}
+	for _, code := range []int{200, 400, 401, 403, 404, 409} {
+		if shouldRetryHTTP(code) {
+			t.Fatalf("shouldRetryHTTP(%d) = true, want false", code)
+		}
+	}
+}
+
+func TestReporterRetriesOnServerError(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_RETRY_ATTEMPTS", "3")
+	t.Setenv("BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS", "1")
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 2 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	rep := New(srv.URL, "api-key")
+	_, err := rep.Send(&models.ScanReport{Host: models.Host{ID: "host-1"}})
+	if err != nil {
+		t.Fatalf("expected retry to succeed: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestReporterDoesNotRetryClientError(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_RETRY_ATTEMPTS", "3")
+	t.Setenv("BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS", "1")
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	rep := New(srv.URL, "api-key")
+	_, err := rep.Send(&models.ScanReport{Host: models.Host{ID: "host-1"}})
+	if err == nil {
+		t.Fatal("expected error for 400")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 (no retry on 4xx)", attempts)
+	}
+}
+
+func TestReporterRetryExhausted(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_RETRY_ATTEMPTS", "2")
+	t.Setenv("BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS", "1")
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	rep := New(srv.URL, "api-key")
+	_, err := rep.Send(&models.ScanReport{Host: models.Host{ID: "host-1"}})
+	if err == nil {
+		t.Fatal("expected error after retries exhausted")
+	}
+	if !strings.Contains(err.Error(), "after 2 attempts") {
+		t.Fatalf("error = %q, want 'after 2 attempts'", err.Error())
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestReporterSendUsesExponentialBackoff(t *testing.T) {
+	src, err := os.ReadFile("reporter.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	for _, want := range []string{
+		"doWithRetry",
+		"shouldRetryHTTP",
+		"BONGSU_AGENT_RETRY_ATTEMPTS",
+		"BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS",
+		"1<<uint(attempt-1)",
+		"r.rng.Int63n",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("reporter.go missing %q", want)
+		}
 	}
 }
