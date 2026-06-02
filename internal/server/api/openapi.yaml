@@ -16,6 +16,114 @@ servers:
 security: []
 
 paths:
+  # ── Authentication ──────────────────────────────────────────────────────
+
+  /api/auth/login:
+    post:
+      operationId: authLogin
+      tags: [auth]
+      summary: Login with username and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      username: { type: string }
+                      role: { type: string }
+                  expires:
+                    type: string
+                    format: date-time
+        "400":
+          description: Missing username or password
+        "401":
+          description: Invalid credentials
+
+  /api/auth/logout:
+    post:
+      operationId: authLogout
+      tags: [auth]
+      summary: Logout and clear session
+      security:
+        - apiKey: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logged out
+
+  /api/auth/me:
+    get:
+      operationId: authMe
+      tags: [auth]
+      summary: Get current user info
+      security:
+        - apiKey: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    type: object
+                    properties:
+                      id: { type: string }
+                      username: { type: string }
+                      role: { type: string }
+        "401":
+          description: Not authenticated
+
+  /api/auth/change-password:
+    post:
+      operationId: authChangePassword
+      tags: [auth]
+      summary: Change password for logged-in user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 12
+      responses:
+        "200":
+          description: Password changed
+        "400":
+          description: Missing or invalid input
+        "401":
+          description: Not authenticated or wrong current password
+
   # ── Health ──────────────────────────────────────────────────────────────
 
   /api/health:
@@ -2254,6 +2362,17 @@ components:
   # ── Security Schemes ──────────────────────────────────────────────────
 
   securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key
+
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Session token
+
     AdminKey:
       type: apiKey
       in: header

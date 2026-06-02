@@ -4655,3 +4655,174 @@ func TestWriteVulnerabilityCSVEscapesFormulaCells(t *testing.T) {
 func ptrTime(t time.Time) *time.Time {
 	return &t
 }
+
+func TestLoginHandlerUsesBcryptForPasswordVerification(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	start := strings.Index(body, "func (s *Server) handleLogin")
+	if start < 0 {
+		t.Fatal("handleLogin not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) handleLogout")
+	if end < 0 {
+		t.Fatal("handleLogout not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password))`,
+		`"invalid credentials"`,
+		`"username and password are required"`,
+		`"auth.login"`,
+		`"denied"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("login handler missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestSessionTokenIs256BitRandom(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	for _, want := range []string{
+		`sessionTokenBytes = 32`,
+		`rand.Read(raw)`,
+		`hex.EncodeToString(raw)`,
+		`sha256.Sum256([]byte(token))`,
+		`hex.EncodeToString(h[:])`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("session token generation missing %q", want)
+		}
+	}
+}
+
+func TestExpiredSessionsAreCleanedUp(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	for _, want := range []string{
+		"DeleteExpiredSessions",
+		`time.Sleep(time.Hour)`,
+		"startSessionCleanup",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("session cleanup missing %q", want)
+		}
+	}
+}
+
+func TestInitialAdminUserCreatedFromEnvVars(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	for _, want := range []string{
+		`BONGSU_ADMIN_USERNAME`,
+		`BONGSU_ADMIN_PASSWORD`,
+		`CountLocalUsers(ctx)`,
+		`CreateLocalUser(ctx, adminUser, string(hash), "admin")`,
+		`bcrypt.GenerateFromPassword([]byte(adminPass), bcrypt.DefaultCost)`,
+		`bootstrapAdmin()`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("admin bootstrap missing %q", want)
+		}
+	}
+}
+
+func TestSessionCookieIsHttpOnly(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	for _, want := range []string{
+		`HttpOnly: true`,
+		`SameSite: http.SameSiteLaxMode`,
+		`bongsu_session`,
+		`MaxAge:   int(maxAge.Seconds())`,
+		`Secure:   secureRequest(r)`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("session cookie security missing %q", want)
+		}
+	}
+}
+
+func TestAuthenticateWebIncludesSessionCheck(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	start := strings.Index(out, "func (s *Server) authenticateWeb")
+	if start < 0 {
+		t.Fatal("authenticateWeb not found")
+	}
+	end := strings.Index(out[start:], "\nfunc ")
+	if end < 0 {
+		t.Fatal("authenticateWeb end not found")
+	}
+	fn := out[start : start+end]
+	if !strings.Contains(fn, "authenticateSession(r)") {
+		t.Fatalf("authenticateWeb must check session: %s", fn)
+	}
+}
+
+func TestSessionMaxAgeIsConfigurable(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	for _, want := range []string{
+		`BONGSU_SESSION_MAX_AGE_HOURS`,
+		`sessionMaxAge`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("session max age config missing %q", want)
+		}
+	}
+}
+
+func TestAuthRoutesAreRegistered(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	for _, want := range []string{
+		`"POST /api/auth/login"`,
+		`"POST /api/auth/logout"`,
+		`"GET /api/auth/me"`,
+		`"POST /api/auth/change-password"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("auth route missing %q", want)
+		}
+	}
+}
+
+func TestChangePasswordRequiresCurrentPassword(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	start := strings.Index(out, "func (s *Server) handleChangePassword")
+	if start < 0 {
+		t.Fatal("handleChangePassword not found")
+	}
+	end := strings.Index(out[start:], "func (s *Server) sessionFromRequest")
+	if end < 0 {
+		t.Fatal("handleChangePassword end not found")
+	}
+	fn := out[start : start+end]
+	for _, want := range []string{
+		`sessionFromRequest(r)`,
+		`"not authenticated"`,
+		`"current_password and new_password are required"`,
+		`len(req.NewPassword) < 12`,
+		`"new password must be at least 12 characters"`,
+		`bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.CurrentPassword))`,
+		`bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)`,
+		`UpdateLocalUserPassword(ctx, user.ID, string(newHash))`,
+		`"auth.change_password"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("change password handler missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestAuthenticatorInterfaceExists(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	for _, want := range []string{
+		"type Authenticator interface",
+		"Authenticate(ctx context.Context, username, password string) (*AuthResult, error)",
+		"type LocalAuthenticator struct",
+		"type OIDCAuthenticator struct",
+		"OIDC authentication not configured",
+		"BONGSU_OIDC_ISSUER",
+		"initAuthenticator()",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("authenticator interface missing %q", want)
+		}
+	}
+}

@@ -73,6 +73,9 @@ type Server struct {
 	generalRateLimiter *ipRateLimiter
 	agentRateLimiter   *ipRateLimiter
 
+	sessionMaxAge time.Duration
+	authenticator Authenticator
+
 	buildInfo BuildInfo
 }
 
@@ -127,7 +130,16 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	s.generalRateLimiter = newIPRateLimiter(generalRPS, generalBurst)
 	s.agentRateLimiter = newIPRateLimiter(agentRPS, int(agentRPS)*2)
 
+	sessionMaxAgeHours := envInt("BONGSU_SESSION_MAX_AGE_HOURS", 24)
+	if sessionMaxAgeHours < 1 {
+		sessionMaxAgeHours = 24
+	}
+	s.sessionMaxAge = time.Duration(sessionMaxAgeHours) * time.Hour
+	s.authenticator = s.initAuthenticator()
+
 	s.routes()
+	s.bootstrapAdmin()
+	s.startSessionCleanup()
 	return s
 }
 
@@ -247,6 +259,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/cve-db/search", s.handleCveDbSearch)
 	s.mux.HandleFunc("GET /api/cve-db/reference-group", s.handleCveDbReferenceGroup)
 	s.mux.HandleFunc("GET /api/cve-db/{id}/affected-packages", s.handleCveDbAffectedPackages)
+	s.mux.HandleFunc("POST /api/auth/login", s.handleLogin)
+	s.mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	s.mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
+	s.mux.HandleFunc("POST /api/auth/change-password", s.handleChangePassword)
 	s.serveDashboard()
 }
 
@@ -291,7 +307,7 @@ func (s *Server) authenticateWeb(r *http.Request) bool {
 	if !s.webAuth {
 		return true
 	}
-	return s.authenticateAdmin(r) || s.viewerSubject(r) != ""
+	return s.authenticateAdmin(r) || s.viewerSubject(r) != "" || s.authenticateSession(r)
 }
 
 func (s *Server) authenticateAdmin(r *http.Request) bool {
@@ -323,6 +339,9 @@ func (s *Server) accessScope(r *http.Request) db.AccessScope {
 	if s.authenticateAdmin(r) || !s.webAuth {
 		return db.AccessScope{All: true}
 	}
+	if u := s.sessionUser(r); u != nil && u.Role == "admin" {
+		return db.AccessScope{All: true}
+	}
 	subject := s.viewerSubject(r)
 	if subject == "" {
 		return db.AccessScope{}
@@ -336,7 +355,7 @@ func (s *Server) accessScope(r *http.Request) db.AccessScope {
 }
 
 func (s *Server) authenticateExport(r *http.Request) bool {
-	return s.authenticateAdmin(r) || s.viewerSubject(r) != ""
+	return s.authenticateAdmin(r) || s.viewerSubject(r) != "" || s.authenticateSession(r)
 }
 
 func (s *Server) exportScope(r *http.Request) db.AccessScope {
@@ -485,6 +504,9 @@ func (s *Server) actorType(r *http.Request) string {
 	if s.authenticateAgent(r) {
 		return "agent"
 	}
+	if u := s.sessionUser(r); u != nil {
+		return u.Role
+	}
 	if s.viewerSubject(r) != "" {
 		return "viewer"
 	}
@@ -492,6 +514,9 @@ func (s *Server) actorType(r *http.Request) string {
 }
 
 func (s *Server) actorID(r *http.Request) string {
+	if u := s.sessionUser(r); u != nil {
+		return u.Username
+	}
 	if subject := s.viewerSubject(r); subject != "" {
 		return subject
 	}

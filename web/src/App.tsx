@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -175,7 +175,7 @@ export default function App() {
   const [hostFilters, setHostFilters] = useState<HostFilters>({});
   const [selectedHostId, setSelectedHostId] = useState('');
   const [selectedVuln, setSelectedVuln] = useState<Vuln | null>(null);
-  const [authed, setAuthed] = useState(!!getApiKey());
+  const [authed, setAuthed] = useState(hasAuth());
   const [noAuthMode, setNoAuthMode] = useState(false);
 
   useEffect(() => {
@@ -208,7 +208,7 @@ export default function App() {
 
   return (
     <div className="layout">
-      <Sidebar view={view} onNavigate={navigate} onLogout={noAuthMode ? undefined : () => { clearApiKey(); setAuthed(false); }} />
+      <Sidebar view={view} onNavigate={navigate} onLogout={noAuthMode ? undefined : () => { clearApiKey(); clearSession(); setAuthed(false); }} />
       <div className="main">
         {view === 'dashboard' && <DashboardView onOpenScanRequests={openScanRequests} onOpenVulnerabilities={openVulnerabilities} onOpenHosts={openHosts} />}
         {view === 'hosts' && <HostsView initialFilters={hostFilters} onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
@@ -227,25 +227,90 @@ export default function App() {
 }
 
 function LoginScreen({ onLogin }: { onLogin: () => void }) {
-  const [key, setKey] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [error, setError] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!username || !password) return;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await api.login(username, password);
+      setSession(result.token);
+      onLogin();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Login failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleApiKeyLogin = () => {
+    if (!apiKeyInput) return;
+    setApiKey(apiKeyInput);
+    onLogin();
+  };
+
   return (
     <div className="login-wrapper">
       <div className="login-card">
         <h2>Bongsu</h2>
         <div className="login-subtitle">Package Vulnerability Monitor</div>
         <input
-          type="password"
-          placeholder="API Key"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && key) { setApiKey(key); onLogin(); } }}
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+          autoFocus
         />
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleLogin(); }}
+        />
+        {error && <div className="login-error">{error}</div>}
         <button
           className="login-btn"
-          onClick={() => { if (key) { setApiKey(key); onLogin(); } }}
+          onClick={handleLogin}
+          disabled={loading || !username || !password}
         >
-          Connect
+          {loading ? 'Signing in...' : 'Sign In'}
         </button>
+        <div className="login-divider">
+          <span>or</span>
+        </div>
+        {showApiKey ? (
+          <>
+            <input
+              type="password"
+              placeholder="API Key"
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleApiKeyLogin(); }}
+            />
+            <button
+              className="login-btn login-btn-secondary"
+              onClick={handleApiKeyLogin}
+              disabled={!apiKeyInput}
+            >
+              Connect with API Key
+            </button>
+          </>
+        ) : (
+          <button
+            className="login-btn login-btn-secondary"
+            onClick={() => setShowApiKey(true)}
+          >
+            Use API Key
+          </button>
+        )}
       </div>
     </div>
   );

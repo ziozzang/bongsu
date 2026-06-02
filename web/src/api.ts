@@ -1,6 +1,7 @@
 const API_BASE = '/api';
 
 let apiKey = localStorage.getItem('bongsu_api_key') || '';
+let sessionToken = localStorage.getItem('bongsu_session') || '';
 let onUnauthorized: (() => void) | null = null;
 
 async function responseError(res: Response): Promise<Error> {
@@ -9,8 +10,9 @@ async function responseError(res: Response): Promise<Error> {
 }
 
 function handleUnauthorized(): Error {
-  if (apiKey) {
+  if (apiKey || sessionToken) {
     clearApiKey();
+    clearSession();
     if (onUnauthorized) onUnauthorized();
   }
   return new Error('Unauthorized');
@@ -30,6 +32,24 @@ export function getApiKey(): string {
   return apiKey;
 }
 
+export function setSession(token: string) {
+  sessionToken = token;
+  localStorage.setItem('bongsu_session', token);
+}
+
+export function clearSession() {
+  sessionToken = '';
+  localStorage.removeItem('bongsu_session');
+}
+
+export function getSession(): string {
+  return sessionToken;
+}
+
+export function hasAuth(): boolean {
+  return apiKey !== '' || sessionToken !== '';
+}
+
 export function onAuthFailure(cb: () => void) {
   onUnauthorized = cb;
 }
@@ -44,6 +64,7 @@ async function request<T>(path: string, params?: Record<string, string>, method?
 
   const headers: Record<string, string> = {};
   if (apiKey) headers['X-API-Key'] = apiKey;
+  if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
 
   const res = await fetch(url.toString(), { method: method || 'GET', headers });
   if (res.status === 401) {
@@ -67,6 +88,7 @@ async function requestCveDbStats(): Promise<CveDbStatsResponse> {
 function apiHeaders(extra?: Record<string, string>): Record<string, string> {
   const headers: Record<string, string> = { ...(extra || {}) };
   if (apiKey) headers['X-API-Key'] = apiKey;
+  if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
   return headers;
 }
 
@@ -757,6 +779,30 @@ export interface InstallerStatus {
 }
 
 export const api = {
+  login: (username: string, password: string) => {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['X-API-Key'] = apiKey;
+    return fetch(API_BASE + '/auth/login', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ username, password }),
+    }).then(async (res) => {
+      if (!res.ok) throw await responseError(res);
+      return res.json() as Promise<{ token: string; user: { id: string; username: string; role: string }; expires: string }>;
+    });
+  },
+  logout: () => {
+    const headers = apiHeaders();
+    return fetch(API_BASE + '/auth/logout', { method: 'POST', headers }).then(async (res) => {
+      if (!res.ok && res.status !== 401) throw await responseError(res);
+      return res.json() as Promise<{ status: string }>;
+    }).finally(() => {
+      clearSession();
+    });
+  },
+  authMe: () => request<{ user: { id: string; username: string; role: string } }>('/auth/me'),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    requestJSON<{ status: string }>('/auth/change-password', { current_password: currentPassword, new_password: newPassword }),
   hosts: (params?: { agent_status?: string; inventory_status?: string; agent_version_state?: string }) => request<Host[]>('/hosts', params),
   host: (id: string) => request<Host>(`/hosts/${id}`),
   updateHostMetadata: (id: string, body: { owner?: string; team?: string; environment?: string; criticality?: string; tags?: string }) =>
