@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -255,6 +256,15 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if s.notifier.ShouldSendScan(sevCounts, riskCounts, inventoryStatus) {
 		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, riskCounts, ingestErrors))
 	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := s.db.RecordVulnTrendSnapshot(ctx, report.Host.ID, report.ScanID); err != nil {
+			log.Printf("trend snapshot after scan %s: %v", report.ScanID, err)
+		}
+		webhookData := reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, riskCounts, ingestErrors)
+		s.ruleNotifier.evaluateAndDispatch(ctx, "scan.completed", webhookData)
+	}()
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":               "ok",

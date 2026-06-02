@@ -75,6 +75,7 @@ type Server struct {
 
 	sessionMaxAge time.Duration
 	authenticator Authenticator
+	ruleNotifier  *ruleNotifier
 
 	buildInfo BuildInfo
 }
@@ -136,11 +137,13 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	}
 	s.sessionMaxAge = time.Duration(sessionMaxAgeHours) * time.Hour
 	s.authenticator = s.initAuthenticator()
+	s.ruleNotifier = newRuleNotifier(s)
 
 	s.routes()
 	s.bootstrapAdmin()
 	s.startSessionCleanup()
 	s.startScheduler()
+	s.startVulnTrendSnapshotter()
 	return s
 }
 
@@ -276,6 +279,22 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/asset-groups/{id}/hosts", s.handleAddHostToAssetGroup)
 	s.mux.HandleFunc("DELETE /api/asset-groups/{id}/hosts/{hostId}", s.handleRemoveHostFromAssetGroup)
 	s.mux.HandleFunc("POST /api/asset-groups/{id}/scan", s.handleTriggerAssetGroupScan)
+	s.mux.HandleFunc("GET /api/vuln-trends", s.handleGetVulnTrends)
+	s.mux.HandleFunc("GET /api/vuln-trends/summary", s.handleGetVulnTrendSummary)
+	s.mux.HandleFunc("GET /api/intelligence/top-risk", s.handleGetTopAtRiskHosts)
+	s.mux.HandleFunc("GET /api/intelligence/recommendations", s.handleGetRecommendations)
+	s.mux.HandleFunc("GET /api/intelligence/posture", s.handleGetVulnPosture)
+	s.mux.HandleFunc("GET /api/admin/notification-rules", s.handleListNotificationRules)
+	s.mux.HandleFunc("POST /api/admin/notification-rules", s.handleCreateNotificationRule)
+	s.mux.HandleFunc("GET /api/admin/notification-rules/{id}", s.handleGetNotificationRule)
+	s.mux.HandleFunc("PUT /api/admin/notification-rules/{id}", s.handleUpdateNotificationRule)
+	s.mux.HandleFunc("DELETE /api/admin/notification-rules/{id}", s.handleDeleteNotificationRule)
+	s.mux.HandleFunc("POST /api/admin/notification-rules/{id}/test", s.handleTestNotificationRule)
+	s.mux.HandleFunc("GET /api/admin/notification-log", s.handleListNotificationLog)
+	s.mux.HandleFunc("GET /api/reports/executive-summary", s.handleGetExecutiveSummary)
+	s.mux.HandleFunc("GET /api/reports/risk-breakdown", s.handleGetRiskBreakdown)
+	s.mux.HandleFunc("GET /api/reports/sla-compliance", s.handleGetSLACompliance)
+	s.mux.HandleFunc("GET /api/reports/export", s.handleExportReport)
 	s.serveDashboard()
 }
 

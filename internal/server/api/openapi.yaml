@@ -2724,6 +2724,481 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  # ── Phase 4a: Vuln Trends ───────────────────────────────────────────────
+
+  /api/vuln-trends:
+    get:
+      operationId: getVulnTrends
+      tags: [trends]
+      summary: Get vulnerability trend data over time
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+          description: Number of days to look back
+        - name: host_id
+          in: query
+          schema:
+            type: string
+          description: Filter trends to a specific host
+      responses:
+        "200":
+          description: Vulnerability trend rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VulnTrendRow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/vuln-trends/summary:
+    get:
+      operationId: getVulnTrendSummary
+      tags: [trends]
+      summary: Get vulnerability trend summary with comparison
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Vulnerability trend summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VulnTrendSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ── Phase 4b: Intelligence ──────────────────────────────────────────────
+
+  /api/intelligence/top-risk:
+    get:
+      operationId: getTopRiskHosts
+      tags: [intelligence]
+      summary: Get hosts at highest risk
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+          description: Maximum number of hosts to return
+      responses:
+        "200":
+          description: List of at-risk hosts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AtRiskHost"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/intelligence/recommendations:
+    get:
+      operationId: getRecommendations
+      tags: [intelligence]
+      summary: Get remediation recommendations
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of recommendations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Recommendation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/intelligence/posture:
+    get:
+      operationId: getPostureComparison
+      tags: [intelligence]
+      summary: Get security posture comparison over time
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+          description: Number of days to compare
+      responses:
+        "200":
+          description: Posture comparison
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PostureComparison"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ── Phase 4c: Notification Rules ────────────────────────────────────────
+
+  /api/admin/notification-rules:
+    get:
+      operationId: listNotificationRules
+      tags: [notifications]
+      summary: List notification rules
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of notification rules
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/NotificationRule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+    post:
+      operationId: createNotificationRule
+      tags: [notifications]
+      summary: Create a notification rule
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationRuleCreate"
+      responses:
+        "201":
+          description: Notification rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/admin/notification-rules/{id}:
+    get:
+      operationId: getNotificationRule
+      tags: [notifications]
+      summary: Get a notification rule
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Notification rule details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationRule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    put:
+      operationId: updateNotificationRule
+      tags: [notifications]
+      summary: Update a notification rule
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationRuleUpdate"
+      responses:
+        "200":
+          description: Notification rule updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationRule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      operationId: deleteNotificationRule
+      tags: [notifications]
+      summary: Delete a notification rule
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Notification rule deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/admin/notification-rules/{id}/test:
+    post:
+      operationId: testNotificationRule
+      tags: [notifications]
+      summary: Send a test notification for a rule
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Test notification sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: sent
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/admin/notification-log:
+    get:
+      operationId: listNotificationLog
+      tags: [notifications]
+      summary: List notification delivery log
+      security:
+        - AdminKey: []
+        - bearerAuth: []
+      parameters:
+        - name: rule_id
+          in: query
+          schema:
+            type: string
+          description: Filter by notification rule ID
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated notification log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/NotificationLog"
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ── Phase 4d: Reports ──────────────────────────────────────────────────
+
+  /api/reports/executive-summary:
+    get:
+      operationId: getExecutiveSummary
+      tags: [reports]
+      summary: Generate executive summary report
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Executive summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutiveSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/reports/risk-breakdown:
+    get:
+      operationId: getRiskBreakdown
+      tags: [reports]
+      summary: Get risk breakdown by group
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      parameters:
+        - name: group_by
+          in: query
+          schema:
+            type: string
+          description: "Metadata field to group by (owner, team, environment, criticality)"
+      responses:
+        "200":
+          description: Risk breakdown rows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/RiskBreakdownRow"
+                  group_by:
+                    type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/reports/sla-compliance:
+    get:
+      operationId: getSlaCompliance
+      tags: [reports]
+      summary: Get SLA compliance report
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: SLA compliance report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SLAComplianceReport"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/reports/export:
+    get:
+      operationId: exportReport
+      tags: [reports]
+      summary: Export a report
+      description: Export executive summary, SLA compliance, or full report as JSON or CSV.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [executive, sla, full]
+          description: Report type to export
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [json, csv]
+            default: json
+          description: Export format
+        - name: group_by
+          in: query
+          schema:
+            type: string
+          description: "Metadata field to group by (owner, team, environment, criticality)"
+      responses:
+        "200":
+          description: Exported report
+          content:
+            application/json:
+              schema:
+                type: object
+            text/csv:
+              schema:
+                type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
 components:
   # ── Security Schemes ──────────────────────────────────────────────────
 
@@ -3958,3 +4433,303 @@ components:
           default: static
         rule_expr:
           type: string
+
+    # ── Phase 4a: Vuln Trends ────────────────────────────────────────────
+
+    VulnTrendRow:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        total_vulns:
+          type: integer
+        critical_count:
+          type: integer
+        high_count:
+          type: integer
+        medium_count:
+          type: integer
+        low_count:
+          type: integer
+        exploited_count:
+          type: integer
+        overdue_count:
+          type: integer
+        new_count:
+          type: integer
+        fixed_count:
+          type: integer
+        host_count:
+          type: integer
+
+    VulnTrendSummary:
+      type: object
+      properties:
+        current:
+          $ref: "#/components/schemas/VulnTrendRow"
+        previous:
+          $ref: "#/components/schemas/VulnTrendRow"
+        trend_direction:
+          type: string
+          enum: [up, down, flat]
+        total_hosts:
+          type: integer
+        snapshot_host_count:
+          type: integer
+
+    # ── Phase 4b: Intelligence ───────────────────────────────────────────
+
+    AtRiskHost:
+      type: object
+      properties:
+        host_id:
+          type: string
+        hostname:
+          type: string
+        total_vulns:
+          type: integer
+        critical_count:
+          type: integer
+        high_count:
+          type: integer
+        exploited_count:
+          type: integer
+        overdue_count:
+          type: integer
+        max_risk_score:
+          type: number
+          format: double
+
+    Recommendation:
+      type: object
+      properties:
+        priority:
+          type: integer
+        category:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        host_ids:
+          type: array
+          items:
+            type: string
+
+    PostureComparison:
+      type: object
+      properties:
+        current_total:
+          type: integer
+        previous_total:
+          type: integer
+        delta:
+          type: integer
+        delta_percent:
+          type: number
+          format: double
+        trend_direction:
+          type: string
+          enum: [up, down, flat]
+        current_date:
+          type: string
+          format: date-time
+        previous_date:
+          type: string
+          format: date-time
+
+    # ── Phase 4c: Notification Rules ─────────────────────────────────────
+
+    NotificationRule:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        enabled:
+          type: boolean
+        trigger_event:
+          type: string
+        min_severity:
+          type: string
+        min_risk_level:
+          type: string
+        exploited_only:
+          type: boolean
+        host_filter:
+          type: string
+        channel_type:
+          type: string
+        channel_config:
+          type: object
+          additionalProperties: true
+        last_triggered:
+          type: string
+          format: date-time
+          nullable: true
+        trigger_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    NotificationRuleCreate:
+      type: object
+      required: [name, trigger_event]
+      properties:
+        name:
+          type: string
+        enabled:
+          type: boolean
+          default: true
+        trigger_event:
+          type: string
+        min_severity:
+          type: string
+        min_risk_level:
+          type: string
+        exploited_only:
+          type: boolean
+          default: false
+        host_filter:
+          type: string
+        channel_type:
+          type: string
+        channel_config:
+          type: object
+          additionalProperties: true
+
+    NotificationRuleUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        enabled:
+          type: boolean
+        trigger_event:
+          type: string
+        min_severity:
+          type: string
+        min_risk_level:
+          type: string
+        exploited_only:
+          type: boolean
+        host_filter:
+          type: string
+        channel_type:
+          type: string
+        channel_config:
+          type: object
+          additionalProperties: true
+
+    NotificationLog:
+      type: object
+      properties:
+        id:
+          type: string
+        rule_id:
+          type: string
+        trigger_event:
+          type: string
+        status:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        error_message:
+          type: string
+          nullable: true
+        attempts:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    # ── Phase 4d: Reports ───────────────────────────────────────────────
+
+    ExecutiveSummary:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        total_hosts:
+          type: integer
+        host_coverage_percent:
+          type: number
+          format: double
+        active_vulnerabilities:
+          type: integer
+        severity_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        risk_level_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        exploited_count:
+          type: integer
+        overdue_sla_count:
+          type: integer
+        sla_compliance_percent:
+          type: number
+          format: double
+        trend_direction:
+          type: string
+          enum: [up, down, flat]
+        trend_delta:
+          type: integer
+        top_risk_hosts:
+          type: array
+          items:
+            $ref: "#/components/schemas/AtRiskHost"
+
+    RiskBreakdownRow:
+      type: object
+      properties:
+        group:
+          type: string
+        total:
+          type: integer
+        severity_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        risk_level_counts:
+          type: object
+          additionalProperties:
+            type: integer
+
+    SLAComplianceReport:
+      type: object
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+        overall_compliance_percent:
+          type: number
+          format: double
+        by_severity:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              total:
+                type: integer
+              compliant:
+                type: integer
+              overdue:
+                type: integer
+              compliance_percent:
+                type: number
+                format: double
+        overdue_by_owner:
+          type: object
+          additionalProperties:
+            type: integer
