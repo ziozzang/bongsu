@@ -22,7 +22,7 @@ import (
 
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAgent(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxAgentReportBytes())
@@ -31,14 +31,14 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			http.Error(w, "report too large", http.StatusRequestEntityTooLarge)
+			writeError(w, http.StatusRequestEntityTooLarge, "report too large")
 			return
 		}
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if err := normalizeScanReport(&report); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -46,7 +46,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	tokenHash, err := s.agentHostTokenHash(r, report.Host.ID)
 	if err != nil {
 		s.audit(r, "agent.report", "host", report.Host.ID, "forbidden", map[string]any{"reason": err.Error()})
-		http.Error(w, err.Error(), http.StatusForbidden)
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 
@@ -54,10 +54,10 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("upsert host: %v", err)
 		if errors.Is(err, db.ErrAgentHostTokenMismatch) {
 			s.audit(r, "agent.report", "host", report.Host.ID, "forbidden", map[string]any{"reason": "agent token mismatch"})
-			http.Error(w, "agent token does not match host binding", http.StatusForbidden)
+			writeError(w, http.StatusForbidden, "agent token does not match host binding")
 			return
 		}
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 
@@ -82,7 +82,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.db.CreateScan(ctx, scan); err != nil {
 		log.Printf("create scan: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	ingestErrors := append([]string{}, report.Errors...)

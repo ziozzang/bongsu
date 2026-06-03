@@ -778,6 +778,144 @@ export interface InstallerStatus {
   trivy: InstallerBinaryStatus;
 }
 
+// Phase 3: Fleet Management
+
+export interface ScheduledScan {
+  id: string;
+  name: string;
+  cron_expr: string;
+  scan_type: string;
+  enabled: boolean;
+  host_filter: string;
+  last_run: string | null;
+  next_run: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssetGroup {
+  id: string;
+  name: string;
+  description: string;
+  group_type: string;
+  rule_expr: string;
+  host_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssetGroupDetail extends AssetGroup {
+  hosts: Host[];
+}
+
+// Phase 4: Intelligence & Reports
+
+export interface VulnTrendRow {
+  date: string;
+  total: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+export interface VulnTrendSummary {
+  current_total: number;
+  previous_total: number;
+  delta: number;
+  delta_percent: number;
+  trend_direction: string;
+}
+
+export interface AtRiskHost {
+  host_id: string;
+  hostname: string;
+  total_vulns: number;
+  critical_count: number;
+  high_count: number;
+  exploited_count: number;
+  overdue_count: number;
+  max_risk_score: number;
+}
+
+export interface Recommendation {
+  type: string;
+  severity: string;
+  count: number;
+  message: string;
+}
+
+export interface PostureComparison {
+  current_total: number;
+  previous_total: number;
+  delta: number;
+  delta_percent: number;
+  trend_direction: string;
+  current_date: string;
+  previous_date: string;
+}
+
+export interface ExecutiveSummary {
+  generated_at: string;
+  total_hosts: number;
+  host_coverage_percent: number;
+  active_vulnerabilities: number;
+  severity_counts: Record<string, number>;
+  risk_level_counts: Record<string, number>;
+  exploited_count: number;
+  overdue_sla_count: number;
+  sla_compliance_percent: number;
+  trend_direction: string;
+  trend_delta: number;
+  top_risk_hosts: AtRiskHost[];
+}
+
+export interface SLASevStats {
+  total: number;
+  overdue: number;
+  compliance_percent: number;
+}
+
+export interface SLAComplianceReport {
+  generated_at: string;
+  overall_compliance_percent: number;
+  by_severity: Record<string, SLASevStats>;
+  overdue_by_owner: { owner: string; overdue: number; total: number }[];
+}
+
+export interface RiskBreakdownRow {
+  group: string;
+  total: number;
+  severity_counts: Record<string, number>;
+  risk_level_counts: Record<string, number>;
+}
+
+export interface NotificationRule {
+  id: string;
+  name: string;
+  trigger_event: string;
+  min_severity: string;
+  min_risk_level: string;
+  channel_type: string;
+  channel_config: Record<string, string>;
+  host_filter: string;
+  enabled: boolean;
+  last_triggered: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationLogEntry {
+  id: string;
+  rule_id: string;
+  rule_name: string;
+  trigger_event: string;
+  channel_type: string;
+  status: string;
+  error_message: string;
+  created_at: string;
+}
+
 export const api = {
   login: (username: string, password: string) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -888,4 +1026,55 @@ export const api = {
     request<{status: string; updated: number; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/recalc-cvss', undefined, 'POST'),
   pruneRetention: (body: { dry_run: boolean; scan_days?: number; request_days?: number; audit_days?: number }) =>
     requestJSON<RetentionPruneResult>('/admin/retention/prune', body),
+
+  // Phase 3: Fleet Management
+  schedules: () => request<ScheduledScan[]>('/admin/schedules'),
+  createSchedule: (body: { name: string; cron_expr: string; scan_type?: string; host_filter?: string; enabled?: boolean }) =>
+    requestJSON<ScheduledScan>('/admin/schedules', body),
+  schedule: (id: string) => request<ScheduledScan>(`/admin/schedules/${id}`),
+  updateSchedule: (id: string, body: { name?: string; cron_expr?: string; scan_type?: string; host_filter?: string; enabled?: boolean }) =>
+    requestJSON<ScheduledScan>(`/admin/schedules/${id}`, body),
+  deleteSchedule: (id: string) => requestEmpty<{ status: string }>(`/admin/schedules/${id}`, 'DELETE'),
+
+  assetGroups: () => request<{ items: AssetGroup[] }>('/asset-groups'),
+  createAssetGroup: (body: { name: string; description?: string; group_type?: string; rule_expr?: string }) =>
+    requestJSON<AssetGroup>('/asset-groups', body),
+  assetGroup: (id: string) => request<AssetGroupDetail>(`/asset-groups/${id}`),
+  deleteAssetGroup: (id: string) => requestEmpty<{ status: string }>(`/asset-groups/${id}`, 'DELETE'),
+  addHostToAssetGroup: (id: string, hostId: string) =>
+    requestJSON<{ status: string }>(`/asset-groups/${id}/hosts`, { host_id: hostId }),
+  removeHostFromAssetGroup: (id: string, hostId: string) =>
+    requestEmpty<{ status: string }>(`/asset-groups/${id}/hosts/${hostId}`, 'DELETE'),
+  triggerAssetGroupScan: (id: string) =>
+    requestJSON<{ status: string; scan_request_id: string }>(`/asset-groups/${id}/scan`, {}),
+
+  // Phase 4: Intelligence & Reports
+  vulnTrends: (params?: { host_id?: string; days?: string }) =>
+    request<{ items: VulnTrendRow[] }>('/vuln-trends', params),
+  vulnTrendSummary: (params?: { host_id?: string; days?: string }) =>
+    request<VulnTrendSummary>('/vuln-trends/summary', params),
+  topRiskHosts: (params?: { limit?: string }) =>
+    request<{ items: AtRiskHost[] }>('/intelligence/top-risk', params),
+  recommendations: () => request<{ items: Recommendation[] }>('/intelligence/recommendations'),
+  vulnPosture: (params?: { days?: string }) =>
+    request<PostureComparison>('/intelligence/posture', params),
+
+  executiveSummary: () => request<ExecutiveSummary>('/reports/executive-summary'),
+  riskBreakdown: (params?: { group_by?: string }) =>
+    request<{ group_by: string; items: RiskBreakdownRow[] }>('/reports/risk-breakdown', params),
+  slaCompliance: () => request<SLAComplianceReport>('/reports/sla-compliance'),
+  exportReport: (params?: { format?: string; type?: string }) =>
+    download('/reports/export', `bongsu-report.${params?.format === 'csv' ? 'csv' : 'json'}`, params),
+
+  notificationRules: () => request<{ items: NotificationRule[] }>('/admin/notification-rules'),
+  createNotificationRule: (body: { name: string; trigger_event: string; min_severity?: string; min_risk_level?: string; channel_type?: string; channel_config?: Record<string, string>; host_filter?: string; enabled?: boolean }) =>
+    requestJSON<NotificationRule>('/admin/notification-rules', body),
+  notificationRule: (id: string) => request<NotificationRule>(`/admin/notification-rules/${id}`),
+  updateNotificationRule: (id: string, body: Partial<NotificationRule>) =>
+    requestJSON<NotificationRule>(`/admin/notification-rules/${id}`, body),
+  deleteNotificationRule: (id: string) => requestEmpty<{ status: string }>(`/admin/notification-rules/${id}`, 'DELETE'),
+  testNotificationRule: (id: string) =>
+    requestJSON<{ status: string; message: string }>(`/admin/notification-rules/${id}/test`, {}),
+  notificationLog: (params?: { rule_id?: string; limit?: string; offset?: string }) =>
+    request<{ items: NotificationLogEntry[]; total: number }>('/admin/notification-log', params),
 };

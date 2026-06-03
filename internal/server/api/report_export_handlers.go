@@ -11,12 +11,12 @@ import (
 
 func (s *Server) handleGetExecutiveSummary(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	summary, err := s.db.GetExecutiveSummary(r.Context())
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	s.audit(r, "report.generate", "report", "executive-summary", "ok", map[string]any{"format": "json"})
@@ -25,7 +25,7 @@ func (s *Server) handleGetExecutiveSummary(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleGetRiskBreakdown(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	groupBy := r.URL.Query().Get("group_by")
@@ -34,7 +34,7 @@ func (s *Server) handleGetRiskBreakdown(w http.ResponseWriter, r *http.Request) 
 	}
 	rows, err := s.db.GetRiskBreakdown(r.Context(), groupBy)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if rows == nil {
@@ -46,12 +46,12 @@ func (s *Server) handleGetRiskBreakdown(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleGetSLACompliance(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	report, err := s.db.GetSLAComplianceReport(r.Context())
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	s.audit(r, "report.generate", "report", "sla-compliance", "ok", nil)
@@ -60,7 +60,7 @@ func (s *Server) handleGetSLACompliance(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleExportReport(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateExport(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	reportType := r.URL.Query().Get("type")
@@ -76,14 +76,14 @@ func (s *Server) handleExportReport(w http.ResponseWriter, r *http.Request) {
 	case "executive":
 		summary, err := s.db.GetExecutiveSummary(r.Context())
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		writeJSON(w, http.StatusOK, summary)
 	case "sla":
 		report, err := s.db.GetSLAComplianceReport(r.Context())
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		writeJSON(w, http.StatusOK, report)
@@ -100,7 +100,7 @@ func (s *Server) handleExportReport(w http.ResponseWriter, r *http.Request) {
 		}
 		rows, err := s.db.GetRiskBreakdown(r.Context(), groupBy)
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		if len(rows) > limit {

@@ -11,12 +11,12 @@ import (
 
 func (s *Server) handleListScheduledScans(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	schedules, err := s.db.ListScheduledScans(r.Context())
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if schedules == nil {
@@ -27,7 +27,7 @@ func (s *Server) handleListScheduledScans(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleCreateScheduledScan(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var req struct {
@@ -74,7 +74,7 @@ func (s *Server) handleCreateScheduledScan(w http.ResponseWriter, r *http.Reques
 		NextRun:      &nextRun,
 	}
 	if err := s.db.CreateScheduledScan(r.Context(), schedule); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	s.audit(r, "schedule.create", "scheduled_scan", schedule.ID, "ok", map[string]any{
@@ -85,7 +85,7 @@ func (s *Server) handleCreateScheduledScan(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleGetScheduledScan(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
@@ -99,7 +99,7 @@ func (s *Server) handleGetScheduledScan(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleUpdateScheduledScan(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
@@ -145,7 +145,7 @@ func (s *Server) handleUpdateScheduledScan(w http.ResponseWriter, r *http.Reques
 	}
 	existing.NextRun = &nextRun
 	if err := s.db.UpdateScheduledScan(r.Context(), existing); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	s.audit(r, "schedule.update", "scheduled_scan", id, "ok", map[string]any{"name": existing.Name})
@@ -154,7 +154,7 @@ func (s *Server) handleUpdateScheduledScan(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleDeleteScheduledScan(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")

@@ -19,7 +19,7 @@ import (
 
 func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
@@ -33,7 +33,7 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 	hosts, err := s.db.ListHosts(ctx)
 	if err != nil {
 		log.Printf("list hosts: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 
@@ -106,19 +106,19 @@ func hostInventoryStatus(inv db.HostInventorySummary, now time.Time, staleAfter 
 
 func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	hostID := r.PathValue("id")
 	if !s.canReadHost(r, hostID) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	ctx := r.Context()
 
 	host, err := s.db.GetHost(ctx, hostID)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	applyAgentStatus(host, time.Now())
@@ -127,12 +127,12 @@ func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateHostMetadata(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	hostID := r.PathValue("id")
 	if hostID == "" {
-		http.Error(w, "host id is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "host id is required")
 		return
 	}
 	var body struct {
@@ -151,21 +151,21 @@ func (s *Server) handleUpdateHostMetadata(w http.ResponseWriter, r *http.Request
 	}
 	var tags any
 	if err := json.Unmarshal([]byte(body.Tags), &tags); err != nil {
-		http.Error(w, "tags must be valid JSON", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "tags must be valid JSON")
 		return
 	}
 	if err := s.db.UpdateHostMetadata(r.Context(), hostID, body.Owner, body.Team, body.Environment, body.Criticality, body.Tags); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "host not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "host not found")
 			return
 		}
 		log.Printf("update host metadata: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	host, err := s.db.GetHost(r.Context(), hostID)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	s.audit(r, "host.metadata.update", "host", hostID, "ok", map[string]any{
@@ -179,21 +179,21 @@ func (s *Server) handleUpdateHostMetadata(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleResetHostAgentToken(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	hostID := r.PathValue("id")
 	if hostID == "" {
-		http.Error(w, "host id is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "host id is required")
 		return
 	}
 	if _, err := s.db.GetHost(r.Context(), hostID); err != nil {
-		http.Error(w, "host not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "host not found")
 		return
 	}
 	if err := s.db.ResetHostAgentToken(r.Context(), hostID); err != nil {
 		log.Printf("reset host agent token: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	s.audit(r, "host.agent_token.reset", "host", hostID, "ok", map[string]any{
@@ -204,12 +204,12 @@ func (s *Server) handleResetHostAgentToken(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	hostID := r.PathValue("id")
 	if !s.canReadHost(r, hostID) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	ctx := r.Context()
@@ -220,7 +220,7 @@ func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
 	pkgs, total, err := s.db.GetLatestPackages(ctx, hostID, limit, offset)
 	if err != nil {
 		log.Printf("host packages: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 
@@ -232,32 +232,32 @@ func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateExport(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	hostID := r.PathValue("id")
 	if !s.exportScope(r).CanReadHost(hostID) {
 		s.audit(r, "sbom.export", "host", hostID, "forbidden", map[string]any{"reason": "missing export permission"})
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	ctx := r.Context()
 
 	host, err := s.db.GetHost(ctx, hostID)
 	if err != nil {
-		http.Error(w, "host not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "host not found")
 		return
 	}
 	pkgs, err := s.db.GetLatestPackagesForSBOM(ctx, hostID)
 	if err != nil {
 		log.Printf("host sbom packages: %v", err)
 		s.audit(r, "sbom.export", "host", hostID, "error", map[string]any{"error": "package lookup failed"})
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	if len(pkgs) == 0 {
 		s.audit(r, "sbom.export", "host", hostID, "error", map[string]any{"error": "no packages available"})
-		http.Error(w, "no packages available for host", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "no packages available for host")
 		return
 	}
 	scanID := latestPackageScanID(pkgs)
@@ -279,13 +279,13 @@ func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 		suffix = "cyclonedx.json"
 		auditFormat = "CycloneDX 1.5"
 	default:
-		http.Error(w, "unsupported sbom format", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "unsupported sbom format")
 		return
 	}
 	if err != nil {
 		log.Printf("generate host sbom: %v", err)
 		s.audit(r, "sbom.export", "host", hostID, "error", map[string]any{"format": auditFormat, "scan_id": scanID, "error": "generation failed"})
-		http.Error(w, "sbom generation failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "sbom generation failed")
 		return
 	}
 	filename := sanitizeFilename(host.Hostname)
@@ -323,12 +323,12 @@ func latestPackageScanID(pkgs []models.Package) string {
 
 func (s *Server) handleHostVulnCounts(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	hostID := r.PathValue("id")
 	if !s.canReadHost(r, hostID) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	ctx := r.Context()
@@ -336,7 +336,7 @@ func (s *Server) handleHostVulnCounts(w http.ResponseWriter, r *http.Request) {
 	counts, err := s.db.GetHostVulnCounts(ctx, hostID)
 	if err != nil {
 		log.Printf("vuln counts: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, counts)

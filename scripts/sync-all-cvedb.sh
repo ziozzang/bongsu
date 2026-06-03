@@ -109,55 +109,82 @@ else
 fi
 echo ""
 
-# --- 3. OSV.dev ---
-echo "[3/5] Downloading OSV.dev data..."
-OSV_FILE="${TMPDIR}/osv-all.jsonl"
-"${SCRIPT_DIR}/download-osv.sh" "${OSV_FILE}" \
-    "PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,Alpine,Debian,SUSE,AlmaLinux,Chainguard"
+# --- 3. OSV.dev (per-ecosystem to avoid upload timeouts) ---
+OSV_ECOSYSTEMS="PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,Alpine,Debian,SUSE,AlmaLinux,Chainguard"
+OSV_TOTAL=0
+OSV_FAILED=0
+ECO_COUNT=$(echo "${OSV_ECOSYSTEMS}" | tr ',' '\n' | wc -l)
+ECO_IDX=0
+echo "[3/5] Downloading OSV.dev data (${ECO_COUNT} ecosystems)..."
 
-if [ -s "${OSV_FILE}" ]; then
-    echo "  Importing OSV data ($(wc -l < "${OSV_FILE}") entries, $(du -h "${OSV_FILE}" | cut -f1))..."
-    IMPORTED=$(import_cve_file "${OSV_FILE}" "osv")
-    echo "  Imported/updated: ${IMPORTED}"
-    TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
-else
+IFS=',' read -ra ECO_ARRAY <<< "${OSV_ECOSYSTEMS}"
+for eco in "${ECO_ARRAY[@]}"; do
+    ECO_IDX=$((ECO_IDX + 1))
+    OSV_ECO_FILE="${TMPDIR}/osv-${eco}.jsonl"
+    echo "  [${ECO_IDX}/${ECO_COUNT}] ${eco}..."
+    if ! "${SCRIPT_DIR}/download-osv.sh" "${OSV_ECO_FILE}" "${eco}"; then
+        echo "    ERROR: ${eco} download failed"
+        FAILED_SOURCES+=("osv:${eco}")
+        OSV_FAILED=1
+        continue
+    fi
+    if [ -s "${OSV_ECO_FILE}" ]; then
+        ECO_LINES=$(wc -l < "${OSV_ECO_FILE}")
+        ECO_SIZE=$(du -h "${OSV_ECO_FILE}" | cut -f1)
+        echo "    Importing ${eco} (${ECO_LINES} entries, ${ECO_SIZE})..."
+        IMPORTED=$(import_cve_file "${OSV_ECO_FILE}" "osv")
+        echo "    Imported/updated: ${IMPORTED}"
+        OSV_TOTAL=$((OSV_TOTAL + IMPORTED))
+        rm -f "${OSV_ECO_FILE}"
+    else
+        echo "    SKIP: ${eco} produced no data"
+    fi
+done
+
+TOTAL_IMPORTED=$((TOTAL_IMPORTED + OSV_TOTAL))
+if [ "${OSV_FAILED}" -ne 0 ]; then
+    echo "  ERROR: incomplete OSV download"
+    FAILED_SOURCES+=("osv:partial")
+elif [ "${OSV_TOTAL}" -eq 0 ]; then
     echo "  ERROR: no OSV data"
     FAILED_SOURCES+=("osv:no-data")
 fi
 echo ""
 
-# --- 4. NVD ---
+# --- 4. NVD (per-year to avoid upload timeouts) ---
 echo "[4/5] Downloading NVD data..."
 CURRENT_YEAR=$(date +%Y)
-NVD_ALL_FILE="${TMPDIR}/nvd-all.jsonl"
 NVD_FAILED=0
+NVD_TOTAL=0
 for YEAR in $(seq $((CURRENT_YEAR - 3)) ${CURRENT_YEAR}); do
     NVD_FILE="${TMPDIR}/nvd-${YEAR}.jsonl"
     echo "  Year ${YEAR}..."
     if ! "${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${YEAR}"; then
-        echo "  ERROR: ${YEAR} failed"
+        echo "    ERROR: ${YEAR} download failed"
         FAILED_SOURCES+=("nvd:${YEAR}")
         NVD_FAILED=1
         continue
     fi
 
     if [ -s "${NVD_FILE}" ]; then
-        echo "    Collected $(wc -l < "${NVD_FILE}") entries"
-        cat "${NVD_FILE}" >> "${NVD_ALL_FILE}"
+        NVD_LINES=$(wc -l < "${NVD_FILE}")
+        NVD_SIZE=$(du -h "${NVD_FILE}" | cut -f1)
+        echo "    Importing ${YEAR} (${NVD_LINES} entries, ${NVD_SIZE})..."
+        IMPORTED=$(import_cve_file "${NVD_FILE}" "nvd")
+        echo "    Imported/updated: ${IMPORTED}"
+        NVD_TOTAL=$((NVD_TOTAL + IMPORTED))
+        rm -f "${NVD_FILE}"
     else
-        echo "  ERROR: ${YEAR} produced no NVD data"
+        echo "    ERROR: ${YEAR} produced no NVD data"
         FAILED_SOURCES+=("nvd:${YEAR}:no-data")
         NVD_FAILED=1
     fi
 done
+
+TOTAL_IMPORTED=$((TOTAL_IMPORTED + NVD_TOTAL))
 if [ "${NVD_FAILED}" -ne 0 ]; then
     echo "  ERROR: incomplete NVD download; preserving existing nvd source"
-elif [ -s "${NVD_ALL_FILE}" ]; then
-    echo "  Importing combined NVD data ($(wc -l < "${NVD_ALL_FILE}") entries, $(du -h "${NVD_ALL_FILE}" | cut -f1))..."
-    IMPORTED=$(import_cve_file "${NVD_ALL_FILE}" "nvd")
-    echo "  Imported/updated: ${IMPORTED}"
-    TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
-else
+elif [ "${NVD_TOTAL}" -eq 0 ]; then
     echo "  ERROR: no NVD data"
     FAILED_SOURCES+=("nvd:no-data")
 fi

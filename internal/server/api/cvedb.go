@@ -26,22 +26,22 @@ import (
 
 func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	scanID := r.PathValue("id")
 	force := r.URL.Query().Get("force") == "true"
 	if err := s.db.DeleteScan(r.Context(), scanID, force); err != nil {
 		if errors.Is(err, db.ErrLatestInventoryScan) {
-			http.Error(w, "latest inventory scan requires force=true", http.StatusConflict)
+			writeError(w, http.StatusConflict, "latest inventory scan requires force=true")
 			return
 		}
 		if errors.Is(err, db.ErrScanNotFound) {
-			http.Error(w, "not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
 		log.Printf("delete scan %s: %v", scanID, err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	s.audit(r, "scan.delete", "scan", scanID, "ok", map[string]any{"force": force})
@@ -50,38 +50,38 @@ func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if s.dbMgr == nil {
-		http.Error(w, "trivy db manager not available", http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "trivy db manager not available")
 		return
 	}
 
 	uploadLimit := maxTrivyDBUploadBytes()
 	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
 	if err := r.ParseMultipartForm(maxMultipartMemoryBytes()); err != nil {
-		http.Error(w, "file too large or invalid form", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file too large or invalid form")
 		return
 	}
 
 	file, _, err := r.FormFile("db")
 	if err != nil {
-		http.Error(w, "missing 'db' file field", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "missing 'db' file field")
 		return
 	}
 	defer file.Close()
 
 	tmpFile, err := os.CreateTemp("", "trivy-db-*.tar.gz")
 	if err != nil {
-		http.Error(w, "temp file error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "temp file error")
 		return
 	}
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	if _, err := io.Copy(tmpFile, file); err != nil {
-		http.Error(w, "file write error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "file write error")
 		return
 	}
 	tmpFile.Close()
@@ -93,7 +93,7 @@ func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
 			"status": status,
 			"error":  err.Error(),
 		})
-		http.Error(w, trivyDBLoadErrorMessage(err), status)
+		writeError(w, status, trivyDBLoadErrorMessage(err))
 		return
 	}
 
@@ -118,11 +118,11 @@ func trivyDBLoadErrorMessage(err error) string {
 
 func (s *Server) handleTrivyDBUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if s.dbMgr == nil {
-		http.Error(w, "trivy db manager not available", http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "trivy db manager not available")
 		return
 	}
 
@@ -144,11 +144,11 @@ func (s *Server) handleTrivyDBUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if s.secMgr == nil {
-		http.Error(w, "security db manager not available", http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "security db manager not available")
 		return
 	}
 	if err := s.secMgr.UpdateNowWithReason(r.Context(), "security-db update"); err != nil {
@@ -162,7 +162,7 @@ func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleSecurityDbRecalculate(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	reason := "manual security-db recalculation"
@@ -195,14 +195,14 @@ func (s *Server) handleSecurityDbRecalculate(w http.ResponseWriter, r *http.Requ
 
 func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	includeTrivy := r.URL.Query().Get("include_trivy") != "false"
 	bundleFile, cveCount, trivyIncluded, bundleSize, revision, err := s.buildSecurityDBBundleTemp(r.Context(), includeTrivy)
 	if err != nil {
 		log.Printf("security-db bundle export: %v", err)
-		http.Error(w, "export failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "export failed")
 		return
 	}
 	defer os.Remove(bundleFile)
@@ -210,7 +210,7 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 	f, err := os.Open(bundleFile)
 	if err != nil {
 		log.Printf("security-db bundle open: %v", err)
-		http.Error(w, "export failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "export failed")
 		return
 	}
 	defer f.Close()
@@ -313,7 +313,7 @@ func (s *Server) buildSecurityDBBundleTemp(ctx context.Context, includeTrivy boo
 
 func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	fail := func(status int, msg, stage string, err error) {
@@ -322,7 +322,7 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 			meta["error"] = err.Error()
 		}
 		s.audit(r, "security_db.import", "security_db", "bundle", "error", meta)
-		http.Error(w, msg, status)
+		writeError(w, status, msg)
 	}
 	uploadLimit := maxSecurityDBBundleBytes()
 	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
@@ -794,7 +794,7 @@ func (s *Server) queueSecurityDBRescans(reason, recalculationStatus string) {
 
 func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	ctx := r.Context()
@@ -802,13 +802,13 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	uploadLimit := maxCveDBImportBytes()
 	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
 	if err := r.ParseMultipartForm(maxMultipartMemoryBytes()); err != nil {
-		http.Error(w, "file too large", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file too large")
 		return
 	}
 
 	file, _, err := r.FormFile("file")
 	if err != nil {
-		http.Error(w, "no file provided", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "no file provided")
 		return
 	}
 	defer file.Close()
@@ -819,7 +819,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 			"source": r.FormValue("source"),
 			"error":  err.Error(),
 		})
-		http.Error(w, "invalid source", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid source")
 		return
 	}
 
@@ -831,7 +831,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 				"source": source,
 				"reason": "no valid entries",
 			})
-			http.Error(w, "no valid entries found", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "no valid entries found")
 			return
 		}
 		status := cveImportErrorStatus(err)
@@ -840,7 +840,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 			"status": status,
 			"error":  err.Error(),
 		})
-		http.Error(w, cveImportErrorMessage(err), status)
+		writeError(w, status, cveImportErrorMessage(err))
 		return
 	}
 	if count == 0 {
@@ -848,7 +848,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 			"source": source,
 			"reason": "no valid entries",
 		})
-		http.Error(w, "no valid entries found", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "no valid entries found")
 		return
 	}
 
@@ -1121,7 +1121,7 @@ func cveImportErrorMessage(err error) string {
 
 func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var err error
@@ -1150,13 +1150,13 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 	}
 	opts, err = normalizeRematchOptions(opts)
 	if err != nil {
-		http.Error(w, "invalid source", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid source")
 		return
 	}
 	result, err := s.db.RematchCVEs(r.Context(), opts)
 	if err != nil {
 		log.Printf("cve-db rematch: %v", err)
-		http.Error(w, "rematch failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "rematch failed")
 		return
 	}
 	if stats, err := s.db.GetCveSourceStats(r.Context()); err == nil {
@@ -1194,7 +1194,7 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCveDbAffectedIndexRebuild(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if r.URL.Query().Get("async") == "true" {
@@ -1211,7 +1211,7 @@ func (s *Server) handleCveDbAffectedIndexRebuild(w http.ResponseWriter, r *http.
 	durationMS := time.Since(started).Milliseconds()
 	if err != nil {
 		log.Printf("cve affected package index rebuild failed after %dms: %v", durationMS, err)
-		http.Error(w, "rebuild failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "rebuild failed")
 		return
 	}
 	stats, _ := s.db.GetCveAffectedPackageIndexStats(r.Context())
@@ -1297,7 +1297,7 @@ func (s *Server) runAffectedIndexRebuild() {
 
 func (s *Server) handleCveDbReferenceIndexRebuild(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if r.URL.Query().Get("async") == "true" {
@@ -1314,7 +1314,7 @@ func (s *Server) handleCveDbReferenceIndexRebuild(w http.ResponseWriter, r *http
 	durationMS := time.Since(started).Milliseconds()
 	if err != nil {
 		log.Printf("cve reference key index rebuild failed after %dms: %v", durationMS, err)
-		http.Error(w, "rebuild failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "rebuild failed")
 		return
 	}
 	revisionMeta := s.securityDBRevisionMeta(r.Context())
@@ -1435,13 +1435,13 @@ func normalizeCveSources(sources []string) ([]string, error) {
 
 func (s *Server) handleCveDbRecalcCVSS(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	count, err := s.db.RecalcCVSSFromVectors(r.Context())
 	if err != nil {
 		log.Printf("cvss recalc: %v", err)
-		http.Error(w, "recalc failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "recalc failed")
 		return
 	}
 	revisionMeta := s.securityDBRevisionMeta(r.Context())
@@ -1456,12 +1456,12 @@ func (s *Server) handleCveDbRecalcCVSS(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	source, err := normalizeCveSource(r.URL.Query().Get("source"), "")
 	if err != nil {
-		http.Error(w, "invalid source", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid source")
 		return
 	}
 	revisionMeta := s.securityDBRevisionMeta(r.Context())
@@ -1469,20 +1469,20 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 	cveFile, count, cveSHA, err := s.writeCveJSONLTemp(r.Context(), source)
 	if err != nil {
 		log.Printf("cve-db export: %v", err)
-		http.Error(w, "export failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "export failed")
 		return
 	}
 	defer os.Remove(cveFile)
 	info, err := os.Stat(cveFile)
 	if err != nil {
 		log.Printf("cve-db export stat: %v", err)
-		http.Error(w, "export failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "export failed")
 		return
 	}
 	f, err := os.Open(cveFile)
 	if err != nil {
 		log.Printf("cve-db export open: %v", err)
-		http.Error(w, "export failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "export failed")
 		return
 	}
 	defer f.Close()
@@ -1607,16 +1607,16 @@ func writeTarFile(tw *tar.Writer, name, path string) error {
 
 func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if !s.canReadCveDB(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	sources, err := s.db.GetCveSources(r.Context())
 	if err != nil {
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sources": sources})
@@ -1625,11 +1625,11 @@ func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if !s.canReadCveDB(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	cacheGen := int64(0)
@@ -1658,7 +1658,7 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 			select {
 			case result := <-ch:
 				if result.status != http.StatusOK {
-					http.Error(w, result.msg, result.status)
+					writeError(w, result.status, result.msg)
 					return
 				}
 				w.Header().Set("Content-Type", "application/json")
@@ -1667,7 +1667,7 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 				w.Write(result.body)
 				return
 			case <-r.Context().Done():
-				http.Error(w, "request cancelled while waiting for CVE stats", http.StatusRequestTimeout)
+				writeError(w, http.StatusRequestTimeout, "request cancelled while waiting for CVE stats")
 				return
 			}
 		}
@@ -1683,7 +1683,7 @@ func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Get("refresh") != "true" {
 			s.finishCveStatsBuild(result)
 		}
-		http.Error(w, result.msg, result.status)
+		writeError(w, result.status, result.msg)
 		return
 	}
 	if r.URL.Query().Get("refresh") != "true" {
@@ -2099,11 +2099,11 @@ func buildCveDBQualitySummary(input cveDBQualityInput) map[string]any {
 
 func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if !s.canReadCveDB(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	searchTimeout := envInt("BONGSU_CVE_SEARCH_TIMEOUT_SECONDS", 15)
@@ -2118,7 +2118,7 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 	severity := r.URL.Query().Get("severity")
 	source, err := normalizeCveSource(r.URL.Query().Get("source"), "")
 	if err != nil {
-		http.Error(w, "invalid source", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid source")
 		return
 	}
 	minCVSS := floatParam(r, "min_cvss", 0)
@@ -2135,11 +2135,11 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			log.Printf("cve-db search timeout after %ds: %v", searchTimeout, err)
-			http.Error(w, "search timeout", http.StatusGatewayTimeout)
+			writeError(w, http.StatusGatewayTimeout, "search timeout")
 			return
 		}
 		log.Printf("cve-db search: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 
@@ -2151,16 +2151,16 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCveDbReferenceGroup(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if !s.canReadCveDB(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	key := strings.TrimSpace(r.URL.Query().Get("key"))
 	if key == "" {
-		http.Error(w, "missing key", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "missing key")
 		return
 	}
 	groupTimeout := envInt("BONGSU_CVE_REFERENCE_GROUP_TIMEOUT_SECONDS", 10)
@@ -2172,16 +2172,16 @@ func (s *Server) handleCveDbReferenceGroup(w http.ResponseWriter, r *http.Reques
 	summary, err := s.db.GetCveReferenceGroupSummary(ctx, key, limitParam(r, 50))
 	if err != nil {
 		if errors.Is(err, db.ErrInvalidCveReferenceKey) {
-			http.Error(w, "invalid key", http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid key")
 			return
 		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			log.Printf("cve-db reference group timeout after %ds: %v", groupTimeout, err)
-			http.Error(w, "reference group timeout", http.StatusGatewayTimeout)
+			writeError(w, http.StatusGatewayTimeout, "reference group timeout")
 			return
 		}
 		log.Printf("cve-db reference group: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)
@@ -2189,16 +2189,16 @@ func (s *Server) handleCveDbReferenceGroup(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleCveDbAffectedPackages(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if !s.canReadCveDB(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	id := strings.TrimSpace(r.PathValue("id"))
 	if id == "" {
-		http.Error(w, "missing cve id", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "missing cve id")
 		return
 	}
 	limit := limitParam(r, 100)
@@ -2213,11 +2213,11 @@ func (s *Server) handleCveDbAffectedPackages(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			log.Printf("cve-db affected packages timeout after %ds: %v", affectedTimeout, err)
-			http.Error(w, "affected packages timeout", http.StatusGatewayTimeout)
+			writeError(w, http.StatusGatewayTimeout, "affected packages timeout")
 			return
 		}
 		log.Printf("cve-db affected packages: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{

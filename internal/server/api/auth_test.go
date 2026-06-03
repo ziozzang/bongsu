@@ -774,7 +774,7 @@ func TestCveDBReadUsesRBACResource(t *testing.T) {
 		"func (s *Server) canReadCveDB",
 		`HasResourcePermission(r.Context(), subject, "cve_db", []string{"read", "admin"})`,
 		"if !s.canReadCveDB(r)",
-		`http.Error(w, "forbidden", http.StatusForbidden)`,
+		`writeError(w, http.StatusForbidden, "forbidden")`,
 		`case "host", "container", "image", "asset_group", "cve_db", "all":`,
 	} {
 		if !strings.Contains(body, want) {
@@ -1448,7 +1448,7 @@ func TestHandleReportNormalizesScannerInput(t *testing.T) {
 		"normalizeScanReport(&report)",
 		"agentHostTokenHash(r, report.Host.ID)",
 		"UpsertHostWithAgentToken",
-		`http.Error(w, err.Error(), http.StatusBadRequest)`,
+		`writeError(w, http.StatusBadRequest, err.Error())`,
 		`uuid.Parse(report.ScanID)`,
 		`"invalid scan_type"`,
 		`ingestErrors := append([]string{}, report.Errors...)`,
@@ -1546,7 +1546,7 @@ func TestHandleListVulnerabilitiesBoundsRuntime(t *testing.T) {
 		`envInt("BONGSU_VULNERABILITY_LIST_TIMEOUT_SECONDS", 15)`,
 		"context.WithTimeout(r.Context()",
 		"s.db.ListVulnerabilities(ctx, filter, limit, offset)",
-		`http.Error(w, "vulnerability list timeout", http.StatusGatewayTimeout)`,
+		`writeError(w, http.StatusGatewayTimeout, "vulnerability list timeout")`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("list vulnerabilities timeout handling missing %q: %s", want, fn)
@@ -2722,25 +2722,20 @@ func TestDownloadEPSSScriptIsFailClosedAndAtomic(t *testing.T) {
 	}
 }
 
-func TestSecurityDBSyncScriptImportsNvdOnceAfterCombiningYears(t *testing.T) {
+func TestSecurityDBSyncScriptImportsNvdPerYear(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(out)
 	for _, want := range []string{
-		`NVD_ALL_FILE="${TMPDIR}/nvd-all.jsonl"`,
 		`NVD_FAILED=0`,
-		`cat "${NVD_FILE}" >> "${NVD_ALL_FILE}"`,
-		`import_cve_file "${NVD_ALL_FILE}" "nvd"`,
+		`import_cve_file "${NVD_FILE}" "nvd"`,
 		`incomplete NVD download; preserving existing nvd source`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("sync-all-cvedb must combine NVD years before import, missing %q", want)
+			t.Fatalf("sync-all-cvedb per-year NVD import missing %q", want)
 		}
-	}
-	if strings.Contains(body, `import_cve_file "${NVD_FILE}" "nvd"`) {
-		t.Fatal("sync-all-cvedb must not replace the nvd source once per year")
 	}
 }
 
@@ -3042,7 +3037,7 @@ func TestHostMetadataUpdateAuditsOnlyAfterHostReload(t *testing.T) {
 	fn := body[start : start+1+end]
 	for _, want := range []string{
 		"errors.Is(err, sql.ErrNoRows)",
-		`http.Error(w, "host not found", http.StatusNotFound)`,
+		`writeError(w, http.StatusNotFound, "host not found")`,
 		`s.db.GetHost(r.Context(), hostID)`,
 		`"host.metadata.update"`,
 	} {
@@ -3201,11 +3196,11 @@ func TestTriageHandlerValidatesScopeBeforeUpsert(t *testing.T) {
 	for _, want := range []string{
 		"normalizeVulnerabilityTriage(&body)",
 		`body.PkgName != "" && body.HostID == ""`,
-		`http.Error(w, "host_id is required when pkg_name is set", http.StatusBadRequest)`,
+		`writeError(w, http.StatusBadRequest, "host_id is required when pkg_name is set")`,
 		`s.db.GetHost(r.Context(), body.HostID)`,
-		`http.Error(w, "host not found", http.StatusNotFound)`,
+		`writeError(w, http.StatusNotFound, "host not found")`,
 		`triageStatusRequiresReason(body.Status) && body.Reason == ""`,
-		`http.Error(w, "reason is required for "+body.Status, http.StatusBadRequest)`,
+		`writeError(w, http.StatusBadRequest, "reason is required for "+body.Status)`,
 		`s.db.UpsertVulnerabilityTriage`,
 	} {
 		if !strings.Contains(fn, want) {
@@ -3392,9 +3387,9 @@ func TestListScanRequestsSupportsOperationalFilters(t *testing.T) {
 	for _, want := range []string{
 		`strings.TrimSpace(r.URL.Query().Get("status"))`,
 		`!validScanRequestStatus(status)`,
-		`http.Error(w, "invalid status", http.StatusBadRequest)`,
+		`writeError(w, http.StatusBadRequest, "invalid status")`,
 		`strings.TrimSpace(r.URL.Query().Get("scan_type"))`,
-		`http.Error(w, "invalid scan_type", http.StatusBadRequest)`,
+		`writeError(w, http.StatusBadRequest, "invalid scan_type")`,
 		`strings.TrimSpace(r.URL.Query().Get("security_db_revision"))`,
 	} {
 		if !strings.Contains(fn, want) {
@@ -3418,7 +3413,7 @@ func TestCreateScanRequestValidatesTargetHost(t *testing.T) {
 	for _, want := range []string{
 		"normalizeScanRequestCreate(&req)",
 		`s.db.GetHost(r.Context(), req.HostID)`,
-		`http.Error(w, "host not found", http.StatusNotFound)`,
+		`writeError(w, http.StatusNotFound, "host not found")`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("create scan request host validation missing %q: %s", want, fn)
@@ -3476,7 +3471,7 @@ func TestAgentScanRequestCompletionRequiresClaimedHost(t *testing.T) {
 	for _, want := range []string{
 		`HostID  string ` + "`json:\"host_id\"`",
 		"validAgentScanRequestCompletionStatus",
-		`http.Error(w, "invalid scan request status", http.StatusBadRequest)`,
+		`writeError(w, http.StatusBadRequest, "invalid scan request status")`,
 		"verifyAgentHostBinding",
 		"body.Message = normalizeScanRequestMessage(body.Message)",
 		"CompleteClaimedScanRequest",
@@ -4260,9 +4255,9 @@ func TestCveDbExportStagesCompleteJSONLBeforeResponse(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		`normalizeCveSource(r.URL.Query().Get("source"), "")`,
-		`http.Error(w, "invalid source", http.StatusBadRequest)`,
+		`writeError(w, http.StatusBadRequest, "invalid source")`,
 		"s.writeCveJSONLTemp(r.Context(), source)",
-		"http.Error(w, \"export failed\", http.StatusInternalServerError)",
+		"writeError(w, http.StatusInternalServerError, \"export failed\")",
 		"os.Stat(cveFile)",
 		"os.Open(cveFile)",
 		`w.Header().Set("Content-Length"`,
@@ -4325,7 +4320,7 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 	for _, want := range []string{
 		`normalizeCveSource(r.URL.Query().Get("source"), "")`,
 		`strings.TrimSpace(r.URL.Query().Get("reference_key"))`,
-		`http.Error(w, "invalid source", http.StatusBadRequest)`,
+		`writeError(w, http.StatusBadRequest, "invalid source")`,
 		`floatParam(r, "min_cvss", 0)`,
 		`floatParam(r, "min_epss", 0)`,
 		`floatParam(r, "min_epss_percentile", 0)`,
@@ -4335,7 +4330,7 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 		"context.WithTimeout(r.Context()",
 		"s.db.SearchCveDatabase(ctx, query, referenceKey, severity, source",
 		"minCVSS, minEPSS, minEPSSPercentile, matchableOnly, includePrioritySources",
-		`http.Error(w, "search timeout", http.StatusGatewayTimeout)`,
+		`writeError(w, http.StatusGatewayTimeout, "search timeout")`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search source normalization missing %q: %s", want, fn)
@@ -4356,8 +4351,8 @@ func TestCveDbReferenceGroupEndpoint(t *testing.T) {
 		"context.WithTimeout(r.Context()",
 		"s.db.GetCveReferenceGroupSummary",
 		"errors.Is(err, db.ErrInvalidCveReferenceKey)",
-		`http.Error(w, "invalid key", http.StatusBadRequest)`,
-		`http.Error(w, "reference group timeout", http.StatusGatewayTimeout)`,
+		`writeError(w, http.StatusBadRequest, "invalid key")`,
+		`writeError(w, http.StatusGatewayTimeout, "reference group timeout")`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("CVE reference group endpoint missing %q", want)
@@ -4377,7 +4372,7 @@ func TestCveDbAffectedPackageEvidenceEndpoint(t *testing.T) {
 		`envInt("BONGSU_CVE_AFFECTED_PACKAGES_TIMEOUT_SECONDS", 10)`,
 		"context.WithTimeout(r.Context()",
 		"s.db.ListCveAffectedPackages",
-		`http.Error(w, "affected packages timeout", http.StatusGatewayTimeout)`,
+		`writeError(w, http.StatusGatewayTimeout, "affected packages timeout")`,
 		`"items": items`,
 		`"offset": offset`,
 	} {
@@ -4490,7 +4485,7 @@ func TestInventoryAndScanEndpointsApplyRBACScope(t *testing.T) {
 			wants: []string{
 				"scope := s.accessScope(r)",
 				"scope.Empty()",
-				`http.Error(w, "forbidden", http.StatusForbidden)`,
+				`writeError(w, http.StatusForbidden, "forbidden")`,
 				"HostIDs:    scope.HostIDs",
 			},
 		},
@@ -4500,7 +4495,7 @@ func TestInventoryAndScanEndpointsApplyRBACScope(t *testing.T) {
 			wants: []string{
 				"scope := s.accessScope(r)",
 				"scope.Empty()",
-				`http.Error(w, "forbidden", http.StatusForbidden)`,
+				`writeError(w, http.StatusForbidden, "forbidden")`,
 				"HostIDs:    scope.HostIDs",
 			},
 		},
@@ -4510,7 +4505,7 @@ func TestInventoryAndScanEndpointsApplyRBACScope(t *testing.T) {
 			wants: []string{
 				"scope := s.accessScope(r)",
 				"scope.Empty()",
-				`http.Error(w, "forbidden", http.StatusForbidden)`,
+				`writeError(w, http.StatusForbidden, "forbidden")`,
 				"ListScans(ctx, hostID, scope.HostIDs",
 			},
 		},
@@ -4520,7 +4515,7 @@ func TestInventoryAndScanEndpointsApplyRBACScope(t *testing.T) {
 			wants: []string{
 				"scope := s.accessScope(r)",
 				"scope.Empty()",
-				`http.Error(w, "forbidden", http.StatusForbidden)`,
+				`writeError(w, http.StatusForbidden, "forbidden")`,
 				"scope.HostIDs",
 				"ListScanRequests(",
 			},

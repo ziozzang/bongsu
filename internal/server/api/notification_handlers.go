@@ -11,12 +11,12 @@ import (
 
 func (s *Server) handleListNotificationRules(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	rules, err := s.db.ListNotificationRules(r.Context())
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if rules == nil {
@@ -27,7 +27,7 @@ func (s *Server) handleListNotificationRules(w http.ResponseWriter, r *http.Requ
 
 func (s *Server) handleCreateNotificationRule(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var req struct {
@@ -78,7 +78,7 @@ func (s *Server) handleCreateNotificationRule(w http.ResponseWriter, r *http.Req
 		ChannelConfig: cfg,
 	}
 	if err := s.db.CreateNotificationRule(r.Context(), rule); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	s.audit(r, "notification_rule.create", "notification_rule", rule.ID, "ok", map[string]any{"name": req.Name})
@@ -87,7 +87,7 @@ func (s *Server) handleCreateNotificationRule(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleGetNotificationRule(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
@@ -101,7 +101,7 @@ func (s *Server) handleGetNotificationRule(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleUpdateNotificationRule(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
@@ -153,7 +153,7 @@ func (s *Server) handleUpdateNotificationRule(w http.ResponseWriter, r *http.Req
 		existing.ChannelConfig = req.ChannelConfig
 	}
 	if err := s.db.UpdateNotificationRule(r.Context(), existing); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	s.audit(r, "notification_rule.update", "notification_rule", id, "ok", nil)
@@ -162,7 +162,7 @@ func (s *Server) handleUpdateNotificationRule(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleDeleteNotificationRule(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
@@ -176,7 +176,7 @@ func (s *Server) handleDeleteNotificationRule(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleTestNotificationRule(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
@@ -195,7 +195,7 @@ func (s *Server) handleTestNotificationRule(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) handleListNotificationLog(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	ruleID := r.URL.Query().Get("rule_id")
@@ -213,7 +213,7 @@ func (s *Server) handleListNotificationLog(w http.ResponseWriter, r *http.Reques
 	}
 	entries, total, err := s.db.ListNotificationLog(r.Context(), ruleID, limit, offset)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if entries == nil {

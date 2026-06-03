@@ -18,7 +18,7 @@ import (
 
 func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
@@ -684,7 +684,7 @@ func (s *Server) cveDBRematchLastResult(ctx context.Context, includeDetails bool
 
 func (s *Server) handleRetentionPrune(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var body struct {
@@ -722,7 +722,7 @@ func (s *Server) handleRetentionPrune(w http.ResponseWriter, r *http.Request) {
 	result, err := s.db.PruneOperationalData(r.Context(), body.ScanDays, body.RequestDays, body.AuditDays, dryRun)
 	if err != nil {
 		log.Printf("retention prune: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	status := "dry_run"
@@ -752,7 +752,7 @@ func (s *Server) handleRetentionPrune(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpsertAccessSubject(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var body struct {
@@ -771,16 +771,16 @@ func (s *Server) handleUpsertAccessSubject(w http.ResponseWriter, r *http.Reques
 	switch body.SubjectType {
 	case "user", "group":
 	default:
-		http.Error(w, "invalid subject_type", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid subject_type")
 		return
 	}
 	if body.ExternalID == "" {
-		http.Error(w, "external_id is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "external_id is required")
 		return
 	}
 	if err := s.db.UpsertAccessSubject(r.Context(), body.ID, body.SubjectType, body.ExternalID, body.DisplayName); err != nil {
 		log.Printf("upsert access subject: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	s.audit(r, "rbac.subject.upsert", "access_subject", body.ExternalID, "ok", map[string]any{
@@ -792,13 +792,13 @@ func (s *Server) handleUpsertAccessSubject(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleListAccessSubjects(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	items, err := s.db.ListAccessSubjects(r.Context())
 	if err != nil {
 		log.Printf("list access subjects: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -806,13 +806,13 @@ func (s *Server) handleListAccessSubjects(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleListAccessPolicies(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	items, err := s.db.ListAccessPolicies(r.Context(), r.URL.Query().Get("subject_external_id"))
 	if err != nil {
 		log.Printf("list access policies: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -820,22 +820,22 @@ func (s *Server) handleListAccessPolicies(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleDeleteAccessSubject(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "id is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "id is required")
 		return
 	}
 	subject, policyCount, err := s.db.DeleteAccessSubject(r.Context(), id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			http.Error(w, "not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
 		log.Printf("delete access subject: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	s.audit(r, "rbac.subject.delete", "access_subject", id, "ok", map[string]any{
@@ -850,22 +850,22 @@ func (s *Server) handleDeleteAccessSubject(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleDeleteAccessPolicy(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "id is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "id is required")
 		return
 	}
 	policy, err := s.db.DeleteAccessPolicy(r.Context(), id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			http.Error(w, "not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "not found")
 			return
 		}
 		log.Printf("delete access policy: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	s.audit(r, "rbac.policy.delete", "access_policy", id, "ok", map[string]any{
@@ -881,7 +881,7 @@ func (s *Server) handleDeleteAccessPolicy(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var body struct {
@@ -897,17 +897,17 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if body.SubjectID == "" && body.SubjectExternalID == "" {
-		http.Error(w, "subject_id or subject_external_id is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "subject_id or subject_external_id is required")
 		return
 	}
 	if body.ResourceType == "" {
-		http.Error(w, "resource_type is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "resource_type is required")
 		return
 	}
 	switch body.ResourceType {
 	case "host", "container", "image", "asset_group", "cve_db", "all":
 	default:
-		http.Error(w, "invalid resource_type", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid resource_type")
 		return
 	}
 	if body.Permission == "" {
@@ -916,16 +916,16 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 	switch body.Permission {
 	case "read", "write", "admin", "export":
 	default:
-		http.Error(w, "invalid permission", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid permission")
 		return
 	}
 	if err := s.db.UpsertAccessPolicy(r.Context(), body.ID, body.SubjectID, body.SubjectExternalID, body.ResourceType, body.ResourceID, body.Permission); err != nil {
 		log.Printf("upsert access policy: %v", err)
 		if strings.Contains(err.Error(), "not found") {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	subjectAuditID := body.SubjectExternalID
@@ -943,21 +943,21 @@ func (s *Server) handleUpsertAccessPolicy(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	createdFrom, err := auditTimeParam(r, "created_from", false)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	createdTo, err := auditTimeParam(r, "created_to", true)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if createdFrom != nil && createdTo != nil && createdFrom.After(*createdTo) {
-		http.Error(w, "created_from must be before created_to", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "created_from must be before created_to")
 		return
 	}
 	filter := db.AuditLogFilter{
@@ -973,7 +973,7 @@ func (s *Server) handleListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	items, total, err := s.db.ListAuditLogs(r.Context(), filter, limitParam(r, 100), offsetParam(r))
 	if err != nil {
 		log.Printf("list audit logs: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})

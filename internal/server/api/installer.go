@@ -17,14 +17,14 @@ import (
 
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateInstall(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	if s.installToken == "" {
 		s.audit(r, "installer.generate", "installer", "install.sh", "error", map[string]any{
 			"reason": "install token is not configured",
 		})
-		http.Error(w, "install token is not configured", http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "install token is not configured")
 		return
 	}
 	scheme := "http"
@@ -268,7 +268,7 @@ echo "  Log:     $WORK_DIR/agent.log"
 
 func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateInstall(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	agentPath := agentBinaryPath()
@@ -279,7 +279,7 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 			"reason": "agent binary not found",
 			"path":   agentPath,
 		})
-		http.Error(w, "agent binary not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "agent binary not found")
 		return
 	}
 	defer f.Close()
@@ -290,7 +290,7 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 			"reason": "agent binary is not readable",
 			"path":   agentPath,
 		})
-		http.Error(w, "agent binary not readable", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "agent binary not readable")
 		return
 	}
 	digest, err := fileSHA256Hex(f)
@@ -300,7 +300,7 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 			"path":   agentPath,
 			"error":  err.Error(),
 		})
-		http.Error(w, "agent binary checksum failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "agent binary checksum failed")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -325,7 +325,7 @@ func (s *Server) handleAgentDownload(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateInstall(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	trivyPath := trivyBinaryPath()
@@ -335,7 +335,7 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 			"reason": "trivy binary not found",
 			"path":   trivyPath,
 		})
-		http.Error(w, "trivy binary not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "trivy binary not found")
 		return
 	}
 	defer f.Close()
@@ -346,7 +346,7 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 			"reason": "trivy binary is not readable",
 			"path":   trivyPath,
 		})
-		http.Error(w, "trivy binary not readable", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "trivy binary not readable")
 		return
 	}
 	digest, err := fileSHA256Hex(f)
@@ -356,7 +356,7 @@ func (s *Server) handleTrivyDownload(w http.ResponseWriter, r *http.Request) {
 			"path":   trivyPath,
 			"error":  err.Error(),
 		})
-		http.Error(w, "trivy binary checksum failed", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "trivy binary checksum failed")
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
@@ -391,7 +391,7 @@ type installerBinaryStatus struct {
 
 func (s *Server) handleInstallerStatus(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	agent := installerBinaryReadiness("bongsu-agent", agentBinaryPath())

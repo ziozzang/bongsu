@@ -9,7 +9,7 @@ import (
 
 func (s *Server) handleGetTopAtRiskHosts(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	limit := envInt("BONGSU_INTELLIGENCE_TOP_RISK_LIMIT", 10)
@@ -20,7 +20,7 @@ func (s *Server) handleGetTopAtRiskHosts(w http.ResponseWriter, r *http.Request)
 	}
 	hosts, err := s.db.GetTopAtRiskHosts(r.Context(), limit)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if hosts == nil {
@@ -31,12 +31,12 @@ func (s *Server) handleGetTopAtRiskHosts(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleGetRecommendations(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	recs, err := s.db.GetRecommendations(r.Context())
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if recs == nil {
@@ -47,7 +47,7 @@ func (s *Server) handleGetRecommendations(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleGetVulnPosture(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	days := envInt("BONGSU_INTELLIGENCE_POSTURE_COMPARISON_DAYS", 7)
@@ -58,7 +58,7 @@ func (s *Server) handleGetVulnPosture(w http.ResponseWriter, r *http.Request) {
 	}
 	pc, err := s.db.GetVulnPostureComparison(r.Context(), days)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, pc)

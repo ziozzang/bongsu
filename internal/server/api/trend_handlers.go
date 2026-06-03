@@ -12,7 +12,7 @@ import (
 
 func (s *Server) handleGetVulnTrends(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	days := 30
@@ -27,7 +27,7 @@ func (s *Server) handleGetVulnTrends(w http.ResponseWriter, r *http.Request) {
 	hostID := r.URL.Query().Get("host_id")
 	trends, err := s.db.GetVulnTrends(r.Context(), days, hostID)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if trends == nil {
@@ -38,12 +38,12 @@ func (s *Server) handleGetVulnTrends(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetVulnTrendSummary(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	summary, err := s.db.GetVulnTrendSummary(r.Context())
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, summary)

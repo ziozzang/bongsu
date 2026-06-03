@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -163,7 +163,7 @@ function parseCvssVector(vector: string) {
   return { version: '3.x', parts, labels, values };
 }
 
-type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search';
+type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
 type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
 type HostFilters = { agent_status?: string; inventory_status?: string; agent_version_state?: string };
@@ -221,6 +221,11 @@ export default function App() {
         {view === 'audit' && <AuditLogView />}
         {view === 'vulns' && <VulnsView initialFilters={vulnerabilityFilters} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'vuln-detail' && <VulnDetailView vuln={selectedVuln} onBack={() => setView('vulns')} />}
+        {view === 'schedules' && <SchedulesView />}
+        {view === 'asset-groups' && <AssetGroupsView />}
+        {view === 'trends' && <TrendsView />}
+        {view === 'reports' && <ReportsView />}
+        {view === 'notifications' && <NotificationsView />}
       </div>
     </div>
   );
@@ -327,6 +332,11 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
     ['scans', 'Scan History', '☰'],
     ['rbac', 'RBAC', '◎'],
     ['audit', 'Audit Log', '◇'],
+    ['schedules', 'Schedules', '⏱'],
+    ['asset-groups', 'Asset Groups', '📁'],
+    ['trends', 'Trends', '📈'],
+    ['reports', 'Reports', '📊'],
+    ['notifications', 'Notifications', '🔔'],
   ];
   return (
     <div className="sidebar">
@@ -4105,6 +4115,574 @@ function CvssTooltip({ pkgId, score, onSelectVuln }: { pkgId: string; score: num
              </div>
            ))
           }
+        </div>
+      )}
+    </>
+  );
+}
+
+function SchedulesView() {
+  const [items, setItems] = useState<ScheduledScan[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [cronExpr, setCronExpr] = useState('');
+  const [scanType, setScanType] = useState('full');
+  const [msg, setMsg] = useState('');
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api.schedules()
+      .then(r => { setItems(r || []); setLoading(false); })
+      .catch(() => { setItems([]); setLoading(false); });
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async () => {
+    if (!name || !cronExpr) return;
+    setMsg('');
+    try {
+      await api.createSchedule({ name, cron_expr: cronExpr, scan_type: scanType });
+      setMsg('Schedule created');
+      setName('');
+      setCronExpr('');
+      load();
+    } catch {
+      setMsg('Failed to create schedule');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setMsg('');
+    try {
+      await api.deleteSchedule(id);
+      setMsg('Schedule deleted');
+      load();
+    } catch {
+      setMsg('Failed to delete schedule');
+    }
+  };
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>Schedules</h1>
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 1rem' }}><h2>Create Schedule</h2></div>
+        <div className="filters">
+          <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input type="text" placeholder="Cron expression (e.g. 0 2 * * *)" value={cronExpr} onChange={(e) => setCronExpr(e.target.value)} style={{ minWidth: 260 }} />
+          <select value={scanType} onChange={(e) => setScanType(e.target.value)}>
+            <option value="full">Full Scan</option>
+            <option value="packages_only">Packages Only</option>
+          </select>
+          <button className="filter-btn" onClick={handleCreate}>Create</button>
+          {msg && <span style={{ color: msg.includes('Failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{msg}</span>}
+        </div>
+      </div>
+      <div className="card">
+        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Cron</th><th>Scan Type</th><th>Enabled</th><th>Last Run</th><th>Next Run</th><th></th></tr>
+            </thead>
+            <tbody>
+              {items.map(s => (
+                <tr key={s.id}>
+                  <td>{s.name}</td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.cron_expr}</td>
+                  <td>{s.scan_type}</td>
+                  <td><span className="badge" style={{ color: s.enabled ? 'var(--low)' : 'var(--medium)' }}>{s.enabled ? 'yes' : 'no'}</span></td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.last_run ? new Date(s.last_run).toLocaleString() : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.next_run ? new Date(s.next_run).toLocaleString() : '-'}</td>
+                  <td><button className="delete-btn" onClick={() => handleDelete(s.id)}>Delete</button></td>
+                </tr>
+              ))}
+              {items.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No schedules</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+function AssetGroupsView() {
+  const [items, setItems] = useState<AssetGroup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [groupType, setGroupType] = useState('static');
+  const [ruleExpr, setRuleExpr] = useState('');
+  const [msg, setMsg] = useState('');
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api.assetGroups()
+      .then(r => { setItems(r.items || []); setLoading(false); })
+      .catch(() => { setItems([]); setLoading(false); });
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async () => {
+    if (!name) return;
+    setMsg('');
+    try {
+      await api.createAssetGroup({ name, description, group_type: groupType, rule_expr: groupType === 'dynamic' ? ruleExpr : '' });
+      setMsg('Asset group created');
+      setName('');
+      setDescription('');
+      setRuleExpr('');
+      load();
+    } catch {
+      setMsg('Failed to create asset group');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setMsg('');
+    try {
+      await api.deleteAssetGroup(id);
+      setMsg('Asset group deleted');
+      load();
+    } catch {
+      setMsg('Failed to delete asset group');
+    }
+  };
+
+  const handleScan = async (id: string) => {
+    setMsg('');
+    try {
+      await api.triggerAssetGroupScan(id);
+      setMsg('Asset group scan triggered');
+    } catch {
+      setMsg('Failed to trigger asset group scan');
+    }
+  };
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>Asset Groups</h1>
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 1rem' }}><h2>Create Asset Group</h2></div>
+        <div className="filters">
+          <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input type="text" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <select value={groupType} onChange={(e) => setGroupType(e.target.value)}>
+            <option value="static">Static</option>
+            <option value="dynamic">Dynamic</option>
+          </select>
+          {groupType === 'dynamic' && <input type="text" placeholder="Rule expression" value={ruleExpr} onChange={(e) => setRuleExpr(e.target.value)} style={{ minWidth: 260 }} />}
+          <button className="filter-btn" onClick={handleCreate}>Create</button>
+          {msg && <span style={{ color: msg.includes('Failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{msg}</span>}
+        </div>
+      </div>
+      <div className="card">
+        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Description</th><th>Type</th><th>Rule</th><th>Hosts</th><th></th><th></th></tr>
+            </thead>
+            <tbody>
+              {items.map(g => (
+                <tr key={g.id}>
+                  <td>{g.name}</td>
+                  <td>{g.description || '-'}</td>
+                  <td><span className="badge">{g.group_type}</span></td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{g.rule_expr || '-'}</td>
+                  <td className="mono">{g.host_count || 0}</td>
+                  <td><button className="update-btn" onClick={() => handleScan(g.id)}>Scan</button></td>
+                  <td><button className="delete-btn" onClick={() => handleDelete(g.id)}>Delete</button></td>
+                </tr>
+              ))}
+              {items.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No asset groups</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+function TrendsView() {
+  const [summary, setSummary] = useState<VulnTrendSummary | null>(null);
+  const [rows, setRows] = useState<VulnTrendRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api.vulnTrendSummary().catch(() => null),
+      api.vulnTrends().catch(() => ({ items: [] })),
+    ]).then(([s, r]) => {
+      setSummary(s);
+      setRows(r?.items || []);
+      setLoading(false);
+    });
+  }, []);
+
+  const trendColor = (dir: string) => dir === 'up' ? 'var(--critical)' : dir === 'down' ? 'var(--low)' : 'var(--medium)';
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>Vulnerability Trends</h1>
+      {loading ? <div>Loading...</div> : (
+        <>
+          {summary && (
+            <div className="stats-grid" style={{ marginBottom: '1.5rem' }}>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: 'var(--primary)' }} />
+                <div className="label">Current Total</div>
+                <div className="value">{summary.current_total.toLocaleString()}</div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: 'var(--text-secondary)' }} />
+                <div className="label">Previous Total</div>
+                <div className="value">{summary.previous_total.toLocaleString()}</div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: summary.delta > 0 ? 'var(--critical)' : 'var(--low)' }} />
+                <div className="label">Delta</div>
+                <div className="value" style={{ color: summary.delta > 0 ? 'var(--critical)' : 'var(--low)' }}>
+                  {summary.delta > 0 ? '+' : ''}{summary.delta.toLocaleString()}
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: 'var(--text-secondary)' }} />
+                <div className="label">Delta %</div>
+                <div className="value">{summary.delta_percent.toFixed(1)}%</div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: trendColor(summary.trend_direction) }} />
+                <div className="label">Trend</div>
+                <div className="value" style={{ color: trendColor(summary.trend_direction), textTransform: 'uppercase' }}>{summary.trend_direction}</div>
+              </div>
+            </div>
+          )}
+          <div className="card">
+            <div className="card-header"><h2>Daily Vulnerability Counts</h2></div>
+            <table>
+              <thead>
+                <tr><th>Date</th><th>Total</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th></tr>
+              </thead>
+              <tbody>
+                {rows.map(r => (
+                  <tr key={r.date}>
+                    <td className="mono" style={{ fontSize: '0.8125rem' }}>{r.date}</td>
+                    <td className="mono">{r.total.toLocaleString()}</td>
+                    <td className="mono" style={{ color: 'var(--critical)', fontWeight: r.critical ? 600 : 400 }}>{r.critical}</td>
+                    <td className="mono" style={{ color: 'var(--high)', fontWeight: r.high ? 600 : 400 }}>{r.high}</td>
+                    <td className="mono" style={{ color: 'var(--medium)', fontWeight: r.medium ? 600 : 400 }}>{r.medium}</td>
+                    <td className="mono" style={{ color: 'var(--low)', fontWeight: r.low ? 600 : 400 }}>{r.low}</td>
+                  </tr>
+                ))}
+                {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No trend data</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function ReportsView() {
+  const [summary, setSummary] = useState<ExecutiveSummary | null>(null);
+  const [sla, setSla] = useState<SLAComplianceReport | null>(null);
+  const [riskRows, setRiskRows] = useState<RiskBreakdownRow[]>([]);
+  const [riskGroupBy, setRiskGroupBy] = useState('owner');
+  const [loading, setLoading] = useState(true);
+  const [exportMsg, setExportMsg] = useState('');
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api.executiveSummary().catch(() => null),
+      api.slaCompliance().catch(() => null),
+      api.riskBreakdown({ group_by: riskGroupBy }).catch(() => ({ items: [], group_by: riskGroupBy })),
+    ]).then(([s, sl, r]) => {
+      setSummary(s);
+      setSla(sl);
+      setRiskRows(r?.items || []);
+      setLoading(false);
+    });
+  }, []);
+
+  const loadRiskBreakdown = useCallback((groupBy: string) => {
+    api.riskBreakdown({ group_by: groupBy })
+      .then(r => { setRiskRows(r.items || []); setRiskGroupBy(groupBy); })
+      .catch(() => {});
+  }, []);
+
+  const handleExport = async () => {
+    setExportMsg('Exporting...');
+    try {
+      await api.exportReport({ format: 'json' });
+      setExportMsg('Report exported');
+    } catch {
+      setExportMsg('Export failed');
+    }
+  };
+
+  const sevColor = (s: string) => s === 'CRITICAL' ? 'var(--critical)' : s === 'HIGH' ? 'var(--high)' : s === 'MEDIUM' ? 'var(--medium)' : 'var(--low)';
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>Reports</h1>
+      {loading ? <div>Loading...</div> : (
+        <>
+          {summary && (
+            <>
+              <div className="stats-grid" style={{ marginBottom: '1.5rem' }}>
+                <div className="stat-card">
+                  <div className="accent-bar" style={{ background: 'var(--primary)' }} />
+                  <div className="label">Total Hosts</div>
+                  <div className="value">{summary.total_hosts}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="accent-bar" style={{ background: 'var(--high)' }} />
+                  <div className="label">Active Vulnerabilities</div>
+                  <div className="value" style={{ color: 'var(--high)' }}>{summary.active_vulnerabilities.toLocaleString()}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="accent-bar" style={{ background: 'var(--critical)' }} />
+                  <div className="label">Exploited</div>
+                  <div className="value" style={{ color: 'var(--critical)' }}>{summary.exploited_count}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="accent-bar" style={{ background: summary.overdue_sla_count > 0 ? 'var(--critical)' : 'var(--low)' }} />
+                  <div className="label">Overdue SLA</div>
+                  <div className="value" style={{ color: summary.overdue_sla_count > 0 ? 'var(--critical)' : 'var(--low)' }}>{summary.overdue_sla_count}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="accent-bar" style={{ background: 'var(--low)' }} />
+                  <div className="label">SLA Compliance</div>
+                  <div className="value" style={{ color: 'var(--low)' }}>{summary.sla_compliance_percent.toFixed(1)}%</div>
+                </div>
+                <div className="stat-card">
+                  <div className="accent-bar" style={{ background: summary.trend_direction === 'up' ? 'var(--critical)' : 'var(--low)' }} />
+                  <div className="label">Trend</div>
+                  <div className="value" style={{ color: summary.trend_direction === 'up' ? 'var(--critical)' : 'var(--low)', textTransform: 'uppercase' }}>{summary.trend_direction}</div>
+                </div>
+              </div>
+              <div className="card" style={{ marginBottom: '1rem' }}>
+                <div className="card-header"><h2>Severity Counts</h2></div>
+                <div style={{ display: 'flex', gap: '1rem', padding: '1rem', flexWrap: 'wrap' }}>
+                  {Object.entries(summary.severity_counts || {}).map(([sev, count]) => (
+                    <div key={sev} style={{ textAlign: 'center' }}>
+                      <div className="mono" style={{ fontSize: '1.25rem', fontWeight: 700, color: sevColor(sev) }}>{count}</div>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sev}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+          {sla && (
+            <div className="card" style={{ marginBottom: '1rem' }}>
+              <div className="card-header"><h2>SLA Compliance</h2></div>
+              <table>
+                <thead>
+                  <tr><th>Severity</th><th>Total</th><th>Overdue</th><th>Compliance %</th></tr>
+                </thead>
+                <tbody>
+                  {Object.entries(sla.by_severity || {}).map(([sev, stats]) => (
+                    <tr key={sev}>
+                      <td><span className="badge" style={{ color: sevColor(sev) }}>{sev}</span></td>
+                      <td className="mono">{stats.total}</td>
+                      <td className="mono" style={{ color: stats.overdue > 0 ? 'var(--critical)' : 'var(--text-muted)' }}>{stats.overdue}</td>
+                      <td className="mono">{stats.compliance_percent.toFixed(1)}%</td>
+                    </tr>
+                  ))}
+                  {Object.keys(sla.by_severity || {}).length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No SLA data</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <div className="card-header">
+              <h2>Risk Breakdown</h2>
+              <div className="filters" style={{ margin: 0 }}>
+                <select value={riskGroupBy} onChange={(e) => loadRiskBreakdown(e.target.value)}>
+                  <option value="owner">Owner</option>
+                  <option value="team">Team</option>
+                  <option value="environment">Environment</option>
+                  <option value="criticality">Criticality</option>
+                </select>
+              </div>
+            </div>
+            <table>
+              <thead>
+                <tr><th>Group</th><th>Total</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th></tr>
+              </thead>
+              <tbody>
+                {riskRows.map(r => (
+                  <tr key={r.group}>
+                    <td>{r.group}</td>
+                    <td className="mono">{r.total.toLocaleString()}</td>
+                    <td className="mono" style={{ color: 'var(--critical)' }}>{r.severity_counts?.CRITICAL || 0}</td>
+                    <td className="mono" style={{ color: 'var(--high)' }}>{r.severity_counts?.HIGH || 0}</td>
+                    <td className="mono" style={{ color: 'var(--medium)' }}>{r.severity_counts?.MEDIUM || 0}</td>
+                    <td className="mono" style={{ color: 'var(--low)' }}>{r.severity_counts?.LOW || 0}</td>
+                  </tr>
+                ))}
+                {riskRows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No risk breakdown data</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ marginBottom: '1rem' }}>
+            <button className="update-btn" onClick={handleExport}>Export Report (JSON)</button>
+            {exportMsg && <span style={{ marginLeft: '0.75rem', color: exportMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{exportMsg}</span>}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function NotificationsView() {
+  const [items, setItems] = useState<NotificationRule[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState('');
+  const [triggerEvent, setTriggerEvent] = useState('scan.completed');
+  const [minSeverity, setMinSeverity] = useState('CRITICAL');
+  const [channelType, setChannelType] = useState('webhook');
+  const [enabled, setEnabled] = useState(true);
+  const [msg, setMsg] = useState('');
+  const [logEntries, setLogEntries] = useState<NotificationLogEntry[]>([]);
+  const [showLog, setShowLog] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api.notificationRules()
+      .then(r => { setItems(r.items || []); setLoading(false); })
+      .catch(() => { setItems([]); setLoading(false); });
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async () => {
+    if (!name) return;
+    setMsg('');
+    try {
+      await api.createNotificationRule({ name, trigger_event: triggerEvent, min_severity: minSeverity, channel_type: channelType, enabled });
+      setMsg('Notification rule created');
+      setName('');
+      load();
+    } catch {
+      setMsg('Failed to create notification rule');
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    setMsg('');
+    try {
+      await api.deleteNotificationRule(id);
+      setMsg('Notification rule deleted');
+      load();
+    } catch {
+      setMsg('Failed to delete notification rule');
+    }
+  };
+
+  const handleTest = async (id: string) => {
+    setMsg('');
+    try {
+      await api.testNotificationRule(id);
+      setMsg('Test notification sent');
+    } catch {
+      setMsg('Failed to send test notification');
+    }
+  };
+
+  const handleLoadLog = async () => {
+    if (showLog) { setShowLog(false); return; }
+    try {
+      const r = await api.notificationLog({ limit: '20' });
+      setLogEntries(r.items || []);
+      setShowLog(true);
+    } catch {
+      setMsg('Failed to load notification log');
+    }
+  };
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>Notifications</h1>
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 1rem' }}><h2>Create Notification Rule</h2></div>
+        <div className="filters">
+          <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <select value={triggerEvent} onChange={(e) => setTriggerEvent(e.target.value)}>
+            <option value="scan.completed">Scan Completed</option>
+            <option value="vulnerability.discovered">Vulnerability Discovered</option>
+            <option value="security_db.updated">Security DB Updated</option>
+          </select>
+          <select value={minSeverity} onChange={(e) => setMinSeverity(e.target.value)}>
+            <option value="CRITICAL">Critical</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+          <select value={channelType} onChange={(e) => setChannelType(e.target.value)}>
+            <option value="webhook">Webhook</option>
+            <option value="log">Log</option>
+          </select>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
+          </label>
+          <button className="filter-btn" onClick={handleCreate}>Create</button>
+          {msg && <span style={{ color: msg.includes('Failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{msg}</span>}
+        </div>
+      </div>
+      <div className="card">
+        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Trigger Event</th><th>Min Severity</th><th>Channel</th><th>Enabled</th><th>Last Triggered</th><th></th><th></th></tr>
+            </thead>
+            <tbody>
+              {items.map(r => (
+                <tr key={r.id}>
+                  <td>{r.name}</td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{r.trigger_event}</td>
+                  <td><span className="badge">{r.min_severity || '-'}</span></td>
+                  <td>{r.channel_type}</td>
+                  <td><span className="badge" style={{ color: r.enabled ? 'var(--low)' : 'var(--medium)' }}>{r.enabled ? 'yes' : 'no'}</span></td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{r.last_triggered ? new Date(r.last_triggered).toLocaleString() : '-'}</td>
+                  <td><button className="update-btn" onClick={() => handleTest(r.id)}>Test</button></td>
+                  <td><button className="delete-btn" onClick={() => handleDelete(r.id)}>Delete</button></td>
+                </tr>
+              ))}
+              {items.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No notification rules</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={{ marginTop: '1rem' }}>
+        <button className="filter-btn" onClick={handleLoadLog}>{showLog ? 'Hide Log' : 'Show Log'}</button>
+      </div>
+      {showLog && (
+        <div className="card" style={{ marginTop: '1rem' }}>
+          <div className="card-header"><h2>Notification Log</h2></div>
+          <table>
+            <thead>
+              <tr><th>Time</th><th>Rule</th><th>Event</th><th>Channel</th><th>Status</th><th>Error</th></tr>
+            </thead>
+            <tbody>
+              {logEntries.map(e => (
+                <tr key={e.id}>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(e.created_at).toLocaleString()}</td>
+                  <td>{e.rule_name}</td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{e.trigger_event}</td>
+                  <td>{e.channel_type}</td>
+                  <td><span className="badge">{e.status}</span></td>
+                  <td style={{ fontSize: '0.8125rem', color: e.error_message ? 'var(--critical)' : 'var(--text-muted)' }}>{e.error_message || '-'}</td>
+                </tr>
+              ))}
+              {logEntries.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No log entries</td></tr>}
+            </tbody>
+          </table>
         </div>
       )}
     </>

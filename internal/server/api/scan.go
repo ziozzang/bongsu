@@ -15,7 +15,7 @@ import (
 
 func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	ctx := r.Context()
@@ -27,7 +27,7 @@ func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if hostID != "" && !scope.CanReadHost(hostID) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	limit := limitParam(r, 50)
@@ -36,7 +36,7 @@ func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
 	scans, total, err := s.db.ListScans(ctx, hostID, scope.HostIDs, limit, offset)
 	if err != nil {
 		log.Printf("list scans: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 
@@ -48,7 +48,7 @@ func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	scope := s.accessScope(r)
@@ -58,17 +58,17 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 	}
 	hostID := r.URL.Query().Get("host_id")
 	if hostID != "" && !scope.CanReadHost(hostID) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
 	if status != "" && !validScanRequestStatus(status) {
-		http.Error(w, "invalid status", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid status")
 		return
 	}
 	scanType := strings.TrimSpace(r.URL.Query().Get("scan_type"))
 	if scanType != "" && !validScanRequestType(scanType) {
-		http.Error(w, "invalid scan_type", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid scan_type")
 		return
 	}
 	staleOnly := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("stale")), "true")
@@ -86,7 +86,7 @@ func (s *Server) handleListScanRequests(w http.ResponseWriter, r *http.Request) 
 	)
 	if err != nil {
 		log.Printf("list scan requests: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	annotateScanRequestStaleness(items, scanRequestClaimTimeoutSeconds())
@@ -114,17 +114,17 @@ func scanRequestClaimTimeoutSeconds() int64 {
 
 func (s *Server) handleCancelScanRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "id is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "id is required")
 		return
 	}
 	if err := s.db.CompleteScanRequest(r.Context(), id, "cancelled", "cancelled by admin"); err != nil {
 		log.Printf("cancel scan request: %v", err)
-		http.Error(w, scanRequestErrorMessage(err), scanRequestErrorStatus(err))
+		writeError(w, scanRequestErrorStatus(err), scanRequestErrorMessage(err))
 		return
 	}
 	req, _ := s.db.GetScanRequest(r.Context(), id)
@@ -134,12 +134,12 @@ func (s *Server) handleCancelScanRequest(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleRequeueScanRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
 	if id == "" {
-		http.Error(w, "id is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "id is required")
 		return
 	}
 	var body struct {
@@ -155,7 +155,7 @@ func (s *Server) handleRequeueScanRequest(w http.ResponseWriter, r *http.Request
 	}
 	if err := s.db.RequeueScanRequest(r.Context(), id, body.Message); err != nil {
 		log.Printf("requeue scan request: %v", err)
-		http.Error(w, scanRequestErrorMessage(err), scanRequestErrorStatus(err))
+		writeError(w, scanRequestErrorStatus(err), scanRequestErrorMessage(err))
 		return
 	}
 	req, _ := s.db.GetScanRequest(r.Context(), id)
@@ -165,7 +165,7 @@ func (s *Server) handleRequeueScanRequest(w http.ResponseWriter, r *http.Request
 
 func (s *Server) handleRequeueStaleScanRequests(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var body struct {
@@ -184,7 +184,7 @@ func (s *Server) handleRequeueStaleScanRequests(w http.ResponseWriter, r *http.R
 	result, err := s.db.RequeueStaleScanRequests(r.Context(), time.Duration(body.TimeoutMinutes)*time.Minute)
 	if err != nil {
 		log.Printf("requeue stale scan requests: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	s.audit(r, "scan_request.requeue_stale", "scan_request", "stale_claims", "ok", map[string]any{
@@ -197,7 +197,7 @@ func (s *Server) handleRequeueStaleScanRequests(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleRequeueFilteredScanRequests(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var body struct {
@@ -217,20 +217,20 @@ func (s *Server) handleRequeueFilteredScanRequests(w http.ResponseWriter, r *htt
 	body.SecurityDBRevision = strings.TrimSpace(body.SecurityDBRevision)
 	body.Message = normalizeScanRequestMessage(body.Message)
 	if body.HostID == "" && body.Status == "" && body.ScanType == "" && body.SecurityDBRevision == "" {
-		http.Error(w, "at least one filter is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "at least one filter is required")
 		return
 	}
 	if body.Status != "" && body.Status != "failed" && body.Status != "degraded" && body.Status != "cancelled" {
-		http.Error(w, "status must be failed, degraded, or cancelled", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "status must be failed, degraded, or cancelled")
 		return
 	}
 	if body.ScanType != "" && !validScanRequestType(body.ScanType) {
-		http.Error(w, "invalid scan_type", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid scan_type")
 		return
 	}
 	if body.HostID != "" {
 		if _, err := s.db.GetHost(r.Context(), body.HostID); err != nil {
-			http.Error(w, "host not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "host not found")
 			return
 		}
 	}
@@ -240,7 +240,7 @@ func (s *Server) handleRequeueFilteredScanRequests(w http.ResponseWriter, r *htt
 	count, err := s.db.RequeueScanRequestsByFilter(r.Context(), body.HostID, body.Status, body.ScanType, body.SecurityDBRevision, body.Message)
 	if err != nil {
 		log.Printf("requeue filtered scan requests: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	s.audit(r, "scan_request.requeue_filtered", "scan_request", "filtered", "ok", map[string]any{
@@ -256,7 +256,7 @@ func (s *Server) handleRequeueFilteredScanRequests(w http.ResponseWriter, r *htt
 
 func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var req models.ScanRequest
@@ -265,18 +265,18 @@ func (s *Server) handleCreateScanRequest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := normalizeScanRequestCreate(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if req.HostID != "" {
 		if _, err := s.db.GetHost(r.Context(), req.HostID); err != nil {
-			http.Error(w, "host not found", http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "host not found")
 			return
 		}
 	}
 	if err := s.db.CreateScanRequest(r.Context(), &req); err != nil {
 		log.Printf("create scan request: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	s.audit(r, "scan_request.create", "scan_request", req.ID, "ok", map[string]any{
@@ -340,24 +340,24 @@ func validAgentScanRequestCompletionStatus(status string) bool {
 
 func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAgent(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	hostID := r.URL.Query().Get("host_id")
 	if hostID == "" {
-		http.Error(w, "host_id is required", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "host_id is required")
 		return
 	}
 	if err := s.verifyAgentHostBinding(r, hostID); err != nil {
 		s.audit(r, "scan_request.claim", "host", hostID, "forbidden", map[string]any{"reason": err.Error()})
-		http.Error(w, err.Error(), http.StatusForbidden)
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	timeoutMinutes := int(scanRequestClaimTimeoutSeconds() / 60)
 	req, requeueResult, err := s.db.ClaimScanRequest(r.Context(), hostID, time.Duration(timeoutMinutes)*time.Minute)
 	if err != nil {
 		log.Printf("claim scan request: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	if requeueResult != nil && (requeueResult.Requeued > 0 || requeueResult.CancelledDuplicates > 0) {
@@ -384,7 +384,7 @@ func (s *Server) handleClaimScanRequest(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAgent(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
@@ -404,17 +404,17 @@ func (s *Server) handleCompleteScanRequest(w http.ResponseWriter, r *http.Reques
 		body.Status = "completed"
 	}
 	if !validAgentScanRequestCompletionStatus(body.Status) {
-		http.Error(w, "invalid scan request status", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid scan request status")
 		return
 	}
 	if err := s.verifyAgentHostBinding(r, body.HostID); err != nil {
 		s.audit(r, "scan_request.complete", "host", body.HostID, "forbidden", map[string]any{"reason": err.Error()})
-		http.Error(w, err.Error(), http.StatusForbidden)
+		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
 	if err := s.db.CompleteClaimedScanRequest(r.Context(), id, body.HostID, body.Status, body.Message); err != nil {
 		log.Printf("complete scan request: %v", err)
-		http.Error(w, scanRequestErrorMessage(err), scanRequestErrorStatus(err))
+		writeError(w, scanRequestErrorStatus(err), scanRequestErrorMessage(err))
 		return
 	}
 	req, _ := s.db.GetScanRequest(r.Context(), id)

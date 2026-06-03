@@ -10,25 +10,25 @@ import (
 
 func (s *Server) handlePackageVulns(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	pkgID := r.PathValue("id")
 	ctx := r.Context()
 	hostID, err := s.db.GetPackageHostID(ctx, pkgID)
 	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	if !s.canReadHost(r, hostID) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
 	vulns, err := s.db.GetVulnsByPackageID(ctx, pkgID)
 	if err != nil {
 		log.Printf("package vulns: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	if vulns == nil {
@@ -39,7 +39,7 @@ func (s *Server) handlePackageVulns(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	ctx := r.Context()
@@ -50,7 +50,7 @@ func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 	}
 	hostID := r.URL.Query().Get("host_id")
 	if hostID != "" && !scope.CanReadHost(hostID) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
@@ -70,7 +70,7 @@ func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 	pkgs, total, err := s.db.SearchPackages(ctx, f)
 	if err != nil {
 		log.Printf("search packages: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 
@@ -82,7 +82,7 @@ func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSearchContainers(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	ctx := r.Context()
@@ -93,7 +93,7 @@ func (s *Server) handleSearchContainers(w http.ResponseWriter, r *http.Request) 
 	}
 	hostID := r.URL.Query().Get("host_id")
 	if hostID != "" && !scope.CanReadHost(hostID) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
 
@@ -113,7 +113,7 @@ func (s *Server) handleSearchContainers(w http.ResponseWriter, r *http.Request) 
 	containers, total, err := s.db.SearchContainers(ctx, f)
 	if err != nil {
 		log.Printf("search containers: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 
@@ -125,7 +125,7 @@ func (s *Server) handleSearchContainers(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handlePackageFilters(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	ctx := r.Context()
@@ -138,7 +138,7 @@ func (s *Server) handlePackageFilters(w http.ResponseWriter, r *http.Request) {
 	opts, err := s.db.GetFilterOptions(ctx, scopeHostFilter(scope, scope.HostIDs))
 	if err != nil {
 		log.Printf("filter options: %v", err)
-		http.Error(w, "db error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
 	writeJSON(w, http.StatusOK, opts)

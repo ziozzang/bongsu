@@ -44,12 +44,12 @@ func validateRuleExpr(expr string) error {
 
 func (s *Server) handleListAssetGroups(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	groups, err := s.db.ListAssetGroups(r.Context())
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	if groups == nil {
@@ -60,7 +60,7 @@ func (s *Server) handleListAssetGroups(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleCreateAssetGroup(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	var req struct {
@@ -99,7 +99,7 @@ func (s *Server) handleCreateAssetGroup(w http.ResponseWriter, r *http.Request) 
 		RuleExpr:    req.RuleExpr,
 	}
 	if err := s.db.CreateAssetGroup(r.Context(), group); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	s.audit(r, "asset_group.create", "asset_group", group.ID, "ok", map[string]any{"name": req.Name, "rule_type": ruleType})
@@ -108,7 +108,7 @@ func (s *Server) handleCreateAssetGroup(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleGetAssetGroup(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
@@ -126,7 +126,7 @@ func (s *Server) handleGetAssetGroup(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteAssetGroup(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	id := r.PathValue("id")
@@ -140,7 +140,7 @@ func (s *Server) handleDeleteAssetGroup(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleAddHostToAssetGroup(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	groupID := r.PathValue("id")
@@ -165,7 +165,7 @@ func (s *Server) handleAddHostToAssetGroup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := s.db.AddHostToAssetGroup(r.Context(), groupID, req.HostID); err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	s.audit(r, "asset_group.add_host", "asset_group", groupID, "ok", map[string]any{"host_id": req.HostID})
@@ -174,7 +174,7 @@ func (s *Server) handleAddHostToAssetGroup(w http.ResponseWriter, r *http.Reques
 
 func (s *Server) handleRemoveHostFromAssetGroup(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	groupID := r.PathValue("id")
@@ -189,7 +189,7 @@ func (s *Server) handleRemoveHostFromAssetGroup(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleTriggerAssetGroupScan(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 	groupID := r.PathValue("id")
@@ -202,13 +202,13 @@ func (s *Server) handleTriggerAssetGroupScan(w http.ResponseWriter, r *http.Requ
 	if group.RuleType == "dynamic" {
 		hostIDs, err = s.db.ExpandDynamicGroup(r.Context(), groupID)
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 	} else {
 		hostIDs, err = s.db.GetAssetGroupHostIDs(r.Context(), groupID)
 		if err != nil {
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 	}

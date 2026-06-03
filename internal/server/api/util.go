@@ -20,6 +20,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"error": message})
+}
+
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any, allowEmpty bool) error {
 	if r.Body == nil {
 		if allowEmpty {
@@ -38,10 +42,10 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any, allowEmpty 
 func writeJSONBodyError(w http.ResponseWriter, err error, fallback string) {
 	var maxBytesErr *http.MaxBytesError
 	if errors.As(err, &maxBytesErr) {
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
 		return
 	}
-	http.Error(w, fallback, http.StatusBadRequest)
+	writeError(w, http.StatusBadRequest, fallback)
 }
 
 func intParam(r *http.Request, key string, def int) int {
