@@ -37,6 +37,7 @@ It also verifies the live one-line installer payload: `/api/admin/installer/stat
 It then exercises the actual live one-line installer and download URLs with `./scripts/verify-live-install-script.sh`: `/api/install.sh`, `/api/downloads/bongsu-agent`, and `/api/downloads/trivy` must reject unauthenticated and query-token requests, accept header authentication, expose checksum headers, and serve binaries whose SHA256 matches the advertised value.
 It verifies the live security DB schedule with `./scripts/verify-live-security-db-schedule.sh`: `/api/health` must show configured source sync, healthy persisted freshness, and a `next_sync` timestamp no later than the latest persisted CVE source update plus `security_db.interval` and a small grace window. This catches API restarts that would otherwise delay the required 6-hour OSV/NVD/Trivy refresh cadence.
 It verifies local session auth with `./scripts/verify-live-session-auth.sh`: `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout` must work on the API port and through the web proxy, and a logged-out bearer token must be rejected.
+It verifies airgap bundle readiness with `./scripts/verify-live-security-db-export-freshness.sh`: `/api/admin/security-db/status` must report `security_db_export.status == "ok"`, no `outdated_sources`, complete `latest_exported_at` / `latest_source_update_at` timestamps, and healthy `security_db_freshness` by default. If this gate fails, export a new security DB bundle before moving data into an air-gapped deployment.
 It verifies CVE DB observability under concurrent operator load with `./scripts/verify-live-cvedb-concurrency.sh`: multiple forced stats refreshes, admin security DB status, and admin metrics must complete with `2xx` responses, valid JSON or Prometheus bodies, healthy CVE DB quality, and no new PostgreSQL shared-memory errors in the API log.
 It verifies stale scan-request recovery with `./scripts/verify-live-scan-request-recovery.sh`: a fixture host-specific request is claimed, aged in PostgreSQL, surfaced by the stale request filter, requeued through `/api/scan-requests/requeue-stale`, audited, and proven claimable again.
 It verifies CVE DB rematch end-to-end with `./scripts/verify-live-cve-rematch-workflow.sh`: a fixture SBOM reports `phenx/php-svg-lib@0.5.0` as a Packagist package, report-triggered automatic rematch must create `cve-db` findings from OSV, explicit scan-scoped rematch must be idempotent, and the findings must preserve package ecosystem, installed version, fixed-version, and OSV advisory evidence.
@@ -58,6 +59,7 @@ go test ./...
 ./scripts/verify-live-installer-payload.sh
 ./scripts/verify-live-install-script.sh
 ./scripts/verify-live-security-db-schedule.sh
+./scripts/verify-live-security-db-export-freshness.sh
 ./scripts/verify-live-session-auth.sh
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-live-cvedb-concurrency.sh
@@ -411,6 +413,7 @@ After any import or update, check:
 curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/stats?refresh=true"
 curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/metrics"
 ./scripts/verify-live-security-db-schedule.sh
+./scripts/verify-live-security-db-export-freshness.sh
 ```
 
 On large CVE DB snapshots, avoid launching several forced `refresh=true` stats checks in parallel with admin status or metrics. `/api/cve-db/stats` shares one in-flight build per API process and limits its own heavy subqueries with `BONGSU_CVE_STATS_QUERY_CONCURRENCY` (default `2`, range `1..7`), but each additional endpoint can still consume PostgreSQL work memory. If PostgreSQL returns shared-memory resize errors while operators are auditing the CVE DB, lower `BONGSU_CVE_STATS_QUERY_CONCURRENCY`, retry the verifier serially, and check `/api/admin/security-db/status` before treating the source DB as unhealthy.

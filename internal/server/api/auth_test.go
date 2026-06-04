@@ -1493,6 +1493,7 @@ func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
 		"../../../scripts/verify-live-installer-payload.sh",
 		"../../../scripts/verify-live-server-build.sh",
 		"../../../scripts/verify-live-scan-request-recovery.sh",
+		"../../../scripts/verify-live-security-db-export-freshness.sh",
 		"../../../scripts/verify-live-web-smoke.sh",
 	} {
 		out, err := os.ReadFile(path)
@@ -4115,6 +4116,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-installer-payload.sh`,
 		`./scripts/verify-live-install-script.sh`,
 		`./scripts/verify-live-scan-request-recovery.sh`,
+		`./scripts/verify-live-security-db-export-freshness.sh`,
 		`./scripts/verify-live-cve-rematch-workflow.sh`,
 		`./scripts/verify-live-session-auth.sh`,
 		`BONGSU_DB_DSN is required for live release readiness`,
@@ -4132,6 +4134,31 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("release readiness live gate must require fresh CVE sources, missing %q", want)
+		}
+	}
+}
+
+func TestLiveSecurityDbExportFreshnessVerifierFailsClosed(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-security-db-export-freshness.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_API_KEY:-test-admin-key-0123456789`,
+		`/api/admin/security-db/status`,
+		`.security_db_freshness.status == "ok"`,
+		`.security_db_export.status`,
+		`security DB export is stale`,
+		`outdated_sources`,
+		`outdated_source_count`,
+		`latest_exported_at`,
+		`latest_source_update_at`,
+		`export a new bundle before airgap promotion`,
+		`Security DB export freshness verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live security DB export freshness verifier missing %q", want)
 		}
 	}
 }

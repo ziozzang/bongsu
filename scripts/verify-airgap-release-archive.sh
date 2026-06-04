@@ -115,6 +115,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-live-sbom-export-workflow.sh" \
     "$ROOT_DIR/scripts/verify-live-scan-request-recovery.sh" \
     "$ROOT_DIR/scripts/verify-live-security-db-schedule.sh" \
+    "$ROOT_DIR/scripts/verify-live-security-db-export-freshness.sh" \
     "$ROOT_DIR/scripts/verify-live-session-auth.sh" \
     "$ROOT_DIR/scripts/verify-live-server-build.sh" \
     "$ROOT_DIR/scripts/verify-live-vulnerability-export-rbac.sh" \

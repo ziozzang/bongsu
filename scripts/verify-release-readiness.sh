@@ -268,6 +268,7 @@ if [ "$LIVE" = "true" ]; then
     run ./scripts/verify-live-installer-payload.sh
     run ./scripts/verify-live-install-script.sh
     run ./scripts/verify-live-security-db-schedule.sh
+    run ./scripts/verify-live-security-db-export-freshness.sh
     run ./scripts/verify-live-session-auth.sh
     run ./scripts/verify-operator-workflow.sh
     run ./scripts/verify-agent-binary-workflow.sh

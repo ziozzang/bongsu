@@ -64,6 +64,7 @@ for pattern in \
     '\./scripts/verify-live-scan-request-recovery\.sh' \
     '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-security-db-schedule\.sh' \
+    '\./scripts/verify-live-security-db-export-freshness\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
     '\./scripts/verify-backup-restore-archive\.sh' \
     'BONGSU_BACKUP_VALIDATE_ARCHIVE=false' \
@@ -142,6 +143,7 @@ for script in \
     verify-live-server-build.sh \
     verify-live-scan-request-recovery.sh \
     verify-live-security-db-schedule.sh \
+    verify-live-security-db-export-freshness.sh \
     verify-live-session-auth.sh \
     verify-live-cvedb-quality.sh \
     verify-live-vulnerability-export-rbac.sh \
@@ -169,6 +171,7 @@ require_text "$RELEASE" 'verify-live-sbom-export-workflow\.sh' "live release rea
 require_text "$RELEASE" 'verify-live-install-script\.sh' "live release readiness must verify one-line install script downloads"
 require_text "$RELEASE" 'verify-live-scan-request-recovery\.sh' "live release readiness must verify stale scan-request recovery"
 require_text "$RELEASE" 'verify-live-security-db-schedule\.sh' "live release readiness must verify security DB sync scheduling"
+require_text "$RELEASE" 'verify-live-security-db-export-freshness\.sh' "live release readiness must verify security DB export freshness"
 require_text "$RELEASE" 'verify-live-session-auth\.sh' "live release readiness must verify local session login"
 require_text "$RELEASE" 'verify-live-vulnerability-export-rbac\.sh' "live release readiness must verify vulnerability export RBAC scoping"
 require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "live release readiness must fail closed when direct DB checks are required but unavailable"
