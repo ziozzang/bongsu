@@ -343,7 +343,11 @@ func (s *Server) authenticateWeb(r *http.Request) bool {
 }
 
 func (s *Server) authenticateAdmin(r *http.Request) bool {
-	return s.matchKey(r.Header.Get("X-API-Key"), s.apiKey)
+	if s.matchKey(r.Header.Get("X-API-Key"), s.apiKey) {
+		return true
+	}
+	u := s.sessionUser(r)
+	return u != nil && u.Role == "admin"
 }
 
 func (s *Server) authenticateAgent(r *http.Request) bool {

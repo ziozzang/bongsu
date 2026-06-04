@@ -105,6 +105,28 @@ func TestAuthSeparation(t *testing.T) {
 	}
 }
 
+func TestAdminAuthenticationAcceptsLocalAdminSession(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	start := strings.Index(out, "func (s *Server) authenticateAdmin")
+	if start < 0 {
+		t.Fatal("authenticateAdmin not found")
+	}
+	end := strings.Index(out[start:], "func (s *Server) authenticateAgent")
+	if end < 0 {
+		t.Fatal("authenticateAgent not found")
+	}
+	fn := out[start : start+end]
+	for _, want := range []string{
+		"s.matchKey(r.Header.Get(\"X-API-Key\"), s.apiKey)",
+		"s.sessionUser(r)",
+		`u.Role == "admin"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("authenticateAdmin must accept local admin sessions; missing %q in %s", want, fn)
+		}
+	}
+}
+
 func TestInstallAuthRequiresTokenOrAdminHeader(t *testing.T) {
 	s := &Server{apiKey: "admin-key", agentKey: "agent-key"}
 
@@ -1442,6 +1464,58 @@ func TestNormalizeScanReportCarriesBoundedCollectionErrors(t *testing.T) {
 	}
 }
 
+func TestNormalizeScanReportBackfillsContainerAssetContext(t *testing.T) {
+	report := models.ScanReport{
+		Host: models.Host{ID: "host-1", Hostname: "app-01"},
+		Containers: []models.ContainerAsset{{
+			Name:        " api ",
+			ContainerID: " container-1 ",
+			ImageName:   " registry.example/api:1.0 ",
+			ImageID:     " sha256:image ",
+		}},
+		Packages: []models.Package{
+			{Name: "openssl", Version: "3.0.13"},
+			{Name: "lodash", Version: "4.17.20", Container: " api "},
+			{Name: "debug", Version: "4.3.0", ContainerID: " container-1 "},
+		},
+		Vulns: []models.Vulnerability{
+			{VulnerabilityID: "CVE-2026-0001", PkgName: "lodash", Container: " api "},
+			{VulnerabilityID: "CVE-2026-0002", PkgName: "debug", ContainerID: " container-1 "},
+		},
+	}
+
+	if err := normalizeScanReport(&report); err != nil {
+		t.Fatalf("normalize scan report: %v", err)
+	}
+	hostPkg := report.Packages[0]
+	if hostPkg.AssetType != "host" || hostPkg.AssetID != "host-1" {
+		t.Fatalf("host package context = (%q, %q), want host/host-1", hostPkg.AssetType, hostPkg.AssetID)
+	}
+	for _, pkg := range report.Packages[1:] {
+		if pkg.AssetType != "container" || pkg.AssetID != "container-1" || pkg.Container != "api" ||
+			pkg.ContainerID != "container-1" || pkg.ImageName != "registry.example/api:1.0" || pkg.ImageID != "sha256:image" {
+			t.Fatalf("container package context was not backfilled: %#v", pkg)
+		}
+	}
+	for _, vuln := range report.Vulns {
+		if vuln.AssetType != "container" || vuln.Container != "api" || vuln.ContainerID != "container-1" ||
+			vuln.ImageName != "registry.example/api:1.0" || vuln.ImageID != "sha256:image" {
+			t.Fatalf("container vulnerability context was not backfilled: %#v", vuln)
+		}
+	}
+}
+
+func TestNormalizeScanReportRejectsInvalidAssetTypes(t *testing.T) {
+	for _, report := range []models.ScanReport{
+		{Host: models.Host{Hostname: "app-01"}, Packages: []models.Package{{AssetType: "service", Name: "openssl"}}},
+		{Host: models.Host{Hostname: "app-01"}, Vulns: []models.Vulnerability{{AssetType: "service", VulnerabilityID: "CVE-2026-0001"}}},
+	} {
+		if err := normalizeScanReport(&report); err == nil {
+			t.Fatalf("invalid asset type should be rejected: %#v", report)
+		}
+	}
+}
+
 func TestHandleReportNormalizesScannerInput(t *testing.T) {
 	out := readAllPackageGoFiles(t)
 	body := out
@@ -2677,6 +2751,23 @@ func TestSecurityDBSyncScriptFailsOnImportErrors(t *testing.T) {
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("sync-all-cvedb must not hide import failures with %q", forbidden)
+		}
+	}
+}
+
+func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`local replace="${3:-true}"`,
+		`-F "file=@${file}" -F "source=${source}" -F "replace=${replace}"`,
+		`import_cve_file "${OSV_ECO_FILE}" "osv" "false"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-all-cvedb must append OSV ecosystem chunks without deleting prior chunks, missing %q", want)
 		}
 	}
 }
@@ -4001,10 +4092,12 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"s.db.BeginTx",
+		"replace && source != \"\"",
 		"s.db.DeleteCveEntriesBySourceTx",
 		"s.importCveJSONLTx",
 		"s.db.SyncEPSSPriorityColumnsTx",
 		"s.db.RefreshCveAffectedPackagesForSourceTx",
+		"s.db.RefreshCveReferenceKeysForSourceTx",
 		"errNoValidCveEntries",
 		"tx.Commit()",
 		"return 0, err",

@@ -1,6 +1,6 @@
 # Bongsu Operations Runbook
 
-Updated: 2026-06-04 11:06:55 KST
+Updated: 2026-06-04 13:49:33 KST
 
 This runbook is for operators running Bongsu in connected or air-gapped environments. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu.
 
@@ -84,6 +84,26 @@ BONGSU_API_KEY="$BONGSU_API_KEY" \
 ./scripts/verify-live-web-smoke.sh
 ```
 
+To verify the username/password login path through the web proxy instead of an API key, pass the initial admin credentials:
+
+```bash
+BONGSU_WEB_BASE=http://localhost:5678 \
+BONGSU_ADMIN_USERNAME="$BONGSU_ADMIN_USERNAME" \
+BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
+./scripts/verify-live-web-smoke.sh
+```
+
+If `POST http://<web>:5678/api/auth/login` returns HTTP 500, first verify that the API is actually listening on `5677` and that the running binary was built from the current checkout:
+
+```bash
+curl -fsS http://localhost:5677/api/ready
+curl -fsS -X POST -H 'Content-Type: application/json' \
+  -d "{\"username\":\"$BONGSU_ADMIN_USERNAME\",\"password\":\"$BONGSU_ADMIN_PASSWORD\"}" \
+  http://localhost:5677/api/auth/login
+```
+
+The web server proxies `/api` to `5677`; a stopped API or stale server binary can surface as a web-side 500 even when the dashboard itself loads on `5678`.
+
 ## Install
 
 Connected deployment:
@@ -146,6 +166,8 @@ Live CVE DB quality and performance verification:
 BONGSU_DB_DSN="$BONGSU_DB_DSN" \
 ./scripts/verify-live-cvedb-quality.sh
 ```
+
+For connected security DB syncs, keep OSV ecosystem chunks in append/upsert mode. `scripts/sync-all-cvedb.sh` sends `replace=false` for each OSV chunk because all chunks share `source=osv`; importing each chunk with source replacement enabled leaves only the last ecosystem in the live CVE DB. Non-OSV sources still use source replacement by default.
 
 When `BONGSU_DB_DSN` is set, this verifier also queries PostgreSQL directly for `TEMP-*`/`CVD-*` placeholders across `cve_database`, `cve_affected_packages`, and `cve_reference_keys`, affected-package rows missing package/ecosystem/fixed evidence, index orphans, EPSS columns on non-EPSS CVE rows, canonical CVE reference keys that merge multiple non-priority sources, and vendor/advisory keys materialized beside canonical CVE keys. It uses local `psql` when available, or `docker exec` against `BONGSU_DB_PSQL_CONTAINER` which defaults to `bongsu-postgres`.
 

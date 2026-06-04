@@ -19,7 +19,6 @@ import (
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
-
 func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAgent(r) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
@@ -345,7 +344,114 @@ func normalizeScanReport(report *models.ScanReport) error {
 		report.Host.Hostname = report.Host.ID
 	}
 	report.Errors = normalizeReportErrors(report.Errors)
+	if err := normalizeReportAssetContext(report); err != nil {
+		return err
+	}
 	return nil
+}
+
+func normalizeReportAssetContext(report *models.ScanReport) error {
+	containersByName := map[string]models.ContainerAsset{}
+	containersByID := map[string]models.ContainerAsset{}
+	for i := range report.Containers {
+		report.Containers[i].Name = strings.TrimSpace(report.Containers[i].Name)
+		report.Containers[i].ContainerID = strings.TrimSpace(report.Containers[i].ContainerID)
+		report.Containers[i].ImageName = strings.TrimSpace(report.Containers[i].ImageName)
+		report.Containers[i].ImageID = strings.TrimSpace(report.Containers[i].ImageID)
+		if report.Containers[i].Name != "" {
+			containersByName[report.Containers[i].Name] = report.Containers[i]
+		}
+		if report.Containers[i].ContainerID != "" {
+			containersByID[report.Containers[i].ContainerID] = report.Containers[i]
+		}
+	}
+	for i := range report.Packages {
+		if err := normalizePackageAssetContext(&report.Packages[i], report.Host.ID, containersByName, containersByID); err != nil {
+			return err
+		}
+	}
+	for i := range report.Vulns {
+		if err := normalizeVulnerabilityAssetContext(&report.Vulns[i], containersByName, containersByID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func normalizePackageAssetContext(pkg *models.Package, hostID string, containersByName, containersByID map[string]models.ContainerAsset) error {
+	pkg.AssetType = strings.TrimSpace(pkg.AssetType)
+	pkg.AssetID = strings.TrimSpace(pkg.AssetID)
+	pkg.Container = strings.TrimSpace(pkg.Container)
+	pkg.ContainerID = strings.TrimSpace(pkg.ContainerID)
+	pkg.ImageName = strings.TrimSpace(pkg.ImageName)
+	pkg.ImageID = strings.TrimSpace(pkg.ImageID)
+	if pkg.AssetType == "" {
+		if pkg.Container != "" || pkg.ContainerID != "" || pkg.ImageName != "" || pkg.ImageID != "" {
+			pkg.AssetType = "container"
+		} else {
+			pkg.AssetType = "host"
+		}
+	}
+	switch pkg.AssetType {
+	case "host":
+		if pkg.AssetID == "" {
+			pkg.AssetID = hostID
+		}
+	case "container":
+		applyContainerContext(&pkg.Container, &pkg.ContainerID, &pkg.ImageName, &pkg.ImageID, containersByName, containersByID)
+		if pkg.AssetID == "" {
+			pkg.AssetID = pkg.ContainerID
+			if pkg.AssetID == "" {
+				pkg.AssetID = pkg.Container
+			}
+		}
+	default:
+		return fmt.Errorf("invalid package asset_type")
+	}
+	return nil
+}
+
+func normalizeVulnerabilityAssetContext(v *models.Vulnerability, containersByName, containersByID map[string]models.ContainerAsset) error {
+	v.AssetType = strings.TrimSpace(v.AssetType)
+	v.Container = strings.TrimSpace(v.Container)
+	v.ContainerID = strings.TrimSpace(v.ContainerID)
+	v.ImageName = strings.TrimSpace(v.ImageName)
+	v.ImageID = strings.TrimSpace(v.ImageID)
+	if v.AssetType == "" {
+		if v.Container != "" || v.ContainerID != "" || v.ImageName != "" || v.ImageID != "" {
+			v.AssetType = "container"
+		}
+	}
+	switch v.AssetType {
+	case "", "host":
+	case "container":
+		applyContainerContext(&v.Container, &v.ContainerID, &v.ImageName, &v.ImageID, containersByName, containersByID)
+	default:
+		return fmt.Errorf("invalid vulnerability asset_type")
+	}
+	return nil
+}
+
+func applyContainerContext(name, containerID, imageName, imageID *string, containersByName, containersByID map[string]models.ContainerAsset) {
+	c, ok := containersByID[*containerID]
+	if !ok && *name != "" {
+		c, ok = containersByName[*name]
+	}
+	if !ok {
+		return
+	}
+	if *name == "" {
+		*name = c.Name
+	}
+	if *containerID == "" {
+		*containerID = c.ContainerID
+	}
+	if *imageName == "" {
+		*imageName = c.ImageName
+	}
+	if *imageID == "" {
+		*imageID = c.ImageID
+	}
 }
 
 func normalizeReportErrors(errs []string) []string {

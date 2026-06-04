@@ -823,7 +823,8 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := s.importCveJSONL(ctx, file, source)
+	replace := !strings.EqualFold(strings.TrimSpace(r.FormValue("replace")), "false")
+	count, err := s.importCveJSONL(ctx, file, source, replace)
 	if err != nil {
 		log.Printf("cve-db import: %v", err)
 		if errors.Is(err, errNoValidCveEntries) {
@@ -871,7 +872,7 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	s.SecurityDatabaseUpdated("cve-db import")
 }
 
-func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string) (int, error) {
+func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string, replace bool) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -882,7 +883,7 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 	if err != nil {
 		return 0, err
 	}
-	if source != "" {
+	if replace && source != "" {
 		if _, err := s.db.DeleteCveEntriesBySourceTx(ctx, tx, source); err != nil {
 			return 0, err
 		}
@@ -898,6 +899,9 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 		return 0, err
 	}
 	if _, err := s.db.RefreshCveAffectedPackagesForSourceTx(ctx, tx, source); err != nil {
+		return 0, err
+	}
+	if _, err := s.db.RefreshCveReferenceKeysForSourceTx(ctx, tx, source); err != nil {
 		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -1621,7 +1625,6 @@ func (s *Server) handleCveDbSources(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sources": sources})
 }
-
 
 func (s *Server) handleCveDbStats(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {

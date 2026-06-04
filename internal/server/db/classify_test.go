@@ -2705,6 +2705,7 @@ func TestCveReferenceKeyIndexIsMaintainedAndIndexed(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"RefreshCveReferenceKeysForCveTx",
+		"RefreshCveReferenceKeysForSourceTx",
 		"RebuildCveReferenceKeys",
 		"EnsureCveReferenceKeys",
 		"GetCveReferenceKeyIndexStats",

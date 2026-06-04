@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 13:14:45 KST
+Updated: 2026-06-04 13:49:33 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Reject non-regular backup archive entries
+master / origin/main latest commit: Fix OSV chunk imports and admin sessions
 ```
 
 Important recent commits:
 
 ```text
-<latest> Reject non-regular backup archive entries
+<latest> Fix OSV chunk imports and admin sessions
+32652bf Reject non-regular backup archive entries
 8d312c4 Verify OpenAPI operation security
 190ff69 Harden generated installer systemd path
 477177c Verify static server build metadata
@@ -128,13 +129,14 @@ Last known listener state:
 *:5677        bongsu API server
 ```
 
-API was last started with:
+API was last started with a fresh build from the current checkout:
 
 ```bash
-go build -o /tmp/bongsu-server-live ./cmd/server
+go build -o /tmp/bongsu-server-current ./cmd/server
 setsid env BONGSU_DB_DSN="postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable" \
-BONGSU_API_KEY=test-admin BONGSU_AGENT_API_KEY=test-agent BONGSU_INSTALL_TOKEN=test-install \
-BONGSU_ALLOW_WEAK_SECRETS=true BONGSU_WEB_AUTH=false \
+BONGSU_API_KEY=test-admin-key-0123456789 BONGSU_AGENT_API_KEY=test-agent-key-0123456789 BONGSU_INSTALL_TOKEN=test-install-token-0123456789 \
+BONGSU_ADMIN_USERNAME=admin BONGSU_ADMIN_PASSWORD=password \
+BONGSU_ALLOW_WEAK_SECRETS=true BONGSU_WEB_AUTH=true \
 BONGSU_SECURITY_DB_SYNC_ON_START=false BONGSU_SECURITY_DB_SYNC_CMD="" \
 BONGSU_TRIVY_DB_INTERVAL_HOURS=0 BONGSU_AGENT_BIN=/home/ziozzang/bongsu/bin/bongsu-agent \
 BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS=30 \
@@ -144,12 +146,37 @@ BONGSU_CVE_SEARCH_TIMEOUT_SECONDS=15 \
 BONGSU_CVE_REFERENCE_GROUP_TIMEOUT_SECONDS=10 \
 BONGSU_CVE_AFFECTED_PACKAGES_TIMEOUT_SECONDS=10 \
 BONGSU_VULNERABILITY_LIST_TIMEOUT_SECONDS=15 \
-BONGSU_PORT=5677 /tmp/bongsu-server-live >/tmp/bongsu-api-5677.log 2>&1 < /dev/null &
+BONGSU_PORT=5677 /tmp/bongsu-server-current >/tmp/bongsu-api-5677.log 2>&1 < /dev/null &
 ```
 
-Do not change this to `8080`. Keep API and web split as `5677` and `5678`.
+Do not change this to `8080`. Keep API and web split as `5677` and `5678`. If `http://10.2.2.10:5678/api/auth/login` returns HTTP 500, check that `5677` is listening and that the running API binary was rebuilt from the current checkout. A stale `/tmp/bongsu-server-live` binary previously lacked the current login routes.
+
+Latest login check passed through both the API and the web proxy:
+
+```text
+POST http://127.0.0.1:5677/api/auth/login admin/password -> 200
+POST http://127.0.0.1:5678/api/auth/login admin/password -> 200
+```
 
 ## Current CVE DB Status
+
+OSV sync bug fixed in this handoff:
+
+- Root cause: `scripts/sync-all-cvedb.sh` imported each OSV ecosystem chunk with the same `source=osv`, while `/api/admin/cve-db/import` replaced all rows for that source on every import. The final ecosystem chunk overwrote the earlier chunks, leaving live OSV effectively at the last imported ecosystem only.
+- Fix: the import API now accepts `replace=false`, OSV ecosystem chunks use append/upsert mode, and affected/reference indexes are refreshed source-wide after each bulk import instead of row-by-row.
+- Live recovery import was run through PyPI, npm, Hex, Pub, Alpine, Debian, SUSE, and AlmaLinux. Chainguard was already present from the previous snapshot.
+
+Latest OSV live snapshot:
+
+```text
+osv cve_database rows:       324549
+osv distinct row ecosystems: 366
+osv affected index rows:     272415
+osv affected ecosystems:     427
+osv matchable rows:          94198
+osv rows with fixed data:    94257
+osv rows with range data:    309659
+```
 
 Last verified operational metrics:
 
@@ -181,6 +208,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 ## What Has Been Completed
 
 - Management server and dashboard are deployed locally with web on `5678` and API on `5677`.
+- Server-side scan report normalization now backfills host/container asset context for package and vulnerability rows from reported containers, and rejects invalid package/vulnerability `asset_type` values before persistence.
 - Security DB ingest/import/export exists for connected and air-gapped flows.
 - CVE DB quality and status are visible on the dashboard.
 - CVE search is backed by indexes and bounded request timeouts.

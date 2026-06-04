@@ -49,10 +49,11 @@ find_trivy_binary() {
 import_cve_file() {
     local file="$1"
     local source="$2"
+    local replace="${3:-true}"
     local result
 
     if ! result=$(curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
-        -F "file=@${file}" -F "source=${source}" "${IMPORT_URL}"); then
+        -F "file=@${file}" -F "source=${source}" -F "replace=${replace}" "${IMPORT_URL}"); then
         echo "ERROR: ${source} import request failed" >&2
         return 1
     fi
@@ -132,7 +133,7 @@ for eco in "${ECO_ARRAY[@]}"; do
         ECO_LINES=$(wc -l < "${OSV_ECO_FILE}")
         ECO_SIZE=$(du -h "${OSV_ECO_FILE}" | cut -f1)
         echo "    Importing ${eco} (${ECO_LINES} entries, ${ECO_SIZE})..."
-        IMPORTED=$(import_cve_file "${OSV_ECO_FILE}" "osv")
+        IMPORTED=$(import_cve_file "${OSV_ECO_FILE}" "osv" "false")
         echo "    Imported/updated: ${IMPORTED}"
         OSV_TOTAL=$((OSV_TOTAL + IMPORTED))
         rm -f "${OSV_ECO_FILE}"

@@ -42,14 +42,14 @@ func (db *DB) UpsertCveEntries(ctx context.Context, entries []models.CveEntry) (
 }
 
 func (db *DB) UpsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry) (int, error) {
-	return db.upsertCveEntriesTx(ctx, tx, entries, true)
+	return db.upsertCveEntriesTx(ctx, tx, entries, true, true)
 }
 
 func (db *DB) UpsertCveEntriesWithoutAffectedIndexTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry) (int, error) {
-	return db.upsertCveEntriesTx(ctx, tx, entries, false)
+	return db.upsertCveEntriesTx(ctx, tx, entries, false, false)
 }
 
-func (db *DB) upsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry, refreshAffectedIndex bool) (int, error) {
+func (db *DB) upsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry, refreshAffectedIndex, refreshReferenceIndex bool) (int, error) {
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, epss_score, epss_percentile, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
 ON CONFLICT (vulnerability_id, source) DO UPDATE SET
@@ -113,12 +113,14 @@ RETURNING id`)
 		} else {
 			_ = cveID
 		}
-		if _, err := db.RefreshCveReferenceKeysForCveTx(ctx, tx, cveID, *e); err != nil {
-			if firstErr == nil {
-				firstErr = fmt.Errorf("refresh reference keys %s: %w", e.VulnerabilityID, err)
+		if refreshReferenceIndex {
+			if _, err := db.RefreshCveReferenceKeysForCveTx(ctx, tx, cveID, *e); err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("refresh reference keys %s: %w", e.VulnerabilityID, err)
+				}
+				log.Printf("refresh CVE reference key index: %v", err)
+				continue
 			}
-			log.Printf("refresh CVE reference key index: %v", err)
-			continue
 		}
 		count++
 	}
@@ -168,6 +170,72 @@ ON CONFLICT (cve_id, reference_key) DO UPDATE SET updated_at=now()`)
 			return count, err
 		}
 		count++
+	}
+	return count, nil
+}
+
+func (db *DB) RefreshCveReferenceKeysForSourceTx(ctx context.Context, tx *sql.Tx, source string) (int, error) {
+	source = strings.TrimSpace(source)
+	args := []any{}
+	filter := ""
+	if source != "" {
+		args = append(args, source)
+		filter = " WHERE source = $1"
+		if _, err := tx.ExecContext(ctx, `
+DELETE FROM cve_reference_keys crk
+USING cve_database c
+WHERE crk.cve_id = c.id
+  AND c.source = $1`, source); err != nil {
+			return 0, err
+		}
+	} else if _, err := tx.ExecContext(ctx, `DELETE FROM cve_reference_keys`); err != nil {
+		return 0, err
+	}
+
+	rows, err := tx.QueryContext(ctx, `SELECT id, vulnerability_id, title, description, refs::text FROM cve_database`+filter, args...)
+	if err != nil {
+		return 0, err
+	}
+
+	type indexedEntry struct {
+		cveID string
+		keys  []string
+	}
+	entries := []indexedEntry{}
+	for rows.Next() {
+		var e models.CveEntry
+		if err := rows.Scan(&e.ID, &e.VulnerabilityID, &e.Title, &e.Description, &e.References); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		keys := cveReferenceKeys(e)
+		if len(keys) > 0 {
+			entries = append(entries, indexedEntry{cveID: e.ID, keys: keys})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
+	rows.Close()
+
+	stmt, err := tx.PrepareContext(ctx, pq.CopyIn("cve_reference_keys", "cve_id", "reference_key", "updated_at"))
+	if err != nil {
+		return 0, err
+	}
+	defer stmt.Close()
+	count := 0
+	now := time.Now().UTC()
+	for _, entry := range entries {
+		for _, key := range entry.keys {
+			if _, err := stmt.ExecContext(ctx, entry.cveID, key, now); err != nil {
+				return count, err
+			}
+			count++
+		}
+	}
+	if _, err := stmt.ExecContext(ctx); err != nil {
+		return count, err
 	}
 	return count, nil
 }
