@@ -4252,6 +4252,9 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"BONGSU_CVE_DB_IMPORT_MAX_BYTES: ${BONGSU_CVE_DB_IMPORT_MAX_BYTES:-2147483648}",
 				"BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES: ${BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES:-4294967296}",
 				"BONGSU_MULTIPART_MEMORY_MAX_BYTES: ${BONGSU_MULTIPART_MEMORY_MAX_BYTES:-33554432}",
+				"max_wal_size=${BONGSU_POSTGRES_MAX_WAL_SIZE:-4GB}",
+				"checkpoint_timeout=${BONGSU_POSTGRES_CHECKPOINT_TIMEOUT:-15min}",
+				"checkpoint_completion_target=${BONGSU_POSTGRES_CHECKPOINT_COMPLETION_TARGET:-0.9}",
 				`pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\"`,
 			} {
 				if !strings.Contains(body, want) {
