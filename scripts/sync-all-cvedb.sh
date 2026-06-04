@@ -22,6 +22,8 @@ IMPORT_URL="${SERVER_URL}/api/admin/cve-db/import"
 RECALCULATE_URL="${SERVER_URL}/api/admin/security-db/recalculate"
 AFFECTED_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/affected-index/rebuild"
 REFERENCE_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/reference-index/rebuild"
+INDEX_REBUILD_WAIT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS:-900}"
+INDEX_REBUILD_POLL_SECONDS="${BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS:-5}"
 
 TOTAL_IMPORTED=0
 FAILED_SOURCES=()
@@ -76,12 +78,85 @@ print(int(data.get("imported", 0)))
 '
 }
 
+queue_index_rebuild() {
+    local label="$1"
+    local url="$2"
+    local field="$3"
+    local response_file
+    local http_code
+    local deadline
+    local running
+    local status
+    local duration_ms
+    local indexed
+    local error_msg
+
+    response_file="${TMPDIR}/rebuild-${field}.json"
+    http_code="$(curl -sS -o "${response_file}" -w "%{http_code}" -X POST -H "X-API-Key: ${API_KEY}" "${url}?async=true")"
+    if [ "${http_code}" != "202" ] && [ "${http_code}" != "409" ]; then
+        echo "ERROR: ${label} rebuild queue request failed with HTTP ${http_code}" >&2
+        cat "${response_file}" >&2 || true
+        return 1
+    fi
+
+    status="$(python3 -c '
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception as exc:
+    print(f"invalid rebuild response: {exc}", file=sys.stderr)
+    sys.exit(2)
+print(data.get("status", ""))
+' "${response_file}")"
+    echo "  ${label} rebuild ${status}."
+
+    deadline=$(( $(date +%s) + INDEX_REBUILD_WAIT_SECONDS ))
+    while true; do
+        if ! curl -fsS -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/health" > "${response_file}"; then
+            echo "ERROR: failed to poll ${label} rebuild status" >&2
+            return 1
+        fi
+        IFS='|' read -r running status duration_ms indexed error_msg < <(python3 -c '
+import json, sys
+field = sys.argv[2]
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception as exc:
+    print(f"false|error|0|0|invalid health response: {exc}")
+    sys.exit(0)
+state = data.get(field) or {}
+last = state.get("last_result") or {}
+print("|".join([
+    "true" if state.get("running") else "false",
+    str(last.get("status") or ""),
+    str(state.get("duration_ms") or last.get("duration_ms") or 0),
+    str(last.get("indexed") or 0),
+    str(last.get("error") or ""),
+]))
+' "${response_file}" "${field}")
+        if [ "${running}" = "false" ]; then
+            if [ "${status}" = "ok" ]; then
+                echo "  ${label} rebuild complete: indexed=${indexed}, duration_ms=${duration_ms}"
+                return 0
+            fi
+            echo "ERROR: ${label} rebuild finished with status '${status:-unknown}' ${error_msg}" >&2
+            return 1
+        fi
+        if [ "$(date +%s)" -ge "${deadline}" ]; then
+            echo "ERROR: timed out waiting for ${label} rebuild after ${INDEX_REBUILD_WAIT_SECONDS}s" >&2
+            return 1
+        fi
+        echo "  ${label} rebuild running for ${duration_ms}ms..."
+        sleep "${INDEX_REBUILD_POLL_SECONDS}"
+    done
+}
+
 finalize_deferred_cve_imports() {
     local reason="$1"
     echo "  Rebuilding affected package index after deferred imports..."
-    curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${AFFECTED_INDEX_REBUILD_URL}" >/dev/null
+    queue_index_rebuild "Affected package index" "${AFFECTED_INDEX_REBUILD_URL}" "cve_affected_index_rebuild"
     echo "  Rebuilding reference key index after deferred imports..."
-    curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${REFERENCE_INDEX_REBUILD_URL}" >/dev/null
+    queue_index_rebuild "Reference key index" "${REFERENCE_INDEX_REBUILD_URL}" "cve_reference_index_rebuild"
     echo "  Queuing security recalculation after deferred imports..."
     curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
         -H "Content-Type: application/json" \

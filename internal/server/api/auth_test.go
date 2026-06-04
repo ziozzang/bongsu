@@ -3513,6 +3513,43 @@ func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
 	}
 }
 
+func TestSecurityDBSyncScriptsFinalizeDeferredImportsAsynchronously(t *testing.T) {
+	for _, path := range []string{
+		"../../../scripts/sync-all-cvedb.sh",
+		"../../../scripts/sync-osv-cvedb.sh",
+	} {
+		out, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(out)
+		for _, want := range []string{
+			"queue_index_rebuild()",
+			`"${url}?async=true"`,
+			`[ "${http_code}" != "202" ] && [ "${http_code}" != "409" ]`,
+			`"${SERVER_URL}/api/health"`,
+			"cve_affected_index_rebuild",
+			"cve_reference_index_rebuild",
+			"BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS",
+			"BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS",
+			`timed out waiting for ${label} rebuild`,
+			`rebuild complete: indexed=`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s must queue and poll async index rebuilds, missing %q", path, want)
+			}
+		}
+		for _, forbidden := range []string{
+			`curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${AFFECTED_INDEX_REBUILD_URL}" >/dev/null`,
+			`curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${REFERENCE_INDEX_REBUILD_URL}" >/dev/null`,
+		} {
+			if strings.Contains(body, forbidden) {
+				t.Fatalf("%s must not block on synchronous index rebuild endpoint: found %q", path, forbidden)
+			}
+		}
+	}
+}
+
 func TestCveDbImportRefreshesSecuritySourceRegistry(t *testing.T) {
 	out, err := os.ReadFile("cvedb.go")
 	if err != nil {
