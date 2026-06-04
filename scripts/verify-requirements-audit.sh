@@ -88,6 +88,7 @@ for keyword in \
     'match' \
     'RBAC' \
     'live RBAC' \
+    'two-host/two-container' \
     'live CVE DB' \
     'live browser' \
     'force scan' \
@@ -139,7 +140,8 @@ for keyword in \
     'EPSS' \
     'requeue-stale' \
     'agent-token/reset' \
-    'verify-live-web-smoke\.sh'
+    'verify-live-web-smoke\.sh' \
+    'two-host/two-container'
 do
     require_text "$RUNBOOK" "$keyword" "operations runbook missing keyword $keyword"
 done
