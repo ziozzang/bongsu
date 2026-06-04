@@ -160,6 +160,139 @@ func (s *Server) handleSecurityDbUpdate(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "security_db": s.secMgr.Status()})
 }
 
+func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	timeoutSeconds := envInt("BONGSU_HEALTH_DB_TIMEOUT_SECONDS", 2)
+	if timeoutSeconds < 1 {
+		timeoutSeconds = 1
+	}
+	if timeoutSeconds > 30 {
+		timeoutSeconds = 30
+	}
+	withTimeout := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(r.Context(), time.Duration(timeoutSeconds)*time.Second)
+	}
+
+	out := map[string]any{
+		"status":                 "ok",
+		"timeout_seconds":        timeoutSeconds,
+		"security_recalculation": s.securityRecalculationStatus(true),
+		"cve_affected_index":     s.affectedIndexRebuildStatus(),
+		"cve_reference_index":    s.referenceIndexRebuildStatus(),
+	}
+	if s.secMgr != nil {
+		out["security_db"] = s.secMgr.Status()
+	} else {
+		out["security_db"] = map[string]any{"configured": false, "status": "unavailable"}
+	}
+
+	dbCtx, cancel := withTimeout()
+	for k, v := range s.securityDBRevisionMeta(dbCtx) {
+		out[k] = v
+	}
+	cancel()
+
+	dbCtx, cancel = withTimeout()
+	freshness := s.securityDBFreshnessStatus(dbCtx, true)
+	freshnessTimedOut := dbCtx.Err() != nil
+	cancel()
+	out["security_db_freshness"] = freshness
+	if freshnessTimedOut {
+		out["security_db_freshness_timeout"] = true
+	}
+	if status, _ := freshness["status"].(string); status != "" && status != "ok" {
+		out["status"] = "degraded"
+	}
+
+	dbCtx, cancel = withTimeout()
+	if last := s.securityRecalculationLastResult(dbCtx, true); last != nil {
+		if recalc, ok := out["security_recalculation"].(map[string]any); ok {
+			recalc["last_result"] = last
+		}
+	}
+	cancel()
+
+	cveQuality, affectedIndex, referenceIndex := s.securityDbStatusQuality(r.Context(), timeoutSeconds)
+	if affectedIndex != nil {
+		out["cve_affected_package_index"] = affectedIndex
+	}
+	if referenceIndex != nil {
+		out["cve_reference_key_index"] = referenceIndex
+	}
+	if cveQuality != nil {
+		out["cve_db_quality"] = cveQuality
+		if status, _ := cveQuality["status"].(string); status == "degraded" {
+			out["status"] = "degraded"
+		}
+	}
+
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) securityDbStatusQuality(parent context.Context, timeoutSeconds int) (map[string]any, any, any) {
+	withTimeout := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(parent, time.Duration(timeoutSeconds)*time.Second)
+	}
+	var affectedIndex *db.CveAffectedPackageIndexStats
+	var affectedIndexPartial bool
+	var affectedIndexDetailErr error
+	var affectedIndexErr error
+	var affectedIndexOut any
+	var referenceIndex *db.CveReferenceKeyIndexStats
+	var referenceIndexErr error
+	var referenceIndexOut any
+
+	dbCtx, cancel := withTimeout()
+	if indexStats, err := s.db.GetCveAffectedPackageIndexStats(dbCtx); err == nil {
+		affectedIndex = indexStats
+		affectedIndexOut = indexStats
+	} else {
+		detailErr := err
+		cancel()
+		dbCtx, cancel = withTimeout()
+		if lightStats, lightErr := s.db.GetCveAffectedPackageIndexHealthStats(dbCtx); lightErr == nil {
+			lightStats["detail_error"] = detailErr.Error()
+			affectedIndex = cveAffectedPackageIndexStatsFromHealthMap(lightStats)
+			affectedIndexPartial = affectedIndex != nil
+			affectedIndexDetailErr = detailErr
+			affectedIndexOut = lightStats
+		} else {
+			affectedIndexErr = detailErr
+			affectedIndexOut = map[string]any{"error": detailErr.Error(), "fallback_error": lightErr.Error()}
+		}
+	}
+	cancel()
+
+	dbCtx, cancel = withTimeout()
+	if stats, err := s.db.GetCveReferenceKeyIndexStats(dbCtx); err == nil {
+		referenceIndex = stats
+		referenceIndexOut = stats
+	} else {
+		referenceIndexErr = err
+		referenceIndexOut = map[string]any{"error": err.Error()}
+	}
+	cancel()
+
+	dbCtx, cancel = withTimeout()
+	placeholderStats, placeholderErr := s.db.GetCvePlaceholderStats(dbCtx)
+	quality := s.cveDBQualitySummary(dbCtx, cveDBQualityInput{
+		Placeholders:          placeholderStats,
+		PlaceholderStatsError: placeholderErr,
+		AffectedIndex:         affectedIndex,
+		AffectedIndexPartial:  affectedIndexPartial,
+		AffectedIndexDetail:   affectedIndexDetailErr,
+		AffectedIndexError:    affectedIndexErr,
+		ReferenceIndex:        referenceIndex,
+		ReferenceIndexError:   referenceIndexErr,
+		SkipMissingFetch:      true,
+	})
+	cancel()
+	return quality, affectedIndexOut, referenceIndexOut
+}
+
 func (s *Server) handleSecurityDbRecalculate(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")

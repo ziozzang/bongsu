@@ -201,12 +201,16 @@ grep -Eq '^openapi: "?3\.' "$TMP_DIR/openapi.yaml"
 grep -q '/api/admin/schedules:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/asset-groups:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/admin/notification-rules:' "$TMP_DIR/openapi.yaml"
+grep -q '/api/admin/security-db/status:' "$TMP_DIR/openapi.yaml"
 
 echo "[3/10] Checking health and admin metrics observability"
 health_json="$(api_json GET /api/health)"
 assert_json "$health_json" '.status and .security_db_revision and (.security_recalculation.running | type == "boolean") and (.security_recalculation.pending | type == "boolean")' "health must expose security DB revision and recalculation state"
 assert_json "$health_json" '.cve_affected_package_index and ((.cve_affected_package_index.count // 0) > 0) and (.cve_affected_package_index.orphans == 0) and ((.cve_affected_package_index.summary_mode == "indexed-only") or (.cve_affected_package_index.stale == false))' "health must expose usable affected-package index state"
 assert_json "$health_json" '.cve_reference_key_index and (.cve_reference_key_index.stale == false) and (.cve_reference_key_index.orphans == 0)' "health must expose healthy reference-key index state"
+security_db_status_json="$(api_json GET /api/admin/security-db/status)"
+assert_json "$security_db_status_json" '.status and .security_db and .security_db.configured == true and .security_db_freshness and .security_recalculation and .security_db_revision' "security DB status must expose sync manager, freshness, recalculation, and revision"
+assert_json "$security_db_status_json" '.cve_db_quality and .cve_db_quality.status and .cve_affected_package_index and ((.cve_affected_package_index.count // 0) > 0) and .cve_reference_key_index' "security DB status must expose CVE quality and index health"
 curl -fsS --max-time "$CURL_MAX_TIME" -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/admin/metrics" -o "$TMP_DIR/admin-metrics.txt"
 for metric in \
     '^bongsu_security_db_revision_info[{]revision="' \

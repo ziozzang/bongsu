@@ -2304,6 +2304,43 @@ paths:
         "503":
           description: Trivy DB manager required but unavailable
 
+  /api/admin/security-db/status:
+    get:
+      operationId: getSecurityDbStatus
+      tags: [admin]
+      summary: Get security DB operational status
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: Security DB status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timeout_seconds:
+                    type: integer
+                  security_db:
+                    type: object
+                  security_db_freshness:
+                    type: object
+                  security_db_revision:
+                    type: string
+                  security_recalculation:
+                    type: object
+                  cve_db_quality:
+                    $ref: "#/components/schemas/CveDbQuality"
+                  cve_affected_package_index:
+                    type: object
+                  cve_reference_key_index:
+                    type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/admin/security-db/update:
     post:
       operationId: updateSecurityDb

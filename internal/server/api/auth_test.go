@@ -1806,6 +1806,33 @@ func TestAutoRescanAuditReportsQueueAccounting(t *testing.T) {
 	}
 }
 
+func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	for _, want := range []string{
+		`"GET /api/admin/security-db/status"`,
+		"func (s *Server) handleSecurityDbStatus",
+		"s.authenticateAdmin(r)",
+		"s.secMgr.Status()",
+		"securityDBFreshnessStatus(dbCtx, true)",
+		"securityRecalculationStatus(true)",
+		"securityRecalculationLastResult(dbCtx, true)",
+		"securityDBRevisionMeta(dbCtx)",
+		"securityDbStatusQuality",
+		`out["cve_db_quality"]`,
+		`out["cve_affected_package_index"]`,
+		`out["cve_reference_key_index"]`,
+		`out["security_db_freshness"]`,
+		`out["status"] = "degraded"`,
+		"affectedIndexRebuildStatus",
+		"referenceIndexRebuildStatus",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("security DB status endpoint missing %q", want)
+		}
+	}
+}
+
 func TestWebhookAuditIncludesSecurityDBRevision(t *testing.T) {
 	out := readAllPackageGoFiles(t)
 	body := out

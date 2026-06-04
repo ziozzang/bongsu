@@ -55,7 +55,7 @@ BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
 ./scripts/verify-operator-workflow.sh
 ```
 
-The operator workflow also validates the live observability surfaces that should back production monitoring: `/api/health` must expose security DB revision, security recalculation state, and usable affected/reference index status, while `/api/admin/metrics` must expose Prometheus gauges for security DB revision, recalculation, affected/reference indexes, EPSS enrichment, and security DB rescan progress.
+The operator workflow also validates the live observability surfaces that should back production monitoring: `/api/health` must expose security DB revision, security recalculation state, and usable affected/reference index status; `/api/admin/security-db/status` must expose source-sync manager state, persisted source freshness, recalculation state, CVE DB quality, and affected/reference index health; `/api/admin/metrics` must expose Prometheus gauges for security DB revision, recalculation, affected/reference indexes, EPSS enrichment, and security DB rescan progress.
 
 - Verify the real agent binary collection path with fixture Trivy/osquery/docker tools:
 
