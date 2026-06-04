@@ -309,7 +309,7 @@ curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/i
 2. Build or receive the new release package, verify `SHA256SUMS`, and load Docker images.
 3. Review `deploy/.env.example` for new required settings and merge them into the local `.env`.
 4. Apply the new compose file and let startup migrations run with `BONGSU_AUTO_MIGRATE=true`.
-5. Check `/api/health`, `/api/cve-db/stats?refresh=true`, and the dashboard CVE DB status card. In the stats response, review `osv_ecosystems` for the largest OSV ecosystems and their affected-package index `last_update` values when investigating partial OSV refresh lag.
+5. Check `/api/health`, `/api/cve-db/stats?refresh=true`, and the dashboard CVE DB status card. `/api/health` uses indexed-only CVE index summaries for liveness; use stats, admin security DB status, and `./scripts/verify-live-cvedb-quality.sh` for detailed affected/reference coverage and OSV upstream freshness. In the stats response, review `osv_ecosystems` for the largest OSV ecosystems and their affected-package index `last_update` values when investigating partial OSV refresh lag.
 6. Re-enroll or update agents only after installer readiness reports the expected agent binary version.
 
 Connected upgrade example:
@@ -390,7 +390,7 @@ If OSV upstream feeds have changed but the persisted source freshness window has
 ./scripts/sync-osv-cvedb.sh http://localhost:5677 "$BONGSU_API_KEY"
 ```
 
-The OSV-only refresh uses the same per-ecosystem append/upsert mode as the full connected sync, prunes stale `source=osv` rows only after every configured ecosystem succeeds, then rebuilds affected-package and reference-key indexes and queues security recalculation once.
+The OSV-only refresh uses the same per-ecosystem append/upsert mode as the full connected sync, prunes stale `source=osv` rows only after every configured ecosystem succeeds, then rebuilds affected-package and reference-key indexes and queues security recalculation once. For a single lagging upstream sentinel, run the same script with `BONGSU_OSV_ECOSYSTEMS=<ecosystem>`; partial overrides intentionally skip source-wide stale prune and should be followed by `BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true ./scripts/verify-live-cvedb-quality.sh`.
 
 If only NVD is stale, refresh it without running OSV or Trivy extraction:
 
@@ -418,7 +418,7 @@ curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/metri
 ./scripts/verify-live-security-db-export-freshness.sh
 ```
 
-On large CVE DB snapshots, avoid launching several forced `refresh=true` stats checks in parallel with admin status or metrics. `/api/cve-db/stats` shares one in-flight build per API process and limits its own heavy subqueries with `BONGSU_CVE_STATS_QUERY_CONCURRENCY` (default `2`, range `1..7`), and repeated `security_db_revision` lookups share a short success-only cache controlled by `BONGSU_SECURITY_DB_REVISION_CACHE_SECONDS` (default `30`, max `300`). Each additional endpoint can still consume PostgreSQL work memory. If PostgreSQL returns shared-memory resize errors while operators are auditing the CVE DB, lower `BONGSU_CVE_STATS_QUERY_CONCURRENCY`, retry the verifier serially, and check `/api/admin/security-db/status` before treating the source DB as unhealthy.
+On large CVE DB snapshots, avoid launching several forced `refresh=true` stats checks in parallel with admin status or metrics. `/api/health` intentionally uses indexed-only CVE summaries, while `/api/cve-db/stats` shares one in-flight build per API process and limits its own heavy subqueries with `BONGSU_CVE_STATS_QUERY_CONCURRENCY` (default `2`, range `1..7`), and repeated `security_db_revision` lookups share a short success-only cache controlled by `BONGSU_SECURITY_DB_REVISION_CACHE_SECONDS` (default `30`, max `300`). Each additional endpoint can still consume PostgreSQL work memory. If PostgreSQL returns shared-memory resize errors while operators are auditing the CVE DB, lower `BONGSU_CVE_STATS_QUERY_CONCURRENCY`, retry the verifier serially, and check `/api/admin/security-db/status` before treating the source DB as unhealthy.
 
 The CVE DB is operationally degraded if required sources are missing, `TEMP-*` or `CVD-*` placeholders appear in API results or direct DB invariants, affected/reference indexes are stale, affected-package index rows lack package/ecosystem/fixed evidence, or EPSS enrichment coverage unexpectedly drops.
 

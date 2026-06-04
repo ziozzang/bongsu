@@ -2468,20 +2468,15 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		`resp["cve_affected_index_rebuild"]`,
 		"affectedIndexRebuildStatus",
 		"GetCveAffectedPackageIndexHealthStats",
-		"detail_error",
 		"cveAffectedPackageIndexStatsFromHealthMap",
 		"AffectedIndexPartial",
-		"AffectedIndexDetail",
-		"fallback_error",
 		`resp["cve_reference_key_index"]`,
 		"GetCveReferenceKeyIndexHealthStats",
 		"cveReferenceKeyIndexStatsFromHealthMap",
 		"ReferenceIndexPartial",
-		"ReferenceIndexDetail",
 		`resp["cve_reference_index_rebuild"]`,
 		`resp["cve_db_quality"]`,
 		"cveDBQualitySummary",
-		"GetCveReferenceKeyIndexStats",
 		"referenceIndexRebuildStatus",
 		`"security_recalculation": recalcStatus`,
 		"for k, v := range s.securityDBRevisionMeta(dbCtx)",
@@ -2500,6 +2495,16 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	}
 	if strings.Index(fn, "s.dbMgr.PublicStatus()") < strings.Index(fn, "else") {
 		t.Fatalf("public Trivy DB status should be used only for non-admin health: %s", fn)
+	}
+	for _, avoid := range []string{
+		"GetCveAffectedPackageIndexStats(dbCtx)",
+		"GetCveReferenceKeyIndexStats(dbCtx)",
+		`"detail_error"`,
+		`"fallback_error"`,
+	} {
+		if strings.Contains(fn, avoid) {
+			t.Fatalf("health handler should use lightweight indexed CVE health stats, found %q: %s", avoid, fn)
+		}
 	}
 }
 

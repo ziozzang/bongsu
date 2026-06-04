@@ -48,10 +48,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		var healthAffectedIndex *db.CveAffectedPackageIndexStats
 		var healthReferenceIndex *db.CveReferenceKeyIndexStats
 		var healthAffectedIndexErr error
-		var healthAffectedIndexDetailErr error
 		var healthAffectedIndexPartial bool
 		var healthReferenceIndexErr error
-		var healthReferenceIndexDetailErr error
 		var healthReferenceIndexPartial bool
 		dbCtx, cancel := withHealthDBTimeout()
 		if last := s.cveDBRematchLastResult(dbCtx, isAdmin); last != nil {
@@ -64,43 +62,23 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		}
 		cancel()
 		dbCtx, cancel = withHealthDBTimeout()
-		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(dbCtx); err == nil {
-			healthAffectedIndex = indexStats
-			resp["cve_affected_package_index"] = indexStats
-		} else if isAdmin {
-			detailErr := err
-			cancel()
-			dbCtx, cancel = withHealthDBTimeout()
-			if lightStats, lightErr := s.db.GetCveAffectedPackageIndexHealthStats(dbCtx); lightErr == nil {
-				lightStats["detail_error"] = detailErr.Error()
-				resp["cve_affected_package_index"] = lightStats
-				healthAffectedIndex = cveAffectedPackageIndexStatsFromHealthMap(lightStats)
-				healthAffectedIndexPartial = healthAffectedIndex != nil
-				healthAffectedIndexDetailErr = detailErr
-			} else {
-				healthAffectedIndexErr = detailErr
-				resp["cve_affected_package_index"] = map[string]any{"error": detailErr.Error(), "fallback_error": lightErr.Error()}
-			}
+		if lightStats, err := s.db.GetCveAffectedPackageIndexHealthStats(dbCtx); err == nil {
+			resp["cve_affected_package_index"] = lightStats
+			healthAffectedIndex = cveAffectedPackageIndexStatsFromHealthMap(lightStats)
+			healthAffectedIndexPartial = healthAffectedIndex != nil
+		} else {
+			healthAffectedIndexErr = err
+			resp["cve_affected_package_index"] = map[string]any{"error": err.Error()}
 		}
 		cancel()
 		dbCtx, cancel = withHealthDBTimeout()
-		if referenceIndexStats, err := s.db.GetCveReferenceKeyIndexStats(dbCtx); err == nil {
-			healthReferenceIndex = referenceIndexStats
-			resp["cve_reference_key_index"] = referenceIndexStats
-		} else if isAdmin {
-			detailErr := err
-			cancel()
-			dbCtx, cancel = withHealthDBTimeout()
-			if lightStats, lightErr := s.db.GetCveReferenceKeyIndexHealthStats(dbCtx); lightErr == nil {
-				lightStats["detail_error"] = detailErr.Error()
-				resp["cve_reference_key_index"] = lightStats
-				healthReferenceIndex = cveReferenceKeyIndexStatsFromHealthMap(lightStats)
-				healthReferenceIndexPartial = healthReferenceIndex != nil
-				healthReferenceIndexDetailErr = detailErr
-			} else {
-				healthReferenceIndexErr = detailErr
-				resp["cve_reference_key_index"] = map[string]any{"error": detailErr.Error(), "fallback_error": lightErr.Error()}
-			}
+		if lightStats, err := s.db.GetCveReferenceKeyIndexHealthStats(dbCtx); err == nil {
+			resp["cve_reference_key_index"] = lightStats
+			healthReferenceIndex = cveReferenceKeyIndexStatsFromHealthMap(lightStats)
+			healthReferenceIndexPartial = healthReferenceIndex != nil
+		} else {
+			healthReferenceIndexErr = err
+			resp["cve_reference_key_index"] = map[string]any{"error": err.Error()}
 		}
 		cancel()
 		dbCtx, cancel = withHealthDBTimeout()
@@ -110,11 +88,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			PlaceholderStatsError: placeholderErr,
 			AffectedIndex:         healthAffectedIndex,
 			AffectedIndexPartial:  healthAffectedIndexPartial,
-			AffectedIndexDetail:   healthAffectedIndexDetailErr,
 			AffectedIndexError:    healthAffectedIndexErr,
 			ReferenceIndex:        healthReferenceIndex,
 			ReferenceIndexPartial: healthReferenceIndexPartial,
-			ReferenceIndexDetail:  healthReferenceIndexDetailErr,
 			ReferenceIndexError:   healthReferenceIndexErr,
 			SkipMissingFetch:      true,
 		}); quality != nil {
