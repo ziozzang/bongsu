@@ -27,15 +27,24 @@ require_tool jq
 
 if [ -z "$EXPECTED_SERVER_COMMIT" ]; then
     require_tool git
-    EXPECTED_SERVER_COMMIT="$(
+    mapfile -t SERVER_BUILD_FILES < <(
         cd "$ROOT"
-        git log -1 --format=%H -- \
+        git ls-files \
             cmd/server \
             internal/server \
             internal/shared \
             migrations \
             deploy/Dockerfile.server \
             Makefile |
+            grep -Ev '(^|/)(testdata|fixtures)(/|$)|_test\.go$'
+    )
+    if [ "${#SERVER_BUILD_FILES[@]}" -eq 0 ]; then
+        echo "ERROR: could not find server build input files" >&2
+        exit 1
+    fi
+    EXPECTED_SERVER_COMMIT="$(
+        cd "$ROOT"
+        git log -1 --format=%H -- "${SERVER_BUILD_FILES[@]}" |
             cut -c1-12
     )"
 fi

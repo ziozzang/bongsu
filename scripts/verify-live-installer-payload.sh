@@ -26,9 +26,9 @@ require_tool jq
 
 if [ -z "$EXPECTED_AGENT_COMMIT" ]; then
     require_tool git
-    EXPECTED_AGENT_COMMIT="$(
+    mapfile -t AGENT_BUILD_FILES < <(
         cd "$ROOT"
-        git log -1 --format=%H -- \
+        git ls-files \
             cmd/agent \
             internal/agent \
             internal/shared \
@@ -36,6 +36,15 @@ if [ -z "$EXPECTED_AGENT_COMMIT" ]; then
             internal/server/api/installer.go \
             deploy/Dockerfile.agent \
             Makefile |
+            grep -Ev '(^|/)(testdata|fixtures)(/|$)|_test\.go$'
+    )
+    if [ "${#AGENT_BUILD_FILES[@]}" -eq 0 ]; then
+        echo "ERROR: could not find agent build input files" >&2
+        exit 1
+    fi
+    EXPECTED_AGENT_COMMIT="$(
+        cd "$ROOT"
+        git log -1 --format=%H -- "${AGENT_BUILD_FILES[@]}" |
             cut -c1-12
     )"
 fi
