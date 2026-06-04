@@ -115,6 +115,7 @@ for script in \
     verify-operator-workflow.sh \
     verify-agent-binary-workflow.sh \
     verify-live-agent-token-binding.sh \
+    verify-live-install-script.sh \
     verify-live-installer-payload.sh \
     verify-live-rbac-scope.sh \
     verify-live-cvedb-concurrency.sh \
@@ -138,6 +139,7 @@ require_text "$RELEASE" 'BONGSU_RELEASE_READINESS_REPORT' "release readiness mus
 require_text "$RELEASE" '"failed_gate_count"' "release readiness report must include failed gate count"
 require_text "$RELEASE" 'BONGSU_VERIFY_CVEDB_REQUIRE_DB=\$\{REQUIRE_DB\}' "live release readiness must require direct CVE DB invariants by default"
 require_text "$RELEASE" 'verify-live-cvedb-concurrency\.sh' "live release readiness must verify concurrent CVE DB observability"
+require_text "$RELEASE" 'verify-live-install-script\.sh' "live release readiness must verify one-line install script downloads"
 require_text "$RELEASE" 'verify-live-scan-request-recovery\.sh' "live release readiness must verify stale scan-request recovery"
 require_text "$RELEASE" 'verify-live-security-db-schedule\.sh' "live release readiness must verify security DB sync scheduling"
 require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "live release readiness must fail closed when direct DB checks are required but unavailable"

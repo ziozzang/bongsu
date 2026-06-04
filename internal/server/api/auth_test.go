@@ -1449,6 +1449,7 @@ func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
 	for _, path := range []string{
 		"../../../scripts/verify-live-cvedb-quality.sh",
 		"../../../scripts/verify-live-cvedb-concurrency.sh",
+		"../../../scripts/verify-live-install-script.sh",
 		"../../../scripts/verify-live-installer-payload.sh",
 		"../../../scripts/verify-live-server-build.sh",
 		"../../../scripts/verify-live-scan-request-recovery.sh",
@@ -3790,6 +3791,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`env -u BONGSU_DB_PASSWORD -u BONGSU_API_KEY -u BONGSU_AGENT_API_KEY -u BONGSU_INSTALL_TOKEN ./scripts/verify-deploy-config.sh`,
 		`./scripts/verify-live-server-build.sh`,
 		`./scripts/verify-live-installer-payload.sh`,
+		`./scripts/verify-live-install-script.sh`,
 		`./scripts/verify-live-scan-request-recovery.sh`,
 		`BONGSU_DB_DSN is required for live release readiness`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh`,
@@ -3861,6 +3863,33 @@ func TestLiveInstallerPayloadVerifierChecksSourceAlignedAgentPayload(t *testing.
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("live installer payload verifier missing %q", want)
+		}
+	}
+}
+
+func TestLiveInstallScriptVerifierExercisesAuthenticatedDownloads(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-install-script.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_INSTALL_TOKEN:-test-install-token-0123456789`,
+		`/api/install.sh?token=${INSTALL_TOKEN}`,
+		`/api/downloads/bongsu-agent`,
+		`/api/downloads/trivy`,
+		`X-Install-Token: ${INSTALL_TOKEN}`,
+		`X-Bongsu-SHA256`,
+		`verify_download_sha256`,
+		`assert_not_contains "$installer" '?token='`,
+		`assert_not_contains "$installer" 'api_key='`,
+		`curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN"`,
+		`bongsu-agent-daemon.service`,
+		`crontab -l`,
+		`Live install script verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live install script verifier missing %q", want)
 		}
 	}
 }

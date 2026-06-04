@@ -107,6 +107,7 @@ for script in \
     verify-live-agent-token-binding.sh \
     verify-live-cvedb-concurrency.sh \
     verify-live-cvedb-quality.sh \
+    verify-live-install-script.sh \
     verify-live-installer-payload.sh \
     verify-live-rbac-scope.sh \
     verify-live-scan-request-recovery.sh \

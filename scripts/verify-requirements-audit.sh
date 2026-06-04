@@ -68,6 +68,7 @@ for command in \
     '\./scripts/verify-agent-binary-workflow\.sh' \
     '\./scripts/verify-live-agent-token-binding\.sh' \
     '\./scripts/verify-live-cvedb-quality\.sh' \
+    '\./scripts/verify-live-install-script\.sh' \
     '\./scripts/verify-live-installer-payload\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
     '\./scripts/verify-live-security-db-schedule\.sh' \
@@ -146,6 +147,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-operations-runbook\.sh' "airgap package m
 require_text "$PACKAGE_SCRIPT" 'verify-cve-matching-invariants\.sh' "airgap package must include CVE matching invariant verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap package must include backup/restore archive verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap package must include live agent token binding verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-install-script\.sh' "airgap package must include live install script verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-installer-payload\.sh' "airgap package must include live installer payload verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-schedule\.sh' "airgap package must include live security DB schedule verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-server-build\.sh' "airgap package must include live server build verifier"
@@ -188,6 +190,7 @@ for keyword in \
     'requeue-stale' \
     'agent-token/reset' \
     'verify-live-agent-token-binding\.sh' \
+    'verify-live-install-script\.sh' \
     'verify-live-installer-payload\.sh' \
     'verify-live-security-db-schedule\.sh' \
     'verify-live-server-build\.sh' \

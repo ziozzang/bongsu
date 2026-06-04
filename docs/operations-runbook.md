@@ -34,6 +34,7 @@ Live release readiness enables strict CVE source freshness automatically; stale 
 In connected live environments it also compares selected OSV upstream `all.zip` `Last-Modified` headers with the local OSV source timestamp, so an OSV feed that is behind upstream beyond the configured grace window fails promotion. With `BONGSU_DB_DSN`, the same gate checks each sentinel ecosystem's affected-package index timestamp so one fresh OSV chunk cannot hide another stale ecosystem.
 It verifies the live API server build first: `/api/health` must expose a non-empty version, build date, and a commit matching the latest server/runtime source commit.
 It also verifies the live one-line installer payload: `/api/admin/installer/status` must report ready agent and Trivy binaries, valid SHA256 metadata, an install token, and an agent version containing the latest agent/installer source commit.
+It then exercises the actual live one-line installer and download URLs with `./scripts/verify-live-install-script.sh`: `/api/install.sh`, `/api/downloads/bongsu-agent`, and `/api/downloads/trivy` must reject unauthenticated and query-token requests, accept header authentication, expose checksum headers, and serve binaries whose SHA256 matches the advertised value.
 It verifies the live security DB schedule with `./scripts/verify-live-security-db-schedule.sh`: `/api/health` must show configured source sync, healthy persisted freshness, and a `next_sync` timestamp no later than the latest persisted CVE source update plus `security_db.interval` and a small grace window. This catches API restarts that would otherwise delay the required 6-hour OSV/NVD/Trivy refresh cadence.
 It verifies CVE DB observability under concurrent operator load with `./scripts/verify-live-cvedb-concurrency.sh`: multiple forced stats refreshes, admin security DB status, and admin metrics must complete with `2xx` responses, valid JSON or Prometheus bodies, healthy CVE DB quality, and no new PostgreSQL shared-memory errors in the API log.
 It verifies stale scan-request recovery with `./scripts/verify-live-scan-request-recovery.sh`: a fixture host-specific request is claimed, aged in PostgreSQL, surfaced by the stale request filter, requeued through `/api/scan-requests/requeue-stale`, audited, and proven claimable again.
@@ -51,6 +52,7 @@ go test ./...
 ./scripts/verify-backup-restore-archive.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-live-installer-payload.sh
+./scripts/verify-live-install-script.sh
 ./scripts/verify-live-security-db-schedule.sh
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-live-cvedb-concurrency.sh
@@ -105,6 +107,17 @@ BONGSU_API_KEY="$BONGSU_API_KEY" \
 ```
 
 This verifier checks `/api/admin/installer/status` for ready agent and Trivy payloads, valid SHA256 and byte metadata, install-token configuration, and an agent version that includes the latest commit touching agent or installer source paths. Set `BONGSU_VERIFY_INSTALLER_AGENT_COMMIT=<12-char-commit>` for packaged or externally built releases where the source checkout is not available.
+
+- Verify the live install script and binary download URLs before publishing the enrollment command:
+
+```bash
+BONGSU_API_BASE=http://localhost:5677 \
+BONGSU_API_KEY="$BONGSU_API_KEY" \
+BONGSU_INSTALL_TOKEN="$BONGSU_INSTALL_TOKEN" \
+./scripts/verify-live-install-script.sh
+```
+
+This verifier downloads `/api/install.sh` with `X-Install-Token`, confirms the generated script uses header-authenticated binary downloads instead of query tokens, checks systemd and cron install paths, rejects unauthenticated `/api/downloads/*` access, and validates the advertised `X-Bongsu-SHA256` header against the downloaded agent and Trivy bytes.
 
 - Verify the live API server binary before promoting a running deployment:
 
