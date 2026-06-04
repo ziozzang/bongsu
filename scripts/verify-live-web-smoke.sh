@@ -63,7 +63,7 @@ async function authenticate(page) {
   await expect(page.getByRole('link', { name: /Dashboard/ })).toBeVisible({ timeout: 15000 });
 }
 
-test('live dashboard, CVE search, hosts, vulnerabilities, and RBAC render', async ({ page }) => {
+test('live dashboard and operator routes render without API 5xx responses', async ({ page }) => {
   const failedResponses: string[] = [];
   page.on('response', response => {
     const url = response.url();
@@ -74,15 +74,20 @@ test('live dashboard, CVE search, hosts, vulnerabilities, and RBAC render', asyn
     throw err;
   });
 
+  async function openRoute(linkName: string | RegExp, headingName: string | RegExp, visibleText: string | RegExp) {
+    await page.getByRole('link', { name: linkName }).click();
+    await expect(page.getByRole('heading', { name: headingName, exact: typeof headingName === 'string' })).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText(visibleText).first()).toBeVisible({ timeout: 15000 });
+    await page.waitForTimeout(500);
+  }
+
   await authenticate(page);
   await expect(page.getByRole('link', { name: /CVE Search/ })).toBeVisible();
   await expect(page.getByText(/CVE DB/i).first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(/Total Hosts|Active Findings|SBOM/i).first()).toBeVisible({ timeout: 15000 });
 
-  const cveStats = page.waitForResponse(response => response.url().includes('/api/cve-db/stats') && response.status() < 500);
   await page.getByRole('link', { name: /CVE Search/ }).click();
   await expect(page.getByRole('heading', { name: 'CVE Search' })).toBeVisible();
-  await cveStats.catch(() => undefined);
   const cveSearch = page.waitForResponse(response => response.url().includes('/api/cve-db/search') && response.status() < 500);
   await page.getByPlaceholder('CVE, package, ecosystem, keyword...').fill(cveQuery);
   await page.getByRole('button', { name: 'Search' }).click();
@@ -107,6 +112,16 @@ test('live dashboard, CVE search, hosts, vulnerabilities, and RBAC render', asyn
   await rbacResponse;
   await expect(page.getByText(/Access Subjects|Save Subject|RBAC management requires/i).first()).toBeVisible({ timeout: 15000 });
 
+  await openRoute('Packages', 'Packages', /Package|No packages found|Scanned/i);
+  await openRoute('Containers', 'Containers', /Container|No containers found|Image/i);
+  await openRoute('Scan History', 'Scan History', /Scan Requests|No scans found|Created/i);
+  await openRoute('Audit Log', 'Audit Log', /Audit|No audit logs|Action/i);
+  await openRoute('Schedules', 'Schedules', /Create Schedule|No schedules|Cron/i);
+  await openRoute('Asset Groups', 'Asset Groups', /Create Asset Group|No asset groups|Rule/i);
+  await openRoute('Trends', 'Vulnerability Trends', /Daily Vulnerability Counts|No trend data|Current Total/i);
+  await openRoute('Reports', 'Reports', /Severity Counts|Risk Breakdown|Active Vulnerabilities/i);
+  await openRoute('Notifications', 'Notifications', /Create Notification Rule|No notification rules|Trigger Event/i);
+
   expect(failedResponses, failedResponses.join('\n')).toEqual([]);
 });
 EOF
@@ -116,7 +131,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: '.',
-  timeout: 60_000,
+  timeout: 120_000,
   expect: { timeout: 10_000 },
   use: {
     baseURL: process.env.BONGSU_WEB_BASE || 'http://127.0.0.1:5678',

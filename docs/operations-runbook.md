@@ -156,6 +156,8 @@ BONGSU_API_KEY="$BONGSU_API_KEY" \
 ./scripts/verify-live-web-smoke.sh
 ```
 
+This smoke covers dashboard, CVE Search, Hosts, Packages, Containers, Scan History, Vulnerabilities, RBAC, Audit Log, Schedules, Asset Groups, Trends, Reports, and Notifications, and fails if any live `/api/` response returns a 5xx status.
+
 Use systemd mode when immediate force-scan polling is required:
 
 ```bash

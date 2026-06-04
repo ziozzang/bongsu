@@ -95,6 +95,8 @@ for keyword in \
     'live CVE DB' \
     'direct DB invariant' \
     'live browser' \
+    'Scan History' \
+    'Notifications' \
     'BONGSU_HOST_ID' \
     'host-token binding' \
     'two logical host' \

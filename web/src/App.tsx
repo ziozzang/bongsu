@@ -4322,6 +4322,12 @@ function TrendsView() {
   }, []);
 
   const trendColor = (dir: string) => dir === 'up' ? 'var(--critical)' : dir === 'down' ? 'var(--low)' : 'var(--medium)';
+  const n = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
+  const currentTotal = n(summary?.current_total);
+  const previousTotal = n(summary?.previous_total);
+  const delta = n(summary?.delta);
+  const deltaPercent = n(summary?.delta_percent);
+  const trendDirection = summary?.trend_direction || 'flat';
 
   return (
     <>
@@ -4333,29 +4339,29 @@ function TrendsView() {
               <div className="stat-card">
                 <div className="accent-bar" style={{ background: 'var(--primary)' }} />
                 <div className="label">Current Total</div>
-                <div className="value">{summary.current_total.toLocaleString()}</div>
+                <div className="value">{currentTotal.toLocaleString()}</div>
               </div>
               <div className="stat-card">
                 <div className="accent-bar" style={{ background: 'var(--text-secondary)' }} />
                 <div className="label">Previous Total</div>
-                <div className="value">{summary.previous_total.toLocaleString()}</div>
+                <div className="value">{previousTotal.toLocaleString()}</div>
               </div>
               <div className="stat-card">
-                <div className="accent-bar" style={{ background: summary.delta > 0 ? 'var(--critical)' : 'var(--low)' }} />
+                <div className="accent-bar" style={{ background: delta > 0 ? 'var(--critical)' : 'var(--low)' }} />
                 <div className="label">Delta</div>
-                <div className="value" style={{ color: summary.delta > 0 ? 'var(--critical)' : 'var(--low)' }}>
-                  {summary.delta > 0 ? '+' : ''}{summary.delta.toLocaleString()}
+                <div className="value" style={{ color: delta > 0 ? 'var(--critical)' : 'var(--low)' }}>
+                  {delta > 0 ? '+' : ''}{delta.toLocaleString()}
                 </div>
               </div>
               <div className="stat-card">
                 <div className="accent-bar" style={{ background: 'var(--text-secondary)' }} />
                 <div className="label">Delta %</div>
-                <div className="value">{summary.delta_percent.toFixed(1)}%</div>
+                <div className="value">{deltaPercent.toFixed(1)}%</div>
               </div>
               <div className="stat-card">
-                <div className="accent-bar" style={{ background: trendColor(summary.trend_direction) }} />
+                <div className="accent-bar" style={{ background: trendColor(trendDirection) }} />
                 <div className="label">Trend</div>
-                <div className="value" style={{ color: trendColor(summary.trend_direction), textTransform: 'uppercase' }}>{summary.trend_direction}</div>
+                <div className="value" style={{ color: trendColor(trendDirection), textTransform: 'uppercase' }}>{trendDirection}</div>
               </div>
             </div>
           )}
@@ -4369,11 +4375,11 @@ function TrendsView() {
                 {rows.map(r => (
                   <tr key={r.date}>
                     <td className="mono" style={{ fontSize: '0.8125rem' }}>{r.date}</td>
-                    <td className="mono">{r.total.toLocaleString()}</td>
-                    <td className="mono" style={{ color: 'var(--critical)', fontWeight: r.critical ? 600 : 400 }}>{r.critical}</td>
-                    <td className="mono" style={{ color: 'var(--high)', fontWeight: r.high ? 600 : 400 }}>{r.high}</td>
-                    <td className="mono" style={{ color: 'var(--medium)', fontWeight: r.medium ? 600 : 400 }}>{r.medium}</td>
-                    <td className="mono" style={{ color: 'var(--low)', fontWeight: r.low ? 600 : 400 }}>{r.low}</td>
+                    <td className="mono">{n(r.total).toLocaleString()}</td>
+                    <td className="mono" style={{ color: 'var(--critical)', fontWeight: n(r.critical) ? 600 : 400 }}>{n(r.critical)}</td>
+                    <td className="mono" style={{ color: 'var(--high)', fontWeight: n(r.high) ? 600 : 400 }}>{n(r.high)}</td>
+                    <td className="mono" style={{ color: 'var(--medium)', fontWeight: n(r.medium) ? 600 : 400 }}>{n(r.medium)}</td>
+                    <td className="mono" style={{ color: 'var(--low)', fontWeight: n(r.low) ? 600 : 400 }}>{n(r.low)}</td>
                   </tr>
                 ))}
                 {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No trend data</td></tr>}
