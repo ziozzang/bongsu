@@ -227,6 +227,11 @@ agent_fleet_status_json="$(api_json GET /api/admin/agent-fleet/status)"
 assert_json "$agent_fleet_status_json" '(.status == "ok" or .status == "degraded") and (.warnings | type == "array") and (.recommended_actions | type == "array") and (.total_hosts | type == "number") and (.outdated_percent | type == "number") and (.agent_status_counts | type == "object") and (.agent_version_counts | type == "object") and (.agent_version_drift_counts.current | type == "number") and (.agent_version_drift_counts.outdated | type == "number") and (.agent_version_drift_counts.unknown | type == "number")' "agent fleet status must expose status, warnings, host/version/drift counts, and outdated percentage"
 assert_json "$agent_fleet_status_json" '.installer and (.installer.ready | type == "boolean") and .installer.agent and (.installer.agent.ready | type == "boolean")' "agent fleet status must expose installer readiness"
 curl -fsS --max-time "$CURL_MAX_TIME" -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/admin/metrics" -o "$TMP_DIR/admin-metrics.txt"
+if grep -Eq '^bongsu_.*_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics reported one or more metrics_error gauges" >&2
+    grep -E '^bongsu_.*_metrics_error ' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
 for metric in \
     '^bongsu_security_recalculation_running ' \
     '^bongsu_security_recalculation_pending '; do

@@ -3361,6 +3361,8 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 		"Checking health and admin metrics observability",
 		`CURL_MAX_TIME="${BONGSU_VERIFY_CURL_MAX_TIME_SECONDS:-45}"`,
 		"health_json=\"$(api_json GET /api/health)\"",
+		"admin metrics reported one or more metrics_error gauges",
+		`grep -Eq '^bongsu_.*_metrics_error ' "$TMP_DIR/admin-metrics.txt"`,
 		".security_db_revision",
 		".security_db_revision_error",
 		".security_recalculation.running",
