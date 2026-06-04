@@ -1,6 +1,6 @@
 # Bongsu Operations Runbook
 
-Updated: 2026-06-04 11:01:05 KST
+Updated: 2026-06-04 11:06:55 KST
 
 This runbook is for operators running Bongsu in connected or air-gapped environments. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu.
 
@@ -65,6 +65,7 @@ Air-gapped deployment:
 ```bash
 ./scripts/package.sh 0.1.0
 sha256sum -c bongsu-0.1.0.tar.gz.sha256
+./scripts/verify-airgap-release-archive.sh bongsu-0.1.0.tar.gz
 # Transfer bongsu-0.1.0.tar.gz and a security DB bundle into the offline network.
 tar xzf bongsu-0.1.0.tar.gz
 cd bongsu-0.1.0
