@@ -186,6 +186,23 @@ for script in "$ROOT_DIR/scripts/sync-all-cvedb.sh" "$ROOT_DIR/scripts/sync-osv-
     require_text "$script" 'cve_affected_index_rebuild' "OSV sync finalization must poll affected index rebuild state"
     require_text "$script" 'cve_reference_index_rebuild' "OSV sync finalization must poll reference index rebuild state"
 done
+for script in \
+    "$ROOT_DIR/scripts/backup.sh" \
+    "$ROOT_DIR/scripts/restore.sh" \
+    "$ROOT_DIR/scripts/download-trivy-db.sh" \
+    "$ROOT_DIR/scripts/sync-all-cvedb.sh" \
+    "$ROOT_DIR/scripts/sync-nvd-cvedb.sh" \
+    "$ROOT_DIR/scripts/sync-osv-cvedb.sh" \
+    "$ROOT_DIR/scripts/sync-trivy-cvedb.sh" \
+    "$ROOT_DIR/scripts/download-osv.sh" \
+    "$ROOT_DIR/scripts/extract-trivy-cvedb.sh"
+do
+    require_text "$script" 'BONGSU_TMPDIR' "packaged large-transfer script must honor BONGSU_TMPDIR"
+    require_text "$script" 'TMP_PARENT="\$\{BONGSU_TMPDIR:-\$\{TMPDIR:-/tmp\}\}"' "packaged large-transfer script must derive TMP_PARENT from BONGSU_TMPDIR"
+    require_text "$script" '\$\{TMP_PARENT%/\}/bongsu-' "packaged large-transfer script must create managed bongsu temp dirs"
+done
+require_text "$ROOT_DIR/scripts/download-trivy-db.sh" 'TRIVY_DOWNLOAD_DIR' "packaged Trivy DB downloader must clean temporary Trivy binary directory"
+require_text "$ROOT_DIR/scripts/download-trivy-db.sh" 'bongsu-trivy-db' "packaged Trivy DB downloader must keep DB cache under managed temp dir"
 
 echo "[7/7] Checking airgap deployment invariants"
 require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_TRIVY_DB_INTERVAL_HOURS: "(0|\$\{BONGSU_TRIVY_DB_INTERVAL_HOURS:-0\})"' "airgap compose must disable Trivy DB auto refresh by default"

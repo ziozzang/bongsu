@@ -137,6 +137,18 @@ do
 done
 
 for pattern in \
+    'scripts/backup\.sh' \
+    'scripts/restore\.sh' \
+    'scripts/download-trivy-db\.sh' \
+    'BONGSU_TMPDIR' \
+    'TMP_PARENT="\\\$\\{BONGSU_TMPDIR:-\\\$\\{TMPDIR:-/tmp\\}\\}"' \
+    'TRIVY_DOWNLOAD_DIR' \
+    'bongsu-trivy-db'
+do
+    require_text "$ROOT/scripts/verify-airgap-release-archive.sh" "$pattern" "airgap archive verifier missing large-transfer temp-dir invariant $pattern"
+done
+
+for pattern in \
     'sha256sum -c bongsu-0\.1\.0\.tar\.gz\.sha256' \
     'sha256sum -c SHA256SUMS' \
     'verify-airgap-offline-rehearsal\.sh' \
