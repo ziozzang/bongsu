@@ -4111,7 +4111,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 	for _, want := range []string{
 		`BONGSU_RELEASE_READINESS_LIVE=true`,
 		`BONGSU_RELEASE_READINESS_REQUIRE_DB`,
-		`env -u BONGSU_DB_PASSWORD -u BONGSU_API_KEY -u BONGSU_AGENT_API_KEY -u BONGSU_INSTALL_TOKEN ./scripts/verify-deploy-config.sh`,
+		`env -u BONGSU_DB_PASSWORD -u BONGSU_API_KEY -u BONGSU_AGENT_API_KEY -u BONGSU_INSTALL_TOKEN -u BONGSU_ALLOW_WEAK_SECRETS -u BONGSU_WEB_AUTH -u BONGSU_AGENT_HOST_BINDING -u BONGSU_CORS_ALLOWED_ORIGINS -u BONGSU_TRIVY_DB_INTERVAL_HOURS -u BONGSU_SECURITY_DB_SYNC_ON_START -u BONGSU_SECURITY_DB_SYNC_CMD -u BONGSU_SYNC_REQUIRE_TRIVY_SOURCE ./scripts/verify-deploy-config.sh`,
 		`./scripts/verify-live-server-build.sh`,
 		`./scripts/verify-live-installer-payload.sh`,
 		`./scripts/verify-live-install-script.sh`,
@@ -4201,6 +4201,7 @@ func TestReleaseReadinessReportVerifierExercisesSuccessAndFailureReports(t *test
 	for _, want := range []string{
 		`BONGSU_RELEASE_READINESS_REPORT="$report"`,
 		`BONGSU_RELEASE_READINESS_SKIP_HEAVY=true`,
+		`BONGSU_RELEASE_READINESS_LIVE=false`,
 		`.status == "passed" and .exit_code == 0`,
 		`.status == "failed" and .exit_code == 7`,
 		`.failed_gate_count == 1`,

@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-05 04:08:18 KST
+Updated: 2026-06-05 04:19:32 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Update live CVE DB verification handoff
+master / origin/main latest commit: Isolate release readiness deploy config env
 ```
 
 Important recent commits:
 
 ```text
-<latest> Update live CVE DB verification handoff
+<latest> Isolate release readiness deploy config env
+dd07e28 Update live CVE DB verification handoff
 cfde381 Cache security DB revision lookups
 7da00c3 Add fixture coverage for export freshness gate
 379194a Include export freshness gate in handoff checks
@@ -170,6 +171,18 @@ BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=tr
 ```
 
 The direct-DB CVE quality run passed with `961359` records, `208854` matchable records, `5` sources, direct placeholder rejection, affected/reference orphan checks, EPSS column enrichment checks, and multi-source reference-group checks.
+
+Latest DB-backed live release readiness also passed after fixing the deploy-config subgate to ignore live runtime overrides such as `BONGSU_ALLOW_WEAK_SECRETS=true`:
+
+```bash
+BONGSU_RELEASE_READINESS_ALLOW_DIRTY=true \
+BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
+BONGSU_RELEASE_READINESS_LIVE=true \
+BONGSU_RELEASE_READINESS_REPORT=/tmp/bongsu-live-release-readiness.json \
+./scripts/verify-release-readiness.sh
+```
+
+The report summary was `status=passed`, `gate_count=34`, `failed_gate_count=0`, `live=true`, `require_db=true`, `skip_heavy=true`, finished at `2026-06-04T19:19:18Z`.
 
 ## Current CVE DB Status
 

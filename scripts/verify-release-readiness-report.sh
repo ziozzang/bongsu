@@ -106,6 +106,7 @@ run_success_case() {
     PATH="$bin_dir:$PATH" \
         BONGSU_RELEASE_READINESS_REPORT="$report" \
         BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
+        BONGSU_RELEASE_READINESS_LIVE=false \
         BONGSU_RELEASE_READINESS_REQUIRE_DB=true \
         "$root_dir/scripts/verify-release-readiness.sh" >"$case_dir/stdout.log"
 
@@ -136,6 +137,7 @@ run_failure_case() {
     PATH="$bin_dir:$PATH" \
         BONGSU_RELEASE_READINESS_REPORT="$report" \
         BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
+        BONGSU_RELEASE_READINESS_LIVE=false \
         BONGSU_RELEASE_READINESS_REQUIRE_DB=true \
         "$root_dir/scripts/verify-release-readiness.sh" >"$case_dir/stdout.log" 2>"$case_dir/stderr.log"
     exit_code="$?"

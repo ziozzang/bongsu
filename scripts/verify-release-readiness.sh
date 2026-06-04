@@ -231,7 +231,7 @@ fi
 run git status --short --branch
 run go test ./...
 run ./scripts/verify-migrations.sh
-run_shell "env -u BONGSU_DB_PASSWORD -u BONGSU_API_KEY -u BONGSU_AGENT_API_KEY -u BONGSU_INSTALL_TOKEN ./scripts/verify-deploy-config.sh"
+run_shell "env -u BONGSU_DB_PASSWORD -u BONGSU_API_KEY -u BONGSU_AGENT_API_KEY -u BONGSU_INSTALL_TOKEN -u BONGSU_ALLOW_WEAK_SECRETS -u BONGSU_WEB_AUTH -u BONGSU_AGENT_HOST_BINDING -u BONGSU_CORS_ALLOWED_ORIGINS -u BONGSU_TRIVY_DB_INTERVAL_HOURS -u BONGSU_SECURITY_DB_SYNC_ON_START -u BONGSU_SECURITY_DB_SYNC_CMD -u BONGSU_SYNC_REQUIRE_TRIVY_SOURCE ./scripts/verify-deploy-config.sh"
 run ./scripts/verify-requirements-audit.sh
 run ./scripts/verify-operations-runbook.sh
 run ./scripts/verify-release-readiness-report.sh
