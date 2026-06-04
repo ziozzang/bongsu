@@ -87,6 +87,7 @@ for script in \
     sync-all-cvedb.sh \
     export-security-db-bundle.sh \
     import-security-db-bundle.sh \
+    verify-agent-binary-workflow.sh \
     verify-operator-workflow.sh \
     verify-static-binaries.sh
 do

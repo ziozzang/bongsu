@@ -1,6 +1,6 @@
 # Bongsu Operations Runbook
 
-Updated: 2026-06-04 10:47:38 KST
+Updated: 2026-06-04 11:01:05 KST
 
 This runbook is for operators running Bongsu in connected or air-gapped environments. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu.
 
@@ -37,6 +37,15 @@ BONGSU_API_KEY="$BONGSU_API_KEY" \
 BONGSU_ADMIN_USERNAME="$BONGSU_ADMIN_USERNAME" \
 BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
 ./scripts/verify-operator-workflow.sh
+```
+
+- Verify the real agent binary collection path with fixture Trivy/osquery/docker tools:
+
+```bash
+BONGSU_API_BASE=http://localhost:5677 \
+BONGSU_API_KEY="$BONGSU_API_KEY" \
+BONGSU_AGENT_API_KEY="$BONGSU_AGENT_API_KEY" \
+./scripts/verify-agent-binary-workflow.sh
 ```
 
 ## Install

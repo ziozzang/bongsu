@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 10:54:22 KST
+Updated: 2026-06-04 11:01:05 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,12 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head before this continuation:
 
 ```text
-c86ada7 (master, origin/main) Expand operator workflow browser coverage
+fa030f8 (master, origin/main) Verify live agent scan request completion
 ```
 
 Important recent commits:
 
 ```text
+fa030f8 Verify live agent scan request completion
+f6e99ac Add live operator workflow verification
 c86ada7 Expand operator workflow browser coverage
 cced8c1 Sync OpenAPI docs and audit handoff
 6627f13 Allow short admin password when BONGSU_ALLOW_WEAK_SECRETS is set
@@ -68,6 +70,7 @@ This handoff commit should include:
 - Browser workflow coverage for scheduled scan creation, dynamic asset-group creation, asset-group scan trigger, report rendering/export, notification rule creation/test delivery, and notification-log loading, including request payload verification.
 - Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
 - Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
+- Real agent binary workflow verifier builds `cmd/agent`, runs it against fixture Trivy/osquery/docker tools, verifies host/container package ontology through the live API, then runs daemon polling to claim and complete a host-specific scan request.
 - Frontend API contract fixes for schedules (`{items}` response plus `packages_only`) and asset groups (`rule_type` instead of stale `group_type`).
 - Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
 - RBAC enforcement regression coverage for package/container/scan/scan-request endpoint scoping and container/image/asset-group policy expansion through latest container assets and host metadata.
@@ -75,7 +78,7 @@ This handoff commit should include:
 - Agent package annotation, DB persistence, and CycloneDX/SPDX export tests that preserve host/container/image/package target relationship context for SBOM and inventory data.
 - Live dashboard hardening: optional admin/summary widget failures no longer log out the no-auth dashboard, package/vulnerability summary SQL no longer references a package alias outside scope, and the dashboard action bar wraps instead of clipping controls.
 - API and DB decomposition into domain-specific files, preserving previous behavior while reducing the monolithic `api.go`/`db.go` maintenance risk.
-- Operational safety additions: per-IP rate limiting, `/api/live`, `/api/ready`, embedded OpenAPI 3.0, `scripts/backup.sh`, `scripts/restore.sh`, `scripts/verify-openapi.sh`, and `scripts/verify-operator-workflow.sh`.
+- Operational safety additions: per-IP rate limiting, `/api/live`, `/api/ready`, embedded OpenAPI 3.0, `scripts/backup.sh`, `scripts/restore.sh`, `scripts/verify-openapi.sh`, `scripts/verify-operator-workflow.sh`, and `scripts/verify-agent-binary-workflow.sh`.
 - Local user/session authentication, initial admin bootstrap, secure session cookies, `Authorization: Bearer` support for the web client, and an OIDC authenticator interface placeholder.
 - Fleet management additions: scheduled scans, asset groups, asset-group force scans, agent report retry configuration, and frontend views for schedules and asset groups.
 - Actionable intelligence additions: vulnerability trends, top-risk hosts, remediation recommendations, notification rules/logs, executive/risk/SLA reports, report export, and corresponding frontend views.
@@ -180,6 +183,7 @@ go test ./...
 ./scripts/verify-requirements-audit.sh
 ./scripts/verify-openapi.sh
 ./scripts/verify-operator-workflow.sh
+./scripts/verify-agent-binary-workflow.sh
 ./scripts/verify-package-contents.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
@@ -198,6 +202,7 @@ cat /tmp/cve-stats.headers
 curl -sS -H 'X-API-Key: test-admin' 'http://127.0.0.1:5677/api/cve-db/search?q=openssl&limit=20' >/tmp/cve-search.json
 curl -sS http://127.0.0.1:5678/ >/tmp/bongsu-web.html
 BONGSU_API_KEY=test-admin-key BONGSU_ADMIN_USERNAME=admin BONGSU_ADMIN_PASSWORD=password ./scripts/verify-operator-workflow.sh
+BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-agent-binary-workflow.sh
 ```
 
 TEMP/CVD direct DB check:
@@ -225,7 +230,7 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
 6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.
-8. Extend verification from API-level agent claim/report/complete to a real installed agent binary collecting host and container inventory in a multi-host/container fixture.
+8. Extend verification from fixture-backed agent binary collection to a real multi-host/container deployment rehearsal using actual Trivy/osquery/docker data.
 
 ## Matching Rules Reminder
 
