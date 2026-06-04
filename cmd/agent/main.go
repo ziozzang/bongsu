@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -30,6 +31,9 @@ var (
 )
 
 func main() {
+	defaultScanRoot := envString("BONGSU_AGENT_SCAN_ROOT", "/")
+	defaultTrivyTimeout := envDurationSeconds("BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS", 30*time.Minute)
+	defaultContainerTimeout := envDurationSeconds("BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS", 10*time.Minute)
 	serverURL := flag.String("server", "", "Bongsu API URL (e.g. http://bongsu:5677)")
 	apiKey := flag.String("api-key", "", "API key for authentication")
 	workDir := flag.String("work-dir", "/opt/bongsu", "Working directory")
@@ -38,9 +42,16 @@ func main() {
 	daemon := flag.Bool("daemon", false, "Poll server for force scan requests")
 	pollInterval := flag.Duration("poll-interval", 60*time.Second, "Force scan polling interval")
 	hostID := flag.String("host-id", "", "Override host identity for cloned/containerized environments")
+	scanRoot := flag.String("scan-root", defaultScanRoot, "Host filesystem root/path for Trivy fs scans")
+	trivyTimeout := flag.Duration("trivy-timeout", defaultTrivyTimeout, "Timeout for host Trivy filesystem scans")
+	containerTimeout := flag.Duration("container-timeout", defaultContainerTimeout, "Timeout for each container image Trivy scan")
+	skipContainers := flag.Bool("skip-containers", envBool("BONGSU_AGENT_SKIP_CONTAINERS", false), "Skip container detection and image scans")
+	maxContainers := flag.Int("max-containers", envInt("BONGSU_AGENT_MAX_CONTAINERS", 0), "Maximum running containers to scan per run; 0 means unlimited")
 	configFile := flag.String("config", "", "Config file path (YAML)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+	visitedFlags := map[string]bool{}
+	flag.Visit(func(f *flag.Flag) { visitedFlags[f.Name] = true })
 	agentToken := ""
 
 	if *showVersion {
@@ -65,6 +76,21 @@ func main() {
 		}
 		if *hostID == "" {
 			*hostID = cfg.HostID
+		}
+		if !visitedFlags["scan-root"] && cfg.ScanRoot != "" {
+			*scanRoot = cfg.ScanRoot
+		}
+		if !visitedFlags["trivy-timeout"] && cfg.TrivyTimeoutSeconds > 0 {
+			*trivyTimeout = time.Duration(cfg.TrivyTimeoutSeconds) * time.Second
+		}
+		if !visitedFlags["container-timeout"] && cfg.ContainerTimeoutSeconds > 0 {
+			*containerTimeout = time.Duration(cfg.ContainerTimeoutSeconds) * time.Second
+		}
+		if !visitedFlags["skip-containers"] && cfg.SkipContainers != nil {
+			*skipContainers = *cfg.SkipContainers
+		}
+		if !visitedFlags["max-containers"] && cfg.MaxContainers > 0 {
+			*maxContainers = cfg.MaxContainers
 		}
 	}
 
@@ -97,24 +123,46 @@ func main() {
 		}
 	}
 
+	scanOpts := agentScanOptions{
+		PackagesOnly:     *packagesOnly,
+		ScanRoot:         *scanRoot,
+		TrivyTimeout:     *trivyTimeout,
+		ContainerTimeout: *containerTimeout,
+		SkipContainers:   *skipContainers,
+		MaxContainers:    *maxContainers,
+	}
 	if *daemon {
-		if err := runDaemon(*serverURL, *apiKey, agentToken, *workDir, *hostID, *pollInterval); err != nil {
+		if err := runDaemon(*serverURL, *apiKey, agentToken, *workDir, *hostID, *pollInterval, scanOpts); err != nil {
 			log.Fatalf("daemon failed: %v", err)
 		}
 		return
 	}
 
-	if _, err := run(*serverURL, *apiKey, agentToken, *workDir, *hostID, *scanType, *packagesOnly, "", ""); err != nil {
+	if _, err := run(*serverURL, *apiKey, agentToken, *workDir, *hostID, *scanType, scanOpts, "", ""); err != nil {
 		log.Fatalf("scan failed: %v", err)
 	}
 }
 
+type agentScanOptions struct {
+	PackagesOnly     bool
+	ScanRoot         string
+	TrivyTimeout     time.Duration
+	ContainerTimeout time.Duration
+	SkipContainers   bool
+	MaxContainers    int
+}
+
 type config struct {
-	ServerURL  string `yaml:"server_url"`
-	APIKey     string `yaml:"api_key"`
-	AgentToken string `yaml:"agent_token"`
-	WorkDir    string `yaml:"work_dir"`
-	HostID     string `yaml:"host_id"`
+	ServerURL               string `yaml:"server_url"`
+	APIKey                  string `yaml:"api_key"`
+	AgentToken              string `yaml:"agent_token"`
+	WorkDir                 string `yaml:"work_dir"`
+	HostID                  string `yaml:"host_id"`
+	ScanRoot                string `yaml:"scan_root"`
+	TrivyTimeoutSeconds     int    `yaml:"trivy_timeout_seconds"`
+	ContainerTimeoutSeconds int    `yaml:"container_timeout_seconds"`
+	SkipContainers          *bool  `yaml:"skip_containers"`
+	MaxContainers           int    `yaml:"max_containers"`
 }
 
 func loadConfig(path string) (*config, error) {
@@ -140,6 +188,18 @@ func loadConfig(path string) (*config, error) {
 			cfg.WorkDir = trimQuotes(v)
 		case "host_id":
 			cfg.HostID = trimQuotes(v)
+		case "scan_root":
+			cfg.ScanRoot = trimQuotes(v)
+		case "trivy_timeout_seconds":
+			cfg.TrivyTimeoutSeconds = parsePositiveInt(v)
+		case "container_timeout_seconds":
+			cfg.ContainerTimeoutSeconds = parsePositiveInt(v)
+		case "skip_containers":
+			if b, ok := parseBool(v); ok {
+				cfg.SkipContainers = &b
+			}
+		case "max_containers":
+			cfg.MaxContainers = parsePositiveInt(v)
 		}
 	}
 	return cfg, nil
@@ -195,7 +255,7 @@ func applyHostIDOverride(host *models.Host, override string) {
 	}
 }
 
-func runDaemon(serverURL, apiKey, agentToken, workDir, hostIDOverride string, pollInterval time.Duration) error {
+func runDaemon(serverURL, apiKey, agentToken, workDir, hostIDOverride string, pollInterval time.Duration, scanOpts agentScanOptions) error {
 	log.Println("=== Bongsu Agent Daemon Starting ===")
 	host, err := system.CollectHostInfo()
 	if err != nil {
@@ -215,7 +275,9 @@ func runDaemon(serverURL, apiKey, agentToken, workDir, hostIDOverride string, po
 			continue
 		}
 		log.Printf("claimed scan request %s type=%s packages_only=%v", req.ID, req.ScanType, req.PackagesOnly)
-		result, err := run(serverURL, apiKey, agentToken, workDir, hostIDOverride, req.ScanType, req.PackagesOnly, req.ID, req.SecurityDBRevision)
+		reqOpts := scanOpts
+		reqOpts.PackagesOnly = req.PackagesOnly
+		result, err := run(serverURL, apiKey, agentToken, workDir, hostIDOverride, req.ScanType, reqOpts, req.ID, req.SecurityDBRevision)
 		if err != nil {
 			log.Printf("scan request %s failed: %v", req.ID, err)
 			_ = rep.CompleteScanRequest(req.ID, host.ID, "failed", err.Error())
@@ -228,7 +290,7 @@ func runDaemon(serverURL, apiKey, agentToken, workDir, hostIDOverride string, po
 	}
 }
 
-func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string, packagesOnly bool, scanRequestID, securityDBRevision string) (*reporter.ReportResult, error) {
+func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string, scanOpts agentScanOptions, scanRequestID, securityDBRevision string) (*reporter.ReportResult, error) {
 	log.Println("=== Bongsu Agent Starting ===")
 	log.Printf("Server: %s", serverURL)
 	log.Printf("Work dir: %s", workDir)
@@ -269,8 +331,11 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 
 	// 4. Trivy - host scan
 	coll := collector.New(workDir)
-	coll.PackagesOnly = packagesOnly
-	if packagesOnly {
+	coll.PackagesOnly = scanOpts.PackagesOnly
+	coll.HostScanRoot = scanOpts.ScanRoot
+	coll.HostTimeout = scanOpts.TrivyTimeout
+	coll.ImageTimeout = scanOpts.ContainerTimeout
+	if scanOpts.PackagesOnly {
 		log.Println("Packages-only mode: server will handle CVE matching")
 	}
 	var allPkgs []models.Package
@@ -292,35 +357,47 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 	}
 
 	// 5. Trivy - container scans
-	log.Println("Detecting running containers...")
-	containers, err := system.GetRunningContainers()
-	if err != nil {
-		log.Printf("Warning: container detection failed: %v", err)
-		collectionErrors = appendCollectionError(collectionErrors, "containers", err)
-	}
-	for _, c := range containers {
-		log.Printf("Running Trivy scan for container: %s (%s)", c.Name, c.ImageName)
-		pkgs, vulns, err := coll.CollectContainerPackages(c.Name)
+	var containers []models.ContainerAsset
+	if scanOpts.SkipContainers {
+		log.Println("Container detection and scans skipped by configuration")
+		collectionErrors = appendCollectionError(collectionErrors, "containers", fmt.Errorf("skipped by agent configuration"))
+	} else {
+		log.Println("Detecting running containers...")
+		containers, err = system.GetRunningContainers()
 		if err != nil {
-			log.Printf("Warning: container %s scan failed: %v", c.Name, err)
-			collectionErrors = appendCollectionError(collectionErrors, "container "+c.Name, err)
-			continue
+			log.Printf("Warning: container detection failed: %v", err)
+			collectionErrors = appendCollectionError(collectionErrors, "containers", err)
 		}
-		assetID := c.ContainerID
-		for i := range pkgs {
-			pkgs[i].AssetType = "container"
-			pkgs[i].AssetID = assetID
-			pkgs[i].Container = c.Name
-			pkgs[i].ContainerID = c.ContainerID
-			pkgs[i].ImageName = c.ImageName
-			pkgs[i].ImageID = c.ImageID
+		if scanOpts.MaxContainers > 0 && len(containers) > scanOpts.MaxContainers {
+			msg := fmt.Errorf("container scan limit reached: scanning %d of %d containers", scanOpts.MaxContainers, len(containers))
+			log.Printf("Warning: %v", msg)
+			collectionErrors = appendCollectionError(collectionErrors, "containers", msg)
+			containers = containers[:scanOpts.MaxContainers]
 		}
-		for i := range vulns {
-			vulns[i].Container = c.Name
+		for _, c := range containers {
+			log.Printf("Running Trivy scan for container: %s (%s)", c.Name, c.ImageName)
+			pkgs, vulns, err := coll.CollectContainerPackages(c.Name)
+			if err != nil {
+				log.Printf("Warning: container %s scan failed: %v", c.Name, err)
+				collectionErrors = appendCollectionError(collectionErrors, "container "+c.Name, err)
+				continue
+			}
+			assetID := c.ContainerID
+			for i := range pkgs {
+				pkgs[i].AssetType = "container"
+				pkgs[i].AssetID = assetID
+				pkgs[i].Container = c.Name
+				pkgs[i].ContainerID = c.ContainerID
+				pkgs[i].ImageName = c.ImageName
+				pkgs[i].ImageID = c.ImageID
+			}
+			for i := range vulns {
+				vulns[i].Container = c.Name
+			}
+			allPkgs = append(allPkgs, pkgs...)
+			allVulns = append(allVulns, vulns...)
+			log.Printf("Container %s: %d packages, %d vulnerabilities", c.Name, len(pkgs), len(vulns))
 		}
-		allPkgs = append(allPkgs, pkgs...)
-		allVulns = append(allVulns, vulns...)
-		log.Printf("Container %s: %d packages, %d vulnerabilities", c.Name, len(pkgs), len(vulns))
 	}
 
 	// 6. OSQuery packages
@@ -364,7 +441,7 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 		Ports:              ports,
 		Timestamp:          now,
 	}
-	if !packagesOnly {
+	if !scanOpts.PackagesOnly {
 		report.Vulns = allVulns
 	}
 
@@ -478,4 +555,56 @@ func trimQuotes(s string) string {
 
 func hasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+func parsePositiveInt(s string) int {
+	n, err := strconv.Atoi(trimQuotes(trimSpace(s)))
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+func parseBool(s string) (bool, bool) {
+	b, err := strconv.ParseBool(trimQuotes(trimSpace(s)))
+	return b, err == nil
+}
+
+func envString(key, def string) string {
+	if v := os.Getenv(key); strings.TrimSpace(v) != "" {
+		return v
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return def
+	}
+	return n
+}
+
+func envBool(key string, def bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(raw)
+	if err != nil {
+		return def
+	}
+	return b
+}
+
+func envDurationSeconds(key string, def time.Duration) time.Duration {
+	seconds := envInt(key, 0)
+	if seconds <= 0 {
+		return def
+	}
+	return time.Duration(seconds) * time.Second
 }

@@ -302,6 +302,11 @@ spec:
 | - | `--work-dir` | Working directory (default: `/opt/bongsu`) |
 | - | `--packages-only` | Server-side CVE matching |
 | - | `--type` | Scan type: `daily` or `manual` |
+| `BONGSU_AGENT_SCAN_ROOT` | `--scan-root` | Host path used for Trivy `fs` scans; default `/` |
+| `BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS` | `--trivy-timeout` | Host Trivy scan timeout; default 1800 seconds |
+| `BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS` | `--container-timeout` | Per-container image scan timeout; default 600 seconds |
+| `BONGSU_AGENT_SKIP_CONTAINERS` | `--skip-containers` | Skip container detection and image scans for constrained hosts |
+| `BONGSU_AGENT_MAX_CONTAINERS` | `--max-containers` | Limit running containers scanned per agent run; `0` means unlimited |
 
 One-line installer and binary download authentication is header-only. Use `X-Install-Token`; token-bearing query strings are rejected so install credentials do not land in URL logs.
 
@@ -396,3 +401,5 @@ curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json"
 **Agent connection failures**: Verify network connectivity and that `BONGSU_SERVER_URL` points to the correct address.
 
 **Empty scan results**: Ensure `--packages-only` flag is used. The agent needs Trivy installed at `<work-dir>/bin/trivy` for scanning.
+
+**Large host scans take too long**: Set `BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS`, `BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS`, `BONGSU_AGENT_MAX_CONTAINERS`, or `BONGSU_AGENT_SKIP_CONTAINERS=true` during install. These values are written into `config.yaml` so cron and systemd daemon scans use the same limits.

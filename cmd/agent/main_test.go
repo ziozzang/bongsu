@@ -155,6 +155,66 @@ func TestContainerScanAnnotatesPackagesWithRuntimeIdentity(t *testing.T) {
 	}
 }
 
+func TestAgentScanControlsAreConfigurable(t *testing.T) {
+	data, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		`flag.String("scan-root"`,
+		`flag.Duration("trivy-timeout"`,
+		`flag.Duration("container-timeout"`,
+		`flag.Bool("skip-containers"`,
+		`flag.Int("max-containers"`,
+		`BONGSU_AGENT_SCAN_ROOT`,
+		`BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS`,
+		`BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS`,
+		`BONGSU_AGENT_SKIP_CONTAINERS`,
+		`BONGSU_AGENT_MAX_CONTAINERS`,
+		`cfg.ScanRoot`,
+		`cfg.TrivyTimeoutSeconds`,
+		`cfg.ContainerTimeoutSeconds`,
+		`cfg.SkipContainers`,
+		`cfg.MaxContainers`,
+		`coll.HostScanRoot = scanOpts.ScanRoot`,
+		`coll.HostTimeout = scanOpts.TrivyTimeout`,
+		`coll.ImageTimeout = scanOpts.ContainerTimeout`,
+		`if scanOpts.SkipContainers`,
+		`len(containers) > scanOpts.MaxContainers`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("agent scan control wiring missing %q", want)
+		}
+	}
+}
+
+func TestCollectorUsesTrivyTimeoutsAndScanRoot(t *testing.T) {
+	data, err := os.ReadFile("../../internal/agent/collector/collector.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		`HostScanRoot string`,
+		`HostTimeout  time.Duration`,
+		`ImageTimeout time.Duration`,
+		`exec.CommandContext(ctx, c.trivy`,
+		`context.WithTimeout(ctx, c.HostTimeout)`,
+		`context.WithTimeout(ctx, c.ImageTimeout)`,
+		`trivy fs timed out after`,
+		`trivy image %s timed out after`,
+		`scanRoot`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("collector scan control missing %q", want)
+		}
+	}
+	if strings.Contains(body, `exec.Command(c.trivy, allArgs...)`) {
+		t.Fatal("collector Trivy execution must use CommandContext")
+	}
+}
+
 func TestScanRequestCompletionFromReportPreservesDegradedScans(t *testing.T) {
 	status, message := scanRequestCompletionFromReport(&reporter.ReportResult{
 		ScanStatus:       "degraded",
@@ -179,7 +239,7 @@ func TestScanRequestCompletionFromReportPreservesDegradedScans(t *testing.T) {
 
 func TestLoadConfigReadsAgentTokenAndHostID(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("server_url: http://server\napi_key: key\nagent_token: token-123\nwork_dir: /tmp/bongsu\nhost_id: host-override-1\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("server_url: http://server\napi_key: key\nagent_token: token-123\nwork_dir: /tmp/bongsu\nhost_id: host-override-1\nscan_root: /var/lib\ntrivy_timeout_seconds: 120\ncontainer_timeout_seconds: 30\nskip_containers: true\nmax_containers: 4\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := loadConfig(path)
@@ -191,6 +251,9 @@ func TestLoadConfigReadsAgentTokenAndHostID(t *testing.T) {
 	}
 	if cfg.HostID != "host-override-1" {
 		t.Fatalf("host id = %q", cfg.HostID)
+	}
+	if cfg.ScanRoot != "/var/lib" || cfg.TrivyTimeoutSeconds != 120 || cfg.ContainerTimeoutSeconds != 30 || cfg.SkipContainers == nil || !*cfg.SkipContainers || cfg.MaxContainers != 4 {
+		t.Fatalf("scan controls not parsed: %#v", cfg)
 	}
 }
 

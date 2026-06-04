@@ -162,6 +162,18 @@ curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/i
   sudo BONGSU_HOST_ID="$(hostname -f)" bash
 ```
 
+For large hosts or dense container nodes, bound agent scans so one scheduled run cannot monopolize the host. These values are persisted into the agent config and are used by both scheduled package-only scans and the force-scan daemon:
+
+```bash
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/install.sh" | \
+  sudo BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS=1800 \
+       BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS=600 \
+       BONGSU_AGENT_MAX_CONTAINERS=20 \
+       bash
+```
+
+Set `BONGSU_AGENT_SKIP_CONTAINERS=true` for constrained hosts where container inventory should be deferred; bongsu records that as a degraded inventory signal instead of silently pretending container coverage is complete.
+
 Live RBAC scope verification:
 
 ```bash

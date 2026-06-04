@@ -1,12 +1,14 @@
 package collector
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -22,6 +24,9 @@ type Collector struct {
 	osquery      string
 	dbRepository string
 	PackagesOnly bool
+	HostScanRoot string
+	HostTimeout  time.Duration
+	ImageTimeout time.Duration
 }
 
 func New(workDir string) *Collector {
@@ -37,6 +42,7 @@ func New(workDir string) *Collector {
 		trivy:        filepath.Join(binDir, "trivy"),
 		osquery:      filepath.Join(binDir, "osqueryi"),
 		dbRepository: dbRepo,
+		HostScanRoot: "/",
 	}
 }
 
@@ -62,7 +68,7 @@ func (c *Collector) ensureOSQuery() error {
 	return fmt.Errorf("osqueryi not found — install osquery or place binary at %s", c.osquery)
 }
 
-func (c *Collector) trivyCommand(args ...string) *exec.Cmd {
+func (c *Collector) trivyCommandContext(ctx context.Context, args ...string) *exec.Cmd {
 	allArgs := append([]string{}, args...)
 	if !c.PackagesOnly {
 		hasDBFlag := false
@@ -78,7 +84,7 @@ func (c *Collector) trivyCommand(args ...string) *exec.Cmd {
 	} else {
 		allArgs = append([]string{"--skip-db-update", "--skip-java-db-update"}, allArgs...)
 	}
-	cmd := exec.Command(c.trivy, allArgs...)
+	cmd := exec.CommandContext(ctx, c.trivy, allArgs...)
 	cmd.Env = append(os.Environ(), "TRIVY_CACHE_DIR="+filepath.Join(c.workDir, "trivy-cache"))
 	return cmd
 }
@@ -89,13 +95,26 @@ func (c *Collector) CollectHostPackages() ([]models.Package, []models.Vulnerabil
 	}
 
 	var cmd *exec.Cmd
+	scanRoot := strings.TrimSpace(c.HostScanRoot)
+	if scanRoot == "" {
+		scanRoot = "/"
+	}
+	ctx := context.Background()
+	cancel := func() {}
+	if c.HostTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, c.HostTimeout)
+	}
+	defer cancel()
 	if c.PackagesOnly {
-		cmd = c.trivyCommand("fs", "--format", "json", "--list-all-pkgs", "/")
+		cmd = c.trivyCommandContext(ctx, "fs", "--format", "json", "--list-all-pkgs", scanRoot)
 	} else {
-		cmd = c.trivyCommand("fs", "--format", "json", "--list-all-pkgs", "--scanners", "vuln", "/")
+		cmd = c.trivyCommandContext(ctx, "fs", "--format", "json", "--list-all-pkgs", "--scanners", "vuln", scanRoot)
 	}
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, fmt.Errorf("trivy fs timed out after %s scanning %s", c.HostTimeout, scanRoot)
+		}
 		return nil, nil, fmt.Errorf("trivy fs: %w", err)
 	}
 
@@ -113,13 +132,22 @@ func (c *Collector) CollectContainerPackages(containerName string) ([]models.Pac
 	}
 
 	var cmd *exec.Cmd
+	ctx := context.Background()
+	cancel := func() {}
+	if c.ImageTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, c.ImageTimeout)
+	}
+	defer cancel()
 	if c.PackagesOnly {
-		cmd = c.trivyCommand("image", "--format", "json", "--list-all-pkgs", imageRef)
+		cmd = c.trivyCommandContext(ctx, "image", "--format", "json", "--list-all-pkgs", imageRef)
 	} else {
-		cmd = c.trivyCommand("image", "--format", "json", "--list-all-pkgs", "--scanners", "vuln", imageRef)
+		cmd = c.trivyCommandContext(ctx, "image", "--format", "json", "--list-all-pkgs", "--scanners", "vuln", imageRef)
 	}
 	out, err := cmd.Output()
 	if err != nil {
+		if ctx.Err() != nil {
+			return nil, nil, fmt.Errorf("trivy image %s timed out after %s", imageRef, c.ImageTimeout)
+		}
 		return nil, nil, fmt.Errorf("trivy image %s: %w", imageRef, err)
 	}
 

@@ -55,6 +55,11 @@ SYSTEMD_DIR="${BONGSU_SYSTEMD_DIR:-/etc/systemd/system}"
 SYSTEMCTL_BIN="${BONGSU_SYSTEMCTL_BIN:-systemctl}"
 AGENT_TOKEN="${BONGSU_AGENT_TOKEN:-}"
 HOST_ID="${BONGSU_HOST_ID:-${BONGSU_AGENT_HOST_ID:-}}"
+AGENT_SCAN_ROOT="${BONGSU_AGENT_SCAN_ROOT:-}"
+AGENT_TRIVY_TIMEOUT_SECONDS="${BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS:-}"
+AGENT_CONTAINER_TIMEOUT_SECONDS="${BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS:-}"
+AGENT_SKIP_CONTAINERS="${BONGSU_AGENT_SKIP_CONTAINERS:-}"
+AGENT_MAX_CONTAINERS="${BONGSU_AGENT_MAX_CONTAINERS:-}"
 
 curl_download() {
     local url="$1"
@@ -186,6 +191,21 @@ work_dir: ${WORK_DIR}
 EOF
 if [ -n "$HOST_ID" ]; then
     printf 'host_id: %%s\n' "$HOST_ID" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_SCAN_ROOT" ]; then
+    printf 'scan_root: %%s\n' "$AGENT_SCAN_ROOT" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_TRIVY_TIMEOUT_SECONDS" ]; then
+    printf 'trivy_timeout_seconds: %%s\n' "$AGENT_TRIVY_TIMEOUT_SECONDS" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_CONTAINER_TIMEOUT_SECONDS" ]; then
+    printf 'container_timeout_seconds: %%s\n' "$AGENT_CONTAINER_TIMEOUT_SECONDS" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_SKIP_CONTAINERS" ]; then
+    printf 'skip_containers: %%s\n' "$AGENT_SKIP_CONTAINERS" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_MAX_CONTAINERS" ]; then
+    printf 'max_containers: %%s\n' "$AGENT_MAX_CONTAINERS" >> "$WORK_DIR/config.yaml"
 fi
 chmod 600 "$WORK_DIR/config.yaml"
 chmod 600 "$WORK_DIR/agent.token" 2>/dev/null || true

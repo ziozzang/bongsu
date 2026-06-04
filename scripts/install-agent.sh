@@ -15,6 +15,11 @@ FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
 INSTALL_TOKEN="${BONGSU_INSTALL_TOKEN:-}"
 AGENT_TOKEN="${BONGSU_AGENT_TOKEN:-}"
 HOST_ID="${BONGSU_HOST_ID:-${BONGSU_AGENT_HOST_ID:-}}"
+AGENT_SCAN_ROOT="${BONGSU_AGENT_SCAN_ROOT:-}"
+AGENT_TRIVY_TIMEOUT_SECONDS="${BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS:-}"
+AGENT_CONTAINER_TIMEOUT_SECONDS="${BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS:-}"
+AGENT_SKIP_CONTAINERS="${BONGSU_AGENT_SKIP_CONTAINERS:-}"
+AGENT_MAX_CONTAINERS="${BONGSU_AGENT_MAX_CONTAINERS:-}"
 SYSTEMD_DIR="${BONGSU_SYSTEMD_DIR:-/etc/systemd/system}"
 SYSTEMCTL_BIN="${BONGSU_SYSTEMCTL_BIN:-systemctl}"
 
@@ -116,6 +121,11 @@ if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "  BONGSU_AGENT_API_KEY  Agent API key when not passed as an argument"
     echo "  BONGSU_AGENT_TOKEN    Optional persistent per-host token"
     echo "  BONGSU_HOST_ID        Optional stable host id override for cloned/containerized hosts"
+    echo "  BONGSU_AGENT_SCAN_ROOT  Optional Trivy fs scan root/path"
+    echo "  BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS  Optional host Trivy scan timeout"
+    echo "  BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS  Optional per-container Trivy timeout"
+    echo "  BONGSU_AGENT_SKIP_CONTAINERS  true to skip container scans"
+    echo "  BONGSU_AGENT_MAX_CONTAINERS  Maximum running containers to scan"
     echo "  BONGSU_SYSTEMD_DIR    Systemd unit directory (default: /etc/systemd/system)"
     echo "  BONGSU_SYSTEMCTL_BIN  systemctl command path/name (default: systemctl)"
     exit 1
@@ -206,6 +216,21 @@ work_dir: ${WORK_DIR}
 EOF
 if [ -n "$HOST_ID" ]; then
     printf 'host_id: %s\n' "$HOST_ID" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_SCAN_ROOT" ]; then
+    printf 'scan_root: %s\n' "$AGENT_SCAN_ROOT" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_TRIVY_TIMEOUT_SECONDS" ]; then
+    printf 'trivy_timeout_seconds: %s\n' "$AGENT_TRIVY_TIMEOUT_SECONDS" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_CONTAINER_TIMEOUT_SECONDS" ]; then
+    printf 'container_timeout_seconds: %s\n' "$AGENT_CONTAINER_TIMEOUT_SECONDS" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_SKIP_CONTAINERS" ]; then
+    printf 'skip_containers: %s\n' "$AGENT_SKIP_CONTAINERS" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_MAX_CONTAINERS" ]; then
+    printf 'max_containers: %s\n' "$AGENT_MAX_CONTAINERS" >> "$WORK_DIR/config.yaml"
 fi
 chmod 600 "$WORK_DIR/config.yaml"
 chmod 600 "$WORK_DIR/agent.token" 2>/dev/null || true
