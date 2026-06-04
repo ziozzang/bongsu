@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 13:05:00 KST
+Updated: 2026-06-04 13:32:00 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Verify CVE reference grouping quality
+master / origin/main latest commit: Harden CVE matching invariants
 ```
 
 Important recent commits:
 
 ```text
-<latest> Verify CVE reference grouping quality
+<latest> Harden CVE matching invariants
+0229dd2 Verify CVE reference grouping quality
 a22626c Expand live web smoke coverage
 1183cfb Harden backup restore archives
 651f783 Verify CVE DB direct invariants
@@ -178,6 +179,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 - Matchable CVE evidence is materialized into `cve_affected_packages`.
 - Vulnerability evidence/listing now uses matchable affected package rows instead of raw JSON name matches.
 - CVE DB rematch filters require compatible package name, ecosystem, fixed version/range, and affected range semantics.
+- CVE rematch false-positive controls now have `./scripts/verify-cve-matching-invariants.sh`, covering same-name OS/library collisions, fixed/range evidence, inclusive `last_affected`, exclusive `limit`, pre-release ordering, and numeric Debian/RPM-style epoch comparison.
 - EPSS data is merged into matching non-EPSS CVE/advisory rows.
 - TEMP placeholder identifiers are blocked/removed from CVE DB matching paths.
 - CVSS v2/v3.x/v4 recalculation support exists and startup recalculation is timeout-bounded.
@@ -203,6 +205,7 @@ go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
 ./scripts/verify-requirements-audit.sh
+./scripts/verify-cve-matching-invariants.sh
 ./scripts/verify-openapi.sh
 ./scripts/verify-backup-restore-archive.sh
 ./scripts/verify-operator-workflow.sh

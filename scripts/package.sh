@@ -90,6 +90,7 @@ for script in \
     export-security-db-bundle.sh \
     import-security-db-bundle.sh \
     verify-release-readiness.sh \
+    verify-cve-matching-invariants.sh \
     verify-backup-restore-archive.sh \
     verify-agent-binary-workflow.sh \
     verify-airgap-release-archive.sh \

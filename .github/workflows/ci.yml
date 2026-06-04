@@ -36,6 +36,9 @@ jobs:
       - name: Verify requirements audit coverage
         run: ./scripts/verify-requirements-audit.sh
 
+      - name: Verify CVE matching invariants
+        run: ./scripts/verify-cve-matching-invariants.sh
+
       - name: Verify OpenAPI coverage
         run: ./scripts/verify-openapi.sh
 

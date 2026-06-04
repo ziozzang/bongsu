@@ -289,6 +289,22 @@ func versionLess(a, b string) (bool, bool) {
 }
 
 func compareVersions(a, b string) (int, bool) {
+	if ae, aok := numericVersionEpoch(a); aok {
+		be := 0
+		if parsed, bok := numericVersionEpoch(b); bok {
+			be = parsed
+		}
+		if ae < be {
+			return -1, true
+		}
+		if ae > be {
+			return 1, true
+		}
+	} else if be, bok := numericVersionEpoch(b); bok {
+		if be > 0 {
+			return -1, true
+		}
+	}
 	as := versionSegments(a)
 	bs := versionSegments(b)
 	if len(as) == 0 || len(bs) == 0 {
@@ -327,6 +343,19 @@ func compareVersions(a, b string) (int, bool) {
 		}
 	}
 	return 0, true
+}
+
+func numericVersionEpoch(v string) (int, bool) {
+	v = strings.TrimSpace(v)
+	idx := strings.Index(v, ":")
+	if idx <= 0 {
+		return 0, false
+	}
+	epoch, err := strconv.Atoi(v[:idx])
+	if err != nil {
+		return 0, false
+	}
+	return epoch, true
 }
 
 func isPreReleaseVersion(v string) bool {
@@ -453,7 +482,6 @@ func preReleaseNumber(v, marker string) (int, bool) {
 	}
 	return n, true
 }
-
 
 func fixedVersionSQLCondition(alias string) string {
 	prefix := ""

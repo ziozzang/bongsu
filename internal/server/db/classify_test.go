@@ -217,6 +217,31 @@ func TestCompatibleSecurityCandidateRejectsWeakOrWrongCandidates(t *testing.T) {
 	}
 }
 
+func TestCompatibleSecurityCandidateRejectsSameNameAcrossOSAndCodePackages(t *testing.T) {
+	affected := `[
+		{"name":"requests","ecosystem":"Debian","fixed":["2.25.2"]},
+		{"name":"requests","ecosystem":"PyPI","fixed":["2.32.4"]},
+		{"name":"openssl","ecosystem":"npm","fixed":["1.0.0"]}
+	]`
+
+	if got, ok := compatibleSecurityCandidate("requests", "python-pkg", "PyPI", "2.31.0", "general-cve", "", affected); !ok {
+		t.Fatal("PyPI requests should match the PyPI advisory row")
+	} else if got.Ecosystem != "PyPI" {
+		t.Fatalf("matched ecosystem = %q, want PyPI", got.Ecosystem)
+	}
+	if got, ok := compatibleSecurityCandidate("requests", "deb", "Debian", "2.25.1", "general-cve", "", affected); !ok {
+		t.Fatal("Debian requests should match the Debian advisory row")
+	} else if got.Ecosystem != "Debian" {
+		t.Fatalf("matched ecosystem = %q, want Debian", got.Ecosystem)
+	}
+	if _, ok := compatibleSecurityCandidate("requests", "python-pkg", "PyPI", "2.31.0", "os-package", "Debian", `[{"name":"requests","ecosystem":"Debian","fixed":["2.25.1+dfsg-2"]}]`); ok {
+		t.Fatal("Debian OS advisory must not match PyPI package with the same name")
+	}
+	if _, ok := compatibleSecurityCandidate("openssl", "deb", "Debian", "3.0.11-1", "code-library", "npm", affected); ok {
+		t.Fatal("npm library advisory must not match Debian OS package with the same name")
+	}
+}
+
 func TestCompatibleSecurityCandidateChecksAffectedRanges(t *testing.T) {
 	affected := `[{"name":"foo","ecosystem":"npm","fixed":["2.0.0"],"ranges":[{"type":"SEMVER","events":[{"introduced":"1.0.0"},{"fixed":"2.0.0"}]}]}]`
 	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "1.5.0", "code-library", "", affected); !ok {
@@ -230,6 +255,30 @@ func TestCompatibleSecurityCandidateChecksAffectedRanges(t *testing.T) {
 	}
 }
 
+func TestVersionInRangeHonorsInclusiveAndExclusiveRangeEvents(t *testing.T) {
+	lastAffected := []affectedRangeEvent{
+		{Introduced: "1.0.0"},
+		{LastAffected: "1.5.0"},
+	}
+	if !versionInRange("1.5.0", lastAffected) {
+		t.Fatal("last_affected boundary should be inclusive")
+	}
+	if versionInRange("1.5.1", lastAffected) {
+		t.Fatal("version above last_affected boundary should not match")
+	}
+
+	limit := []affectedRangeEvent{
+		{Introduced: "1.0.0"},
+		{Limit: "2.0.0"},
+	}
+	if !versionInRange("1.9.9", limit) {
+		t.Fatal("version below limit should match")
+	}
+	if versionInRange("2.0.0", limit) {
+		t.Fatal("limit boundary should be exclusive")
+	}
+}
+
 func TestCompatibleSecurityCandidateUsesRangeFixedVersion(t *testing.T) {
 	affected := `[{"name":"foo","ecosystem":"npm","ranges":[{"type":"SEMVER","events":[{"introduced":"1.0.0"},{"fixed":"2.0.0"}]}]}]`
 	got, ok := compatibleSecurityCandidate("foo", "npm", "npm", "1.5.0", "code-library", "", affected)
@@ -239,6 +288,35 @@ func TestCompatibleSecurityCandidateUsesRangeFixedVersion(t *testing.T) {
 	fixed := fixedVersions(got)
 	if len(fixed) != 1 || fixed[0] != "2.0.0" {
 		t.Fatalf("fixed versions = %#v, want 2.0.0", fixed)
+	}
+}
+
+func TestCompareVersionsHonorsNumericEpochs(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"2:1.0", "1:9.9", 1},
+		{"1:1.0", "2:0.1", -1},
+		{"1:2.0.0-1", "1:2.0.0-2", -1},
+		{"1:2.0.0-2", "1:2.0.0-2", 0},
+		{"1.0", "1:0.1", -1},
+	}
+	for _, tt := range tests {
+		got, ok := compareVersions(tt.a, tt.b)
+		if !ok {
+			t.Fatalf("compareVersions(%q, %q) not comparable", tt.a, tt.b)
+		}
+		if got != tt.want {
+			t.Fatalf("compareVersions(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
+		}
+	}
+
+	if _, ok := compatibleSecurityCandidate("openssl", "deb", "Debian", "2:1.0", "os-package", "Debian", `[{"name":"openssl","ecosystem":"Debian","fixed":["1:9.9"]}]`); ok {
+		t.Fatal("higher installed epoch must not be treated as affected by a lower fixed epoch")
+	}
+	if _, ok := compatibleSecurityCandidate("openssl", "deb", "Debian", "1:2.0.0-1", "os-package", "Debian", `[{"name":"openssl","ecosystem":"Debian","fixed":["1:2.0.0-2"]}]`); !ok {
+		t.Fatal("same epoch with lower package revision should remain affected")
 	}
 }
 
