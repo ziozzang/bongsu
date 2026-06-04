@@ -365,7 +365,8 @@ func securityDBOperationalGuidance(manager any, freshness, quality map[string]an
 			}
 		}
 		if status, _ := m["status"].(string); status == "never" {
-			if _, ok := m["last_sync_persisted"]; ok {
+			freshnessStatus, _ := freshness["status"].(string)
+			if _, ok := m["last_sync_persisted"]; ok && freshnessStatus != "ok" {
 				add("sync manager has not completed since this process started", "use persisted freshness for current DB state or trigger /api/admin/security-db/update to refresh now")
 			}
 		}

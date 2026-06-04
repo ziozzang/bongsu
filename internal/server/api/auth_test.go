@@ -1970,6 +1970,20 @@ func TestSecurityDBOperationalGuidanceSurfacesActionableProblems(t *testing.T) {
 	if len(warnings) != 0 || len(actions) != 0 {
 		t.Fatalf("healthy guidance warnings=%#v actions=%#v", warnings, actions)
 	}
+
+	warnings, actions = securityDBOperationalGuidance(
+		map[string]any{
+			"configured":          true,
+			"status":              "never",
+			"last_sync_persisted": "2026-06-04T08:43:52Z",
+		},
+		map[string]any{"status": "ok", "missing_sources": []string{}, "stale_sources": []map[string]any{}},
+		map[string]any{"status": "ok"},
+		false,
+	)
+	if containsString(warnings, "sync manager has not completed since this process started") || len(actions) != 0 {
+		t.Fatalf("healthy persisted freshness should not warn about restarted sync manager, warnings=%#v actions=%#v", warnings, actions)
+	}
 }
 
 func TestWebhookAuditIncludesSecurityDBRevision(t *testing.T) {
