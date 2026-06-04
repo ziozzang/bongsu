@@ -138,8 +138,12 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "current_password and new_password are required"})
 		return
 	}
-	if len(req.NewPassword) < 12 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "new password must be at least 12 characters"})
+	changeMinLen := 12
+	if envBool("BONGSU_ALLOW_WEAK_SECRETS", false) {
+		changeMinLen = 1
+	}
+	if len(req.NewPassword) < changeMinLen {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("new password must be at least %d characters", changeMinLen)})
 		return
 	}
 
@@ -271,8 +275,12 @@ func (s *Server) bootstrapAdmin() {
 	if adminUser == "" || adminPass == "" {
 		return
 	}
-	if len(adminPass) < 16 {
-		log.Printf("WARNING: BONGSU_ADMIN_PASSWORD too short, skipping admin bootstrap")
+	minLen := 16
+	if envBool("BONGSU_ALLOW_WEAK_SECRETS", false) {
+		minLen = 1
+	}
+	if len(adminPass) < minLen {
+		log.Printf("WARNING: BONGSU_ADMIN_PASSWORD too short (%d < %d), skipping admin bootstrap", len(adminPass), minLen)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
