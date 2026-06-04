@@ -3588,6 +3588,9 @@ func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t
 		`/api/admin/security-db/status`,
 		`.security_db_freshness.status == "ok"`,
 		"security DB required sources must not be stale",
+		`BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS="${BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS:-false}"`,
+		`https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip`,
+		"local OSV source is older than upstream sentinel",
 		`/api/cve-db/search?q=phenx%2Fphp-svg-lib&limit=10&matchable=true`,
 		`WHERE fixed_version ~* '^[0-9a-f]{40}$'`,
 		"affected package index rows must not keep hash-like fixed versions",
@@ -3612,7 +3615,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`BONGSU_RELEASE_READINESS_LIVE=true`,
 		`./scripts/verify-live-server-build.sh`,
 		`./scripts/verify-live-installer-payload.sh`,
-		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true ./scripts/verify-live-cvedb-quality.sh`,
+		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true ./scripts/verify-live-cvedb-quality.sh`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("release readiness live gate must require fresh CVE sources, missing %q", want)

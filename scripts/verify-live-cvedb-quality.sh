@@ -25,6 +25,9 @@ BONGSU_DB_DSN="${BONGSU_DB_DSN:-}"
 BONGSU_DB_PSQL_CONTAINER="${BONGSU_DB_PSQL_CONTAINER:-bongsu-postgres}"
 BONGSU_VERIFY_CVEDB_REQUIRE_DB="${BONGSU_VERIFY_CVEDB_REQUIRE_DB:-false}"
 BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES="${BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES:-false}"
+BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS="${BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS:-false}"
+BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS="${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS:-Packagist,Debian,Ubuntu,npm,PyPI}"
+BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS="${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS:-28800}"
 PSQL_MODE=""
 TMP_DIR="$(mktemp -d)"
 
@@ -171,6 +174,90 @@ assert_db_at_least() {
     fi
 }
 
+http_last_modified_epoch() {
+    local url="$1"
+    local header_file="$2"
+    curl -fsSI --max-time "$CURL_MAX_TIME" "$url" -o "$header_file"
+    python3 - "$header_file" <<'PY'
+import email.utils
+import sys
+
+header_file = sys.argv[1]
+last_modified = ""
+with open(header_file, "r", encoding="utf-8", errors="replace") as fh:
+    for line in fh:
+        if line.lower().startswith("last-modified:"):
+            last_modified = line.split(":", 1)[1].strip()
+            break
+if not last_modified:
+    raise SystemExit("missing Last-Modified header")
+dt = email.utils.parsedate_to_datetime(last_modified)
+print(int(dt.timestamp()))
+PY
+}
+
+iso_to_epoch() {
+    python3 - "$1" <<'PY'
+from datetime import datetime, timezone
+import sys
+
+raw = (sys.argv[1] or "").strip()
+if not raw or raw == "null":
+    raise SystemExit("missing timestamp")
+if raw.endswith("Z"):
+    raw = raw[:-1] + "+00:00"
+print(int(datetime.fromisoformat(raw).timestamp()))
+PY
+}
+
+urlencode() {
+    python3 - "$1" <<'PY'
+import sys
+import urllib.parse
+
+print(urllib.parse.quote(sys.argv[1]))
+PY
+}
+
+assert_osv_upstream_freshness() {
+    local stats_json="$1"
+    local local_last_update
+    local local_epoch
+    local max_upstream_epoch=0
+    local max_upstream_ecosystem=""
+
+    require_tool python3
+    local_last_update="$(jq -r '.sources[]? | select(.source == "osv") | .last_update // empty' "$stats_json")"
+    if [ -z "$local_last_update" ]; then
+        echo "ERROR: OSV source is missing from CVE DB stats" >&2
+        jq . "$stats_json" >&2
+        exit 1
+    fi
+    local_epoch="$(iso_to_epoch "$local_last_update")"
+
+    IFS=',' read -ra OSV_UPSTREAM_ECOSYSTEM_ARRAY <<< "$BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS"
+    for eco in "${OSV_UPSTREAM_ECOSYSTEM_ARRAY[@]}"; do
+        eco="$(echo "$eco" | xargs)"
+        [ -n "$eco" ] || continue
+        encoded_eco="$(urlencode "$eco")"
+        header_file="$TMP_DIR/osv-upstream-${encoded_eco}.headers"
+        upstream_epoch="$(http_last_modified_epoch "https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip" "$header_file")"
+        if awk -v u="$upstream_epoch" -v m="$max_upstream_epoch" 'BEGIN { exit !(u > m) }'; then
+            max_upstream_epoch="$upstream_epoch"
+            max_upstream_ecosystem="$eco"
+        fi
+    done
+
+    if ! awk -v local="$local_epoch" -v upstream="$max_upstream_epoch" -v grace="$BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS" 'BEGIN { exit !((local + grace) >= upstream) }'; then
+        echo "ERROR: local OSV source is older than upstream sentinel ${max_upstream_ecosystem} beyond grace" >&2
+        echo "local_osv_last_update=${local_last_update} local_epoch=${local_epoch}" >&2
+        echo "upstream_ecosystem=${max_upstream_ecosystem} upstream_epoch=${max_upstream_epoch} grace_seconds=${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS}" >&2
+        exit 1
+    fi
+
+    echo "OSV upstream freshness ok: local=${local_last_update}, newest_upstream_ecosystem=${max_upstream_ecosystem}"
+}
+
 require_tool curl
 require_tool jq
 require_tool awk
@@ -200,6 +287,10 @@ if [ "$BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES" = "true" ]; then
     assert_jq "$freshness_json" '.security_db_freshness.status == "ok"' "security DB required sources must be fresh"
     assert_jq "$freshness_json" '((.security_db_freshness.missing_sources // []) | length) == 0' "security DB required sources must not be missing"
     assert_jq "$freshness_json" '((.security_db_freshness.stale_sources // []) | length) == 0' "security DB required sources must not be stale"
+fi
+if [ "$BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS" = "true" ]; then
+    echo "Checking OSV upstream freshness sentinels"
+    assert_osv_upstream_freshness "$stats_json"
 fi
 
 echo "[2/7] Checking affected-package and reference-key indexes"
