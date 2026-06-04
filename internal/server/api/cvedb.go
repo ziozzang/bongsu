@@ -2165,6 +2165,9 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	if entries == nil {
+		entries = []models.CveEntry{}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": entries,
@@ -2242,6 +2245,9 @@ func (s *Server) handleCveDbAffectedPackages(w http.ResponseWriter, r *http.Requ
 		log.Printf("cve-db affected packages: %v", err)
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
+	}
+	if items == nil {
+		items = []db.CveAffectedPackage{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":  items,

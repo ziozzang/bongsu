@@ -4530,6 +4530,7 @@ func TestCveDbSearchNormalizesSourceFilter(t *testing.T) {
 		"s.db.SearchCveDatabase(ctx, query, referenceKey, severity, source",
 		"minCVSS, minEPSS, minEPSSPercentile, matchableOnly, includePrioritySources",
 		`writeError(w, http.StatusGatewayTimeout, "search timeout")`,
+		"entries = []models.CveEntry{}",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE search source normalization missing %q: %s", want, fn)
@@ -4572,6 +4573,7 @@ func TestCveDbAffectedPackageEvidenceEndpoint(t *testing.T) {
 		"context.WithTimeout(r.Context()",
 		"s.db.ListCveAffectedPackages",
 		`writeError(w, http.StatusGatewayTimeout, "affected packages timeout")`,
+		"items = []db.CveAffectedPackage{}",
 		`"items": items`,
 		`"offset": offset`,
 	} {
