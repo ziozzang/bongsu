@@ -266,7 +266,27 @@ done
 if ! grep -Eq '^bongsu_security_db_revision_info[{]revision="|^bongsu_security_db_revision_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
     echo "ERROR: admin metrics must expose security DB revision info or revision metrics error" >&2
     sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
-	exit 1
+    exit 1
+fi
+if ! grep -Eq '^bongsu_security_db_effective_status[{]status="ok"} |^bongsu_security_db_freshness_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose effective security DB status or freshness metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_security_db_effective_source_info[{]source="|^bongsu_security_db_freshness_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose effective security DB source info or freshness metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_security_db_effective_last_sync_timestamp_seconds |^bongsu_security_db_freshness_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose effective security DB last sync timestamp or freshness metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_security_db_effective_age_seconds |^bongsu_security_db_freshness_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose effective security DB age or freshness metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
 fi
 if ! grep -Eq '^bongsu_cve_affected_package_index_coverage_percent |^bongsu_cve_affected_package_index_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
     echo "ERROR: admin metrics must expose affected-package index coverage or metrics error" >&2

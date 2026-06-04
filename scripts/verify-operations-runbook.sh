@@ -89,6 +89,9 @@ for pattern in \
     'TEMP-\*' \
     'CVD-\*' \
     'bongsu_security_db_source_stale' \
+    'bongsu_security_db_effective_status' \
+    'bongsu_security_db_effective_source_info' \
+    'bongsu_security_db_effective_last_sync_timestamp_seconds' \
     'bongsu_cve_placeholder_records' \
     'bongsu_security_db_rescan_open' \
     'bongsu_\*_metrics_error' \

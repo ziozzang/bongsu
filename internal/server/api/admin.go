@@ -229,6 +229,15 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			writePromGauge(&b, "bongsu_overdue_sla_vulnerability_risk_metrics_error", nil, 1)
 		}
 		freshness := s.securityDBFreshnessStatus(ctx, true)
+		effectiveStatus := strings.TrimSpace(fmt.Sprint(freshness["status"]))
+		for _, status := range []string{"ok", "stale", "missing_sources", "empty", "error", "unavailable"} {
+			writePromGauge(&b, "bongsu_security_db_effective_status", map[string]string{"status": status}, boolMetric(effectiveStatus == status))
+		}
+		if effectiveSource := strings.TrimSpace(fmt.Sprint(freshness["latest_source"])); effectiveSource != "" {
+			writePromGauge(&b, "bongsu_security_db_effective_source_info", map[string]string{"source": effectiveSource}, 1)
+		}
+		writePromGauge(&b, "bongsu_security_db_effective_last_sync_timestamp_seconds", nil, metricTimestamp(freshness["latest_last_update"]))
+		writePromGauge(&b, "bongsu_security_db_effective_age_seconds", nil, metricNumber(freshness["latest_age_seconds"]))
 		writePromGauge(&b, "bongsu_security_db_source_stale", nil, boolMetric(freshness["stale"]))
 		if count, ok := freshness["source_count"].(int); ok {
 			writePromGauge(&b, "bongsu_security_db_source_count", nil, float64(count))
@@ -448,6 +457,11 @@ func metricNumber(v any) float64 {
 func metricTimestamp(v any) float64 {
 	if t, ok := v.(time.Time); ok && !t.IsZero() {
 		return float64(t.Unix())
+	}
+	if s, ok := v.(string); ok {
+		if t, err := time.Parse(time.RFC3339, strings.TrimSpace(s)); err == nil && !t.IsZero() {
+			return float64(t.Unix())
+		}
 	}
 	return 0
 }

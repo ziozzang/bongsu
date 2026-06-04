@@ -115,6 +115,8 @@ for keyword in \
     'effective_status' \
     'effective_source' \
     'effective_last_sync' \
+    'effective persisted security DB status/source/last-sync' \
+    'bongsu_security_db_effective_status' \
     'operator workflow requires those effective fields' \
     'multi-source canonical CVE' \
     'vendor/advisory key' \
