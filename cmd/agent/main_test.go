@@ -43,6 +43,7 @@ func TestReleaseBuildsInjectAgentMetadata(t *testing.T) {
 		"../../scripts/package.sh": {
 			"COMMIT=",
 			"BUILD_DATE=",
+			"go build -trimpath",
 			"-X main.version=${VERSION}",
 			"-X main.commit=${COMMIT}",
 			"-X main.buildDate=${BUILD_DATE}",
@@ -53,6 +54,11 @@ func TestReleaseBuildsInjectAgentMetadata(t *testing.T) {
 			"sync-all-cvedb.sh",
 			"SHA256SUMS",
 			"sha256sum -c SHA256SUMS",
+		},
+		"../../scripts/verify-static-binaries.sh": {
+			`"$OUT_DIR/bongsu-agent" --version`,
+			`"$OUT_DIR/bongsu-server" --version`,
+			"${VERSION}+${COMMIT}+${BUILD_DATE}",
 		},
 		"../../deploy/Dockerfile.agent": {
 			"ARG BONGSU_COMMIT",

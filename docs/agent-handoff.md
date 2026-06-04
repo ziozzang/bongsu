@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Verify latest SBOM package ontology
+master / origin/main latest commit: Verify static server build metadata
 ```
 
 Important recent commits:
 
 ```text
-<latest> Verify latest SBOM package ontology
+<latest> Verify static server build metadata
+d6f2f27 Verify latest SBOM package ontology
 c90c4df Verify stale CVE rematch cleanup
 a8db21a Verify matchable CVE rematch insertion
 ba171bf Verify security DB rescan queue
@@ -191,6 +192,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 - CVSS v2/v3.x/v4 recalculation support exists and startup recalculation is timeout-bounded.
 - Background stale-while-revalidate cache for `/api/cve-db/stats` is implemented.
 - The dashboard API client now reads `X-Bongsu-Cache` for CVE DB stats and the dashboard card exposes cache state, generated timestamp, and stats duration.
+- Static release verification now executes both `bongsu-agent --version` and `bongsu-server --version`, checking injected version/commit/build-date metadata after confirming both linux/amd64 binaries are statically linked; `scripts/package.sh` now builds release binaries with `-trimpath`.
 - `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
 - `./scripts/verify-live-rbac-scope.sh` now validates dynamic `asset_group` policy expansion instead of relying only on a direct host policy.
 - `internal/server/db/package_sbom_exec_test.go` now executes `GetLatestPackagesForSBOM` through a fake `database/sql` driver and verifies the latest-inventory query preserves container/image/package target ontology fields before CycloneDX/SPDX generation.

@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,45 @@ func TestEnvPositiveIntFallsBackForInvalidValues(t *testing.T) {
 	t.Setenv("BONGSU_TEST_POSITIVE_INT", "42")
 	if got := envPositiveInt("BONGSU_TEST_POSITIVE_INT", 10); got != 42 {
 		t.Fatalf("envPositiveInt valid = %d, want 42", got)
+	}
+}
+
+func TestServerVersionStringIncludesBuildMetadata(t *testing.T) {
+	oldVersion, oldCommit, oldBuildDate := version, commit, buildDate
+	t.Cleanup(func() {
+		version, commit, buildDate = oldVersion, oldCommit, oldBuildDate
+	})
+	version = "2.3.4"
+	commit = "abcdef1234567890"
+	buildDate = "2026-06-04T00:00:00Z"
+	if got, want := serverVersionString(), "2.3.4+abcdef123456+2026-06-04T00:00:00Z"; got != want {
+		t.Fatalf("server version = %q, want %q", got, want)
+	}
+	version, commit, buildDate = "", "", ""
+	if got := serverVersionString(); got != "dev" {
+		t.Fatalf("empty build metadata = %q, want dev", got)
+	}
+}
+
+func TestServerVersionFlagExitsBeforeSecretValidation(t *testing.T) {
+	if os.Getenv("BONGSU_TEST_SERVER_VERSION_CHILD") == "1" {
+		version = "9.8.7"
+		commit = "1234567890abcdef"
+		buildDate = "2026-06-04T01:02:03Z"
+		os.Args = []string{"bongsu-server", "--version"}
+		main()
+		return
+	}
+
+	cmd := exec.Command(os.Args[0], "-test.run=TestServerVersionFlagExitsBeforeSecretValidation")
+	cmd.Env = append(os.Environ(), "BONGSU_TEST_SERVER_VERSION_CHILD=1", "BONGSU_ALLOW_WEAK_SECRETS=false")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("server --version failed before exit: %v\n%s", err, out)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if got, want := lines[0], "9.8.7+1234567890ab+2026-06-04T01:02:03Z"; got != want {
+		t.Fatalf("server --version output = %q, want %q", got, want)
 	}
 }
 

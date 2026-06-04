@@ -43,6 +43,15 @@ verify_static() {
 verify_static "$OUT_DIR/bongsu-agent"
 verify_static "$OUT_DIR/bongsu-server"
 
-"$OUT_DIR/bongsu-agent" --version
+agent_version="$("$OUT_DIR/bongsu-agent" --version)"
+server_version="$("$OUT_DIR/bongsu-server" --version)"
+echo "agent version:  $agent_version"
+echo "server version: $server_version"
+for got in "$agent_version" "$server_version"; do
+    if [[ "$got" != "${VERSION}+${COMMIT}+${BUILD_DATE}" ]]; then
+        echo "ERROR: static binary build metadata mismatch: got $got, want ${VERSION}+${COMMIT}+${BUILD_DATE}" >&2
+        exit 1
+    fi
+done
 
 echo "Static binary verification passed"

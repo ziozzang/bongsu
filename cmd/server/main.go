@@ -28,6 +28,11 @@ var (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Println(serverVersionString())
+		return
+	}
+
 	startTime := time.Now()
 	port := envInt("BONGSU_PORT", 5677)
 	dbDSN := envOr("BONGSU_DB_DSN", "postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable")
@@ -290,4 +295,21 @@ func subtleSecretEqual(a, b string) bool {
 		diff |= a[i] ^ b[i]
 	}
 	return diff == 0
+}
+
+func serverVersionString() string {
+	parts := []string{strings.TrimSpace(version)}
+	if parts[0] == "" {
+		parts[0] = "dev"
+	}
+	if c := strings.TrimSpace(commit); c != "" {
+		if len(c) > 12 {
+			c = c[:12]
+		}
+		parts = append(parts, c)
+	}
+	if d := strings.TrimSpace(buildDate); d != "" {
+		parts = append(parts, d)
+	}
+	return strings.Join(parts, "+")
 }

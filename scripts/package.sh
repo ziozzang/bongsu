@@ -31,8 +31,8 @@ cd "$ROOT"
 echo ""
 echo "[1/6] Building binaries..."
 LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/bongsu-agent-linux-amd64 ./cmd/agent
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o bin/bongsu-server-linux-amd64 ./cmd/server
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="${LDFLAGS}" -o bin/bongsu-agent-linux-amd64 ./cmd/agent
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="${LDFLAGS}" -o bin/bongsu-server-linux-amd64 ./cmd/server
 echo "  bin/bongsu-agent-linux-amd64 ($(du -h bin/bongsu-agent-linux-amd64 | cut -f1))"
 echo "  bin/bongsu-server-linux-amd64 ($(du -h bin/bongsu-server-linux-amd64 | cut -f1))"
 
