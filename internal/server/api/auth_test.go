@@ -3439,6 +3439,15 @@ func TestOsvDownloaderFailsClosedAndWritesAtomically(t *testing.T) {
 	if strings.Contains(body, "WARNING: ${eco} download failed, skipping") {
 		t.Fatal("download-osv must not silently skip failed ecosystems")
 	}
+	for _, forbidden := range []string{
+		"affected[:20]",
+		"refs[:20]",
+		"aliases[:5]",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("download-osv must preserve complete OSV evidence and not truncate %s", forbidden)
+		}
+	}
 }
 
 func TestRestoreScriptVerifiesBackupSidecarChecksum(t *testing.T) {

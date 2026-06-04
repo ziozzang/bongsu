@@ -82,7 +82,7 @@ func isOSEcosystem(ecosystem string) bool {
 		eco = strings.TrimSpace(eco[:idx])
 	}
 	switch eco {
-	case "debian", "ubuntu", "alpine", "red hat", "rhel", "suse", "almalinux", "amazon linux", "wolfi", "chainguard", "rocky linux", "oracle linux":
+	case "debian", "ubuntu", "alpine", "red hat", "rhel", "suse", "opensuse", "almalinux", "amazon linux", "wolfi", "chainguard", "rocky linux", "oracle linux", "azure linux", "openeuler", "mageia", "android":
 		return true
 	default:
 		return false

@@ -65,6 +65,9 @@ func TestClassifySecuritySource(t *testing.T) {
 		{"osv debian", "osv", `[{"name":"openssl","ecosystem":"Debian"}]`, "os-package", "Debian"},
 		{"osv debian release", "osv", `[{"name":"openssl","ecosystem":"Debian:11"}]`, "os-package", "Debian:11"},
 		{"osv suse release", "osv", `[{"name":"openssl","ecosystem":"SUSE:Linux Enterprise Server 15"}]`, "os-package", "SUSE:Linux Enterprise Server 15"},
+		{"osv opensuse release", "osv", `[{"name":"openssl","ecosystem":"openSUSE:Tumbleweed"}]`, "os-package", "openSUSE:Tumbleweed"},
+		{"osv azure linux release", "osv", `[{"name":"openssl","ecosystem":"Azure Linux:3"}]`, "os-package", "Azure Linux:3"},
+		{"osv android", "osv", `[{"name":"platform/frameworks/base","ecosystem":"Android"}]`, "os-package", "Android"},
 		{"nvd fallback", "nvd", `[]`, "general-cve", ""},
 		{"cisa kev fallback", "cisa-kev", `[]`, "general-cve", ""},
 		{"epss fallback", "epss", `[]`, "general-cve", ""},
@@ -1334,7 +1337,7 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 		"epss_percentile>=$",
 		"source NOT IN ('cisa-kev', 'epss')",
 		"if matchableOnly",
-		"cveSourceMatchablePredicateSQL",
+		"EXISTS (SELECT 1 FROM cve_affected_packages cap_matchable WHERE cap_matchable.cve_id = cve_database.id)",
 		"enrichCveReferenceGroupCounts",
 		"ReferenceGroupTotal",
 		"ReferenceGroupMatchable",
@@ -2767,6 +2770,8 @@ func TestUpsertCveEntriesMergesAffectedProductsOnSourceConflict(t *testing.T) {
 	fn := body[start : start+1+next]
 	for _, want := range []string{
 		"ON CONFLICT (vulnerability_id, source) DO UPDATE SET",
+		"category=CASE WHEN EXCLUDED.category <> '' THEN EXCLUDED.category ELSE cve_database.category END",
+		"ecosystem=CASE WHEN EXCLUDED.ecosystem <> '' THEN EXCLUDED.ecosystem ELSE cve_database.ecosystem END",
 		"jsonb_agg(DISTINCT ap.elem)",
 		"cve_database.affected_products",
 		"EXCLUDED.affected_products",

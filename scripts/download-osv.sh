@@ -163,9 +163,9 @@ with open("${OUTPUT_TMP}", "a") as out:
             "description": details[:4000] if details else "",
             "published_date": published,
             "modified_date": modified,
-            "affected_products": json.dumps(affected[:20]),
-            "references": json.dumps(refs[:20]),
-            "raw_data": json.dumps({"id": vuln_id, "aliases": aliases[:5]})
+            "affected_products": json.dumps(affected),
+            "references": json.dumps(refs),
+            "raw_data": json.dumps({"id": vuln_id, "aliases": aliases})
         }
         out.write(json.dumps(entry) + "\n")
         count += 1

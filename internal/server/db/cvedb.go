@@ -53,8 +53,8 @@ func (db *DB) upsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []mode
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, epss_score, epss_percentile, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
 ON CONFLICT (vulnerability_id, source) DO UPDATE SET
-	category=CASE WHEN cve_database.category = '' THEN EXCLUDED.category ELSE cve_database.category END,
-	ecosystem=CASE WHEN cve_database.ecosystem = '' THEN EXCLUDED.ecosystem ELSE cve_database.ecosystem END,
+	category=CASE WHEN EXCLUDED.category <> '' THEN EXCLUDED.category ELSE cve_database.category END,
+	ecosystem=CASE WHEN EXCLUDED.ecosystem <> '' THEN EXCLUDED.ecosystem ELSE cve_database.ecosystem END,
 	severity=EXCLUDED.severity, cvss_score=EXCLUDED.cvss_score, cvss_vector=EXCLUDED.cvss_vector,
 	epss_score=EXCLUDED.epss_score, epss_percentile=EXCLUDED.epss_percentile,
 	title=EXCLUDED.title, description=EXCLUDED.description,
@@ -595,7 +595,7 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 		argN++
 	}
 	if matchableOnly {
-		baseQ += " AND " + cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END", "ecosystem")
+		baseQ += " AND EXISTS (SELECT 1 FROM cve_affected_packages cap_matchable WHERE cap_matchable.cve_id = cve_database.id)"
 	}
 
 	var total int
