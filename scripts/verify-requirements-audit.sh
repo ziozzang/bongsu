@@ -58,6 +58,7 @@ for command in \
     '\./scripts/verify-migrations\.sh' \
     '\./scripts/verify-deploy-config\.sh' \
     '\./scripts/verify-requirements-audit\.sh' \
+    '\./scripts/verify-openapi\.sh' \
     '\./scripts/verify-package-contents\.sh' \
     '\./scripts/verify-installer-smoke\.sh' \
     '\./scripts/verify-static-binaries\.sh' \
@@ -88,6 +89,7 @@ do
 done
 
 require_text "$CI" 'verify-requirements-audit\.sh' "CI must run the requirements audit verifier"
+require_text "$CI" 'verify-openapi\.sh' "CI must run the OpenAPI verifier"
 require_text "$CI" 'verify-package-contents\.sh' "CI must run the package contents verifier"
 require_text "$README" 'requirements-audit\.md' "README must link the requirements audit"
 require_text "$README" 'operations-runbook\.md' "README must link the operations runbook"

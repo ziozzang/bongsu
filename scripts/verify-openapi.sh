@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SPEC="$ROOT/internal/server/api/openapi.yaml"
+DOC_SPEC="$ROOT/docs/openapi.yaml"
 
 echo "=== OpenAPI Specification Verification ==="
 
@@ -13,12 +14,24 @@ if [ ! -f "$SPEC" ]; then
 fi
 echo "OK: Spec file exists ($SPEC)"
 
+if [ ! -f "$DOC_SPEC" ]; then
+    echo "FAIL: documentation openapi.yaml not found at $DOC_SPEC"
+    exit 1
+fi
+echo "OK: Documentation spec file exists ($DOC_SPEC)"
+
 # Validate YAML syntax
 if ! python3 -c "import yaml; yaml.safe_load(open('$SPEC'))" 2>/dev/null; then
     echo "FAIL: openapi.yaml is not valid YAML"
     exit 1
 fi
 echo "OK: Valid YAML"
+
+if ! cmp -s "$SPEC" "$DOC_SPEC"; then
+    echo "FAIL: docs/openapi.yaml is out of sync with internal/server/api/openapi.yaml"
+    exit 1
+fi
+echo "OK: Documentation spec is synchronized"
 
 # Check all routes from api.go are documented
 ROUTES=$(grep -oP 'HandleFunc\("\K[^"]+' "$ROOT/internal/server/api/api.go" | grep '^/' | sort -u)

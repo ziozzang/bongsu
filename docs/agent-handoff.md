@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-01 20:23:25 KST
+Updated: 2026-06-04 10:05:43 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,21 +24,24 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head before this continuation:
 
 ```text
-82972fb (master, origin/main) Preserve container SBOM relationships
+6627f13 (master, origin/main) Allow short admin password when BONGSU_ALLOW_WEAK_SECRETS is set
 ```
 
 Important recent commits:
 
 ```text
+6627f13 Allow short admin password when BONGSU_ALLOW_WEAK_SECRETS is set
+4f13d45 Add admin credentials to .env.example
+0c110c7 Add Phase 5 polish: performance indexes, frontend integration, error consistency
+78397ff Add actionable intelligence: trending, recommendations, notifications, reports
+049735b Add fleet management: agent retry, scan scheduling, asset groups
+fca7b5d Add local user accounts, session auth, and OIDC interface
+5bdb43d Add Phase 1 operational safety features
+fc827a5 Decompose api.go and db.go into domain-specific files
+13da542 Harden live dashboard and summary queries
 82972fb Preserve container SBOM relationships
 7a9762a Verify airgap package contents
 c3fa8e0 Add RBAC scope enforcement tests
-725c748 Add operations runbook
-ad6d146 Add force scan and RBAC browser smoke tests
-b832cad Add requirements audit gate
-ab5ccb7 Verify installer systemd mode
-5d40f0f Verify installer download checksums
-7d61e20 Add installer smoke verification
 ```
 
 This handoff commit should include:
@@ -65,6 +68,11 @@ This handoff commit should include:
 - Airgap package contents verifier that checks the release package script includes static binaries, Docker images, deploy files, migrations, docs, web assets, source sync/import/export tools, loader script, and SHA256 manifests.
 - Agent package annotation, DB persistence, and CycloneDX/SPDX export tests that preserve host/container/image/package target relationship context for SBOM and inventory data.
 - Live dashboard hardening: optional admin/summary widget failures no longer log out the no-auth dashboard, package/vulnerability summary SQL no longer references a package alias outside scope, and the dashboard action bar wraps instead of clipping controls.
+- API and DB decomposition into domain-specific files, preserving previous behavior while reducing the monolithic `api.go`/`db.go` maintenance risk.
+- Operational safety additions: per-IP rate limiting, `/api/live`, `/api/ready`, embedded OpenAPI 3.1, `scripts/backup.sh`, `scripts/restore.sh`, and `scripts/verify-openapi.sh`.
+- Local user/session authentication, initial admin bootstrap, secure session cookies, `Authorization: Bearer` support for the web client, and an OIDC authenticator interface placeholder.
+- Fleet management additions: scheduled scans, asset groups, asset-group force scans, agent report retry configuration, and frontend views for schedules and asset groups.
+- Actionable intelligence additions: vulnerability trends, top-risk hosts, remediation recommendations, notification rules/logs, executive/risk/SLA reports, report export, and corresponding frontend views.
 
 ## Live Runtime
 
@@ -152,6 +160,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - CI runs `scripts/verify-package-contents.sh` to keep air-gapped release archives from silently losing required files.
 - Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
 - Live Playwright smoke passed against `http://10.2.2.10:5678/` for the dashboard, CVE Search, and Hosts. The live `/api/packages?limit=1` and `/api/vuln-summary?group_by=owner` endpoints returned 200 after the mismatch-filter SQL fix.
+- Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state.
 
 ## Verification Commands
 
@@ -163,6 +172,7 @@ go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
 ./scripts/verify-requirements-audit.sh
+./scripts/verify-openapi.sh
 ./scripts/verify-package-contents.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
@@ -207,6 +217,7 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
 6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.
+8. Exercise the new sessions, schedules, asset groups, reports, notification rules, backup/restore, and OpenAPI docs in a realistic live operator workflow.
 
 ## Matching Rules Reminder
 

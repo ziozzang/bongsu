@@ -36,6 +36,9 @@ jobs:
       - name: Verify requirements audit coverage
         run: ./scripts/verify-requirements-audit.sh
 
+      - name: Verify OpenAPI coverage
+        run: ./scripts/verify-openapi.sh
+
       - name: Verify airgap package contents
         run: ./scripts/verify-package-contents.sh
 
