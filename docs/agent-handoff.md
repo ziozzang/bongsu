@@ -264,6 +264,7 @@ go test ./...
 ./scripts/verify-agent-binary-workflow.sh
 ./scripts/verify-live-agent-token-binding.sh
 ./scripts/verify-live-cvedb-quality.sh
+./scripts/verify-live-security-db-export-freshness.sh
 ./scripts/verify-live-rbac-scope.sh
 ./scripts/verify-live-web-smoke.sh
 ./scripts/verify-package-contents.sh
@@ -290,6 +291,7 @@ BONGSU_API_KEY=test-admin-key BONGSU_ADMIN_USERNAME=admin BONGSU_ADMIN_PASSWORD=
 BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-agent-binary-workflow.sh
 BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-live-agent-token-binding.sh
 BONGSU_API_KEY=test-admin-key BONGSU_DB_DSN='postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable' ./scripts/verify-live-cvedb-quality.sh
+BONGSU_API_KEY=test-admin-key ./scripts/verify-live-security-db-export-freshness.sh
 BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key BONGSU_VIEWER_API_KEY=viewer-test-key BONGSU_VIEWER_SUBJECT=rbac-live-viewer ./scripts/verify-live-rbac-scope.sh
 BONGSU_WEB_BASE=http://127.0.0.1:5678 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-web-smoke.sh
 ./scripts/verify-airgap-release-archive.sh bongsu-0.1.0.tar.gz

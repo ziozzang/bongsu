@@ -8,6 +8,7 @@ MATCHING="$ROOT/docs/vulnerability-matching-rules.md"
 README="$ROOT/README.md"
 CI="$ROOT/.github/workflows/ci.yml"
 RUNBOOK="$ROOT/docs/operations-runbook.md"
+HANDOFF="$ROOT/docs/agent-handoff.md"
 PACKAGE_SCRIPT="$ROOT/scripts/package.sh"
 
 require_file() {
@@ -39,7 +40,7 @@ reject_text() {
     fi
 }
 
-for file in "$AUDIT" "$ARCH" "$MATCHING" "$README" "$CI" "$RUNBOOK" "$PACKAGE_SCRIPT"; do
+for file in "$AUDIT" "$ARCH" "$MATCHING" "$README" "$CI" "$RUNBOOK" "$HANDOFF" "$PACKAGE_SCRIPT"; do
     require_file "$file"
 done
 
@@ -150,6 +151,7 @@ require_text "$CI" 'verify-package-contents\.sh' "CI must run the package conten
 require_text "$CI" 'verify-airgap-package-smoke\.sh' "CI must run the airgap package smoke verifier"
 require_text "$README" 'requirements-audit\.md' "README must link the requirements audit"
 require_text "$README" 'operations-runbook\.md' "README must link the operations runbook"
+require_text "$HANDOFF" 'verify-live-security-db-export-freshness\.sh' "agent handoff must include the security DB export freshness verifier"
 require_text "$ARCH" 'BONGSU_SYSTEMD_DIR' "architecture must document systemd installer test hooks"
 require_text "$MATCHING" 'package/ecosystem/fixed evidence' "matching rules must describe package evidence"
 require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
