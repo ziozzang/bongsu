@@ -473,6 +473,31 @@ func TestApplyVulnerabilitySLA(t *testing.T) {
 	}
 }
 
+func TestSLAComplianceReportInitializesStableJSONFields(t *testing.T) {
+	out, err := os.ReadFile("report.go")
+	if err != nil {
+		t.Fatalf("read report.go: %v", err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetSLAComplianceReport")
+	if start < 0 {
+		t.Fatal("GetSLAComplianceReport not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetRiskBreakdown")
+	if end < 0 {
+		t.Fatal("GetSLAComplianceReport end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"OverdueByOwner: []SLAOwnerRow{}",
+		"BySeverity:     map[string]SLASevStats{}",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("SLA report must initialize stable JSON array/object field %q: %s", want, fn)
+		}
+	}
+}
+
 func TestContainerSortExprAllowlist(t *testing.T) {
 	if got := containerSortExpr("image_name", true); got != "c.image_name DESC NULLS LAST" {
 		t.Fatalf("sort expr = %q", got)

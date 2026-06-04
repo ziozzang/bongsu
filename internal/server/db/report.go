@@ -8,18 +8,18 @@ import (
 )
 
 type ExecutiveSummary struct {
-	GeneratedAt      time.Time    `json:"generated_at"`
-	TotalHosts       int          `json:"total_hosts"`
-	HostCoverage     float64      `json:"host_coverage_percent"`
-	ActiveVulns      int          `json:"active_vulnerabilities"`
-	SeverityCounts   map[string]int `json:"severity_counts"`
-	RiskCounts       map[string]int `json:"risk_level_counts"`
-	ExploitedCount   int          `json:"exploited_count"`
-	OverdueCount     int          `json:"overdue_sla_count"`
-	SLACompliance    float64      `json:"sla_compliance_percent"`
-	TrendDirection   string       `json:"trend_direction"`
-	TrendDelta       int          `json:"trend_delta"`
-	TopRiskHosts     []AtRiskHost `json:"top_risk_hosts"`
+	GeneratedAt    time.Time      `json:"generated_at"`
+	TotalHosts     int            `json:"total_hosts"`
+	HostCoverage   float64        `json:"host_coverage_percent"`
+	ActiveVulns    int            `json:"active_vulnerabilities"`
+	SeverityCounts map[string]int `json:"severity_counts"`
+	RiskCounts     map[string]int `json:"risk_level_counts"`
+	ExploitedCount int            `json:"exploited_count"`
+	OverdueCount   int            `json:"overdue_sla_count"`
+	SLACompliance  float64        `json:"sla_compliance_percent"`
+	TrendDirection string         `json:"trend_direction"`
+	TrendDelta     int            `json:"trend_delta"`
+	TopRiskHosts   []AtRiskHost   `json:"top_risk_hosts"`
 }
 
 type SLAComplianceReport struct {
@@ -30,15 +30,15 @@ type SLAComplianceReport struct {
 }
 
 type SLASevStats struct {
-	Total    int     `json:"total"`
-	Overdue  int     `json:"overdue"`
-	Rate     float64 `json:"compliance_percent"`
+	Total   int     `json:"total"`
+	Overdue int     `json:"overdue"`
+	Rate    float64 `json:"compliance_percent"`
 }
 
 type SLAOwnerRow struct {
-	Owner    string `json:"owner"`
-	Overdue  int    `json:"overdue"`
-	Total    int    `json:"total"`
+	Owner   string `json:"owner"`
+	Overdue int    `json:"overdue"`
+	Total   int    `json:"total"`
 }
 
 type RiskBreakdownRow struct {
@@ -127,8 +127,9 @@ func (db *DB) GetExecutiveSummary(ctx context.Context) (*ExecutiveSummary, error
 
 func (db *DB) GetSLAComplianceReport(ctx context.Context) (*SLAComplianceReport, error) {
 	report := &SLAComplianceReport{
-		GeneratedAt: time.Now().UTC(),
-		BySeverity:  map[string]SLASevStats{},
+		GeneratedAt:    time.Now().UTC(),
+		BySeverity:     map[string]SLASevStats{},
+		OverdueByOwner: []SLAOwnerRow{},
 	}
 	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL() +
 		` AND COALESCE(vt.status, 'open') IN ('open', 'in_progress')`

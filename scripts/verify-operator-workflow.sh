@@ -266,7 +266,13 @@ executive_json="$(api_json GET /api/reports/executive-summary)"
 assert_json "$executive_json" '.generated_at and (.total_hosts | type == "number")' "executive summary must expose generated_at and numeric host count"
 risk_json="$(api_json GET '/api/reports/risk-breakdown?group_by=owner')"
 assert_json "$risk_json" '.group_by == "owner" and (.items | type == "array")' "risk breakdown must preserve group_by and items"
+sla_json="$(api_json GET /api/reports/sla-compliance)"
+assert_json "$sla_json" '.generated_at and (.overall_compliance_percent | type == "number") and (.overdue_by_owner | type == "array") and (.by_severity | type == "object")' "SLA compliance report must expose generated_at, overall rate, severity buckets, and owner backlog"
+for sev in CRITICAL HIGH MEDIUM LOW; do
+    assert_json "$sla_json" ".by_severity[\"${sev}\"] and (.by_severity[\"${sev}\"].total | type == \"number\") and (.by_severity[\"${sev}\"].overdue | type == \"number\") and (.by_severity[\"${sev}\"].compliance_percent | type == \"number\")" "SLA compliance report must include numeric bucket for ${sev}"
+done
 api_json GET '/api/reports/export?format=json&type=executive' | jq -e '.generated_at' >/dev/null
+api_json GET '/api/reports/export?format=json&type=sla' | jq -e '.generated_at and .by_severity' >/dev/null
 
 echo "[8/10] Checking notification rule contract"
 rules_json="$(api_json GET /api/admin/notification-rules)"
