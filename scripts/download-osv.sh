@@ -14,6 +14,10 @@ TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"
 mkdir -p "${TMP_PARENT}"
 WORKDIR=$(mktemp -d "${TMP_PARENT%/}/bongsu-osv.XXXXXX")
 trap 'rm -rf "${WORKDIR}"; rm -f "${OUTPUT_TMP}"' EXIT
+OSV_CURL_CONNECT_TIMEOUT="${BONGSU_OSV_CURL_CONNECT_TIMEOUT_SECONDS:-20}"
+OSV_CURL_MAX_TIME="${BONGSU_OSV_CURL_MAX_TIME_SECONDS:-1800}"
+OSV_CURL_RETRIES="${BONGSU_OSV_CURL_RETRIES:-3}"
+OSV_CURL_RETRY_DELAY="${BONGSU_OSV_CURL_RETRY_DELAY_SECONDS:-3}"
 
 echo "Downloading OSV.dev data for: ${ECOSYSTEMS}"
 
@@ -26,8 +30,15 @@ for eco in "${ECO_ARRAY[@]}"; do
     eco=$(echo "$eco" | xargs)  # trim whitespace
     echo "  Downloading ${eco}..."
     # URL-encode spaces for curl
-    encoded_eco=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${eco}'))")
-    if ! curl -fsSL "https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip" -o "${WORKDIR}/${eco}.zip"; then
+    encoded_eco=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "${eco}")
+    if ! curl -fsSL \
+        --connect-timeout "${OSV_CURL_CONNECT_TIMEOUT}" \
+        --max-time "${OSV_CURL_MAX_TIME}" \
+        --retry "${OSV_CURL_RETRIES}" \
+        --retry-delay "${OSV_CURL_RETRY_DELAY}" \
+        --retry-connrefused \
+        "https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip" \
+        -o "${WORKDIR}/${eco}.zip"; then
         echo "  ERROR: ${eco} download failed"
         FAILED_ECOSYSTEMS+=("${eco}:download")
         continue

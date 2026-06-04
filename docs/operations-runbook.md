@@ -288,6 +288,14 @@ TRIVY_BIN=/usr/local/bin/trivy \
 ./scripts/sync-trivy-cvedb.sh http://localhost:5677 "$BONGSU_API_KEY"
 ```
 
+If OSV upstream feeds have changed but the persisted source freshness window has not yet marked `osv` stale, refresh only OSV without replacing unrelated CISA, EPSS, NVD, or Trivy source rows:
+
+```bash
+./scripts/sync-osv-cvedb.sh http://localhost:5677 "$BONGSU_API_KEY"
+```
+
+The OSV-only refresh uses the same per-ecosystem append/upsert mode as the full connected sync, prunes stale `source=osv` rows only after every configured ecosystem succeeds, then rebuilds affected-package and reference-key indexes and queues security recalculation once.
+
 Air-gapped environments should disable online sync and import signed transfer bundles:
 
 ```text
