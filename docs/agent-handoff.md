@@ -55,6 +55,7 @@ This handoff commit should include:
 - `docs/operations-runbook.md`
 - `scripts/verify-requirements-audit.sh`
 - `scripts/verify-package-contents.sh`
+- `scripts/verify-airgap-package-smoke.sh`
 - `scripts/package.sh`
 - `.github/workflows/ci.yml`
 - `README.md`
@@ -71,6 +72,7 @@ This handoff commit should include:
 - Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
 - Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
 - Real agent binary workflow verifier builds `cmd/agent`, runs it against fixture Trivy/osquery/docker tools, verifies host/container package ontology through the live API, then runs daemon polling to claim and complete a host-specific scan request.
+- Airgap package smoke verifier runs `scripts/package.sh` end-to-end with lightweight `go`/`npm`/`docker` stubs, then validates the generated `bongsu-*.tar.gz`.
 - Airgap release archive verifier unpacks a generated `bongsu-*.tar.gz`, checks outer and inner SHA256 manifests, required files, executable/static binaries, Docker image tarballs, loader script, runbook/audit references, and airgap compose invariants.
 - Frontend API contract fixes for schedules (`{items}` response plus `packages_only`) and asset groups (`rule_type` instead of stale `group_type`).
 - Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
@@ -186,6 +188,7 @@ go test ./...
 ./scripts/verify-operator-workflow.sh
 ./scripts/verify-agent-binary-workflow.sh
 ./scripts/verify-package-contents.sh
+./scripts/verify-airgap-package-smoke.sh
 ./scripts/verify-airgap-release-archive.sh <generated-bongsu-archive.tar.gz>
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
@@ -233,7 +236,7 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
 6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.
-8. Generate a real release archive with `scripts/package.sh`, run `scripts/verify-airgap-release-archive.sh` against it, and then rehearse loading/importing it in an offline-like environment.
+8. Generate a real release archive with `scripts/package.sh`, run `scripts/verify-airgap-release-archive.sh` against it, and then rehearse loading/importing it in an offline-like environment. The lightweight package smoke verifier now covers the package script path, but it intentionally stubs heavy Docker/npm work.
 
 ## Matching Rules Reminder
 

@@ -94,6 +94,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-operator-workflow.sh" \
     "$ROOT_DIR/scripts/verify-agent-binary-workflow.sh" \
     "$ROOT_DIR/scripts/verify-airgap-release-archive.sh" \
+    "$ROOT_DIR/scripts/verify-airgap-package-smoke.sh" \
     "$ROOT_DIR/deploy/docker-compose.yml" \
     "$ROOT_DIR/deploy/docker-compose.airgap.yml" \
     "$ROOT_DIR/deploy/.env.example" \
@@ -146,9 +147,9 @@ require_text "$ROOT_DIR/load-images.sh" 'docker load < images/bongsu-server\.tar
 require_text "$ROOT_DIR/load-images.sh" 'docker load < images/bongsu-agent\.tar\.gz' "loader must load agent image"
 
 echo "[7/7] Checking airgap deployment invariants"
-require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_TRIVY_DB_INTERVAL_HOURS: "\$\{BONGSU_TRIVY_DB_INTERVAL_HOURS:-0\}"' "airgap compose must disable Trivy DB auto refresh by default"
-require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_SECURITY_DB_SYNC_ON_START: "\$\{BONGSU_SECURITY_DB_SYNC_ON_START:-false\}"' "airgap compose must disable source sync on start by default"
-require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_SECURITY_DB_SYNC_CMD: "\$\{BONGSU_SECURITY_DB_SYNC_CMD:-\}"' "airgap compose must default to empty security DB sync command"
+require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_TRIVY_DB_INTERVAL_HOURS: "(0|\$\{BONGSU_TRIVY_DB_INTERVAL_HOURS:-0\})"' "airgap compose must disable Trivy DB auto refresh by default"
+require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_SECURITY_DB_SYNC_ON_START: "(false|\$\{BONGSU_SECURITY_DB_SYNC_ON_START:-false\})"' "airgap compose must disable source sync on start by default"
+require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_SECURITY_DB_SYNC_CMD: "(\$\{BONGSU_SECURITY_DB_SYNC_CMD:-\})?"' "airgap compose must default to empty security DB sync command"
 require_text "$ROOT_DIR/docs/operations-runbook.md" 'verify-airgap-release-archive\.sh' "runbook must document archive verification"
 require_text "$ROOT_DIR/docs/requirements-audit.md" 'verify-airgap-release-archive\.sh' "requirements audit must include archive verification"
 

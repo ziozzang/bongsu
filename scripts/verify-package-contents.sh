@@ -57,6 +57,7 @@ for script in \
     'import-security-db-bundle.sh' \
     'verify-agent-binary-workflow.sh' \
     'verify-airgap-release-archive.sh' \
+    'verify-airgap-package-smoke.sh' \
     'verify-operator-workflow.sh' \
     'verify-static-binaries.sh'
 do

@@ -63,6 +63,7 @@ curl -fsS http://localhost:5677/api/health
 Air-gapped deployment:
 
 ```bash
+./scripts/verify-airgap-package-smoke.sh
 ./scripts/package.sh 0.1.0
 sha256sum -c bongsu-0.1.0.tar.gz.sha256
 ./scripts/verify-airgap-release-archive.sh bongsu-0.1.0.tar.gz
