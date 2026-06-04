@@ -85,6 +85,8 @@ echo "[3/7] Checking required package entries"
 for path in \
     "$ROOT_DIR/images/bongsu-server.tar.gz" \
     "$ROOT_DIR/images/bongsu-agent.tar.gz" \
+    "$ROOT_DIR/images/bongsu-web.tar.gz" \
+    "$ROOT_DIR/images/postgres-16-alpine.tar.gz" \
     "$ROOT_DIR/bin/bongsu-server" \
     "$ROOT_DIR/bin/bongsu-agent" \
     "$ROOT_DIR/scripts/backup.sh" \
@@ -150,10 +152,16 @@ fi
 echo "[6/7] Checking Docker image archives and loader"
 gzip -t "$ROOT_DIR/images/bongsu-server.tar.gz"
 gzip -t "$ROOT_DIR/images/bongsu-agent.tar.gz"
+gzip -t "$ROOT_DIR/images/bongsu-web.tar.gz"
+gzip -t "$ROOT_DIR/images/postgres-16-alpine.tar.gz"
 tar -tzf "$ROOT_DIR/images/bongsu-server.tar.gz" >/dev/null
 tar -tzf "$ROOT_DIR/images/bongsu-agent.tar.gz" >/dev/null
+tar -tzf "$ROOT_DIR/images/bongsu-web.tar.gz" >/dev/null
+tar -tzf "$ROOT_DIR/images/postgres-16-alpine.tar.gz" >/dev/null
 require_text "$ROOT_DIR/load-images.sh" 'docker load < images/bongsu-server\.tar\.gz' "loader must load server image"
 require_text "$ROOT_DIR/load-images.sh" 'docker load < images/bongsu-agent\.tar\.gz' "loader must load agent image"
+require_text "$ROOT_DIR/load-images.sh" 'docker load < images/bongsu-web\.tar\.gz' "loader must load web image"
+require_text "$ROOT_DIR/load-images.sh" 'docker load < images/postgres-16-alpine\.tar\.gz' "loader must load postgres image"
 
 echo "[7/7] Checking airgap deployment invariants"
 require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_TRIVY_DB_INTERVAL_HOURS: "(0|\$\{BONGSU_TRIVY_DB_INTERVAL_HOURS:-0\})"' "airgap compose must disable Trivy DB auto refresh by default"

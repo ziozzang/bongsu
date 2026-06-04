@@ -57,6 +57,9 @@ docker build -t "bongsu-agent:${VERSION}" -t "bongsu-agent:latest" \
     --build-arg "BONGSU_BUILD_DATE=${BUILD_DATE}" \
     -f deploy/Dockerfile.agent . 2>&1 | tail -3
 
+docker build -t "bongsu-web:${VERSION}" -t "bongsu-web:latest" \
+    -f deploy/Dockerfile.web . 2>&1 | tail -3
+
 # Step 4: Create staging directory
 echo ""
 echo "[4/6] Staging files..."
@@ -67,6 +70,8 @@ mkdir -p "$STAGING"/{images,bin,scripts,deploy,web,docs}
 echo "  Saving Docker images..."
 docker save "bongsu-server:${VERSION}" | gzip > "$STAGING/images/bongsu-server.tar.gz"
 docker save "bongsu-agent:${VERSION}" | gzip > "$STAGING/images/bongsu-agent.tar.gz"
+docker save "bongsu-web:${VERSION}" | gzip > "$STAGING/images/bongsu-web.tar.gz"
+docker save "postgres:16-alpine" | gzip > "$STAGING/images/postgres-16-alpine.tar.gz"
 
 # Copy binaries
 cp bin/bongsu-agent-linux-amd64 "$STAGING/bin/bongsu-agent"
@@ -129,6 +134,8 @@ set -euo pipefail
 echo "Loading Docker images..."
 docker load < images/bongsu-server.tar.gz
 docker load < images/bongsu-agent.tar.gz
+docker load < images/bongsu-web.tar.gz
+docker load < images/postgres-16-alpine.tar.gz
 echo "Done. Run: cd deploy && docker compose up -d"
 EOF
 chmod +x "$STAGING/load-images.sh"
@@ -152,7 +159,7 @@ echo "Size:   $(du -h "${PACKAGE_NAME}.tar.gz" | cut -f1)"
 echo "SHA256: ${SHA}"
 echo ""
 echo "Contents:"
-echo "  images/              Docker images (server with trivy, agent)"
+echo "  images/              Docker images (server with trivy, web, agent, postgres)"
 echo "  bin/                 Static server and agent binaries"
 echo "  scripts/             installer, source sync, and security DB bundle tools"
 echo "  deploy/              docker-compose.yml, .env.example"

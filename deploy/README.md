@@ -217,7 +217,7 @@ spec:
 | `BONGSU_ACCESS_LOG_HEALTH` | `false` | Include `/api/health` in access logs when enabled |
 | `BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS` | `10` | Maximum seconds allowed to read request headers before closing the connection |
 | `BONGSU_HTTP_READ_TIMEOUT_SECONDS` | `30` | Maximum seconds allowed to read a full request, including upload body |
-| `BONGSU_HTTP_WRITE_TIMEOUT_SECONDS` | `120` | Maximum seconds allowed to write a response |
+| `BONGSU_HTTP_WRITE_TIMEOUT_SECONDS` | `900` | Maximum seconds allowed to write a response |
 | `BONGSU_HTTP_IDLE_TIMEOUT_SECONDS` | `120` | Maximum keep-alive idle seconds per connection |
 | `BONGSU_HTTP_MAX_HEADER_BYTES` | `1048576` | Maximum accepted HTTP request header size |
 | `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC; use `key:user:alice` or `key:group:platform` when user and group IDs may overlap |

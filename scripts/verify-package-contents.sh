@@ -29,6 +29,8 @@ require_file "$RUNBOOK"
 for path in \
     'images/bongsu-server.tar.gz' \
     'images/bongsu-agent.tar.gz' \
+    'images/bongsu-web.tar.gz' \
+    'images/postgres-16-alpine.tar.gz' \
     'bin/bongsu-agent' \
     'bin/bongsu-server' \
     'deploy/docker-compose.yml' \
@@ -78,6 +80,8 @@ for pattern in \
     'CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build' \
     'docker save "bongsu-server' \
     'docker save "bongsu-agent' \
+    'docker save "bongsu-web' \
+    'docker save "postgres:16-alpine"' \
     'cp -r migrations' \
     'cp -r docs' \
     'cp README.md' \

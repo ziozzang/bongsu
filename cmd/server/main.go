@@ -228,7 +228,7 @@ func newHTTPServer(port int, handler http.Handler) *http.Server {
 		Handler:           handler,
 		ReadHeaderTimeout: time.Duration(envPositiveInt("BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS", 10)) * time.Second,
 		ReadTimeout:       time.Duration(envPositiveInt("BONGSU_HTTP_READ_TIMEOUT_SECONDS", 30)) * time.Second,
-		WriteTimeout:      time.Duration(envPositiveInt("BONGSU_HTTP_WRITE_TIMEOUT_SECONDS", 120)) * time.Second,
+		WriteTimeout:      time.Duration(envPositiveInt("BONGSU_HTTP_WRITE_TIMEOUT_SECONDS", 900)) * time.Second,
 		IdleTimeout:       time.Duration(envPositiveInt("BONGSU_HTTP_IDLE_TIMEOUT_SECONDS", 120)) * time.Second,
 		MaxHeaderBytes:    envPositiveInt("BONGSU_HTTP_MAX_HEADER_BYTES", 1<<20),
 	}

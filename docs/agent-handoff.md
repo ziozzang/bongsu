@@ -14,7 +14,7 @@ This document is the handoff point for the next agent session. Continue from the
 - Do not touch or reconfigure Caddy.
 - Docker Compose deployment must remain available for the management server.
 - Air-gapped deployment is required: update outside, export bundle, import inside.
-- Air-gapped release archives must include static server/agent binaries, source sync scripts, import/export scripts, Docker images, migrations, web assets, and a package `SHA256SUMS` manifest.
+- Air-gapped release archives must include static server/agent binaries, source sync scripts, import/export scripts, server/web/agent/postgres Docker images, migrations, web assets, and a package `SHA256SUMS` manifest.
 - CVE matching must use only matchable affected package evidence: package name, ecosystem/target such as `Packagist`, and fixed-version/range data. Name-only or priority-only records must remain searchable but must not create rematch/rescan findings.
 - `TEMP-*` and `CVD-*` placeholder vulnerabilities are invalid for the CVE DB and should not appear in `cve_database`, `cve_affected_packages`, reference keys, or rematch candidates.
 - EPSS belongs on matching CVE/advisory rows as columns, not only as separate EPSS source records.
@@ -239,7 +239,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 - Playwright coverage now verifies dashboard CVE DB status, CVE Search fixed-version evidence, Hosts force-scan POST bodies, RBAC subject/policy POST bodies, scheduled scan creation payloads, dynamic asset-group creation and scan trigger payloads, report export query parameters, notification rule creation/test payloads, and notification-log rendering.
 - Dashboard E2E and live web smoke now verify first-screen `bongsu` branding plus the `봉수대` meaning/product intro text.
 - `docs/operations-runbook.md` is available and `scripts/package.sh` includes documentation in release archives.
-- Real airgap package generation was exercised with `scripts/package.sh 0.1.0-real-20260604051738` after fixing server/agent Dockerfiles from `golang:1.24-alpine` to `golang:1.25-alpine` to match `go.mod`. The generated archive was `bongsu-0.1.0-real-20260604051738.tar.gz`, size 87M, SHA256 `622d4706b7d31242ae26340d90700480362d1a25f92879ec35d9388e1eece929`; both `scripts/verify-airgap-release-archive.sh` and `scripts/verify-airgap-offline-rehearsal.sh` passed against it.
+- Real airgap package generation was exercised with `scripts/package.sh 0.1.0-real-20260604055407` after fixing server/agent Dockerfiles from `golang:1.24-alpine` to `golang:1.25-alpine` to match `go.mod`. The generated archive was `bongsu-0.1.0-real-20260604055407.tar.gz`, size 208M, SHA256 `ff200255584ecc524a1cf6daf387c5a5ab47dfe65a8b804c5bfef44ba45d7900`; both `scripts/verify-airgap-release-archive.sh` and `scripts/verify-airgap-offline-rehearsal.sh` passed against it. The packaged loader loaded `bongsu-server`, `bongsu-agent`, `bongsu-web`, and `postgres:16-alpine`; packaged compose started on isolated ports `5687/5688`; a 109M exported security DB bundle imported successfully with 806272 CVE rows, 682665 affected-package rows, 1308724 reference keys, and 100% affected/reference index coverage.
 - Go tests now assert RBAC access scope expansion for host, container, image, and asset-group policies and verify inventory/scan list endpoints apply those scopes.
 - CI runs `scripts/verify-package-contents.sh` and `scripts/verify-airgap-package-smoke.sh` to keep air-gapped release archives from silently losing required files or breaking package generation.
 - Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
@@ -320,7 +320,7 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
 6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.
-8. Run a real isolated/offline deployment rehearsal with Docker image loading and security DB bundle import. A real release archive has now been generated and verified locally, but the final commercial gate should still exercise transfer into an offline network or disposable air-gapped host.
+8. Repeat the airgap archive/load/compose/import rehearsal after any packaging or security DB import change. A real isolated local rehearsal passed with Docker image loading and security DB bundle import; the final commercial gate should still exercise transfer into a physically separate offline network or disposable air-gapped host.
 
 ## Matching Rules Reminder
 

@@ -470,6 +470,11 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusInternalServerError, "cve affected package index failed", "index_cve", err)
 		return
 	}
+	if _, err := s.db.RefreshCveReferenceKeysForSourceTx(r.Context(), tx, ""); err != nil {
+		tx.Rollback()
+		fail(http.StatusInternalServerError, "cve reference key index failed", "index_cve_references", err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		fail(http.StatusInternalServerError, "cve import commit failed", "commit_cve", err)
 		return

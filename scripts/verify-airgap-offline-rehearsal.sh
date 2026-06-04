@@ -102,8 +102,8 @@ chmod +x "$STUB_DIR/docker"
     cd "$ROOT_DIR"
     ./load-images.sh
 )
-if [ "$(wc -l < "$LOAD_LOG" | tr -d ' ')" != "2" ]; then
-    echo "ERROR: loader must load exactly two image archives" >&2
+if [ "$(wc -l < "$LOAD_LOG" | tr -d ' ')" != "4" ]; then
+    echo "ERROR: loader must load exactly four image archives" >&2
     cat "$LOAD_LOG" >&2 || true
     exit 1
 fi

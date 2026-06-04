@@ -1074,6 +1074,8 @@ func TestSecurityDBBundleImportUsesSingleCveTransaction(t *testing.T) {
 		"s.importCveJSONLTx",
 		"validateSecurityDBBundleImportedCount(manifest, imported)",
 		"s.db.SyncEPSSPriorityColumnsTx",
+		"s.db.RefreshCveAffectedPackagesForSourceTx",
+		"s.db.RefreshCveReferenceKeysForSourceTx",
 		"tx.Rollback()",
 		"tx.Commit()",
 	} {
@@ -3037,7 +3039,7 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"BONGSU_DB_CONN_MAX_LIFETIME_MINUTES: ${BONGSU_DB_CONN_MAX_LIFETIME_MINUTES:-5}",
 				"BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS: ${BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS:-10}",
 				"BONGSU_HTTP_READ_TIMEOUT_SECONDS: ${BONGSU_HTTP_READ_TIMEOUT_SECONDS:-30}",
-				"BONGSU_HTTP_WRITE_TIMEOUT_SECONDS: ${BONGSU_HTTP_WRITE_TIMEOUT_SECONDS:-120}",
+				"BONGSU_HTTP_WRITE_TIMEOUT_SECONDS: ${BONGSU_HTTP_WRITE_TIMEOUT_SECONDS:-900}",
 				"BONGSU_HTTP_IDLE_TIMEOUT_SECONDS: ${BONGSU_HTTP_IDLE_TIMEOUT_SECONDS:-120}",
 				"BONGSU_HTTP_MAX_HEADER_BYTES: ${BONGSU_HTTP_MAX_HEADER_BYTES:-1048576}",
 				`BONGSU_PORT: "5677"`,
