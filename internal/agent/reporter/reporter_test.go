@@ -2,6 +2,7 @@ package reporter
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -124,6 +125,27 @@ func TestReporterDoesNotRetryClientError(t *testing.T) {
 	}
 }
 
+func TestReporterBoundsErrorResponseBodies(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, strings.Repeat("x", maxErrorResponseBodyBytes+4096))
+	}))
+	defer srv.Close()
+
+	rep := New(srv.URL, "api-key")
+	_, err := rep.Send(&models.ScanReport{Host: models.Host{ID: "host-1"}})
+	if err == nil {
+		t.Fatal("expected error for oversized error body")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "...(truncated)") {
+		t.Fatalf("error body was not marked truncated: len=%d err=%q", len(msg), msg)
+	}
+	if strings.Count(msg, "x") > maxErrorResponseBodyBytes {
+		t.Fatalf("error body was not bounded: x count=%d", strings.Count(msg, "x"))
+	}
+}
+
 func TestReporterRetryExhausted(t *testing.T) {
 	t.Setenv("BONGSU_AGENT_RETRY_ATTEMPTS", "2")
 	t.Setenv("BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS", "1")
@@ -164,5 +186,26 @@ func TestReporterSendUsesExponentialBackoff(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("reporter.go missing %q", want)
 		}
+	}
+}
+
+func TestReporterErrorBodiesUseBoundedReader(t *testing.T) {
+	src, err := os.ReadFile("reporter.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(src)
+	for _, want := range []string{
+		"const maxErrorResponseBodyBytes",
+		"io.LimitReader(body, maxErrorResponseBodyBytes+1)",
+		"readBoundedErrorBody(resp.Body)",
+		"...(truncated)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("reporter bounded error body missing %q", want)
+		}
+	}
+	if strings.Count(body, "io.ReadAll(") != 1 {
+		t.Fatalf("reporter must only read HTTP error bodies through readBoundedErrorBody: %s", body)
 	}
 }

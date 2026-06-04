@@ -15,6 +15,8 @@ import (
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
+const maxErrorResponseBodyBytes = 16 << 10
+
 type retryConfig struct {
 	maxAttempts int
 	maxBackoff  time.Duration
@@ -100,7 +102,7 @@ func (r *Reporter) ClaimScanRequest(hostID string) (*models.ScanRequest, error) 
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body := readBoundedErrorBody(resp.Body)
 		return nil, fmt.Errorf("claim returned %d: %s", resp.StatusCode, string(body))
 	}
 	var out struct {
@@ -137,7 +139,7 @@ func (r *Reporter) CompleteScanRequest(id, hostID, status, message string) error
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody := readBoundedErrorBody(resp.Body)
 		return fmt.Errorf("complete returned %d: %s", resp.StatusCode, string(respBody))
 	}
 	return nil
@@ -187,7 +189,7 @@ func (r *Reporter) Send(report *models.ScanReport) (*ReportResult, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody := readBoundedErrorBody(resp.Body)
 		return nil, fmt.Errorf("server returned %d: %s", resp.StatusCode, string(respBody))
 	}
 
@@ -199,4 +201,20 @@ func (r *Reporter) Send(report *models.ScanReport) (*ReportResult, error) {
 		result.ScanStatus = "completed"
 	}
 	return &result, nil
+}
+
+func readBoundedErrorBody(body io.Reader) []byte {
+	if body == nil {
+		return nil
+	}
+	limited := io.LimitReader(body, maxErrorResponseBodyBytes+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return []byte("failed to read error response")
+	}
+	if len(data) <= maxErrorResponseBodyBytes {
+		return data
+	}
+	data = data[:maxErrorResponseBodyBytes]
+	return append(data, []byte("...(truncated)")...)
 }
