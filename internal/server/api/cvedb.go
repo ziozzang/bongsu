@@ -791,14 +791,22 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		}
 		trivyLoaded = true
 	}
-	s.audit(r, "security_db.import", "security_db", "bundle", "ok", map[string]any{
-		"imported":             imported,
-		"trivy_db_loaded":      trivyLoaded,
-		"security_db_revision": manifest.SecurityDBRevision,
-	})
+	importMeta := securityDBBundleImportMeta(manifest)
+	importMeta["imported"] = imported
+	importMeta["trivy_db_loaded"] = trivyLoaded
+	s.audit(r, "security_db.import", "security_db", "bundle", "ok", importMeta)
 	s.SecurityDatabaseUpdated("security-db bundle import")
 	s.clearCveStatsCache()
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "imported": imported, "trivy_db_loaded": trivyLoaded, "security_db_revision": manifest.SecurityDBRevision})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":                   "ok",
+		"imported":                 imported,
+		"trivy_db_loaded":          trivyLoaded,
+		"security_db_revision":     manifest.SecurityDBRevision,
+		"bundle_created_at":        manifest.CreatedAt,
+		"bundle_source_count":      len(manifest.Sources),
+		"bundle_cve_records":       manifest.CveRecords,
+		"bundle_trivy_db_included": manifest.TrivyDBIncluded,
+	})
 }
 
 type securityDBBundleManifest struct {
@@ -811,6 +819,19 @@ type securityDBBundleManifest struct {
 	TrivyDBIncluded    bool                `json:"trivy_db_included"`
 	TrivyDBSHA256      string              `json:"trivy_db_sha256"`
 	Sources            []db.CveSourceStats `json:"sources,omitempty"`
+}
+
+func securityDBBundleImportMeta(manifest *securityDBBundleManifest) map[string]any {
+	meta := map[string]any{}
+	if manifest == nil {
+		return meta
+	}
+	meta["security_db_revision"] = manifest.SecurityDBRevision
+	meta["bundle_created_at"] = manifest.CreatedAt
+	meta["bundle_source_count"] = len(manifest.Sources)
+	meta["bundle_cve_records"] = manifest.CveRecords
+	meta["bundle_trivy_db_included"] = manifest.TrivyDBIncluded
+	return meta
 }
 
 var errNoValidCveEntries = errors.New("no valid cve entries")
@@ -841,6 +862,11 @@ func validateSecurityDBBundle(manifest *securityDBBundleManifest, cveFile, cveSH
 	}
 	if manifest.Version != 1 {
 		return fmt.Errorf("unsupported bundle version")
+	}
+	if strings.TrimSpace(manifest.CreatedAt) != "" {
+		if _, err := time.Parse(time.RFC3339, manifest.CreatedAt); err != nil {
+			return fmt.Errorf("invalid bundle created_at")
+		}
 	}
 	if cveFile == "" {
 		return fmt.Errorf("missing cve-database.jsonl")

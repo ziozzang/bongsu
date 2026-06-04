@@ -1038,6 +1038,10 @@ func TestValidateSecurityDBBundleChecksums(t *testing.T) {
 	if err := validateSecurityDBBundle(manifest, "/tmp/cve.jsonl", cveSHA, "/tmp/trivy.tar.gz", "bad"); err == nil || !strings.Contains(err.Error(), "trivy db checksum") {
 		t.Fatalf("trivy checksum error = %v", err)
 	}
+	manifest.CreatedAt = "not-a-time"
+	if err := validateSecurityDBBundle(manifest, "/tmp/cve.jsonl", cveSHA, "/tmp/trivy.tar.gz", trivySHA); err == nil || !strings.Contains(err.Error(), "created_at") {
+		t.Fatalf("created_at validation error = %v", err)
+	}
 }
 
 func TestValidateSecurityDBBundleImportedCount(t *testing.T) {
@@ -1119,7 +1123,12 @@ func TestSecurityDBBundleImportRejectsDuplicateEntries(t *testing.T) {
 		`"duplicate manifest.json"`,
 		`"duplicate cve-database.jsonl"`,
 		`"duplicate trivy-db.tar.gz"`,
-		`"security_db_revision": manifest.SecurityDBRevision`,
+		`"security_db_revision"`,
+		"securityDBBundleImportMeta(manifest)",
+		`"bundle_created_at"`,
+		`"bundle_source_count"`,
+		`"bundle_cve_records"`,
+		`"bundle_trivy_db_included"`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("bundle import duplicate/entry guard missing %q: %s", want, fn)
@@ -3286,6 +3295,9 @@ func TestDashboardExposesAirgapSecurityBundleActions(t *testing.T) {
 		"handleSecurityBundleExport",
 		"handleSecurityBundleImport",
 		"securityBundleIncludeTrivy",
+		"bundle_created_at",
+		"bundle_source_count",
+		"security_db_revision",
 		"recalculation started",
 	} {
 		if !strings.Contains(appBody, want) {
@@ -3299,6 +3311,10 @@ func TestDashboardExposesAirgapSecurityBundleActions(t *testing.T) {
 		"/admin/security-db/import",
 		"FormData",
 		"uploadForm",
+		"bundle_created_at?: string",
+		"bundle_source_count?: number",
+		"bundle_cve_records?: number",
+		"bundle_trivy_db_included?: boolean",
 		"bongsu-security-db-bundle.tar.gz",
 	} {
 		if !strings.Contains(apiBody, want) {

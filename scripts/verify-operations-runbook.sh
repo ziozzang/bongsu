@@ -169,6 +169,8 @@ require_text "$RELEASE" 'verify-live-vulnerability-export-rbac\.sh' "live releas
 require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "live release readiness must fail closed when direct DB checks are required but unavailable"
 require_text "$AUDIT" 'verify-operations-runbook\.sh' "requirements audit must list the operations runbook verifier"
 require_text "$ARCH" 'security_db_freshness\.latest_source' "architecture must document persisted freshness health fields"
+require_text "$ARCH" 'bundle creation timestamp' "architecture must document security DB bundle provenance metadata"
+require_text "$ARCH" 'source count, CVE record count, and Trivy inclusion state' "architecture must document airgap import provenance audit fields"
 reject_text "$RUNBOOK" 'Caddyfile|caddy reload|docker compose .*caddy|systemctl .*caddy' "runbook must not tell operators to manage Caddy from Bongsu"
 
 echo "Operations runbook verification passed"

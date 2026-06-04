@@ -874,7 +874,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setSecurityBundleMsg(`Importing ${file.name}...`);
     try {
       const r = await api.importSecurityDBBundle(file);
-      setSecurityBundleMsg(`Imported ${r.imported.toLocaleString()} CVE records${r.trivy_db_loaded ? ' and Trivy DB' : ''}; recalculation started`);
+      const revisionMsg = r.security_db_revision ? `, rev ${r.security_db_revision}` : '';
+      const createdMsg = r.bundle_created_at ? `, bundle ${new Date(r.bundle_created_at).toLocaleString()}` : '';
+      const sourceMsg = typeof r.bundle_source_count === 'number' ? `, ${r.bundle_source_count} sources` : '';
+      setSecurityBundleMsg(`Imported ${r.imported.toLocaleString()} CVE records${r.trivy_db_loaded ? ' and Trivy DB' : ''}${revisionMsg}${createdMsg}${sourceMsg}; recalculation started`);
       api.rawHealth().then(h => {
         setHealth(h);
         setSecurityDbConfigured(!!h.security_db?.configured);
