@@ -79,7 +79,12 @@ validate_backup_archive() {
 
     while IFS= read -r entry; do
         case "$entry" in
-            database.dump|manifest.json|trivy-cache.tar) ;;
+            database.dump|manifest.json|trivy-cache.tar)
+                if tar -tvzf "$archive" "$entry" | grep -qv '^-'; then
+                    echo "ERROR: backup archive entry must be a regular file: $entry" >&2
+                    exit 1
+                fi
+                ;;
             /*|*../*|../*|*/..|.)
                 echo "ERROR: unsafe backup archive entry: $entry" >&2
                 exit 1

@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 14:05:00 KST
+Updated: 2026-06-04 13:14:45 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Verify OpenAPI operation security
+master / origin/main latest commit: Reject non-regular backup archive entries
 ```
 
 Important recent commits:
 
 ```text
-<latest> Verify OpenAPI operation security
+<latest> Reject non-regular backup archive entries
+8d312c4 Verify OpenAPI operation security
 190ff69 Harden generated installer systemd path
 477177c Verify static server build metadata
 d6f2f27 Verify latest SBOM package ontology
@@ -92,7 +93,7 @@ This handoff commit should include:
 - Browser smoke coverage for Hosts force-scan requests and RBAC subject/policy creation, including POST body verification.
 - Browser workflow coverage for scheduled scan creation, dynamic asset-group creation, asset-group scan trigger, report rendering/export, notification rule creation/test delivery, and notification-log loading, including request payload verification.
 - Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
-- Backup/restore archive verifier covers safe tar entries, required members, duplicate member rejection, and manifest checksum rejection without requiring a live database.
+- Backup/restore archive verifier covers safe tar entries, regular-file enforcement, required members, duplicate member rejection, symlink member rejection, and manifest checksum rejection without requiring a live database.
 - Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
 - Real agent binary workflow verifier builds `cmd/agent`, runs it against fixture Trivy/osquery/docker tools for two logical host IDs, verifies host/container package ontology and host-id isolation through the live API, then runs daemon polling to claim and complete a host-specific scan request.
 - Live agent token binding verifier binds a host to one token, then proves a different token cannot report inventory, claim scan requests, or complete requests for the bound host when `BONGSU_AGENT_HOST_BINDING=true`.
@@ -195,6 +196,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 - Background stale-while-revalidate cache for `/api/cve-db/stats` is implemented.
 - The dashboard API client now reads `X-Bongsu-Cache` for CVE DB stats and the dashboard card exposes cache state, generated timestamp, and stats duration.
 - `scripts/verify-openapi.sh` now verifies not only route/spec sync but also that non-public operations declare security, admin operations include `AdminKey`, agent operations include `AgentKey`, installer/download operations include `InstallToken`/`AdminKey`, and export/SBOM operations are not documented as public.
+- `scripts/restore.sh` now rejects allowed-name backup archive members unless they are regular files, and `scripts/verify-backup-restore-archive.sh` covers symlink `database.dump` rejection.
 - The generated `/api/install.sh` one-line installer now supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN`, matching the packaged installer test hooks so systemd service/timer generation can be verified without touching `/etc/systemd/system` or real `systemctl`.
 - Static release verification now executes both `bongsu-agent --version` and `bongsu-server --version`, checking injected version/commit/build-date metadata after confirming both linux/amd64 binaries are statically linked; `scripts/package.sh` now builds release binaries with `-trimpath`.
 - `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
