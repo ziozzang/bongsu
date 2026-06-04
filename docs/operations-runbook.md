@@ -386,6 +386,14 @@ If OSV upstream feeds have changed but the persisted source freshness window has
 
 The OSV-only refresh uses the same per-ecosystem append/upsert mode as the full connected sync, prunes stale `source=osv` rows only after every configured ecosystem succeeds, then rebuilds affected-package and reference-key indexes and queues security recalculation once.
 
+If only NVD is stale, refresh it without running OSV or Trivy extraction:
+
+```bash
+./scripts/sync-nvd-cvedb.sh http://localhost:5677 "$BONGSU_API_KEY"
+```
+
+The NVD-only refresh downloads the configured NVD year range into one JSONL file and replaces the `nvd` source once, so yearly chunks cannot overwrite each other. Use `BONGSU_NVD_YEARS=2023,2024,2025,2026` or `BONGSU_NVD_YEAR_WINDOW=5` to tune the retained publication-year range.
+
 Air-gapped environments should disable online sync and import signed transfer bundles:
 
 ```text

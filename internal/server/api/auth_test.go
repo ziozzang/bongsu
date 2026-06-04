@@ -3801,20 +3801,26 @@ func TestDownloadEPSSScriptIsFailClosedAndAtomic(t *testing.T) {
 	}
 }
 
-func TestSecurityDBSyncScriptImportsNvdPerYear(t *testing.T) {
+func TestSecurityDBSyncScriptImportsCombinedNvdOnce(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(out)
 	for _, want := range []string{
+		`NVD_YEARS="${BONGSU_NVD_YEARS:-}"`,
+		`NVD_YEARS="$(seq -s, $((CURRENT_YEAR - NVD_YEAR_WINDOW)) "${CURRENT_YEAR}")"`,
 		`NVD_FAILED=0`,
+		`"${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${NVD_YEARS}"`,
 		`import_cve_file "${NVD_FILE}" "nvd"`,
 		`incomplete NVD download; preserving existing nvd source`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("sync-all-cvedb per-year NVD import missing %q", want)
+			t.Fatalf("sync-all-cvedb combined NVD import missing %q", want)
 		}
+	}
+	if strings.Contains(body, `for YEAR in $(seq`) || strings.Contains(body, `NVD_FILE="${TMPDIR}/nvd-${YEAR}.jsonl"`) {
+		t.Fatal("sync-all-cvedb must not replace the nvd source once per year")
 	}
 }
 
@@ -4387,6 +4393,29 @@ func TestTrivySourceSyncScriptRefreshesOnlyTrivySource(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-trivy-cvedb must provide targeted fail-closed Trivy refresh, missing %q", want)
+		}
+	}
+}
+
+func TestNvdSourceSyncScriptRefreshesOnlyNvdSource(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/sync-nvd-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`NVD_YEARS="${BONGSU_NVD_YEARS:-}"`,
+		`BONGSU_NVD_YEAR_WINDOW`,
+		`"${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${NVD_YEARS}"`,
+		`preserving existing nvd source`,
+		`-F "source=nvd"`,
+		`-F "replace=true"`,
+		`-F "finalize=true"`,
+		`NVD import returned zero imported rows`,
+		`/api/cve-db/stats`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-nvd-cvedb must provide targeted fail-closed NVD refresh, missing %q", want)
 		}
 	}
 }

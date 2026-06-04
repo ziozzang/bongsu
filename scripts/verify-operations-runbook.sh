@@ -143,6 +143,7 @@ for script in \
     verify-live-session-auth.sh \
     verify-live-cvedb-quality.sh \
     verify-live-vulnerability-export-rbac.sh \
+    sync-nvd-cvedb.sh \
     sync-osv-cvedb.sh \
     sync-trivy-cvedb.sh \
     verify-live-web-smoke.sh \

@@ -188,35 +188,35 @@ elif [ "${OSV_TOTAL}" -eq 0 ]; then
 fi
 echo ""
 
-# --- 4. NVD (per-year to avoid upload timeouts) ---
+# --- 4. NVD ---
 echo "[4/5] Downloading NVD data..."
-CURRENT_YEAR=$(date +%Y)
+CURRENT_YEAR="$(date +%Y)"
+NVD_YEAR_WINDOW="${BONGSU_NVD_YEAR_WINDOW:-3}"
+NVD_YEARS="${BONGSU_NVD_YEARS:-}"
+if [ -z "${NVD_YEARS}" ]; then
+    NVD_YEARS="$(seq -s, $((CURRENT_YEAR - NVD_YEAR_WINDOW)) "${CURRENT_YEAR}")"
+fi
 NVD_FAILED=0
 NVD_TOTAL=0
-for YEAR in $(seq $((CURRENT_YEAR - 3)) ${CURRENT_YEAR}); do
-    NVD_FILE="${TMPDIR}/nvd-${YEAR}.jsonl"
-    echo "  Year ${YEAR}..."
-    if ! "${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${YEAR}"; then
-        echo "    ERROR: ${YEAR} download failed"
-        FAILED_SOURCES+=("nvd:${YEAR}")
-        NVD_FAILED=1
-        continue
-    fi
-
-    if [ -s "${NVD_FILE}" ]; then
-        NVD_LINES=$(wc -l < "${NVD_FILE}")
-        NVD_SIZE=$(du -h "${NVD_FILE}" | cut -f1)
-        echo "    Importing ${YEAR} (${NVD_LINES} entries, ${NVD_SIZE})..."
-        IMPORTED=$(import_cve_file "${NVD_FILE}" "nvd")
-        echo "    Imported/updated: ${IMPORTED}"
-        NVD_TOTAL=$((NVD_TOTAL + IMPORTED))
-        rm -f "${NVD_FILE}"
-    else
-        echo "    ERROR: ${YEAR} produced no NVD data"
-        FAILED_SOURCES+=("nvd:${YEAR}:no-data")
-        NVD_FAILED=1
-    fi
-done
+NVD_FILE="${TMPDIR}/nvd.jsonl"
+echo "  Years ${NVD_YEARS}..."
+if ! "${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${NVD_YEARS}"; then
+    echo "    ERROR: NVD download failed"
+    FAILED_SOURCES+=("nvd:download")
+    NVD_FAILED=1
+elif [ -s "${NVD_FILE}" ]; then
+    NVD_LINES=$(wc -l < "${NVD_FILE}")
+    NVD_SIZE=$(du -h "${NVD_FILE}" | cut -f1)
+    echo "    Importing NVD (${NVD_LINES} entries, ${NVD_SIZE})..."
+    IMPORTED=$(import_cve_file "${NVD_FILE}" "nvd")
+    echo "    Imported/updated: ${IMPORTED}"
+    NVD_TOTAL=$((NVD_TOTAL + IMPORTED))
+    rm -f "${NVD_FILE}"
+else
+    echo "    ERROR: NVD produced no data"
+    FAILED_SOURCES+=("nvd:no-data")
+    NVD_FAILED=1
+fi
 
 TOTAL_IMPORTED=$((TOTAL_IMPORTED + NVD_TOTAL))
 if [ "${NVD_FAILED}" -ne 0 ]; then
