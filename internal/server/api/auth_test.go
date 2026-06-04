@@ -4134,6 +4134,12 @@ func TestLiveCveRematchWorkflowVerifierUsesPackagistFixture(t *testing.T) {
 		`explicit scan-scoped rematch must be idempotent after automatic rematch`,
 		`finding_source=cve-db`,
 		`advisory_sources`,
+		`advisory_evidence`,
+		`.source == "osv"`,
+		`ascii_downcase) == "packagist"`,
+		`fixed_version // ""`,
+		`automatic rematch findings must preserve package ecosystem and OSV advisory evidence`,
+		`rematched findings must preserve package ecosystem and OSV advisory evidence`,
 		`Live CVE rematch workflow verification passed`,
 	} {
 		if !strings.Contains(body, want) {
