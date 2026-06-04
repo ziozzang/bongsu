@@ -1743,6 +1743,10 @@ func (s *Server) startAffectedIndexRebuild() (bool, string) {
 	return true, "queued"
 }
 
+func (s *Server) QueueCveAffectedIndexRebuild() (bool, string) {
+	return s.startAffectedIndexRebuild()
+}
+
 func (s *Server) runAffectedIndexRebuild() {
 	started := time.Now()
 	log.Printf("CVE affected package index rebuild started")

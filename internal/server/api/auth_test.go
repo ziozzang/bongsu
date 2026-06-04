@@ -3585,6 +3585,23 @@ func TestAsyncCveIndexRebuildsUseRebuildTimeouts(t *testing.T) {
 	}
 }
 
+func TestServerExposesAffectedIndexRebuildQueueForStartupFallback(t *testing.T) {
+	out, err := os.ReadFile("cvedb.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`func (s *Server) QueueCveAffectedIndexRebuild() (bool, string)`,
+		`return s.startAffectedIndexRebuild()`,
+		`if s.affectedIndexRunning`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("startup affected-index fallback must reuse async rebuild guard, missing %q", want)
+		}
+	}
+}
+
 func TestCveDbImportRefreshesSecuritySourceRegistry(t *testing.T) {
 	out, err := os.ReadFile("cvedb.go")
 	if err != nil {

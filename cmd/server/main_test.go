@@ -160,6 +160,8 @@ func TestMainStartsHTTPListenerBeforeBackgroundSecuritySync(t *testing.T) {
 		`database.RunMigrations(migrationCtx)`,
 		`BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS`,
 		`database.EnsureCveAffectedPackages(indexCtx)`,
+		`queueStartupAffectedIndexRebuild = true`,
+		`server.QueueCveAffectedIndexRebuild()`,
 		`BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS`,
 		`database.EnsureCveReferenceKeys(refCtx)`,
 		`BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS`,
@@ -171,6 +173,12 @@ func TestMainStartsHTTPListenerBeforeBackgroundSecuritySync(t *testing.T) {
 	}
 	if strings.Index(body, `httpServer.Serve(listener)`) > strings.Index(body, `go secMgr.Start(bgCtx)`) {
 		t.Fatal("security DB startup sync must begin only after the HTTP listener is accepting requests")
+	}
+	if strings.Contains(body, `log.Fatalf("prepare CVE affected package index`) {
+		t.Fatal("affected package index startup preparation must not prevent the API listener from starting")
+	}
+	if strings.Index(body, `httpServer.Serve(listener)`) > strings.Index(body, `server.QueueCveAffectedIndexRebuild()`) {
+		t.Fatal("startup affected index rebuild fallback must be queued only after the HTTP listener is accepting requests")
 	}
 }
 

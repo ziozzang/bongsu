@@ -51,6 +51,7 @@ func main() {
 	defer database.Close()
 	log.Println("Connected to database")
 
+	queueStartupAffectedIndexRebuild := false
 	if autoMigrate {
 		migrationCtx, migrationCancel := context.WithTimeout(context.Background(), time.Duration(envPositiveInt("BONGSU_DB_MIGRATION_TIMEOUT_SECONDS", 600))*time.Second)
 		if err := database.RunMigrations(migrationCtx); err != nil {
@@ -62,7 +63,8 @@ func main() {
 		indexCtx, indexCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS", 180))*time.Second)
 		if n, err := database.EnsureCveAffectedPackages(indexCtx); err != nil {
 			indexCancel()
-			log.Fatalf("prepare CVE affected package index: %v", err)
+			queueStartupAffectedIndexRebuild = true
+			log.Printf("WARNING: prepare CVE affected package index skipped; API will start and queue async rebuild: %v", err)
 		} else if n > 0 {
 			indexCancel()
 			log.Printf("Indexed %d CVE affected packages", n)
@@ -166,6 +168,13 @@ func main() {
 	}()
 
 	log.Printf("Bongsu server listening on :%d", port)
+	if queueStartupAffectedIndexRebuild {
+		if started, status := server.QueueCveAffectedIndexRebuild(); started {
+			log.Printf("Queued async CVE affected package index rebuild after startup prepare failure")
+		} else {
+			log.Printf("Async CVE affected package index rebuild not queued after startup prepare failure: %s", status)
+		}
+	}
 	if dbMgr != nil {
 		dbMgr.SetUpdateHook(server.SecurityDatabaseUpdated)
 		bgCtx, bgCancel := context.WithCancel(context.Background())
