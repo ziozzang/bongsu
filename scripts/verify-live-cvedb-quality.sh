@@ -16,6 +16,8 @@ MIN_REFERENCE_INDEX_COVERAGE="${BONGSU_VERIFY_CVEDB_MIN_REFERENCE_INDEX_COVERAGE
 MIN_EPSS_NON_EPSS_COVERAGE="${BONGSU_VERIFY_CVEDB_MIN_EPSS_NON_EPSS_COVERAGE:-50}"
 MIN_REFERENCE_MULTI_SOURCE_GROUPS="${BONGSU_VERIFY_CVEDB_MIN_REFERENCE_MULTI_SOURCE_GROUPS:-1}"
 MIN_REFERENCE_VENDOR_GROUPS="${BONGSU_VERIFY_CVEDB_MIN_REFERENCE_VENDOR_GROUPS:-1}"
+MIN_OSV_PACKAGIST_SENTINEL_ROWS="${BONGSU_VERIFY_CVEDB_MIN_OSV_PACKAGIST_SENTINEL_ROWS:-1000}"
+MIN_OSV_PACKAGIST_SENTINEL_MATCHES="${BONGSU_VERIFY_CVEDB_MIN_OSV_PACKAGIST_SENTINEL_MATCHES:-3}"
 MAX_STATS_WALL_SECONDS="${BONGSU_VERIFY_CVEDB_MAX_STATS_WALL_SECONDS:-30}"
 MAX_STATS_INTERNAL_MS="${BONGSU_VERIFY_CVEDB_MAX_STATS_INTERNAL_MS:-20000}"
 MAX_SEARCH_WALL_SECONDS="${BONGSU_VERIFY_CVEDB_MAX_SEARCH_WALL_SECONDS:-10}"
@@ -316,6 +318,32 @@ FROM cve_database
 WHERE source != 'epss'
   AND vulnerability_id ~ '^CVE-[0-9]{4}-[0-9]{4,}$'
   AND (epss_score > 0 OR epss_percentile > 0)" "direct DB must expose EPSS as columns on non-EPSS CVE rows"
+    osv_packagist_rows="$(db_scalar "
+SELECT count(*)
+FROM cve_database c
+WHERE c.source = 'osv'
+  AND (
+      lower(c.ecosystem) LIKE 'packagist%'
+      OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
+          WHERE lower(COALESCE(ap->>'ecosystem', '')) LIKE 'packagist%'
+      )
+  )")"
+    if awk -v v="$osv_packagist_rows" -v m="$MIN_OSV_PACKAGIST_SENTINEL_ROWS" 'BEGIN { exit !(v >= m) }'; then
+        assert_db_at_least "
+SELECT count(*)
+FROM cve_affected_packages
+WHERE source = 'osv'
+  AND package_name = 'phenx/php-svg-lib'
+  AND ecosystem = 'packagist'
+  AND fixed_version IN ('0.5.1', '0.5.2')" "$MIN_OSV_PACKAGIST_SENTINEL_MATCHES" "OSV Packagist sentinel must preserve phenx/php-svg-lib package/ecosystem/fixed evidence"
+        packagist_json="$TMP_DIR/osv-packagist-sentinel.json"
+        packagist_time="$TMP_DIR/osv-packagist-sentinel.time"
+        api_get_json "/api/cve-db/search?q=phenx%2Fphp-svg-lib&limit=10&matchable_only=true" "$packagist_json" "$packagist_time"
+        assert_elapsed_at_most "$packagist_time" "$MAX_SEARCH_WALL_SECONDS" "OSV Packagist sentinel search"
+        assert_jq_numarg "$packagist_json" min "$MIN_OSV_PACKAGIST_SENTINEL_MATCHES" '(.total // 0) >= $min and ([.items[]? | select((.source // "") == "osv" and ((.ecosystem // "") | ascii_downcase) == "packagist" and (.matchable_affected_count // 0) > 0)] | length) >= $min' "CVE Search must return matchable phenx/php-svg-lib Packagist OSV evidence"
+    fi
 else
     if [ "$BONGSU_VERIFY_CVEDB_REQUIRE_DB" = "true" ]; then
         echo "ERROR: BONGSU_DB_DSN is required for direct CVE DB invariant checks" >&2

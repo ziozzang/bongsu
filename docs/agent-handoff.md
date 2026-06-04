@@ -164,22 +164,21 @@ POST http://127.0.0.1:5678/api/auth/login admin/password -> 200
 
 ## Current CVE DB Status
 
-OSV sync bug fixed in this handoff:
+OSV sync bugs fixed in recent handoffs:
 
-- Root cause: `scripts/sync-all-cvedb.sh` imported each OSV ecosystem chunk with the same `source=osv`, while `/api/admin/cve-db/import` replaced all rows for that source on every import. The final ecosystem chunk overwrote the earlier chunks, leaving live OSV effectively at the last imported ecosystem only.
-- Fix: the import API accepts `replace=false`, OSV ecosystem chunks use append/upsert mode, and OSV chunks use `finalize=false` so affected/reference indexes plus security recalculation run once after all OSV chunks finish instead of once per ecosystem.
-- Live recovery import was run through PyPI, npm, Hex, Pub, Alpine, Debian, SUSE, and AlmaLinux. Chainguard was already present from the previous snapshot.
+- First root cause: `scripts/sync-all-cvedb.sh` imported each OSV ecosystem chunk with the same `source=osv`, while `/api/admin/cve-db/import` replaced all rows for that source on every import. The final ecosystem chunk overwrote earlier chunks.
+- First fix: the import API accepts `replace=false`, OSV ecosystem chunks use append/upsert mode, and OSV chunks use `finalize=false` so affected/reference indexes plus security recalculation run once after all OSV chunks finish instead of once per ecosystem.
+- Second root cause: after append mode was fixed, rows sharing the same OSV source and CVE alias still conflicted on `(vulnerability_id, source)`. Later distro chunks could overwrite earlier Packagist/PyPI/npm `affected_products`.
+- Second fix: CVE/source upserts now merge existing and incoming `affected_products`/`refs` arrays. The live verifier includes a Packagist sentinel for `phenx/php-svg-lib` when the DB contains a production-scale OSV Packagist feed.
 
 Latest OSV live snapshot:
 
 ```text
-osv cve_database rows:       324549
-osv distinct row ecosystems: 366
-osv affected index rows:     272415
-osv affected ecosystems:     427
-osv matchable rows:          94198
-osv rows with fixed data:    94257
-osv rows with range data:    309659
+osv cve_database rows:       330843
+osv Packagist top rows:      6299
+osv affected index rows:     282765
+osv indexed/matchable CVEs:  99597
+phenx/php-svg-lib matches:   3 Packagist rows with fixed 0.5.1/0.5.2
 ```
 
 Last verified operational metrics:
