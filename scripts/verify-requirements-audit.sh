@@ -86,6 +86,8 @@ for keyword in \
     '5677' \
     '5678' \
     'air-gapped' \
+    '봉수대' \
+    'product intro' \
     'TEMP-\*' \
     'CVD-\*' \
     'EPSS' \

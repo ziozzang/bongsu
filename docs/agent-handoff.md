@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 13:50:00 KST
+Updated: 2026-06-04 14:05:00 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Verify dynamic asset-group RBAC scope
+master / origin/main latest commit: Verify dashboard product identity
 ```
 
 Important recent commits:
 
 ```text
-<latest> Verify dynamic asset-group RBAC scope
+<latest> Verify dashboard product identity
+c2298c9 Verify dynamic asset-group RBAC scope
 5bb05ac Harden CVE matching invariants
 0229dd2 Verify CVE reference grouping quality
 a22626c Expand live web smoke coverage
@@ -189,11 +190,12 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 - `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
 - `./scripts/verify-live-rbac-scope.sh` now validates dynamic `asset_group` policy expansion instead of relying only on a direct host policy.
 - Playwright coverage now verifies dashboard CVE DB status, CVE Search fixed-version evidence, Hosts force-scan POST bodies, RBAC subject/policy POST bodies, scheduled scan creation payloads, dynamic asset-group creation and scan trigger payloads, report export query parameters, notification rule creation/test payloads, and notification-log rendering.
+- Dashboard E2E and live web smoke now verify first-screen `bongsu` branding plus the `봉수대` meaning/product intro text.
 - `docs/operations-runbook.md` is available and `scripts/package.sh` includes documentation in release archives.
 - Go tests now assert RBAC access scope expansion for host, container, image, and asset-group policies and verify inventory/scan list endpoints apply those scopes.
 - CI runs `scripts/verify-package-contents.sh` and `scripts/verify-airgap-package-smoke.sh` to keep air-gapped release archives from silently losing required files or breaking package generation.
 - Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
-- Live Playwright smoke is now scripted by `./scripts/verify-live-web-smoke.sh` and passed against `http://127.0.0.1:5678` using `BONGSU_API_KEY=test-admin-key`. It covers dashboard CVE DB status, CVE Search, Hosts, Packages, Containers, Scan History, Vulnerabilities, RBAC, Audit Log, Schedules, Asset Groups, Trends, Reports, and Notifications routes, while asserting that live `/api/` responses do not return 5xx.
+- Live Playwright smoke is now scripted by `./scripts/verify-live-web-smoke.sh` and passed against `http://127.0.0.1:5678` using `BONGSU_API_KEY=test-admin-key`. It covers dashboard product identity, CVE DB status, CVE Search, Hosts, Packages, Containers, Scan History, Vulnerabilities, RBAC, Audit Log, Schedules, Asset Groups, Trends, Reports, and Notifications routes, while asserting that live `/api/` responses do not return 5xx.
 - Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state, the newest browser suite now covers the added schedule/asset-group/report/notification views with mocked API contract assertions, and the live operator verifier passed against `127.0.0.1:5677` using the running API and agent credentials, including agent claim/report/complete.
 
 ## Verification Commands

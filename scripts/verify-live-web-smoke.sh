@@ -82,6 +82,9 @@ test('live dashboard and operator routes render without API 5xx responses', asyn
   }
 
   await authenticate(page);
+  await expect(page.getByRole('heading', { name: 'bongsu' })).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(/Named after 봉수대/)).toBeVisible({ timeout: 15000 });
+  await expect(page.getByText(/hosts and running containers/)).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole('link', { name: /CVE Search/ })).toBeVisible();
   await expect(page.getByText(/CVE DB/i).first()).toBeVisible({ timeout: 15000 });
   await expect(page.getByText(/Total Hosts|Active Findings|SBOM/i).first()).toBeVisible({ timeout: 15000 });

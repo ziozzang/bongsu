@@ -796,7 +796,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div className="eyebrow">Self-hosted vulnerability watchtower</div>
           <h1>bongsu</h1>
           <p>
-            Named after a Korean signal-fire watchtower, Bongsu gathers package evidence from hosts and running containers,
+            Named after 봉수대, the Korean signal-fire watchtower, Bongsu gathers package evidence from hosts and running containers,
             separates OS packages from code libraries, and matches them against CVSS-aware vulnerability databases.
           </p>
         </div>
