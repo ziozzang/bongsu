@@ -74,7 +74,6 @@ func deleteScanLatestInventorySQL() string {
 	)`
 }
 
-
 func (db *DB) InsertUserAccounts(ctx context.Context, users []models.UserAccount) error {
 	if len(users) == 0 {
 		return nil
@@ -161,6 +160,87 @@ func (db *DB) InsertPorts(ctx context.Context, ports []models.PortInfo) error {
 		}
 	}
 	return tx.Commit()
+}
+
+func (db *DB) GetLatestUserAccounts(ctx context.Context, hostID string, limit, offset int) ([]models.UserAccount, int, error) {
+	countQ := `SELECT count(*) FROM user_accounts u JOIN ` + latestScansSub + ` ls ON u.scan_id = ls.id WHERE u.host_id=$1`
+	dataQ := `SELECT u.id, u.scan_id, u.host_id, u.username, u.uid, u.gid, u.home_dir, u.shell
+FROM user_accounts u JOIN ` + latestScansSub + ` ls ON u.scan_id = ls.id
+WHERE u.host_id=$1
+ORDER BY u.uid, u.username
+LIMIT $2 OFFSET $3`
+	var total int
+	if err := db.QueryRowContext(ctx, countQ, hostID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := db.QueryContext(ctx, dataQ, hostID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var users []models.UserAccount
+	for rows.Next() {
+		var u models.UserAccount
+		if err := rows.Scan(&u.ID, &u.ScanID, &u.HostID, &u.Username, &u.UID, &u.GID, &u.HomeDir, &u.Shell); err != nil {
+			return nil, 0, err
+		}
+		users = append(users, u)
+	}
+	return users, total, rows.Err()
+}
+
+func (db *DB) GetLatestProcessSnapshots(ctx context.Context, hostID string, limit, offset int) ([]models.ProcessSnapshot, int, error) {
+	countQ := `SELECT count(*) FROM process_snapshots p JOIN ` + latestScansSub + ` ls ON p.scan_id = ls.id WHERE p.host_id=$1`
+	dataQ := `SELECT p.id, p.scan_id, p.host_id, p.pid, p.name, p.cmdline, p.user_name, p.cpu_usage, p.mem_usage
+FROM process_snapshots p JOIN ` + latestScansSub + ` ls ON p.scan_id = ls.id
+WHERE p.host_id=$1
+ORDER BY p.cpu_usage DESC, p.mem_usage DESC, p.pid
+LIMIT $2 OFFSET $3`
+	var total int
+	if err := db.QueryRowContext(ctx, countQ, hostID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := db.QueryContext(ctx, dataQ, hostID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var procs []models.ProcessSnapshot
+	for rows.Next() {
+		var p models.ProcessSnapshot
+		if err := rows.Scan(&p.ID, &p.ScanID, &p.HostID, &p.PID, &p.Name, &p.Cmdline, &p.User, &p.CPUUsage, &p.MemUsage); err != nil {
+			return nil, 0, err
+		}
+		procs = append(procs, p)
+	}
+	return procs, total, rows.Err()
+}
+
+func (db *DB) GetLatestPorts(ctx context.Context, hostID string, limit, offset int) ([]models.PortInfo, int, error) {
+	countQ := `SELECT count(*) FROM port_info p JOIN ` + latestScansSub + ` ls ON p.scan_id = ls.id WHERE p.host_id=$1`
+	dataQ := `SELECT p.id, p.scan_id, p.host_id, p.name, p.port, p.protocol, p.address, p.pid
+FROM port_info p JOIN ` + latestScansSub + ` ls ON p.scan_id = ls.id
+WHERE p.host_id=$1
+ORDER BY p.port, p.protocol, p.address
+LIMIT $2 OFFSET $3`
+	var total int
+	if err := db.QueryRowContext(ctx, countQ, hostID).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := db.QueryContext(ctx, dataQ, hostID, limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	var ports []models.PortInfo
+	for rows.Next() {
+		var p models.PortInfo
+		if err := rows.Scan(&p.ID, &p.ScanID, &p.HostID, &p.Name, &p.Port, &p.Protocol, &p.Address, &p.PID); err != nil {
+			return nil, 0, err
+		}
+		ports = append(ports, p)
+	}
+	return ports, total, rows.Err()
 }
 
 func (db *DB) ListScans(ctx context.Context, hostID string, hostIDs []string, limit, offset int) ([]models.Scan, int, error) {
@@ -254,7 +334,6 @@ func packageIdentitySQL(a, b string) string {
 	}
 	return strings.Join(parts, " AND ")
 }
-
 
 func (db *DB) CreateScanRequest(ctx context.Context, req *models.ScanRequest) error {
 	if req.ID == "" {

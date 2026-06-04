@@ -286,6 +286,78 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /api/hosts/{id}/users:
+    get:
+      operationId: getHostUsers
+      tags: [hosts]
+      summary: Get latest host user accounts
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated latest-scan user accounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedUserAccounts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/hosts/{id}/processes:
+    get:
+      operationId: getHostProcesses
+      tags: [hosts]
+      summary: Get latest host process snapshot
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated latest-scan processes, ordered by CPU and memory usage
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedProcessSnapshots"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/hosts/{id}/ports:
+    get:
+      operationId: getHostPorts
+      tags: [hosts]
+      summary: Get latest host listening ports
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+      responses:
+        "200":
+          description: Paginated latest-scan listening ports
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedPorts"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /api/hosts/{id}/sbom:
     get:
       operationId: getHostSBOM
@@ -4426,6 +4498,36 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Package"
+        total:
+          type: integer
+
+    PaginatedUserAccounts:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserAccount"
+        total:
+          type: integer
+
+    PaginatedProcessSnapshots:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProcessSnapshot"
+        total:
+          type: integer
+
+    PaginatedPorts:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PortInfo"
         total:
           type: integer
 

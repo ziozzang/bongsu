@@ -230,6 +230,75 @@ func (s *Server) handleHostPackages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleHostUsers(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	hostID := r.PathValue("id")
+	if !s.canReadHost(r, hostID) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	items, total, err := s.db.GetLatestUserAccounts(r.Context(), hostID, limitParam(r, 100), offsetParam(r))
+	if err != nil {
+		log.Printf("host users: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if items == nil {
+		items = []models.UserAccount{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
+}
+
+func (s *Server) handleHostProcesses(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	hostID := r.PathValue("id")
+	if !s.canReadHost(r, hostID) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	items, total, err := s.db.GetLatestProcessSnapshots(r.Context(), hostID, limitParam(r, 100), offsetParam(r))
+	if err != nil {
+		log.Printf("host processes: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if items == nil {
+		items = []models.ProcessSnapshot{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
+}
+
+func (s *Server) handleHostPorts(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	hostID := r.PathValue("id")
+	if !s.canReadHost(r, hostID) {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+
+	items, total, err := s.db.GetLatestPorts(r.Context(), hostID, limitParam(r, 100), offsetParam(r))
+	if err != nil {
+		log.Printf("host ports: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if items == nil {
+		items = []models.PortInfo{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": total})
+}
+
 func (s *Server) handleHostSBOM(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateExport(r) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")

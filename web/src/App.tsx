@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -1827,6 +1827,12 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
   const [pkgs, setPkgs] = useState<Pkg[]>([]);
   const [totalPkgs, setTotalPkgs] = useState(0);
   const [pkgPage, setPkgPage] = useState(0);
+  const [users, setUsers] = useState<UserAccount[]>([]);
+  const [totalUsers, setTotalUsers] = useState(0);
+  const [processes, setProcesses] = useState<ProcessSnapshot[]>([]);
+  const [totalProcesses, setTotalProcesses] = useState(0);
+  const [ports, setPorts] = useState<PortInfo[]>([]);
+  const [totalPorts, setTotalPorts] = useState(0);
   const [exportMsg, setExportMsg] = useState('');
   const [metadata, setMetadata] = useState({ owner: '', team: '', environment: '', criticality: '', tags: '{}' });
   const [metadataMsg, setMetadataMsg] = useState('');
@@ -1852,6 +1858,12 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
   }, [hostId]);
 
   useEffect(() => { loadPkgs(0); }, [loadPkgs]);
+
+  useEffect(() => {
+    api.hostUsers(hostId, 20, 0).then(r => { setUsers(r.items || []); setTotalUsers(r.total || 0); }).catch(() => {});
+    api.hostProcesses(hostId, 20, 0).then(r => { setProcesses(r.items || []); setTotalProcesses(r.total || 0); }).catch(() => {});
+    api.hostPorts(hostId, 20, 0).then(r => { setPorts(r.items || []); setTotalPorts(r.total || 0); }).catch(() => {});
+  }, [hostId]);
 
   if (!host) return <div>Loading...</div>;
 
@@ -1979,6 +1991,61 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
           </span>
           {agentTokenMsg && <span style={{ color: agentTokenMsg.includes('failed') ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>{agentTokenMsg}</span>}
         </div>
+      </div>
+
+      <div className="split-grid" style={{ marginBottom: '1rem' }}>
+        <div className="card">
+          <div className="card-header"><h2>Users ({totalUsers})</h2></div>
+          <table>
+            <thead><tr><th>User</th><th>UID</th><th>GID</th><th>Shell</th></tr></thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id || `${u.username}-${u.uid}`}>
+                  <td className="mono">{u.username}</td><td>{u.uid}</td><td>{u.gid}</td><td className="mono">{u.shell || '-'}</td>
+                </tr>
+              ))}
+              {users.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No user inventory</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="card">
+          <div className="card-header"><h2>Listening Ports ({totalPorts})</h2></div>
+          <table>
+            <thead><tr><th>Port</th><th>Protocol</th><th>Process</th><th>Address</th></tr></thead>
+            <tbody>
+              {ports.map(p => (
+                <tr key={p.id || `${p.protocol}-${p.address}-${p.port}`}>
+                  <td className="mono">{p.port}</td><td>{p.protocol}</td><td className="mono">{p.name || p.pid || '-'}</td><td className="mono">{p.address || '-'}</td>
+                </tr>
+              ))}
+              {ports.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No port inventory</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: '1rem' }}>
+        <div className="card-header">
+          <h2>Top Processes ({totalProcesses})</h2>
+        </div>
+        <table>
+          <thead>
+            <tr><th>PID</th><th>Name</th><th>User</th><th>CPU</th><th>Mem</th><th>Command</th></tr>
+          </thead>
+          <tbody>
+            {processes.map(p => (
+              <tr key={p.id || `${p.pid}-${p.name}`}>
+                <td className="mono">{p.pid}</td>
+                <td className="mono">{p.name}</td>
+                <td>{p.user || '-'}</td>
+                <td className="mono">{p.cpu_usage.toFixed(1)}%</td>
+                <td className="mono">{p.mem_usage.toFixed(1)}%</td>
+                <td className="mono" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.cmdline || '-'}</td>
+              </tr>
+            ))}
+            {processes.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No process inventory</td></tr>}
+          </tbody>
+        </table>
       </div>
 
       <div className="card">

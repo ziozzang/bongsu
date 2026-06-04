@@ -20,7 +20,7 @@ Bongsu means "봉수대": a watchtower network that sends signals from the edge 
 - Matching: packages-only mode sends packages to the server, then the server runs Trivy SBOM matching with the local Trivy DB. Server-side matching writes transient SBOM input through private `0600` temporary files and removes them after Trivy returns, so package inventories are not exposed through predictable shared temp paths.
 - Security DB: JSONL import/export for `cve_database`, Trivy DB upload/update, source sync command hook via `BONGSU_SECURITY_DB_SYNC_CMD`.
 - Airgap: server can import CVE JSONL and Trivy DB archives. The one-line installer downloads the agent and Trivy binaries from the management server.
-- Data model: host, scan, package, vulnerability, container asset, security source, scan request, and RBAC policy tables.
+- Data model: host, scan, package, vulnerability, container asset, user account, process snapshot, listening port, security source, scan request, and RBAC policy tables. Host detail APIs expose the latest completed or degraded scan's packages, users, top processes, listening ports, and SBOM export under the same host/container RBAC scope.
 
 ## Security Sources
 

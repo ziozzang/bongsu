@@ -180,6 +180,40 @@ export interface Host {
   };
 }
 
+export interface UserAccount {
+  id: string;
+  scan_id: string;
+  host_id: string;
+  username: string;
+  uid: number;
+  gid: number;
+  home_dir: string;
+  shell: string;
+}
+
+export interface ProcessSnapshot {
+  id: string;
+  scan_id: string;
+  host_id: string;
+  pid: number;
+  name: string;
+  cmdline: string;
+  user: string;
+  cpu_usage: number;
+  mem_usage: number;
+}
+
+export interface PortInfo {
+  id: string;
+  scan_id: string;
+  host_id: string;
+  name: string;
+  port: number;
+  protocol: string;
+  address: string;
+  pid: number;
+}
+
 export interface Vuln {
   id: string;
   vulnerability_id: string;
@@ -980,6 +1014,12 @@ export const api = {
     requestEmpty<{ status: string }>(`/hosts/${id}/agent-token/reset`, 'POST'),
   hostPackages: (id: string, limit: number, offset: number) =>
     request<{ items: Pkg[]; total: number }>(`/hosts/${id}/packages`, { limit: String(limit), offset: String(offset) }),
+  hostUsers: (id: string, limit: number, offset: number) =>
+    request<{ items: UserAccount[]; total: number }>(`/hosts/${id}/users`, { limit: String(limit), offset: String(offset) }),
+  hostProcesses: (id: string, limit: number, offset: number) =>
+    request<{ items: ProcessSnapshot[]; total: number }>(`/hosts/${id}/processes`, { limit: String(limit), offset: String(offset) }),
+  hostPorts: (id: string, limit: number, offset: number) =>
+    request<{ items: PortInfo[]; total: number }>(`/hosts/${id}/ports`, { limit: String(limit), offset: String(offset) }),
   exportHostSBOM: (id: string, hostname: string, format = 'cyclonedx') =>
     download(`/hosts/${id}/sbom`, `${hostname || id}-${format === 'spdx' ? 'spdx.json' : 'cyclonedx.json'}`, { format }),
   hostVulnCounts: (id: string) => request<Record<string, number>>(`/hosts/${id}/vuln-counts`),

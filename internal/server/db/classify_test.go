@@ -2138,6 +2138,40 @@ func TestLatestScansIncludesDegradedInventory(t *testing.T) {
 	}
 }
 
+func TestHostRuntimeInventoryQueriesUseLatestInventoryScan(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, fnName := range []string{
+		"GetLatestUserAccounts",
+		"GetLatestProcessSnapshots",
+		"GetLatestPorts",
+	} {
+		start := strings.Index(body, "func (db *DB) "+fnName)
+		if start < 0 {
+			t.Fatalf("%s not found", fnName)
+		}
+		end := strings.Index(body[start+1:], "\nfunc ")
+		if end < 0 {
+			t.Fatalf("%s end not found", fnName)
+		}
+		fn := body[start : start+1+end]
+		for _, want := range []string{
+			"JOIN ` + latestScansSub + ` ls ON",
+			"WHERE ",
+			"host_id=$1",
+			"LIMIT $2 OFFSET $3",
+			"rows.Err()",
+		} {
+			if !strings.Contains(fn, want) {
+				t.Fatalf("%s must query latest scan inventory and paginate, missing %q: %s", fnName, want, fn)
+			}
+		}
+	}
+}
+
 func TestRunMigrationsRecordsAppliedFiles(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {

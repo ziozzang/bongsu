@@ -3664,6 +3664,86 @@ func TestResetHostAgentTokenRequiresAdminAndAudits(t *testing.T) {
 	}
 }
 
+func TestHostRuntimeInventoryEndpointsAreDocumentedAndScoped(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	for _, want := range []string{
+		`"GET /api/hosts/{id}/users"`,
+		`"GET /api/hosts/{id}/processes"`,
+		`"GET /api/hosts/{id}/ports"`,
+		"func (s *Server) handleHostUsers",
+		"func (s *Server) handleHostProcesses",
+		"func (s *Server) handleHostPorts",
+		"s.canReadHost(r, hostID)",
+		"s.db.GetLatestUserAccounts",
+		"s.db.GetLatestProcessSnapshots",
+		"s.db.GetLatestPorts",
+		"[]models.UserAccount{}",
+		"[]models.ProcessSnapshot{}",
+		"[]models.PortInfo{}",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("host runtime inventory endpoint missing %q", want)
+		}
+	}
+
+	spec, err := os.ReadFile("../../../internal/server/api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	specBody := string(spec)
+	for _, want := range []string{
+		"/api/hosts/{id}/users:",
+		"/api/hosts/{id}/processes:",
+		"/api/hosts/{id}/ports:",
+		"PaginatedUserAccounts:",
+		"PaginatedProcessSnapshots:",
+		"PaginatedPorts:",
+	} {
+		if !strings.Contains(specBody, want) {
+			t.Fatalf("OpenAPI missing host runtime inventory contract %q", want)
+		}
+	}
+}
+
+func TestHostDetailShowsRuntimeInventory(t *testing.T) {
+	apiOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiBody := string(apiOut)
+	for _, want := range []string{
+		"export interface UserAccount",
+		"export interface ProcessSnapshot",
+		"export interface PortInfo",
+		"hostUsers:",
+		"hostProcesses:",
+		"hostPorts:",
+	} {
+		if !strings.Contains(apiBody, want) {
+			t.Fatalf("web API client missing host runtime inventory support %q", want)
+		}
+	}
+
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBody := string(appOut)
+	for _, want := range []string{
+		"Users ({totalUsers})",
+		"Listening Ports ({totalPorts})",
+		"Top Processes ({totalProcesses})",
+		"api.hostUsers(hostId, 20, 0)",
+		"api.hostProcesses(hostId, 20, 0)",
+		"api.hostPorts(hostId, 20, 0)",
+	} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("host detail UI missing runtime inventory evidence %q", want)
+		}
+	}
+}
+
 func TestDashboardShowsAgentTokenBindingState(t *testing.T) {
 	appOut, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {
