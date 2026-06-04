@@ -200,6 +200,7 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 	freshnessTimedOut := dbCtx.Err() != nil
 	cancel()
 	out["security_db_freshness"] = freshness
+	enrichSecurityDBManagerStatus(out["security_db"], freshness)
 	if freshnessTimedOut {
 		out["security_db_freshness_timeout"] = true
 	}
@@ -306,6 +307,35 @@ func (s *Server) securityDbStatusQuality(parent context.Context, timeoutSeconds 
 	})
 	cancel()
 	return quality, affectedIndexOut, referenceIndexOut
+}
+
+func enrichSecurityDBManagerStatus(status any, freshness map[string]any) {
+	m, ok := status.(map[string]any)
+	if !ok || freshness == nil {
+		return
+	}
+	for _, pair := range []struct {
+		from string
+		to   string
+	}{
+		{"latest_source", "persisted_latest_source"},
+		{"latest_last_update", "persisted_latest_update"},
+		{"latest_age_seconds", "persisted_latest_age_seconds"},
+		{"source_count", "persisted_source_count"},
+		{"missing_sources", "persisted_missing_sources"},
+		{"stale_sources", "persisted_stale_sources"},
+		{"status", "persisted_status"},
+	} {
+		if v, ok := freshness[pair.from]; ok {
+			m[pair.to] = v
+		}
+	}
+	if status, _ := m["status"].(string); status == "never" {
+		if latest, ok := freshness["latest_last_update"]; ok {
+			m["status_detail"] = "process has not run a sync since startup; using persisted CVE DB freshness"
+			m["last_sync_persisted"] = latest
+		}
+	}
 }
 
 func (s *Server) handleSecurityDbRecalculate(w http.ResponseWriter, r *http.Request) {
@@ -2182,13 +2212,25 @@ func buildCveDBQualitySummary(input cveDBQualityInput) map[string]any {
 			severity = level
 		}
 	}
+	totalRecords := input.TotalRecords
+	if totalRecords == 0 && input.ReferenceIndex != nil && input.ReferenceIndex.TotalCVEs > 0 {
+		totalRecords = input.ReferenceIndex.TotalCVEs
+	}
+	totalMatchable := input.TotalMatchable
+	if totalMatchable == 0 && input.AffectedIndex != nil && input.AffectedIndex.IndexedCVEs > 0 {
+		totalMatchable = input.AffectedIndex.IndexedCVEs
+	}
+	eligibleSources := input.EligibleSources
+	if eligibleSources == 0 && input.AffectedIndex != nil && input.AffectedIndex.SourceCount > 0 {
+		eligibleSources = input.AffectedIndex.SourceCount
+	}
 	out := map[string]any{
 		"status":                  "ok",
 		"warnings":                warnings,
 		"warning_count":           0,
-		"total_records":           input.TotalRecords,
-		"total_matchable":         input.TotalMatchable,
-		"eligible_sources":        input.EligibleSources,
+		"total_records":           totalRecords,
+		"total_matchable":         totalMatchable,
+		"eligible_sources":        eligibleSources,
 		"excluded_sources":        input.ExcludedSources,
 		"temporary_placeholders":  0,
 		"empty_vulnerability_ids": 0,
@@ -2275,7 +2317,7 @@ func buildCveDBQualitySummary(input cveDBQualityInput) map[string]any {
 		out["epss_merge_error"] = input.EPSSMergeError.Error()
 		addWarning(1, "EPSS merge quality unavailable")
 	}
-	if input.TotalRecords > 0 && input.EligibleSources == 0 {
+	if totalRecords > 0 && eligibleSources == 0 {
 		addWarning(2, "no rematch eligible CVE sources")
 	}
 	status := "ok"

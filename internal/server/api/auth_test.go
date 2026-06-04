@@ -1843,6 +1843,7 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		"securityRecalculationLastResult(dbCtx, true)",
 		"securityDBRevisionMeta(dbCtx)",
 		"securityDbStatusQuality",
+		"enrichSecurityDBManagerStatus(out[\"security_db\"], freshness)",
 		`out["cve_db_quality"]`,
 		`out["cve_affected_package_index"]`,
 		`out["cve_reference_key_index"]`,
@@ -2134,6 +2135,7 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		`s.securityDBFreshnessStatus(dbCtx, isAdmin)`,
 		`resp["security_db_freshness_timeout"] = true`,
 		`resp["security_db_freshness"] = freshness`,
+		`enrichSecurityDBManagerStatus(resp["security_db"], freshness)`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("health handler missing %q: %s", want, fn)
@@ -2144,6 +2146,29 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	}
 	if strings.Index(fn, "s.dbMgr.PublicStatus()") < strings.Index(fn, "else") {
 		t.Fatalf("public Trivy DB status should be used only for non-admin health: %s", fn)
+	}
+}
+
+func TestEnrichSecurityDBManagerStatusAddsPersistedFreshness(t *testing.T) {
+	status := map[string]any{"status": "never"}
+	freshness := map[string]any{
+		"latest_source":      "osv",
+		"latest_last_update": "2026-06-04T05:31:32Z",
+		"source_count":       5,
+		"status":             "ok",
+	}
+	enrichSecurityDBManagerStatus(status, freshness)
+	if status["persisted_latest_source"] != "osv" {
+		t.Fatalf("persisted latest source = %#v", status["persisted_latest_source"])
+	}
+	if status["persisted_status"] != "ok" {
+		t.Fatalf("persisted status = %#v", status["persisted_status"])
+	}
+	if status["last_sync_persisted"] != "2026-06-04T05:31:32Z" {
+		t.Fatalf("persisted last sync = %#v", status["last_sync_persisted"])
+	}
+	if _, ok := status["status_detail"].(string); !ok {
+		t.Fatalf("status detail missing: %#v", status)
 	}
 }
 
@@ -2174,6 +2199,12 @@ func TestCveDBQualitySummarySupportsPartialAffectedIndexHealth(t *testing.T) {
 	}
 	if _, ok := quality["affected_index_stale"]; ok {
 		t.Fatalf("partial affected index must not expose unknown stale state: %#v", quality)
+	}
+	if quality["total_matchable"] != 25 {
+		t.Fatalf("partial affected index total_matchable = %#v, want indexed CVE count", quality["total_matchable"])
+	}
+	if quality["eligible_sources"] != 1 {
+		t.Fatalf("partial affected index eligible_sources = %#v, want affected index source count", quality["eligible_sources"])
 	}
 
 	quality = buildCveDBQualitySummary(cveDBQualityInput{
@@ -2215,6 +2246,9 @@ func TestCveDBQualitySummarySupportsPartialReferenceIndexHealth(t *testing.T) {
 	}
 	if _, ok := quality["reference_index_stale"]; ok {
 		t.Fatalf("partial reference index must not expose unknown stale state: %#v", quality)
+	}
+	if quality["total_records"] != 0 {
+		t.Fatalf("partial reference index without total CVEs should not invent total_records: %#v", quality["total_records"])
 	}
 
 	quality = buildCveDBQualitySummary(cveDBQualityInput{

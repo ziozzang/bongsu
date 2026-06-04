@@ -149,6 +149,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		timedOut := dbCtx.Err() != nil
 		cancel()
 		resp["security_db_freshness"] = freshness
+		enrichSecurityDBManagerStatus(resp["security_db"], freshness)
 		if timedOut {
 			resp["security_db_freshness_timeout"] = true
 		} else if status, _ := freshness["status"].(string); status != "" && status != "ok" {
@@ -171,6 +172,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			resp["security_db"] = s.secMgr.Status()
 		} else {
 			resp["security_db"] = s.secMgr.PublicStatus()
+		}
+		if freshness, ok := resp["security_db_freshness"].(map[string]any); ok {
+			enrichSecurityDBManagerStatus(resp["security_db"], freshness)
 		}
 	}
 	writeJSON(w, http.StatusOK, resp)
