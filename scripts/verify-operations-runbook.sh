@@ -72,6 +72,7 @@ for pattern in \
     'BONGSU_DB_DSN="\$BONGSU_DB_DSN"' \
     'BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS' \
     'BONGSU_VERIFY_CURL_MAX_TIME_SECONDS' \
+    'BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS=3600' \
     'BONGSU_VERIFY_CVEDB_CONCURRENCY_STATS_REQUESTS' \
     'stale-claim path' \
     'BONGSU_NOTIFICATION_RETRY_ATTEMPTS' \
@@ -161,6 +162,7 @@ require_text "$RELEASE" 'BONGSU_RELEASE_READINESS_REPORT' "release readiness mus
 require_text "$RELEASE" '"failed_gate_count"' "release readiness report must include failed gate count"
 require_text "$RELEASE" 'verify-release-readiness-report\.sh' "release readiness must verify JSON evidence report behavior"
 require_text "$RELEASE" 'BONGSU_VERIFY_CVEDB_REQUIRE_DB=\$\{REQUIRE_DB\}' "live release readiness must require direct CVE DB invariants by default"
+require_text "$RELEASE" 'BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS=3600' "live release readiness must bound OSV upstream freshness grace to one hour"
 require_text "$RELEASE" 'verify-live-cvedb-concurrency\.sh' "live release readiness must verify concurrent CVE DB observability"
 require_text "$RELEASE" 'verify-live-cve-rematch-workflow\.sh' "live release readiness must verify CVE DB rematch workflow"
 require_text "$RELEASE" 'verify-live-sbom-export-workflow\.sh' "live release readiness must verify live SBOM export workflow"

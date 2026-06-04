@@ -31,7 +31,7 @@ BONGSU_DB_DSN="$BONGSU_DB_DSN" BONGSU_RELEASE_READINESS_LIVE=true ./scripts/veri
 
 Set `BONGSU_RELEASE_READINESS_REPORT` during release or handoff runs to persist a JSON evidence report with the source commit, selected options, each gate command, exit status, timestamps, duration, and total failed gate count. Keep this report with the release archive, CI artifact, or handoff notes so a failed promotion has an auditable record instead of only terminal output.
 Live release readiness enables strict CVE source freshness automatically; stale or missing required sources must be fixed before promotion. It requires `BONGSU_DB_DSN` by default so direct PostgreSQL CVE DB invariants run during release promotion; set `BONGSU_RELEASE_READINESS_REQUIRE_DB=false` only for non-release smoke runs where database access is intentionally unavailable.
-In connected live environments it also compares selected OSV upstream `all.zip` `Last-Modified` headers with the local OSV source timestamp, so an OSV feed that is behind upstream beyond the configured grace window fails promotion. With `BONGSU_DB_DSN`, the same gate checks each sentinel ecosystem's affected-package index timestamp so one fresh OSV chunk cannot hide another stale ecosystem.
+In connected live environments it also compares selected OSV upstream `all.zip` `Last-Modified` headers with the local OSV source timestamp, so an OSV feed that is behind upstream beyond the configured grace window fails promotion. The default and release-readiness grace is `BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS=3600`, short enough to catch source-specific OSV lag inside the 6-hour sync cadence while tolerating feed updates that land during a full OSV import. With `BONGSU_DB_DSN`, the same gate checks each sentinel ecosystem's affected-package index timestamp so one fresh OSV chunk cannot hide another stale ecosystem.
 It verifies the live API server build first: `/api/health` must expose a non-empty version, build date, and a commit matching the latest server/runtime source commit, or a newer commit whose server/runtime build inputs are identical.
 It also verifies the live one-line installer payload: `/api/admin/installer/status` must report ready agent and Trivy binaries, valid SHA256 metadata, an install token, and an agent version containing the latest agent/installer source commit.
 It then exercises the actual live one-line installer and download URLs with `./scripts/verify-live-install-script.sh`: `/api/install.sh`, `/api/downloads/bongsu-agent`, and `/api/downloads/trivy` must reject unauthenticated and query-token requests, accept header authentication, expose checksum headers, and serve binaries whose SHA256 matches the advertised value.
@@ -272,6 +272,8 @@ For release-candidate or production health gates, require source freshness as we
 
 ```bash
 BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true \
+BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true \
+BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS=3600 \
 BONGSU_DB_DSN="$BONGSU_DB_DSN" \
 ./scripts/verify-live-cvedb-quality.sh
 ```
