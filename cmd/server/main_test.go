@@ -190,14 +190,14 @@ func TestMainBackfillsSecuritySourceRegistryAfterMigrations(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"BONGSU_SECURITY_SOURCE_STATUS_TIMEOUT_SECONDS",
-		`database.RefreshSecuritySourceStatus(sourceCtx, "")`,
+		`database.EnsureSecuritySourceStatus(sourceCtx, "")`,
 		"refresh security source registry status",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("server startup must backfill security source registry status, missing %q", want)
 		}
 	}
-	if strings.Index(body, `database.RunMigrations(migrationCtx)`) > strings.Index(body, `database.RefreshSecuritySourceStatus(sourceCtx, "")`) {
+	if strings.Index(body, `database.RunMigrations(migrationCtx)`) > strings.Index(body, `database.EnsureSecuritySourceStatus(sourceCtx, "")`) {
 		t.Fatal("security source registry status must refresh after migrations")
 	}
 }

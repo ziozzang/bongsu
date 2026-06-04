@@ -81,7 +81,7 @@ func main() {
 			}
 		}()
 		sourceCtx, sourceCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_SECURITY_SOURCE_STATUS_TIMEOUT_SECONDS", 30))*time.Second)
-		if err := database.RefreshSecuritySourceStatus(sourceCtx, ""); err != nil {
+		if err := database.EnsureSecuritySourceStatus(sourceCtx, ""); err != nil {
 			log.Printf("WARNING: refresh security source registry status: %v", err)
 		}
 		sourceCancel()

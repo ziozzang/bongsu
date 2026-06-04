@@ -476,6 +476,14 @@ func (db *DB) DeleteAllCveEntriesTx(ctx context.Context, tx *sql.Tx) (int, error
 }
 
 func (db *DB) RefreshSecuritySourceStatusTx(ctx context.Context, tx *sql.Tx, source string) error {
+	return db.refreshSecuritySourceStatusTx(ctx, tx, source, false)
+}
+
+func (db *DB) EnsureSecuritySourceStatusTx(ctx context.Context, tx *sql.Tx, source string) error {
+	return db.refreshSecuritySourceStatusTx(ctx, tx, source, true)
+}
+
+func (db *DB) refreshSecuritySourceStatusTx(ctx context.Context, tx *sql.Tx, source string, preserveExistingSync bool) error {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		rows, err := tx.QueryContext(ctx, `SELECT source FROM cve_database WHERE source != '' GROUP BY source`)
@@ -495,7 +503,7 @@ func (db *DB) RefreshSecuritySourceStatusTx(ctx context.Context, tx *sql.Tx, sou
 		}
 		rows.Close()
 		for _, rowSource := range sources {
-			if err := db.RefreshSecuritySourceStatusTx(ctx, tx, rowSource); err != nil {
+			if err := db.refreshSecuritySourceStatusTx(ctx, tx, rowSource, preserveExistingSync); err != nil {
 				return err
 			}
 		}
@@ -523,12 +531,12 @@ ON CONFLICT (id) DO UPDATE SET
 	kind=EXCLUDED.kind,
 	category=EXCLUDED.category,
 	ecosystems=EXCLUDED.ecosystems,
-	last_sync_started_at=EXCLUDED.last_sync_started_at,
-	last_sync_finished_at=EXCLUDED.last_sync_finished_at,
+	last_sync_started_at=CASE WHEN $5 THEN COALESCE(security_sources.last_sync_started_at, EXCLUDED.last_sync_started_at) ELSE EXCLUDED.last_sync_started_at END,
+	last_sync_finished_at=CASE WHEN $5 THEN COALESCE(security_sources.last_sync_finished_at, EXCLUDED.last_sync_finished_at) ELSE EXCLUDED.last_sync_finished_at END,
 	last_status=EXCLUDED.last_status,
 	last_error='',
 	record_count=EXCLUDED.record_count,
-	updated_at=now()`, source, meta.name, meta.category, pq.Array(meta.ecosystems))
+	updated_at=now()`, source, meta.name, meta.category, pq.Array(meta.ecosystems), preserveExistingSync)
 	return err
 }
 
@@ -539,6 +547,18 @@ func (db *DB) RefreshSecuritySourceStatus(ctx context.Context, source string) er
 	}
 	defer tx.Rollback()
 	if err := db.RefreshSecuritySourceStatusTx(ctx, tx, source); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (db *DB) EnsureSecuritySourceStatus(ctx context.Context, source string) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := db.EnsureSecuritySourceStatusTx(ctx, tx, source); err != nil {
 		return err
 	}
 	return tx.Commit()
