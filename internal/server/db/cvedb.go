@@ -1494,6 +1494,13 @@ type CveSourceStats struct {
 	LastUpdate       *time.Time `json:"last_update"`
 }
 
+type CveOsvEcosystemStats struct {
+	Ecosystem     string     `json:"ecosystem"`
+	IndexedRows   int        `json:"indexed_rows"`
+	MatchableCVEs int        `json:"matchable_cves"`
+	LastUpdate    *time.Time `json:"last_update"`
+}
+
 type CveSourceFreshnessStats struct {
 	Source     string     `json:"source"`
 	Count      int        `json:"count"`
@@ -1863,6 +1870,37 @@ ORDER BY base.source`)
 		stats = append(stats, s)
 	}
 	return stats, nil
+}
+
+func (db *DB) GetCveOsvEcosystemStats(ctx context.Context, limit int) ([]CveOsvEcosystemStats, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 40
+	}
+	rows, err := db.QueryContext(ctx, `
+SELECT
+	lower(split_part(ecosystem, ':', 1)) AS ecosystem,
+	count(*) AS indexed_rows,
+	count(DISTINCT vulnerability_id) AS matchable_cves,
+	max(updated_at) AS last_update
+FROM cve_affected_packages
+WHERE source = 'osv'
+  AND trim(ecosystem) != ''
+GROUP BY lower(split_part(ecosystem, ':', 1))
+ORDER BY indexed_rows DESC, ecosystem
+LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var stats []CveOsvEcosystemStats
+	for rows.Next() {
+		var s CveOsvEcosystemStats
+		if err := rows.Scan(&s.Ecosystem, &s.IndexedRows, &s.MatchableCVEs, &s.LastUpdate); err != nil {
+			return nil, err
+		}
+		stats = append(stats, s)
+	}
+	return stats, rows.Err()
 }
 
 func (db *DB) GetCveSourceFreshnessStats(ctx context.Context) ([]CveSourceFreshnessStats, error) {

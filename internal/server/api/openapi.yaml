@@ -1952,11 +1952,34 @@ paths:
           description: Force cache refresh
       responses:
         "200":
-          description: CVE DB statistics
+          description: CVE DB statistics, including merged source stats, OSV ecosystem affected-index freshness, index health, EPSS merge coverage, and rematch policy.
           content:
             application/json:
               schema:
                 type: object
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                  osv_ecosystems:
+                    type: array
+                    description: OSV affected-package index freshness grouped by base ecosystem.
+                    items:
+                      type: object
+                      properties:
+                        ecosystem:
+                          type: string
+                        indexed_rows:
+                          type: integer
+                        matchable_cves:
+                          type: integer
+                        last_update:
+                          type: string
+                          format: date-time
+                          nullable: true
+                  osv_ecosystems_error:
+                    type: string
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":

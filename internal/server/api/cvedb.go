@@ -2081,9 +2081,11 @@ func (s *Server) buildCveDbStatsBody(ctx context.Context) cveStatsBuildResult {
 	var epssErr error
 	var placeholderStats *db.CvePlaceholderStats
 	var placeholderErr error
+	var osvEcosystemStats []db.CveOsvEcosystemStats
+	var osvEcosystemErr error
 	var securityMeta map[string]any
 
-	var sourceStatsMS, affectedIndexMS, referenceIndexMS, epssMS, placeholderMS, securityRevisionMS int64
+	var sourceStatsMS, affectedIndexMS, referenceIndexMS, epssMS, placeholderMS, osvEcosystemMS, securityRevisionMS int64
 	var wg sync.WaitGroup
 	measure := func(dst *int64, fn func()) {
 		defer wg.Done()
@@ -2091,12 +2093,13 @@ func (s *Server) buildCveDbStatsBody(ctx context.Context) cveStatsBuildResult {
 		fn()
 		*dst = time.Since(stepStarted).Milliseconds()
 	}
-	wg.Add(6)
+	wg.Add(7)
 	go measure(&sourceStatsMS, func() { stats, statsErr = s.db.GetCveSourceStats(ctx) })
 	go measure(&affectedIndexMS, func() { indexStats, indexErr = s.db.GetCveAffectedPackageIndexStats(ctx) })
 	go measure(&referenceIndexMS, func() { referenceIndexStats, referenceIndexErr = s.db.GetCveReferenceKeyIndexStats(ctx) })
 	go measure(&epssMS, func() { epssStats, epssErr = s.db.GetCveEPSSMergeStats(ctx) })
 	go measure(&placeholderMS, func() { placeholderStats, placeholderErr = s.db.GetCvePlaceholderStats(ctx) })
+	go measure(&osvEcosystemMS, func() { osvEcosystemStats, osvEcosystemErr = s.db.GetCveOsvEcosystemStats(ctx, 40) })
 	go measure(&securityRevisionMS, func() { securityMeta = s.securityDBRevisionMeta(ctx) })
 	wg.Wait()
 	durations["source_stats"] = sourceStatsMS
@@ -2104,6 +2107,7 @@ func (s *Server) buildCveDbStatsBody(ctx context.Context) cveStatsBuildResult {
 	durations["reference_key_index"] = referenceIndexMS
 	durations["epss_merge"] = epssMS
 	durations["placeholder_quality"] = placeholderMS
+	durations["osv_ecosystems"] = osvEcosystemMS
 	durations["security_db_revision"] = securityRevisionMS
 
 	if statsErr != nil {
@@ -2150,6 +2154,11 @@ func (s *Server) buildCveDbStatsBody(ctx context.Context) cveStatsBuildResult {
 			"eligible_sources":             eligible,
 			"excluded_sources":             excluded,
 		},
+	}
+	if osvEcosystemErr == nil {
+		resp["osv_ecosystems"] = osvEcosystemStats
+	} else {
+		resp["osv_ecosystems_error"] = osvEcosystemErr.Error()
 	}
 	if indexErr == nil {
 		resp["affected_package_index"] = indexStats

@@ -555,6 +555,13 @@ export interface CveSourceStat {
   rematch_exclusion?: string;
 }
 
+export interface CveOsvEcosystemStat {
+  ecosystem: string;
+  indexed_rows: number;
+  matchable_cves: number;
+  last_update: string | null;
+}
+
 export interface CveRematchPolicy {
   sources?: string[];
   min_source_matchable_percent?: number;
@@ -645,6 +652,8 @@ export interface CveDbStatsResponse {
   cve_db_quality_error?: string;
   durations_ms?: Record<string, number>;
   sources: CveSourceStat[];
+  osv_ecosystems?: CveOsvEcosystemStat[];
+  osv_ecosystems_error?: string;
   rematch_policy?: CveRematchPolicy;
 }
 

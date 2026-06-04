@@ -252,7 +252,7 @@ curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/i
 2. Build or receive the new release package, verify `SHA256SUMS`, and load Docker images.
 3. Review `deploy/.env.example` for new required settings and merge them into the local `.env`.
 4. Apply the new compose file and let startup migrations run with `BONGSU_AUTO_MIGRATE=true`.
-5. Check `/api/health`, `/api/cve-db/stats?refresh=true`, and the dashboard CVE DB status card.
+5. Check `/api/health`, `/api/cve-db/stats?refresh=true`, and the dashboard CVE DB status card. In the stats response, review `osv_ecosystems` for the largest OSV ecosystems and their affected-package index `last_update` values when investigating partial OSV refresh lag.
 6. Re-enroll or update agents only after installer readiness reports the expected agent binary version.
 
 Connected upgrade example:

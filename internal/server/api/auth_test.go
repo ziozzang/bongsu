@@ -2981,6 +2981,7 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		"go measure(&referenceIndexMS",
 		"go measure(&epssMS",
 		"go measure(&placeholderMS",
+		"go measure(&osvEcosystemMS",
 		"go measure(&securityRevisionMS",
 		"wg.Wait()",
 		`X-Bongsu-Cache`,
@@ -2996,6 +2997,7 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		`durations["reference_key_index"]`,
 		`durations["epss_merge"]`,
 		`durations["placeholder_quality"]`,
+		`durations["osv_ecosystems"]`,
 		`durations["security_db_revision"]`,
 		`durations["total"]`,
 		`"source_count"`,
@@ -3009,6 +3011,9 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		"GetCveEPSSMergeStats",
 		`"epss_merge"`,
 		`"epss_merge_error"`,
+		"GetCveOsvEcosystemStats",
+		`"osv_ecosystems"`,
+		`"osv_ecosystems_error"`,
 		`"cve_db_quality"`,
 		"GetCvePlaceholderStats",
 		"buildCveDBQualitySummary",
@@ -3052,6 +3057,11 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"temporary_placeholders",
 		"CVE DB quality:",
 		"CVE Matchable",
+		"OSV Ecosystems",
+		"osvEcosystems",
+		"osvEcosystemRows",
+		"oldestOsvEcosystem",
+		"OSV ecosystem stats:",
 		"Affected Index",
 		"cveAffectedIndexUnhealthy",
 		"cveAffectedIndex?.stale",
@@ -3100,7 +3110,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}

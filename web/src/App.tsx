@@ -366,7 +366,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [cveReferenceIndex, setCveReferenceIndex] = useState<HealthStatus['cve_reference_key_index'] | CveDbStatsResponse['reference_key_index'] | null>(null);
   const [cveEpssMerge, setCveEpssMerge] = useState<CveEpssMergeStats | null>(null);
   const [cveDbQuality, setCveDbQuality] = useState<CveDbQuality | null>(null);
-  const [cveStatsMeta, setCveStatsMeta] = useState<Pick<CveDbStatsResponse, 'cache_status' | 'generated_at' | 'durations_ms'> | null>(null);
+  const [cveStatsMeta, setCveStatsMeta] = useState<Pick<CveDbStatsResponse, 'cache_status' | 'generated_at' | 'durations_ms' | 'osv_ecosystems' | 'osv_ecosystems_error'> | null>(null);
   const [installerStatus, setInstallerStatus] = useState<InstallerStatus | null>(null);
   const [securityDbStatus, setSecurityDbStatus] = useState<SecurityDbOperationalStatus | null>(null);
   const [agentFleetStatus, setAgentFleetStatus] = useState<AgentFleetStatus | null>(null);
@@ -400,7 +400,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setCveEpssMerge(r.epss_merge || null);
     setCveReferenceIndex(r.reference_key_index || null);
     setCveDbQuality(r.cve_db_quality || null);
-    setCveStatsMeta({ cache_status: r.cache_status, generated_at: r.generated_at, durations_ms: r.durations_ms });
+    setCveStatsMeta({ cache_status: r.cache_status, generated_at: r.generated_at, durations_ms: r.durations_ms, osv_ecosystems: r.osv_ecosystems, osv_ecosystems_error: r.osv_ecosystems_error });
   }, []);
   const applySecurityDbStatus = useCallback((r: SecurityDbOperationalStatus) => {
     setSecurityDbStatus(r);
@@ -631,6 +631,18 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const cveStatsCacheStatus = cveStatsMeta?.cache_status || 'unknown';
   const cveStatsGeneratedAt = cveStatsMeta?.generated_at ? new Date(cveStatsMeta.generated_at).toLocaleString() : 'not loaded';
   const cveStatsDuration = cveStatsMeta?.durations_ms?.total;
+  const osvEcosystems = cveStatsMeta?.osv_ecosystems || [];
+  const osvEcosystemRows = osvEcosystems.reduce((sum, eco) => sum + (eco.indexed_rows || 0), 0);
+  const oldestOsvEcosystem = osvEcosystems.reduce<typeof osvEcosystems[number] | null>((oldest, eco) => {
+    if (!eco.last_update) return oldest;
+    if (!oldest?.last_update) return eco;
+    return new Date(eco.last_update).getTime() < new Date(oldest.last_update).getTime() ? eco : oldest;
+  }, null);
+  const osvEcosystemColor = cveStatsMeta?.osv_ecosystems_error
+    ? 'var(--high)'
+    : osvEcosystems.length > 0
+      ? 'var(--low)'
+      : 'var(--medium)';
   const weakestCveSource = cveSources.reduce<CveSourceStat | null>((worst, source) =>
     !worst || (source.matchable_percent ?? 0) < (worst.matchable_percent ?? 0) ? source : worst, null);
   const latestCveSource = cveSources.reduce<CveSourceStat | null>((latest, source) => {
@@ -1389,6 +1401,18 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             {cveTotalMatchable.toLocaleString()} records with ecosystem/range data
           </div>
         </div>
+        <div className="stat-card" title={oldestOsvEcosystem?.last_update ? `Oldest OSV ecosystem ${oldestOsvEcosystem.ecosystem} updated ${new Date(oldestOsvEcosystem.last_update).toLocaleString()}` : cveStatsMeta?.osv_ecosystems_error || ''}>
+          <div className="accent-bar" style={{ background: osvEcosystemColor }} />
+          <div className="label">OSV Ecosystems</div>
+          <div className="value" style={{ color: osvEcosystemColor }}>{osvEcosystems.length || '-'}</div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {cveStatsMeta?.osv_ecosystems_error
+              ? 'ecosystem stats delayed'
+              : oldestOsvEcosystem
+                ? `${osvEcosystemRows.toLocaleString()} rows, ${oldestOsvEcosystem.ecosystem} oldest`
+                : 'waiting for OSV index stats'}
+          </div>
+        </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: cveAffectedIndexColor }} />
           <div className="label">Affected Index</div>
@@ -1507,6 +1531,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {securityDbWarnings.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: securityDbStatus?.status === 'degraded' ? 'var(--critical)' : 'var(--medium)' }}>Security DB: {securityDbWarnings.slice(0, 3).join('; ')}{securityDbWarnings.length > 3 ? `; +${securityDbWarnings.length - 3} more` : ''}</div>}
       {securityDbActions.length > 0 && <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Action: {securityDbActions.slice(0, 2).join('; ')}</div>}
       {cveQualityWarnings.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: cveQualityStatus === 'degraded' ? 'var(--critical)' : 'var(--medium)' }}>CVE DB quality: {cveQualityWarnings.slice(0, 3).join(', ')}{cveQualityWarnings.length > 3 ? `, +${cveQualityWarnings.length - 3} more` : ''}</div>}
+      {cveStatsMeta?.osv_ecosystems_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--medium)' }}>OSV ecosystem stats: {cveStatsMeta.osv_ecosystems_error}</div>}
       {cveAffectedIndex?.detail_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--medium)' }}>Affected index detailed stats delayed; showing indexed-only health snapshot.</div>}
       {cveEpssMerge && cveEpssMerge.epss_cves > 0 && cveEpssMerge.enriched_records === 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>EPSS source is loaded but no non-EPSS CVE rows are enriched.</div>}
       {cveAffectedIndex?.stale && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>Affected index is older than matchable CVE rows. Rebuild the index before trusting rematch coverage.</div>}
