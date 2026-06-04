@@ -70,6 +70,7 @@ for script in \
     'verify-airgap-offline-rehearsal.sh' \
     'verify-airgap-package-smoke.sh' \
     'verify-live-agent-token-binding.sh' \
+    'verify-live-cvedb-concurrency.sh' \
     'verify-live-cvedb-quality.sh' \
     'verify-live-installer-payload.sh' \
     'verify-live-rbac-scope.sh' \

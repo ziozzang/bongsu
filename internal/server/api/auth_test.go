@@ -1447,6 +1447,7 @@ func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
 	}
 	for _, path := range []string{
 		"../../../scripts/verify-live-cvedb-quality.sh",
+		"../../../scripts/verify-live-cvedb-concurrency.sh",
 		"../../../scripts/verify-live-installer-payload.sh",
 		"../../../scripts/verify-live-server-build.sh",
 		"../../../scripts/verify-live-web-smoke.sh",
@@ -3727,6 +3728,30 @@ func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t
 	}
 }
 
+func TestLiveCveDbConcurrencyVerifierChecksConcurrentObservability(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-cvedb-concurrency.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_VERIFY_CVEDB_CONCURRENCY_STATS_REQUESTS`,
+		`/api/cve-db/stats?refresh=true`,
+		`/api/admin/security-db/status`,
+		`/api/admin/metrics`,
+		`assert_json_ok "stats${i}"`,
+		`(.status // "") == "ok" and (.cve_db_quality.status // "") == "ok"`,
+		`assert_metrics_ok`,
+		`assert_no_new_shared_memory_errors`,
+		`shared memory|could not resize|No space left on device|pq: .*53100`,
+		`Live CVE DB concurrency verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live CVE DB concurrency verifier missing %q", want)
+		}
+	}
+}
+
 func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-release-readiness.sh")
 	if err != nil {
@@ -3741,6 +3766,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-installer-payload.sh`,
 		`BONGSU_DB_DSN is required for live release readiness`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh`,
+		`./scripts/verify-live-cvedb-concurrency.sh`,
 		`BONGSU_RELEASE_READINESS_REPORT`,
 		`trap on_exit EXIT`,
 		`"format_version": 1`,

@@ -60,6 +60,7 @@ for pattern in \
     '\./scripts/verify-agent-binary-workflow\.sh' \
     '\./scripts/verify-live-agent-token-binding\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
+    '\./scripts/verify-live-cvedb-concurrency\.sh' \
     '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-security-db-schedule\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
@@ -69,6 +70,7 @@ for pattern in \
     'BONGSU_DB_DSN="\$BONGSU_DB_DSN"' \
     'BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS' \
     'BONGSU_VERIFY_CURL_MAX_TIME_SECONDS' \
+    'BONGSU_VERIFY_CVEDB_CONCURRENCY_STATS_REQUESTS' \
     'BONGSU_NOTIFICATION_RETRY_ATTEMPTS' \
     'BONGSU_NOTIFICATION_RETRY_DELAY_MS' \
     'signed retry path' \
@@ -113,6 +115,7 @@ for script in \
     verify-live-agent-token-binding.sh \
     verify-live-installer-payload.sh \
     verify-live-rbac-scope.sh \
+    verify-live-cvedb-concurrency.sh \
     verify-live-server-build.sh \
     verify-live-security-db-schedule.sh \
     verify-live-cvedb-quality.sh \
@@ -131,6 +134,7 @@ require_text "$RELEASE" 'BONGSU_RELEASE_READINESS_REQUIRE_DB' "live release read
 require_text "$RELEASE" 'BONGSU_RELEASE_READINESS_REPORT' "release readiness must support JSON evidence reports"
 require_text "$RELEASE" '"failed_gate_count"' "release readiness report must include failed gate count"
 require_text "$RELEASE" 'BONGSU_VERIFY_CVEDB_REQUIRE_DB=\$\{REQUIRE_DB\}' "live release readiness must require direct CVE DB invariants by default"
+require_text "$RELEASE" 'verify-live-cvedb-concurrency\.sh' "live release readiness must verify concurrent CVE DB observability"
 require_text "$RELEASE" 'verify-live-security-db-schedule\.sh' "live release readiness must verify security DB sync scheduling"
 require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "live release readiness must fail closed when direct DB checks are required but unavailable"
 require_text "$AUDIT" 'verify-operations-runbook\.sh' "requirements audit must list the operations runbook verifier"

@@ -35,6 +35,7 @@ In connected live environments it also compares selected OSV upstream `all.zip` 
 It verifies the live API server build first: `/api/health` must expose a non-empty version, build date, and a commit matching the latest server/runtime source commit.
 It also verifies the live one-line installer payload: `/api/admin/installer/status` must report ready agent and Trivy binaries, valid SHA256 metadata, an install token, and an agent version containing the latest agent/installer source commit.
 It verifies the live security DB schedule with `./scripts/verify-live-security-db-schedule.sh`: `/api/health` must show configured source sync, healthy persisted freshness, and a `next_sync` timestamp no later than the latest persisted CVE source update plus `security_db.interval` and a small grace window. This catches API restarts that would otherwise delay the required 6-hour OSV/NVD/Trivy refresh cadence.
+It verifies CVE DB observability under concurrent operator load with `./scripts/verify-live-cvedb-concurrency.sh`: multiple forced stats refreshes, admin security DB status, and admin metrics must complete with `2xx` responses, valid JSON or Prometheus bodies, healthy CVE DB quality, and no new PostgreSQL shared-memory errors in the API log.
 
 Individual gates remain useful while debugging:
 
@@ -51,6 +52,7 @@ go test ./...
 ./scripts/verify-live-installer-payload.sh
 ./scripts/verify-live-security-db-schedule.sh
 ./scripts/verify-live-server-build.sh
+./scripts/verify-live-cvedb-concurrency.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
 npm --prefix web run test:e2e
@@ -222,6 +224,16 @@ Live CVE DB quality and performance verification:
 BONGSU_DB_DSN="$BONGSU_DB_DSN" \
 ./scripts/verify-live-cvedb-quality.sh
 ```
+
+Concurrent CVE DB observability verification:
+
+```bash
+BONGSU_API_BASE=http://localhost:5677 \
+BONGSU_API_KEY="$BONGSU_API_KEY" \
+./scripts/verify-live-cvedb-concurrency.sh
+```
+
+This gate starts several `/api/cve-db/stats?refresh=true` requests together with `/api/admin/security-db/status` and `/api/admin/metrics`, then fails on non-2xx responses, malformed JSON/metrics output, degraded CVE DB quality, or new PostgreSQL shared-memory errors in `BONGSU_API_LOG_FILE` (default `/tmp/bongsu-api-5677.log`). Use `BONGSU_VERIFY_CVEDB_CONCURRENCY_STATS_REQUESTS` and `BONGSU_VERIFY_CVEDB_CONCURRENCY_CURL_MAX_TIME_SECONDS` to tune the stress level and timeout for larger deployments.
 
 For release-candidate or production health gates, require source freshness as well as match quality:
 

@@ -270,6 +270,7 @@ if [ "$LIVE" = "true" ]; then
     run ./scripts/verify-agent-binary-workflow.sh
     run ./scripts/verify-live-agent-token-binding.sh
     run_shell "BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh"
+    run ./scripts/verify-live-cvedb-concurrency.sh
     run ./scripts/verify-live-rbac-scope.sh
     run ./scripts/verify-live-web-smoke.sh
 fi
