@@ -102,6 +102,7 @@ do
 done
 
 require_text "$CI" 'verify-requirements-audit\.sh' "CI must run the requirements audit verifier"
+require_text "$CI" 'verify-release-readiness\.sh' "CI must run the consolidated release readiness verifier"
 require_text "$CI" 'verify-openapi\.sh' "CI must run the OpenAPI verifier"
 require_text "$CI" 'verify-package-contents\.sh' "CI must run the package contents verifier"
 require_text "$CI" 'verify-airgap-package-smoke\.sh' "CI must run the airgap package smoke verifier"

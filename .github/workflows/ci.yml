@@ -51,6 +51,11 @@ jobs:
       - name: Verify static release binaries
         run: ./scripts/verify-static-binaries.sh
 
+      - name: Verify consolidated release readiness gate
+        env:
+          BONGSU_RELEASE_READINESS_SKIP_HEAVY: "true"
+        run: ./scripts/verify-release-readiness.sh
+
   web:
     name: Web Build And E2E
     runs-on: ubuntu-latest
