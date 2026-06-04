@@ -26,21 +26,24 @@ var ErrAgentHostTokenMismatch = errors.New("agent token does not match host bind
 var ErrInvalidCveReferenceKey = errors.New("invalid CVE reference key")
 
 var (
-	cveReferenceKeyRe      = regexp.MustCompile(`(?i)\bCVE-\d{4}-\d{4,}\b`)
-	ghsaReferenceKeyRe     = regexp.MustCompile(`(?i)\bGHSA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}\b`)
-	rustsecReferenceKeyRe  = regexp.MustCompile(`(?i)\bRUSTSEC-\d{4}-\d{4,}\b`)
-	pysecReferenceKeyRe    = regexp.MustCompile(`(?i)\bPYSEC-\d{4}-\d{1,}\b`)
-	goReferenceKeyRe       = regexp.MustCompile(`(?i)\bGO-\d{4}-\d{4,}\b`)
-	debianAdvisoryKeyRe    = regexp.MustCompile(`(?i)\bD(?:SA|LA)-\d{1,6}(?:-\d+)?\b`)
-	malwareAdvisoryKeyRe   = regexp.MustCompile(`(?i)\bMAL-\d{4}-\d{1,}\b`)
-	almaAdvisoryKeyRe      = regexp.MustCompile(`(?i)\bAL(?:BA|EA|SA)-\d{4}:\d{1,}\b`)
-	suseAdvisoryKeyRe      = regexp.MustCompile(`(?i)\b(?:openSUSE|SUSE)-[A-Z]{2}-\d{4}:\d{1,}-\d+\b`)
-	drupalAdvisoryKeyRe    = regexp.MustCompile(`(?i)\bDRUPAL-[A-Z]+-\d{4}-\d{3,}\b`)
-	dtsaAdvisoryKeyRe      = regexp.MustCompile(`(?i)\bDTSA-\d{1,}-\d+\b`)
-	osvAdvisoryKeyRe       = regexp.MustCompile(`(?i)\bOSV-\d{4}-\d{1,}\b`)
-	gsdAdvisoryKeyRe       = regexp.MustCompile(`(?i)\bGSD-\d{4}-\d{1,}\b`)
-	hashOnlyFixedVersionRe = regexp.MustCompile(`(?i)^[0-9a-f]{40}$`)
-	githubRepoPartRe       = regexp.MustCompile(`^[a-z0-9_.-]+$`)
+	cveReferenceKeyRe         = regexp.MustCompile(`(?i)\bCVE-\d{4}-\d{4,}\b`)
+	ghsaReferenceKeyRe        = regexp.MustCompile(`(?i)\bGHSA-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}\b`)
+	rustsecReferenceKeyRe     = regexp.MustCompile(`(?i)\bRUSTSEC-\d{4}-\d{4,}\b`)
+	pysecReferenceKeyRe       = regexp.MustCompile(`(?i)\bPYSEC-\d{4}-\d{1,}\b`)
+	goReferenceKeyRe          = regexp.MustCompile(`(?i)\bGO-\d{4}-\d{4,}\b`)
+	debianAdvisoryKeyRe       = regexp.MustCompile(`(?i)\bD(?:SA|LA)-\d{1,6}(?:-\d+)?\b`)
+	malwareAdvisoryKeyRe      = regexp.MustCompile(`(?i)\bMAL-\d{4}-\d{1,}\b`)
+	almaAdvisoryKeyRe         = regexp.MustCompile(`(?i)\bAL(?:BA|EA|SA)-\d{4}:\d{1,}\b`)
+	suseAdvisoryKeyRe         = regexp.MustCompile(`(?i)\b(?:openSUSE|SUSE)-[A-Z]{2}-\d{4}:\d{1,}-\d+\b`)
+	drupalAdvisoryKeyRe       = regexp.MustCompile(`(?i)\bDRUPAL-[A-Z]+-\d{4}-\d{3,}\b`)
+	dtsaAdvisoryKeyRe         = regexp.MustCompile(`(?i)\bDTSA-\d{1,}-\d+\b`)
+	osvAdvisoryKeyRe          = regexp.MustCompile(`(?i)\bOSV-\d{4}-\d{1,}\b`)
+	gsdAdvisoryKeyRe          = regexp.MustCompile(`(?i)\bGSD-\d{4}-\d{1,}\b`)
+	hashOnlyFixedVersionRe    = regexp.MustCompile(`(?i)^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$`)
+	versionLikeFixedVersionRe = regexp.MustCompile(`[0-9]`)
+	urlLikeFixedVersionRe     = regexp.MustCompile(`(?i)^(?:https?|git|ssh)://|^git\+|^pkg:|/`)
+	branchLikeFixedVersionRe  = regexp.MustCompile(`(?i)^(?:main|master|trunk|head|latest|stable|unstable|develop|development)$`)
+	githubRepoPartRe          = regexp.MustCompile(`^[a-z0-9_.-]+$`)
 )
 
 type RetentionPruneResult struct {
@@ -95,7 +98,6 @@ func applyDBPoolConfig(db *sql.DB, cfg poolConfig) {
 	db.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMin) * time.Minute)
 }
 
-
 func defaultString(v, def string) string {
 	if v == "" {
 		return def
@@ -124,4 +126,3 @@ func envPositiveInt(key string, def int) int {
 }
 
 const latestScansSub = `(SELECT DISTINCT ON (host_id) id FROM scans WHERE status IN ('completed','degraded') ORDER BY host_id, created_at DESC)`
-

@@ -192,7 +192,7 @@ func fixedVersions(p affectedProduct) []string {
 	for _, r := range p.Ranges {
 		for _, ev := range r.Events {
 			fixed := strings.TrimSpace(ev.Fixed)
-			if fixed == "" || isHashOnlyFixedVersion(fixed) || seen[fixed] {
+			if !isSafeFixedVersion(fixed) || seen[fixed] {
 				continue
 			}
 			out = append(out, fixed)
@@ -208,7 +208,7 @@ func hasSafeFixedEvidence(p affectedProduct) bool {
 	}
 	for _, r := range p.Ranges {
 		for _, ev := range r.Events {
-			if fixed := strings.TrimSpace(ev.Fixed); fixed != "" && !isHashOnlyFixedVersion(fixed) {
+			if fixed := strings.TrimSpace(ev.Fixed); isSafeFixedVersion(fixed) {
 				return true
 			}
 		}
@@ -221,7 +221,7 @@ func uniqueFixedVersions(in []string) []string {
 	seen := map[string]bool{}
 	for _, fixed := range in {
 		fixed = strings.TrimSpace(fixed)
-		if fixed == "" || isHashOnlyFixedVersion(fixed) || seen[fixed] {
+		if !isSafeFixedVersion(fixed) || seen[fixed] {
 			continue
 		}
 		out = append(out, fixed)
@@ -232,6 +232,26 @@ func uniqueFixedVersions(in []string) []string {
 
 func isHashOnlyFixedVersion(version string) bool {
 	return hashOnlyFixedVersionRe.MatchString(strings.TrimSpace(version))
+}
+
+func isSafeFixedVersion(version string) bool {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		return false
+	}
+	if !versionLikeFixedVersionRe.MatchString(version) {
+		return false
+	}
+	if hashOnlyFixedVersionRe.MatchString(version) {
+		return false
+	}
+	if urlLikeFixedVersionRe.MatchString(version) {
+		return false
+	}
+	if branchLikeFixedVersionRe.MatchString(version) {
+		return false
+	}
+	return true
 }
 
 func versionInRange(installed string, events []affectedRangeEvent) bool {
@@ -247,7 +267,7 @@ func versionInRange(installed string, events []affectedRangeEvent) bool {
 			}
 		}
 		if active && ev.Fixed != "" {
-			if isHashOnlyFixedVersion(ev.Fixed) {
+			if !isSafeFixedVersion(ev.Fixed) {
 				return false
 			}
 			if less, ok := versionLess(installed, ev.Fixed); ok {
@@ -492,10 +512,17 @@ func fixedVersionSQLCondition(alias string) string {
 	fixed := prefix + "fixed_version"
 	return fmt.Sprintf(`%s IS NOT NULL AND %s != ''
 			AND %s IS NOT NULL AND %s != ''
+			AND %s ~ '[0-9]'
+			AND %s !~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'
+			AND %s !~* '^(?:https?|git|ssh)://'
+			AND %s !~* '^git\+'
+			AND %s !~* '^pkg:'
+			AND %s !~ '/'
+			AND %s !~* '^(?:main|master|trunk|head|latest|stable|unstable|develop|development)$'
 			AND %s !~* '(~|alpha|beta|rc|pre|preview|dev|snapshot)'
 			AND regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
 			AND regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
 			AND array_remove(string_to_array(regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]
 			  >= array_remove(string_to_array(regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]`,
-		fixed, fixed, installed, installed, installed, installed, fixed, installed, fixed)
+		fixed, fixed, installed, installed, fixed, fixed, fixed, fixed, fixed, fixed, fixed, installed, installed, fixed, installed, fixed)
 }

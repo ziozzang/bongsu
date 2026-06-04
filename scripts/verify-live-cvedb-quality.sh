@@ -425,7 +425,13 @@ WHERE trim(package_name) = ''
     assert_db_zero "
 SELECT count(*)
 FROM cve_affected_packages
-WHERE fixed_version ~* '^[0-9a-f]{40}$'" "affected package index rows must not keep hash-like fixed versions"
+WHERE fixed_version !~ '[0-9]'
+   OR fixed_version ~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'
+   OR fixed_version ~* '^(?:https?|git|ssh)://'
+   OR fixed_version ~* '^git\+'
+   OR fixed_version ~* '^pkg:'
+   OR fixed_version ~ '/'
+   OR fixed_version ~* '^(?:main|master|trunk|head|latest|stable|unstable|develop|development)$'" "affected package index rows must keep version-like fixed versions only"
     assert_db_zero "
 SELECT count(*)
 FROM cve_affected_packages cap

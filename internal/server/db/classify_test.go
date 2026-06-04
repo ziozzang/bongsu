@@ -204,6 +204,16 @@ func TestCompatibleSecurityCandidateRejectsWeakOrWrongCandidates(t *testing.T) {
 		t.Fatal("hash-only fixed evidence should not match as a package version")
 	}
 
+	urlFixed := `[{"name":"foo","ecosystem":"npm","fixed":["https://github.com/example/foo/commit/1.2.3"]}]`
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "4.5.5", "code-library", "", urlFixed); ok {
+		t.Fatal("URL-like fixed evidence should not match as a package version")
+	}
+
+	branchFixed := `[{"name":"foo","ecosystem":"npm","fixed":["stable"]}]`
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "4.5.5", "code-library", "", branchFixed); ok {
+		t.Fatal("branch-like fixed evidence should not match as a package version")
+	}
+
 	hashRangeFixed := `[{"name":"foo","ecosystem":"npm","ranges":[{"events":[{"introduced":"0"},{"fixed":"0123456789abcdef0123456789abcdef01234567"}]}]}]`
 	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "4.5.5", "code-library", "", hashRangeFixed); ok {
 		t.Fatal("hash-only range fixed evidence should not match as a package version")
@@ -1255,7 +1265,10 @@ func TestCveSourceQualityRequiresFixedData(t *testing.T) {
 		"jsonb_array_length(ap->'fixed') = 1",
 		"jsonb_array_elements(CASE WHEN jsonb_typeof(ap->'ranges')",
 		"ev->>'fixed'",
-		"!~* '^[0-9a-f]{40}$'",
+		"!~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+		"~ '[0-9]'",
+		"!~* '^(?:https?|git|ssh)://'",
+		"!~ '/'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("source quality predicate missing %q: %s", want, got)
@@ -1716,7 +1729,10 @@ func TestCvePackageMatchablePredicateRequiresPackageTargetAndFixedData(t *testin
 		"jsonb_array_length(ap->'fixed') = 1",
 		"jsonb_array_elements(CASE WHEN jsonb_typeof(ap->'ranges')",
 		"ev->>'fixed'",
-		"!~* '^[0-9a-f]{40}$'",
+		"!~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+		"~ '[0-9]'",
+		"!~* '^(?:https?|git|ssh)://'",
+		"!~ '/'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("package matchable predicate missing %q: %s", want, got)
@@ -1785,6 +1801,24 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 		{
 			name:             "hash fixed is not matchable",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0123456789abcdef0123456789abcdef01234567"]}]`,
+			want:             false,
+			wantReason:       "missing fixed version",
+		},
+		{
+			name:             "sha256 fixed is not matchable",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"]}]`,
+			want:             false,
+			wantReason:       "missing fixed version",
+		},
+		{
+			name:             "url fixed is not matchable",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["https://github.com/dompdf/php-svg-lib/releases/tag/0.5.2"]}]`,
+			want:             false,
+			wantReason:       "missing fixed version",
+		},
+		{
+			name:             "branch fixed is not matchable",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["main"]}]`,
 			want:             false,
 			wantReason:       "missing fixed version",
 		},
@@ -1887,7 +1921,10 @@ func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
 			"jsonb_array_length",
 			"= 1",
 			"ev->>'fixed'",
-			"!~* '^[0-9a-f]{40}$'",
+			"!~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+			"~ '[0-9]'",
+			"!~* '^(?:https?|git|ssh)://'",
+			"!~ '/'",
 		} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("%s CVE fixed enrichment missing %q: %s", name, want, got)
@@ -1932,7 +1969,10 @@ func TestCveAffectedPackageIndexUsesSharedFixedVersionRules(t *testing.T) {
 		"jsonb_array_length",
 		"= 1",
 		"ev->>'fixed'",
-		"!~* '^[0-9a-f]{40}$'",
+		"!~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+		"~ '[0-9]'",
+		"!~* '^(?:https?|git|ssh)://'",
+		"!~ '/'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("affected-package fixed SQL missing %q: %s", want, got)
@@ -2566,6 +2606,29 @@ func TestCveAffectedPackageQualityConstraintsMigration(t *testing.T) {
 	}
 }
 
+func TestNonVersionFixedAffectedPackagesMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/050_reject_nonversion_fixed_affected_packages.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DELETE FROM cve_affected_packages",
+		"fixed_version !~ '[0-9]'",
+		"fixed_version ~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+		"fixed_version ~* '^(?:https?|git|ssh)://'",
+		"fixed_version ~ '/'",
+		"cve_affected_packages_fixed_version_safe_check",
+		"fixed_version ~ '[0-9]'",
+		"fixed_version !~* '^(?:https?|git|ssh)://'",
+		"fixed_version !~ '/'",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("non-version fixed affected-package migration missing %q: %s", want, body)
+		}
+	}
+}
+
 func TestStaleRematchedVulnerabilityCleanupOnlyTargetsCveDBFindings(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {
@@ -3168,7 +3231,10 @@ func TestCveFixedVersionSQLIncludesTopLevelAndRangeEvents(t *testing.T) {
 		"c.affected_products->0->'fixed'->>0",
 		"jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products)",
 		"ev->>'fixed'",
-		"!~* '^[0-9a-f]{40}$'",
+		"!~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+		"~ '[0-9]'",
+		"!~* '^(?:https?|git|ssh)://'",
+		"!~ '/'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("fixed version SQL missing %q: %s", want, got)
@@ -3315,6 +3381,10 @@ func TestFixedVersionSQLConditionDoesNotHidePrereleases(t *testing.T) {
 		"beta",
 		"rc",
 		"snapshot",
+		"~ '[0-9]'",
+		"!~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+		"!~* '^(?:https?|git|ssh)://'",
+		"!~ '/'",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("fixed condition missing %q: %s", want, got)
@@ -3328,7 +3398,9 @@ func TestCurrentActionableVulnSQLUsesRemediationFilters(t *testing.T) {
 		"COALESCE(vt.status, 'open') IN ('open', 'in_progress')",
 		"fixed_version",
 		"v.vulnerability_id NOT LIKE 'CGA-%'",
-		"v.fixed_version !~ '^[0-9a-f]{40}$'",
+		"v.fixed_version !~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+		"v.fixed_version !~* '^(?:https?|git|ssh)://'",
+		"v.fixed_version !~ '/'",
 		"v.fixed_version IS NOT NULL",
 		"SUBSTRING(v.vulnerability_id FROM '^[A-Z]+')",
 		"cve_affected_packages cap_any",
