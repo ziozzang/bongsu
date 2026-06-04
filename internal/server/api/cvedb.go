@@ -1154,6 +1154,65 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleCveDbPruneStaleSource(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	source, err := normalizeCveSource(r.PathValue("source"), "")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid source")
+		return
+	}
+	rawBefore := strings.TrimSpace(r.URL.Query().Get("before"))
+	if rawBefore == "" {
+		writeError(w, http.StatusBadRequest, "missing before timestamp")
+		return
+	}
+	before, err := time.Parse(time.RFC3339, rawBefore)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid before timestamp")
+		return
+	}
+
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		log.Printf("cve-db prune stale begin tx: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	defer tx.Rollback()
+	pruned, err := s.db.DeleteCveEntriesBySourceUpdatedBeforeTx(r.Context(), tx, source, before)
+	if err != nil {
+		log.Printf("cve-db prune stale delete: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("cve-db prune stale commit: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	s.clearCveStatsCache()
+	out := map[string]any{
+		"status":               "ok",
+		"source":               source,
+		"before":               before.Format(time.RFC3339),
+		"pruned":               pruned,
+		"security_db_revision": revisionMeta["security_db_revision"],
+	}
+	writeJSON(w, http.StatusOK, out)
+	auditMeta := map[string]any{"source": source, "before": before.Format(time.RFC3339), "pruned": pruned}
+	for k, v := range revisionMeta {
+		auditMeta[k] = v
+	}
+	s.audit(r, "cve_db.prune_stale_source", "cve_db", source, "ok", auditMeta)
+	if pruned > 0 {
+		s.SecurityDatabaseUpdated("cve-db stale source prune")
+	}
+}
+
 func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string, replace, finalize bool) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

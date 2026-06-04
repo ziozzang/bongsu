@@ -3132,6 +3132,24 @@ func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
 	}
 }
 
+func TestSecurityDBSyncScriptPrunesStaleOSVAfterSuccessfulChunks(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`OSV_PRUNE_BEFORE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"`,
+		`if [ "${OSV_FAILED}" -eq 0 ]; then`,
+		`/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}`,
+		`finalize_deferred_cve_imports "osv chunk import"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-all-cvedb must prune stale OSV rows only after successful chunks, missing %q", want)
+		}
+	}
+}
+
 func TestSecurityDBSyncScriptCoversCoreOSVEcosystems(t *testing.T) {
 	for _, path := range []string{
 		"../../../scripts/sync-all-cvedb.sh",
@@ -3182,6 +3200,32 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("operator workflow must verify health/metrics observability, missing %q", want)
+		}
+	}
+}
+
+func TestOperatorWorkflowVerifiesHostRuntimeInventoryEndpoints(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-operator-workflow.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`/api/hosts/{id}/users:`,
+		`/api/hosts/{id}/processes:`,
+		`/api/hosts/{id}/ports:`,
+		"bongsu-operator-user",
+		"bongsu-operator-process",
+		"bongsu-operator-listener",
+		`api_json GET "/api/hosts/${VERIFY_HOST_ID}/users?limit=20"`,
+		`api_json GET "/api/hosts/${VERIFY_HOST_ID}/processes?limit=20"`,
+		`api_json GET "/api/hosts/${VERIFY_HOST_ID}/ports?limit=20"`,
+		"host user runtime inventory endpoint must expose latest reported user accounts",
+		"host process runtime inventory endpoint must expose latest reported process snapshot",
+		"host port runtime inventory endpoint must expose latest reported listening ports",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("operator workflow must verify host runtime inventory endpoints, missing %q", want)
 		}
 	}
 }
@@ -4686,6 +4730,35 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 	}
 	if !strings.Contains(body, "UpsertCveEntriesWithoutAffectedIndexTx") {
 		t.Fatal("bulk cve jsonl import must rebuild affected package index after import instead of per row")
+	}
+}
+
+func TestCveDbPruneStaleSourceEndpointRefreshesDerivedState(t *testing.T) {
+	body := readAllPackageGoFiles(t)
+	for _, want := range []string{
+		`POST /api/admin/cve-db/source/{source}/prune-stale`,
+		"func (s *Server) handleCveDbPruneStaleSource",
+		"s.db.DeleteCveEntriesBySourceUpdatedBeforeTx",
+		`s.SecurityDatabaseUpdated("cve-db stale source prune")`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("stale CVE source prune endpoint missing %q", want)
+		}
+	}
+	fnStart := strings.Index(body, "func (s *Server) handleCveDbPruneStaleSource")
+	fnEnd := strings.Index(body[fnStart:], "func (s *Server) importCveJSONL(")
+	if fnStart < 0 || fnEnd < 0 {
+		t.Fatal("stale CVE source prune endpoint body not found")
+	}
+	fn := body[fnStart : fnStart+fnEnd]
+	for _, forbidden := range []string{
+		"RefreshCveAffectedPackagesForSourceTx",
+		"RefreshCveReferenceKeysForSourceTx",
+		"SyncEPSSPriorityColumnsTx",
+	} {
+		if strings.Contains(fn, forbidden) {
+			t.Fatalf("stale CVE source prune must rely on FK cascade instead of full source rebuild, found %q", forbidden)
+		}
 	}
 }
 

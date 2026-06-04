@@ -130,6 +130,7 @@ echo ""
 OSV_ECOSYSTEMS="${BONGSU_OSV_ECOSYSTEMS:-PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,SwiftURL,Hackage,CRAN,opam,VSCode,GitHub Actions,Alpine,Debian,Ubuntu,SUSE,openSUSE,AlmaLinux,Red Hat,Rocky Linux,Azure Linux,Wolfi,Chainguard,openEuler,Mageia,Android}"
 OSV_TOTAL=0
 OSV_FAILED=0
+OSV_PRUNE_BEFORE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 ECO_COUNT=$(echo "${OSV_ECOSYSTEMS}" | tr ',' '\n' | wc -l)
 ECO_IDX=0
 echo "[3/5] Downloading OSV.dev data (${ECO_COUNT} ecosystems)..."
@@ -160,6 +161,11 @@ done
 
 TOTAL_IMPORTED=$((TOTAL_IMPORTED + OSV_TOTAL))
 if [ "${OSV_TOTAL}" -gt 0 ]; then
+    if [ "${OSV_FAILED}" -eq 0 ]; then
+        echo "  Pruning stale OSV rows older than ${OSV_PRUNE_BEFORE}..."
+        curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
+            "${SERVER_URL}/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}" >/dev/null
+    fi
     if ! finalize_deferred_cve_imports "osv chunk import"; then
         echo "  ERROR: OSV deferred import finalization failed"
         FAILED_SOURCES+=("osv:finalize")

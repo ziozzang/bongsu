@@ -2861,6 +2861,8 @@ func TestCveReplacementDeleteHelpersAreTransactional(t *testing.T) {
 	for _, want := range []string{
 		"func (db *DB) DeleteCveEntriesBySourceTx",
 		"DELETE FROM cve_database WHERE source=$1",
+		"func (db *DB) DeleteCveEntriesBySourceUpdatedBeforeTx",
+		"DELETE FROM cve_database WHERE source=$1 AND updated_at < $2",
 		"func (db *DB) DeleteAllCveEntriesTx",
 		"DELETE FROM cve_database",
 	} {

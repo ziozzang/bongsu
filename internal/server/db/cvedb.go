@@ -457,6 +457,15 @@ func (db *DB) DeleteCveEntriesBySourceTx(ctx context.Context, tx *sql.Tx, source
 	return int(n), nil
 }
 
+func (db *DB) DeleteCveEntriesBySourceUpdatedBeforeTx(ctx context.Context, tx *sql.Tx, source string, before time.Time) (int, error) {
+	res, err := tx.ExecContext(ctx, `DELETE FROM cve_database WHERE source=$1 AND updated_at < $2`, source, before)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 func (db *DB) DeleteAllCveEntriesTx(ctx context.Context, tx *sql.Tx) (int, error) {
 	res, err := tx.ExecContext(ctx, `DELETE FROM cve_database`)
 	if err != nil {

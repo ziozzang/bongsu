@@ -2206,6 +2206,51 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/admin/cve-db/source/{source}/prune-stale:
+    post:
+      operationId: pruneStaleCveSource
+      tags: [admin]
+      summary: Prune stale CVE rows for a source
+      description: Delete rows for a source whose updated_at is older than the supplied RFC3339 timestamp. Derived affected-package and reference-key rows are removed by foreign-key cascade.
+      security:
+        - AdminKey: []
+      parameters:
+        - name: source
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: before
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Prune result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  source:
+                    type: string
+                  before:
+                    type: string
+                    format: date-time
+                  pruned:
+                    type: integer
+                  security_db_revision:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/admin/cve-db/affected-index/rebuild:
     post:
       operationId: rebuildAffectedIndex

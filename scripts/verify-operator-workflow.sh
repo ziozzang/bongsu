@@ -177,9 +177,15 @@ scan_report_json() {
           ],
           containers: [],
           vulnerabilities: [],
-          users: [],
-          processes: [],
-          ports: [],
+          users: [
+            {username: "bongsu-operator-user", uid: 4242, gid: 4242, home_dir: "/home/bongsu-operator-user", shell: "/bin/bash"}
+          ],
+          processes: [
+            {pid: 4242, name: "bongsu-operator-process", cmdline: "bongsu-operator-process --verify", user: "bongsu-operator-user", cpu_usage: 12.5, mem_usage: 3.5}
+          ],
+          ports: [
+            {name: "bongsu-operator-listener", port: 45678, protocol: "tcp", address: "127.0.0.1", pid: 4242}
+          ],
           timestamp: $ts
         }'
 }
@@ -204,6 +210,9 @@ grep -q '/api/admin/notification-rules:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/admin/security-db/status:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/admin/agent-fleet/status:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/admin/rbac/status:' "$TMP_DIR/openapi.yaml"
+grep -q '/api/hosts/{id}/users:' "$TMP_DIR/openapi.yaml"
+grep -q '/api/hosts/{id}/processes:' "$TMP_DIR/openapi.yaml"
+grep -q '/api/hosts/{id}/ports:' "$TMP_DIR/openapi.yaml"
 
 echo "[3/10] Checking health and admin metrics observability"
 health_json="$(api_json GET /api/health)"
@@ -321,6 +330,12 @@ if [ -n "$claimed_revision" ]; then
 fi
 report_json="$(agent_json POST /api/report "$claimed_report")"
 assert_json "$report_json" '.status == "ok" and .scan_status == "completed" and .inventory_status == "healthy"' "claimed agent report must complete a healthy inventory scan"
+host_users_json="$(api_json GET "/api/hosts/${VERIFY_HOST_ID}/users?limit=20")"
+assert_json "$host_users_json" '.total >= 1 and (.items[] | select(.username == "bongsu-operator-user" and .uid == 4242 and .gid == 4242))' "host user runtime inventory endpoint must expose latest reported user accounts"
+host_processes_json="$(api_json GET "/api/hosts/${VERIFY_HOST_ID}/processes?limit=20")"
+assert_json "$host_processes_json" '.total >= 1 and (.items[] | select(.name == "bongsu-operator-process" and .pid == 4242 and .user == "bongsu-operator-user"))' "host process runtime inventory endpoint must expose latest reported process snapshot"
+host_ports_json="$(api_json GET "/api/hosts/${VERIFY_HOST_ID}/ports?limit=20")"
+assert_json "$host_ports_json" '.total >= 1 and (.items[] | select(.name == "bongsu-operator-listener" and .port == 45678 and .address == "127.0.0.1"))' "host port runtime inventory endpoint must expose latest reported listening ports"
 complete_json="$(agent_json POST "/api/agent/scan-requests/${SCAN_REQUEST_ID}/complete" "$(jq -nc --arg host_id "$VERIFY_HOST_ID" '{host_id:$host_id, status:"completed", message:"operator verifier complete"}')")"
 assert_json "$complete_json" '.status == "completed"' "agent completion endpoint must accept the claimed host"
 request_done="$(api_json GET "/api/scan-requests?host_id=${VERIFY_HOST_ID}&limit=5")"
