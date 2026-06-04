@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Verify stale CVE rematch cleanup
+master / origin/main latest commit: Verify latest SBOM package ontology
 ```
 
 Important recent commits:
 
 ```text
-<latest> Verify stale CVE rematch cleanup
+<latest> Verify latest SBOM package ontology
+c90c4df Verify stale CVE rematch cleanup
 a8db21a Verify matchable CVE rematch insertion
 ba171bf Verify security DB rescan queue
 699020d Verify dashboard product identity
@@ -192,6 +193,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 - The dashboard API client now reads `X-Bongsu-Cache` for CVE DB stats and the dashboard card exposes cache state, generated timestamp, and stats duration.
 - `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
 - `./scripts/verify-live-rbac-scope.sh` now validates dynamic `asset_group` policy expansion instead of relying only on a direct host policy.
+- `internal/server/db/package_sbom_exec_test.go` now executes `GetLatestPackagesForSBOM` through a fake `database/sql` driver and verifies the latest-inventory query preserves container/image/package target ontology fields before CycloneDX/SPDX generation.
 - `internal/server/db/stale_rematch_cleanup_exec_test.go` now executes `RemoveStaleRematchedVulnerabilities` through a fake `database/sql` driver and verifies cleanup candidates are restricted to `finding_source='cve-db'`, compatible findings are kept, and missing-fixed/wrong-ecosystem rematch findings are deleted.
 - `internal/server/db/cve_rematch_exec_test.go` now executes `RematchCVEs` through a fake `database/sql` driver and verifies that only a compatible, fixed-version-backed, affected npm candidate inserts a `cve-db` finding; missing fixed evidence, non-affected installed versions, and same-name Debian/package ecosystem mismatches are skipped.
 - `internal/server/db/scan_rescan_test.go` now executes `QueueSecurityDBRescans` through a fake `database/sql` driver, verifying host eligibility filtering, transaction commit, pending dedupe accounting, requested_by/reason propagation, and `security_db_revision` stamping without requiring a live PostgreSQL instance.
