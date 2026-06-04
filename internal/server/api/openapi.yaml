@@ -261,6 +261,26 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteHost
+      tags: [hosts]
+      summary: Delete a host and its collected inventory
+      description: Deletes the host, cascaded scans, packages, vulnerabilities, runtime inventory, asset-group memberships, and host-scoped scan requests or triage decisions. Audit logs are retained.
+      security:
+        - AdminKey: []
+      parameters:
+        - $ref: "#/components/parameters/HostID"
+      responses:
+        "200":
+          description: Host deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /api/hosts/{id}/packages:
     get:

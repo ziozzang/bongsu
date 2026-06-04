@@ -38,6 +38,7 @@ cleanup() {
     if [ -n "$SCAN_REQUEST_ID" ]; then
         curl -fsS --max-time "$CURL_MAX_TIME" -X POST -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/scan-requests/${SCAN_REQUEST_ID}/cancel" >/dev/null 2>&1
     fi
+    curl -fsS --max-time "$CURL_MAX_TIME" -X DELETE -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/hosts/${VERIFY_HOST_ID}" >/dev/null 2>&1
     rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT

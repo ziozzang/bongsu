@@ -1676,6 +1676,7 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
   const [agentStatus, setAgentStatus] = useState(initialFilters.agent_status || '');
   const [inventoryStatus, setInventoryStatus] = useState(initialFilters.inventory_status || '');
   const [agentVersionState, setAgentVersionState] = useState(initialFilters.agent_version_state || '');
+  const reloadHosts = () => load(agentStatus, inventoryStatus, agentVersionState);
   const load = useCallback((status: string, inventory: string, versionState: string) => {
     setLoading(true);
     api.hosts({ ...(status ? { agent_status: status } : {}), ...(inventory ? { inventory_status: inventory } : {}), ...(versionState ? { agent_version_state: versionState } : {}) })
@@ -1794,26 +1795,45 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
                   <td style={{ color: sevColor('LOW'), fontWeight: 600 }}>{counts.LOW || 0}</td>
                   <td className="mono">{new Date(h.last_seen).toLocaleString()}</td>
                   <td>
-                    <button
-                      className="delete-btn"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        setScanMsg('');
-                        try {
-                          await api.createScanRequest({ host_id: h.id, scan_type: 'manual', packages_only: true, reason: `dashboard force scan: ${h.hostname}` });
-                          setScanMsg(`Force scan requested for ${h.hostname}`);
-                        } catch {
-                          setScanMsg(`Force scan request failed for ${h.hostname}`);
-                        }
-                      }}
-                    >
-                      Scan
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.375rem' }}>
+                      <button
+                        className="delete-btn"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          setScanMsg('');
+                          try {
+                            await api.createScanRequest({ host_id: h.id, scan_type: 'manual', packages_only: true, reason: `dashboard force scan: ${h.hostname}` });
+                            setScanMsg(`Force scan requested for ${h.hostname}`);
+                          } catch {
+                            setScanMsg(`Force scan request failed for ${h.hostname}`);
+                          }
+                        }}
+                      >
+                        Scan
+                      </button>
+                      <button
+                        className="delete-btn"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Delete host ${h.hostname} and its collected inventory?`)) return;
+                          setScanMsg('');
+                          try {
+                            await api.deleteHost(h.id);
+                            setScanMsg(`Deleted ${h.hostname}`);
+                            reloadHosts();
+                          } catch {
+                            setScanMsg(`Delete failed for ${h.hostname}`);
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
             })}
-            {hosts.length === 0 && <tr><td colSpan={15} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
+            {hosts.length === 0 && <tr><td colSpan={16} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
           </tbody>
         </table>
       </div>

@@ -35,6 +35,8 @@ cleanup() {
     if [ "$SUBJECT_CREATED" = "1" ]; then
         curl -fsS --max-time "$CURL_MAX_TIME" -X DELETE -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/admin/rbac/subjects/${SUBJECT_ID}" >/dev/null 2>&1
     fi
+    curl -fsS --max-time "$CURL_MAX_TIME" -X DELETE -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/hosts/${ALLOWED_HOST_ID}" >/dev/null 2>&1
+    curl -fsS --max-time "$CURL_MAX_TIME" -X DELETE -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/hosts/${DENIED_HOST_ID}" >/dev/null 2>&1
     rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT

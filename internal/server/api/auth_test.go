@@ -1340,6 +1340,57 @@ func TestAgentFleetStatusEndpointReportsVersionDrift(t *testing.T) {
 	}
 }
 
+func TestHostDeleteEndpointCleansHostScopedOperationalData(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	for _, want := range []string{
+		`"DELETE /api/hosts/{id}"`,
+		"func (s *Server) handleDeleteHost",
+		"s.authenticateAdmin(r)",
+		"s.db.DeleteHost(r.Context(), hostID)",
+		`"host.delete"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("host delete endpoint missing %q", want)
+		}
+	}
+	dbFile, err := os.ReadFile("../db/host.go")
+	if err != nil {
+		t.Fatalf("read host db file: %v", err)
+	}
+	dbFiles := string(dbFile)
+	for _, want := range []string{
+		"func (db *DB) DeleteHost",
+		"db.BeginTx(ctx, nil)",
+		"DELETE FROM scan_requests WHERE host_id=$1 OR claimed_by_host_id=$1",
+		"DELETE FROM vulnerability_triage WHERE host_id=$1",
+		"DELETE FROM hosts WHERE id=$1",
+		"sql.ErrNoRows",
+		"tx.Commit()",
+	} {
+		if !strings.Contains(dbFiles, want) {
+			t.Fatalf("host delete DB cleanup missing %q", want)
+		}
+	}
+}
+
+func TestLiveVerifiersCleanUpFixtureHosts(t *testing.T) {
+	for _, path := range []string{
+		"../../../scripts/verify-operator-workflow.sh",
+		"../../../scripts/verify-live-rbac-scope.sh",
+		"../../../scripts/verify-live-agent-token-binding.sh",
+		"../../../scripts/verify-agent-binary-workflow.sh",
+	} {
+		out, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if !strings.Contains(string(out), "-X DELETE") || !strings.Contains(string(out), "/api/hosts/") {
+			t.Fatalf("%s must delete fixture hosts during cleanup", path)
+		}
+	}
+}
+
 func TestAgentFleetOperationalStatusDegradesOnActionableIssues(t *testing.T) {
 	status, warnings, actions := agentFleetOperationalStatus(
 		3,

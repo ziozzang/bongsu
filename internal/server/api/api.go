@@ -202,6 +202,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/report", s.handleReport)
 	s.mux.HandleFunc("GET /api/hosts", s.handleListHosts)
 	s.mux.HandleFunc("GET /api/hosts/{id}", s.handleGetHost)
+	s.mux.HandleFunc("DELETE /api/hosts/{id}", s.handleDeleteHost)
 	s.mux.HandleFunc("POST /api/hosts/{id}/metadata", s.handleUpdateHostMetadata)
 	s.mux.HandleFunc("POST /api/hosts/{id}/agent-token/reset", s.handleResetHostAgentToken)
 	s.mux.HandleFunc("GET /api/hosts/{id}/packages", s.handleHostPackages)

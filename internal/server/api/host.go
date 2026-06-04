@@ -125,6 +125,37 @@ func (s *Server) handleGetHost(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, host)
 }
 
+func (s *Server) handleDeleteHost(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	hostID := r.PathValue("id")
+	if hostID == "" {
+		writeError(w, http.StatusBadRequest, "host id is required")
+		return
+	}
+	host, err := s.db.GetHost(r.Context(), hostID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "host not found")
+		return
+	}
+	if err := s.db.DeleteHost(r.Context(), hostID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "host not found")
+			return
+		}
+		log.Printf("delete host: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	s.audit(r, "host.delete", "host", hostID, "ok", map[string]any{
+		"hostname":      host.Hostname,
+		"agent_version": host.AgentVersion,
+	})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
 func (s *Server) handleUpdateHostMetadata(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")

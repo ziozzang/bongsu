@@ -69,6 +69,32 @@ func (db *DB) ResetHostAgentToken(ctx context.Context, hostID string) error {
 	return nil
 }
 
+func (db *DB) DeleteHost(ctx context.Context, hostID string) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM scan_requests WHERE host_id=$1 OR claimed_by_host_id=$1`, hostID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM vulnerability_triage WHERE host_id=$1`, hostID); err != nil {
+		return err
+	}
+	res, err := tx.ExecContext(ctx, `DELETE FROM hosts WHERE id=$1`, hostID)
+	if err != nil {
+		return err
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return tx.Commit()
+}
 
 const hostCols = `id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, agent_token_hash <> '' AS agent_token_set, owner, team, environment, criticality, tags::text, last_seen, created_at`
 

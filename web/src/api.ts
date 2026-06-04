@@ -1008,6 +1008,8 @@ export const api = {
     requestJSON<{ status: string }>('/auth/change-password', { current_password: currentPassword, new_password: newPassword }),
   hosts: (params?: { agent_status?: string; inventory_status?: string; agent_version_state?: string }) => request<Host[]>('/hosts', params),
   host: (id: string) => request<Host>(`/hosts/${id}`),
+  deleteHost: (id: string) =>
+    requestEmpty<{ status: string }>(`/hosts/${id}`, 'DELETE'),
   updateHostMetadata: (id: string, body: { owner?: string; team?: string; environment?: string; criticality?: string; tags?: string }) =>
     requestJSON<Host>(`/hosts/${id}/metadata`, body),
   resetHostAgentToken: (id: string) =>

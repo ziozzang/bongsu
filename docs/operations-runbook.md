@@ -81,6 +81,8 @@ BONGSU_AGENT_API_KEY="$BONGSU_AGENT_API_KEY" \
 
 This verifier requires `BONGSU_AGENT_HOST_BINDING=true` on the API. It binds a host to one agent token, then proves a different token cannot report inventory, claim scan requests, or complete requests for that host.
 
+Live verifier scripts create short-lived hosts and delete them during cleanup through `DELETE /api/hosts/{id}`. If an interrupted verifier leaves synthetic hosts behind, remove only hosts whose IDs match the verifier prefixes, such as `host-operator-verify-*`, `host-rbac-live-*`, `host-agent-binding-*`, or `host-agent-binary-*`; the host delete API cascades collected inventory and host-scoped operational rows while preserving audit logs. Do not delete real enrolled hosts just to clear an agent-fleet warning; an actual `dev` or outdated agent version should be fixed by redeploying the one-line installer or restarting the updated service.
+
 - Verify the deployed web UI on port `5678` with a live browser smoke test:
 
 ```bash
@@ -373,6 +375,12 @@ Compromised or reinstalled host agent:
 1. Reset the host agent token from Host Detail or `/api/hosts/{id}/agent-token/reset`.
 2. Reinstall the agent so it receives a fresh persistent `agent.token`.
 3. Confirm new reports bind successfully and old-token requests are rejected; `./scripts/verify-live-agent-token-binding.sh` exercises the same report, claim, and completion rejection path in a fixture host.
+
+Retired host or interrupted verifier fixture:
+
+1. Confirm the host is intentionally retired or synthetic. Verifier host IDs start with prefixes such as `host-operator-verify-`, `host-rbac-live-`, `host-agent-binding-`, or `host-agent-binary-`.
+2. Delete it from the Hosts view or call `DELETE /api/hosts/{id}` with an admin key.
+3. Recheck `/api/admin/agent-fleet/status`; remaining outdated-version warnings should correspond to real enrolled hosts that need redeployment, not verifier leftovers.
 
 ## Routine Maintenance
 
