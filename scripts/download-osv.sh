@@ -22,6 +22,7 @@ OSV_CURL_RETRY_DELAY="${BONGSU_OSV_CURL_RETRY_DELAY_SECONDS:-3}"
 echo "Downloading OSV.dev data for: ${ECOSYSTEMS}"
 
 TOTAL=0
+SKIPPED_CGA_TOTAL=0
 FAILED_ECOSYSTEMS=()
 > "${OUTPUT_TMP}"
 
@@ -56,11 +57,12 @@ for eco in "${ECO_ARRAY[@]}"; do
         continue
     fi
 
-    COUNT=$(python3 << PYEOF
+    RESULT=$(python3 << PYEOF
 import json, os, glob, re
 
 eco_dir = "${WORKDIR}/${eco}"
 count = 0
+skipped_cga = 0
 with open("${OUTPUT_TMP}", "a") as out:
     for f in sorted(glob.glob(os.path.join(eco_dir, "*.json"))):
         try:
@@ -80,6 +82,9 @@ with open("${OUTPUT_TMP}", "a") as out:
                 break
         if not cve_id:
             cve_id = vuln_id
+        if cve_id.startswith("CGA-"):
+            skipped_cga += 1
+            continue
 
         severity = ""
         cvss_score = 0.0
@@ -170,11 +175,17 @@ with open("${OUTPUT_TMP}", "a") as out:
         out.write(json.dumps(entry) + "\n")
         count += 1
 
-print(count)
+print(f"{count}|{skipped_cga}")
 PYEOF
 )
-    echo "  ${eco}: ${COUNT} entries"
+    COUNT="${RESULT%%|*}"
+    SKIPPED_CGA="${RESULT#*|}"
+    echo "  ${eco}: ${COUNT} importable entries"
+    if [ "${SKIPPED_CGA}" -gt 0 ]; then
+        echo "  ${eco}: skipped ${SKIPPED_CGA} CGA-only advisories"
+    fi
     TOTAL=$((TOTAL + COUNT))
+    SKIPPED_CGA_TOTAL=$((SKIPPED_CGA_TOTAL + SKIPPED_CGA))
     if [ "${COUNT}" -eq 0 ]; then
         FAILED_ECOSYSTEMS+=("${eco}:no-entries")
     fi
@@ -193,4 +204,7 @@ mv "${OUTPUT_TMP}" "${OUTPUT}"
 trap - EXIT
 rm -rf "${WORKDIR}"
 echo "Total: ${TOTAL} CVE entries written to ${OUTPUT}"
+if [ "${SKIPPED_CGA_TOTAL}" -gt 0 ]; then
+    echo "Skipped: ${SKIPPED_CGA_TOTAL} CGA-only advisories without CVE aliases"
+fi
 echo "Import: curl -F 'file=@${OUTPUT}' -F 'source=osv' -H 'X-API-Key: YOUR_KEY' http://YOUR_SERVER:5677/api/admin/cve-db/import"

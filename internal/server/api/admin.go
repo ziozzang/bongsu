@@ -1022,12 +1022,41 @@ func (s *Server) handleAccessControlStatus(w http.ResponseWriter, r *http.Reques
 		status = "degraded"
 		warnings = append(warnings, "access policies reference missing subjects")
 	}
+	authStatus := s.accessControlAuthStatus()
+	if configured, _ := authStatus["trusted_identity_configured"].(bool); configured {
+		if count, _ := authStatus["trusted_proxy_cidr_count"].(int); count == 0 {
+			status = "degraded"
+			warnings = append(warnings, "trusted identity headers are configured but no trusted proxy CIDRs are valid")
+		}
+	}
+	if adminConfigured, _ := authStatus["trusted_identity_admin_configured"].(bool); adminConfigured {
+		if configured, _ := authStatus["trusted_identity_configured"].(bool); !configured {
+			status = "degraded"
+			warnings = append(warnings, "trusted identity admin allowlists are configured without trusted identity headers")
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":       status,
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
 		"warnings":     warnings,
 		"stats":        stats,
+		"auth":         authStatus,
 	})
+}
+
+func (s *Server) accessControlAuthStatus() map[string]any {
+	trustedConfigured := s.trustedAuth.userHeader != "" || s.trustedAuth.groupsHeader != ""
+	return map[string]any{
+		"web_auth_enabled":                  s.webAuth,
+		"viewer_key_count":                  len(s.viewerKeys),
+		"trusted_identity_configured":       trustedConfigured,
+		"trusted_user_header_configured":    s.trustedAuth.userHeader != "",
+		"trusted_groups_header_configured":  s.trustedAuth.groupsHeader != "",
+		"trusted_proxy_cidr_count":          len(s.trustedAuth.proxyNets),
+		"trusted_admin_user_count":          len(s.trustedAuth.adminUsers),
+		"trusted_admin_group_count":         len(s.trustedAuth.adminGroups),
+		"trusted_identity_admin_configured": len(s.trustedAuth.adminUsers) > 0 || len(s.trustedAuth.adminGroups) > 0,
+	}
 }
 
 func (s *Server) handleDeleteAccessSubject(w http.ResponseWriter, r *http.Request) {

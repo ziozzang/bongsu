@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -3989,6 +3989,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
 function RBACView() {
   const [subjects, setSubjects] = useState<AccessSubject[]>([]);
   const [policies, setPolicies] = useState<AccessPolicy[]>([]);
+  const [rbacStatus, setRbacStatus] = useState<AccessControlStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [subjectType, setSubjectType] = useState('user');
@@ -4006,10 +4007,12 @@ function RBACView() {
     Promise.all([
       api.rbacSubjects(),
       api.rbacPolicies(filter ? { subject_external_id: filter } : undefined),
+      api.rbacStatus(),
     ])
-      .then(([s, p]) => {
+      .then(([s, p, status]) => {
         setSubjects(s.items || []);
         setPolicies(p.items || []);
+        setRbacStatus(status);
         setLoading(false);
       })
       .catch(() => {
@@ -4073,6 +4076,36 @@ function RBACView() {
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>RBAC</h1>
+      {rbacStatus && (
+        <div className="db-status-bar" style={{ marginBottom: '1rem' }}>
+          <h3>Access Control</h3>
+          <span className={`status-dot ${rbacStatus.status === 'ok' ? 'ready' : 'not-ready'}`}>
+            RBAC: {rbacStatus.status}
+          </span>
+          <span className={`status-dot ${rbacStatus.auth?.web_auth_enabled ? 'ready' : 'not-ready'}`}>
+            Web auth: {rbacStatus.auth?.web_auth_enabled ? 'on' : 'off'}
+          </span>
+          <span className={`status-dot ${(rbacStatus.auth?.viewer_key_count || 0) > 0 ? 'ready' : 'not-ready'}`}>
+            Viewer keys: {(rbacStatus.auth?.viewer_key_count || 0).toLocaleString()}
+          </span>
+          <span className={`status-dot ${rbacStatus.auth?.trusted_identity_configured ? 'ready' : 'not-ready'}`}>
+            Trusted identity: {rbacStatus.auth?.trusted_identity_configured ? 'on' : 'off'}
+          </span>
+          {rbacStatus.auth?.trusted_identity_configured && (
+            <span className={`status-dot ${(rbacStatus.auth.trusted_proxy_cidr_count || 0) > 0 ? 'ready' : 'not-ready'}`}>
+              Proxy CIDRs: {(rbacStatus.auth.trusted_proxy_cidr_count || 0).toLocaleString()}
+            </span>
+          )}
+          {rbacStatus.auth?.trusted_identity_configured && (
+            <span className={`status-dot ${rbacStatus.auth.trusted_identity_admin_configured ? 'ready' : 'not-ready'}`}>
+              Trusted admins: {((rbacStatus.auth.trusted_admin_user_count || 0) + (rbacStatus.auth.trusted_admin_group_count || 0)).toLocaleString()}
+            </span>
+          )}
+          {rbacStatus.warnings && rbacStatus.warnings.length > 0 && (
+            <span style={{ color: 'var(--medium)', fontSize: '0.8125rem' }}>{rbacStatus.warnings.slice(0, 2).join('; ')}</span>
+          )}
+        </div>
+      )}
       <div className="grid-2" style={{ marginBottom: '1rem' }}>
         <div className="card" style={{ padding: '1rem' }}>
           <div className="card-header"><h2>Subject</h2></div>

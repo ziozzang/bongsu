@@ -764,6 +764,35 @@ export interface AccessPolicy {
   created_at: string;
 }
 
+export interface AccessControlStatus {
+  status: string;
+  generated_at: string;
+  warnings?: string[];
+  stats: {
+    subject_count: number;
+    policy_count: number;
+    user_subject_count: number;
+    group_subject_count: number;
+    read_policy_count: number;
+    write_policy_count: number;
+    admin_policy_count: number;
+    export_policy_count: number;
+    wildcard_policy_count: number;
+    orphan_policy_count: number;
+  };
+  auth?: {
+    web_auth_enabled: boolean;
+    viewer_key_count: number;
+    trusted_identity_configured: boolean;
+    trusted_user_header_configured: boolean;
+    trusted_groups_header_configured: boolean;
+    trusted_proxy_cidr_count: number;
+    trusted_admin_user_count: number;
+    trusted_admin_group_count: number;
+    trusted_identity_admin_configured: boolean;
+  };
+}
+
 export interface CveDbEntry {
   id: string;
   vulnerability_id: string;
@@ -1148,6 +1177,7 @@ export const api = {
   auditLogs: (params: { actor_type?: string; actor_id?: string; action?: string; resource_type?: string; resource_id?: string; status?: string; created_from?: string; created_to?: string; limit?: string; offset?: string }) =>
     request<{ items: AuditLog[]; total: number }>('/admin/audit-logs', params),
   rbacSubjects: () => request<{ items: AccessSubject[] }>('/admin/rbac/subjects'),
+  rbacStatus: () => request<AccessControlStatus>('/admin/rbac/status'),
   rbacPolicies: (params?: { subject_external_id?: string }) =>
     request<{ items: AccessPolicy[] }>('/admin/rbac/policies', params),
   upsertRbacSubject: (body: { subject_type?: string; external_id: string; display_name?: string }) =>

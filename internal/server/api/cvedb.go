@@ -1356,6 +1356,47 @@ func (s *Server) handleCveDbPruneStaleSource(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+func (s *Server) handleCveDbRefreshSourceStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	source, err := normalizeCveSource(r.PathValue("source"), "")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid source")
+		return
+	}
+	tx, err := s.db.BeginTx(r.Context(), nil)
+	if err != nil {
+		log.Printf("cve-db refresh source status begin tx: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	defer tx.Rollback()
+	if err := s.db.RefreshSecuritySourceStatusTx(r.Context(), tx, source); err != nil {
+		log.Printf("cve-db refresh source status: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		log.Printf("cve-db refresh source status commit: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	s.clearCveStatsCache()
+	revisionMeta := s.securityDBRevisionMeta(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":               "ok",
+		"source":               source,
+		"security_db_revision": revisionMeta["security_db_revision"],
+	})
+	auditMeta := map[string]any{"source": source}
+	for k, v := range revisionMeta {
+		auditMeta[k] = v
+	}
+	s.audit(r, "cve_db.refresh_source_status", "cve_db", source, "ok", auditMeta)
+}
+
 func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string, replace, finalize bool) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

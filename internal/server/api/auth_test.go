@@ -2475,7 +2475,13 @@ func TestRBACStatusEndpointExposesOperationalCounters(t *testing.T) {
 		"GetAccessControlStats",
 		"OrphanPolicyCount",
 		`"stats":        stats`,
+		`"auth":         authStatus`,
+		"accessControlAuthStatus",
+		`"trusted_identity_configured"`,
+		`"trusted_proxy_cidr_count"`,
+		`"trusted_identity_admin_configured"`,
 		`"access policies reference missing subjects"`,
+		`"trusted identity headers are configured but no trusted proxy CIDRs are valid"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("RBAC status endpoint missing %q", want)
@@ -2491,9 +2497,53 @@ func TestRBACStatusEndpointExposesOperationalCounters(t *testing.T) {
 		`.stats.subject_count`,
 		`.stats.policy_count`,
 		`.stats.orphan_policy_count`,
+		`.auth.viewer_key_count`,
+		`.auth.trusted_identity_configured`,
+		`.auth.trusted_proxy_cidr_count`,
 	} {
 		if !strings.Contains(string(script), want) {
 			t.Fatalf("operator workflow must verify RBAC status, missing %q", want)
+		}
+	}
+}
+
+func TestRBACViewShowsAuthOperationalStatus(t *testing.T) {
+	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiOut, err := os.ReadFile("../../../web/src/api.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appBody := string(appOut)
+	apiBody := string(apiOut)
+	for _, want := range []string{
+		"AccessControlStatus",
+		"api.rbacStatus()",
+		"Access Control",
+		"Web auth:",
+		"Viewer keys:",
+		"Trusted identity:",
+		"Proxy CIDRs:",
+		"Trusted admins:",
+		"rbacStatus.warnings",
+	} {
+		if !strings.Contains(appBody, want) {
+			t.Fatalf("RBAC view auth operational status missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"AccessControlStatus",
+		"trusted_identity_configured",
+		"trusted_user_header_configured",
+		"trusted_groups_header_configured",
+		"trusted_proxy_cidr_count",
+		"trusted_identity_admin_configured",
+		"rbacStatus: () => request<AccessControlStatus>",
+	} {
+		if !strings.Contains(apiBody, want) {
+			t.Fatalf("RBAC API type/status client missing %q", want)
 		}
 	}
 }
@@ -3387,7 +3437,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "security_db_export?:", "outdated_sources?: Array", "lag_seconds?: number", "security_db_bundle_import?:", "bundle_created_at?: string", "bundle_source_count?: number", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "AccessControlStatus", "trusted_identity_configured", "trusted_proxy_cidr_count", "trusted_identity_admin_configured", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "security_db_export?:", "outdated_sources?: Array", "lag_seconds?: number", "security_db_bundle_import?:", "bundle_created_at?: string", "bundle_source_count?: number", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
@@ -3708,6 +3758,8 @@ func TestSecurityDBSyncScriptPrunesStaleOSVAfterSuccessfulChunks(t *testing.T) {
 		`if [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then`,
 		`/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}`,
 		`Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override.`,
+		`/api/admin/cve-db/source/osv/refresh-status`,
+		`Refreshing OSV source status after partial sync`,
 		`finalize_deferred_cve_imports "osv chunk import"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -3731,6 +3783,8 @@ func TestTargetedOSVSyncScriptSkipsSourceWidePruneForPartialEcosystems(t *testin
 		`/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}`,
 		`Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override.`,
 		`Run a full OSV sync with the default ecosystem list to prune upstream removals safely.`,
+		`/api/admin/cve-db/source/osv/refresh-status`,
+		`Refreshing OSV source status after partial sync`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-osv-cvedb must protect non-selected ecosystems during partial OSV sync, missing %q", want)
@@ -4109,6 +4163,9 @@ func TestOsvDownloaderFailsClosedAndWritesAtomically(t *testing.T) {
 		`FAILED_ECOSYSTEMS+=("${eco}:no-entries")`,
 		`ERROR: incomplete OSV download`,
 		`OSV download produced no CVE entries`,
+		`if cve_id.startswith("CGA-"):`,
+		`skipped_cga += 1`,
+		`CGA-only advisories without CVE aliases`,
 		`mv "${OUTPUT_TMP}" "${OUTPUT}"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -6077,9 +6134,12 @@ func TestCveDbPruneStaleSourceEndpointRefreshesDerivedState(t *testing.T) {
 	body := readAllPackageGoFiles(t)
 	for _, want := range []string{
 		`POST /api/admin/cve-db/source/{source}/prune-stale`,
+		`POST /api/admin/cve-db/source/{source}/refresh-status`,
 		"func (s *Server) handleCveDbPruneStaleSource",
+		"func (s *Server) handleCveDbRefreshSourceStatus",
 		"s.db.DeleteCveEntriesBySourceUpdatedBeforeTx",
 		"s.db.RefreshSecuritySourceStatusTx",
+		`"cve_db.refresh_source_status"`,
 		`s.SecurityDatabaseUpdated("cve-db stale source prune")`,
 	} {
 		if !strings.Contains(body, want) {

@@ -387,7 +387,7 @@ assert_json "$subjects_json" '.items | type == "array"' "RBAC subject list must 
 policies_json="$(api_json GET /api/admin/rbac/policies)"
 assert_json "$policies_json" '.items | type == "array"' "RBAC policy list must return a stable items array"
 rbac_status_json="$(api_json GET /api/admin/rbac/status)"
-assert_json "$rbac_status_json" '.status and (.stats.subject_count | type == "number") and (.stats.policy_count | type == "number") and (.stats.orphan_policy_count | type == "number") and (.stats.subject_type_counts | type == "object") and (.stats.resource_type_counts | type == "object") and (.stats.permission_counts | type == "object")' "RBAC status must expose subject, policy, orphan, and distribution counters"
+assert_json "$rbac_status_json" '.status and (.stats.subject_count | type == "number") and (.stats.policy_count | type == "number") and (.stats.orphan_policy_count | type == "number") and (.stats.subject_type_counts | type == "object") and (.stats.resource_type_counts | type == "object") and (.stats.permission_counts | type == "object") and (.auth.viewer_key_count | type == "number") and (.auth.trusted_identity_configured | type == "boolean") and (.auth.trusted_proxy_cidr_count | type == "number")' "RBAC status must expose subject, policy, orphan, distribution, and auth configuration counters"
 group_body="$(jq -nc --arg name "$RUN_ID asset group" '{name:$name, description:"operator verifier", rule_type:"dynamic", rule_expr:"team=platform"}')"
 group_json="$(api_json POST /api/asset-groups "$group_body")"
 ASSET_GROUP_ID="$(jq -r '.id' <<<"$group_json")"

@@ -22,6 +22,7 @@ IMPORT_URL="${SERVER_URL}/api/admin/cve-db/import"
 RECALCULATE_URL="${SERVER_URL}/api/admin/security-db/recalculate"
 AFFECTED_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/affected-index/rebuild"
 REFERENCE_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/reference-index/rebuild"
+SOURCE_STATUS_REFRESH_URL="${SERVER_URL}/api/admin/cve-db/source/osv/refresh-status"
 INDEX_REBUILD_WAIT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS:-900}"
 INDEX_REBUILD_POLL_SECONDS="${BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS:-5}"
 INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS:-600}"
@@ -170,6 +171,8 @@ finalize_osv_imports() {
     else
         echo "  Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override."
         echo "  Run a full OSV sync with the default ecosystem list to prune upstream removals safely."
+        echo "  Refreshing OSV source status after partial sync..."
+        curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${SOURCE_STATUS_REFRESH_URL}" >/dev/null
     fi
     echo "  Rebuilding affected package index after OSV imports..."
     queue_index_rebuild "Affected package index" "${AFFECTED_INDEX_REBUILD_URL}" "cve_affected_index_rebuild"
