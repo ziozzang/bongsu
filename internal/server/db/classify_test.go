@@ -2658,6 +2658,39 @@ func TestUpsertCveEntriesFailsWholeBatchOnAnyInsertError(t *testing.T) {
 	}
 }
 
+func TestUpsertCveEntriesMergesAffectedProductsOnSourceConflict(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) upsertCveEntriesTx")
+	if start < 0 {
+		t.Fatal("upsertCveEntriesTx not found")
+	}
+	next := strings.Index(body[start+1:], "\nfunc ")
+	if next < 0 {
+		t.Fatal("upsertCveEntriesTx body end not found")
+	}
+	fn := body[start : start+1+next]
+	for _, want := range []string{
+		"ON CONFLICT (vulnerability_id, source) DO UPDATE SET",
+		"jsonb_agg(DISTINCT ap.elem)",
+		"cve_database.affected_products",
+		"EXCLUDED.affected_products",
+		"jsonb_agg(DISTINCT ref.elem)",
+		"cve_database.refs",
+		"EXCLUDED.refs",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("CVE upsert must merge OSV ecosystem evidence on source conflict, missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "affected_products=EXCLUDED.affected_products") || strings.Contains(fn, "refs=EXCLUDED.refs") {
+		t.Fatalf("CVE upsert must not overwrite previous OSV ecosystem evidence: %s", fn)
+	}
+}
+
 func TestBulkCveAffectedPackageRefreshCanScopeBySource(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {

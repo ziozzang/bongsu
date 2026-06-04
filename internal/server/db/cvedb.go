@@ -53,12 +53,26 @@ func (db *DB) upsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []mode
 	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, epss_score, epss_percentile, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
 ON CONFLICT (vulnerability_id, source) DO UPDATE SET
-	category=EXCLUDED.category, ecosystem=EXCLUDED.ecosystem,
+	category=CASE WHEN cve_database.category = '' THEN EXCLUDED.category ELSE cve_database.category END,
+	ecosystem=CASE WHEN cve_database.ecosystem = '' THEN EXCLUDED.ecosystem ELSE cve_database.ecosystem END,
 	severity=EXCLUDED.severity, cvss_score=EXCLUDED.cvss_score, cvss_vector=EXCLUDED.cvss_vector,
 	epss_score=EXCLUDED.epss_score, epss_percentile=EXCLUDED.epss_percentile,
 	title=EXCLUDED.title, description=EXCLUDED.description,
 	published_date=EXCLUDED.published_date, modified_date=EXCLUDED.modified_date,
-	affected_products=EXCLUDED.affected_products, refs=EXCLUDED.refs,
+	affected_products=(
+		SELECT COALESCE(jsonb_agg(DISTINCT ap.elem), '[]'::jsonb)
+		FROM jsonb_array_elements(
+			(CASE WHEN jsonb_typeof(cve_database.affected_products) = 'array' THEN cve_database.affected_products ELSE '[]'::jsonb END) ||
+			(CASE WHEN jsonb_typeof(EXCLUDED.affected_products) = 'array' THEN EXCLUDED.affected_products ELSE '[]'::jsonb END)
+		) AS ap(elem)
+	),
+	refs=(
+		SELECT COALESCE(jsonb_agg(DISTINCT ref.elem), '[]'::jsonb)
+		FROM jsonb_array_elements(
+			(CASE WHEN jsonb_typeof(cve_database.refs) = 'array' THEN cve_database.refs ELSE '[]'::jsonb END) ||
+			(CASE WHEN jsonb_typeof(EXCLUDED.refs) = 'array' THEN EXCLUDED.refs ELSE '[]'::jsonb END)
+		) AS ref(elem)
+	),
 	raw_data=EXCLUDED.raw_data, updated_at=now()
 RETURNING id`)
 	if err != nil {
