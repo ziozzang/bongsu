@@ -4132,7 +4132,7 @@ function SchedulesView() {
   const load = useCallback(() => {
     setLoading(true);
     api.schedules()
-      .then(r => { setItems(r || []); setLoading(false); })
+      .then(r => { setItems(r.items || []); setLoading(false); })
       .catch(() => { setItems([]); setLoading(false); });
   }, []);
 
@@ -4142,7 +4142,7 @@ function SchedulesView() {
     if (!name || !cronExpr) return;
     setMsg('');
     try {
-      await api.createSchedule({ name, cron_expr: cronExpr, scan_type: scanType });
+      await api.createSchedule({ name, cron_expr: cronExpr, scan_type: 'manual', packages_only: scanType === 'packages_only' });
       setMsg('Schedule created');
       setName('');
       setCronExpr('');
@@ -4190,7 +4190,7 @@ function SchedulesView() {
                 <tr key={s.id}>
                   <td>{s.name}</td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.cron_expr}</td>
-                  <td>{s.scan_type}</td>
+                  <td>{s.packages_only ? 'packages_only' : s.scan_type}</td>
                   <td><span className="badge" style={{ color: s.enabled ? 'var(--low)' : 'var(--medium)' }}>{s.enabled ? 'yes' : 'no'}</span></td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.last_run ? new Date(s.last_run).toLocaleString() : '-'}</td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.next_run ? new Date(s.next_run).toLocaleString() : '-'}</td>
@@ -4228,7 +4228,7 @@ function AssetGroupsView() {
     if (!name) return;
     setMsg('');
     try {
-      await api.createAssetGroup({ name, description, group_type: groupType, rule_expr: groupType === 'dynamic' ? ruleExpr : '' });
+      await api.createAssetGroup({ name, description, rule_type: groupType, rule_expr: groupType === 'dynamic' ? ruleExpr : '' });
       setMsg('Asset group created');
       setName('');
       setDescription('');
@@ -4288,7 +4288,7 @@ function AssetGroupsView() {
                 <tr key={g.id}>
                   <td>{g.name}</td>
                   <td>{g.description || '-'}</td>
-                  <td><span className="badge">{g.group_type}</span></td>
+                  <td><span className="badge">{g.rule_type}</span></td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{g.rule_expr || '-'}</td>
                   <td className="mono">{g.host_count || 0}</td>
                   <td><button className="update-btn" onClick={() => handleScan(g.id)}>Scan</button></td>

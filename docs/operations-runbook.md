@@ -1,6 +1,6 @@
 # Bongsu Operations Runbook
 
-Updated: 2026-06-01 19:57:17 KST
+Updated: 2026-06-04 10:47:38 KST
 
 This runbook is for operators running Bongsu in connected or air-gapped environments. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu.
 
@@ -22,10 +22,21 @@ go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
 ./scripts/verify-requirements-audit.sh
+./scripts/verify-openapi.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
 npm --prefix web run test:e2e
+```
+
+- Against a running API, exercise the operator workflow before staging or release promotion:
+
+```bash
+BONGSU_API_BASE=http://localhost:5677 \
+BONGSU_API_KEY="$BONGSU_API_KEY" \
+BONGSU_ADMIN_USERNAME="$BONGSU_ADMIN_USERNAME" \
+BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
+./scripts/verify-operator-workflow.sh
 ```
 
 ## Install

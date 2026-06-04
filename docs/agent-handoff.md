@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 10:41:16 KST
+Updated: 2026-06-04 10:47:38 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,12 +24,13 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head before this continuation:
 
 ```text
-cced8c1 (master, origin/main) Sync OpenAPI docs and audit handoff
+c86ada7 (master, origin/main) Expand operator workflow browser coverage
 ```
 
 Important recent commits:
 
 ```text
+c86ada7 Expand operator workflow browser coverage
 cced8c1 Sync OpenAPI docs and audit handoff
 6627f13 Allow short admin password when BONGSU_ALLOW_WEAK_SECRETS is set
 4f13d45 Add admin credentials to .env.example
@@ -65,13 +66,15 @@ This handoff commit should include:
 - Requirements audit coverage that maps the original product requirements to evidence, verification commands, and remaining commercial-readiness gaps without declaring the overall goal complete.
 - Browser smoke coverage for Hosts force-scan requests and RBAC subject/policy creation, including POST body verification.
 - Browser workflow coverage for scheduled scan creation, dynamic asset-group creation, asset-group scan trigger, report rendering/export, notification rule creation/test delivery, and notification-log loading, including request payload verification.
+- Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
+- Frontend API contract fixes for schedules (`{items}` response plus `packages_only`) and asset groups (`rule_type` instead of stale `group_type`).
 - Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
 - RBAC enforcement regression coverage for package/container/scan/scan-request endpoint scoping and container/image/asset-group policy expansion through latest container assets and host metadata.
 - Airgap package contents verifier that checks the release package script includes static binaries, Docker images, deploy files, migrations, docs, web assets, source sync/import/export tools, loader script, and SHA256 manifests.
 - Agent package annotation, DB persistence, and CycloneDX/SPDX export tests that preserve host/container/image/package target relationship context for SBOM and inventory data.
 - Live dashboard hardening: optional admin/summary widget failures no longer log out the no-auth dashboard, package/vulnerability summary SQL no longer references a package alias outside scope, and the dashboard action bar wraps instead of clipping controls.
 - API and DB decomposition into domain-specific files, preserving previous behavior while reducing the monolithic `api.go`/`db.go` maintenance risk.
-- Operational safety additions: per-IP rate limiting, `/api/live`, `/api/ready`, embedded OpenAPI 3.1, `scripts/backup.sh`, `scripts/restore.sh`, and `scripts/verify-openapi.sh`.
+- Operational safety additions: per-IP rate limiting, `/api/live`, `/api/ready`, embedded OpenAPI 3.0, `scripts/backup.sh`, `scripts/restore.sh`, `scripts/verify-openapi.sh`, and `scripts/verify-operator-workflow.sh`.
 - Local user/session authentication, initial admin bootstrap, secure session cookies, `Authorization: Bearer` support for the web client, and an OIDC authenticator interface placeholder.
 - Fleet management additions: scheduled scans, asset groups, asset-group force scans, agent report retry configuration, and frontend views for schedules and asset groups.
 - Actionable intelligence additions: vulnerability trends, top-risk hosts, remediation recommendations, notification rules/logs, executive/risk/SLA reports, report export, and corresponding frontend views.
@@ -162,7 +165,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - CI runs `scripts/verify-package-contents.sh` to keep air-gapped release archives from silently losing required files.
 - Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
 - Live Playwright smoke passed against `http://10.2.2.10:5678/` for the dashboard, CVE Search, and Hosts. The live `/api/packages?limit=1` and `/api/vuln-summary?group_by=owner` endpoints returned 200 after the mismatch-filter SQL fix.
-- Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state, and the newest browser suite now covers the added schedule/asset-group/report/notification views with mocked API contract assertions.
+- Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state, the newest browser suite now covers the added schedule/asset-group/report/notification views with mocked API contract assertions, and the live operator verifier passed against `127.0.0.1:5677` using the running API process credentials.
 
 ## Verification Commands
 
@@ -175,6 +178,7 @@ go test ./...
 ./scripts/verify-deploy-config.sh
 ./scripts/verify-requirements-audit.sh
 ./scripts/verify-openapi.sh
+./scripts/verify-operator-workflow.sh
 ./scripts/verify-package-contents.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
@@ -192,6 +196,7 @@ curl -sS -H 'X-API-Key: test-admin' http://127.0.0.1:5677/api/cve-db/stats -o /t
 cat /tmp/cve-stats.headers
 curl -sS -H 'X-API-Key: test-admin' 'http://127.0.0.1:5677/api/cve-db/search?q=openssl&limit=20' >/tmp/cve-search.json
 curl -sS http://127.0.0.1:5678/ >/tmp/bongsu-web.html
+BONGSU_API_KEY=test-admin-key BONGSU_ADMIN_USERNAME=admin BONGSU_ADMIN_PASSWORD=password ./scripts/verify-operator-workflow.sh
 ```
 
 TEMP/CVD direct DB check:
@@ -219,7 +224,7 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
 6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.
-8. Exercise local sessions, backup/restore, OpenAPI docs, and the new schedules/asset groups/reports/notification rules against a realistic live operator workflow with a real API and enrolled agents.
+8. Extend the live operator workflow from API-level verification to a real enrolled-agent end-to-end pass where scheduled and asset-group scan requests are claimed and completed by an agent.
 
 ## Matching Rules Reminder
 

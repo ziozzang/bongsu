@@ -787,6 +787,7 @@ export interface ScheduledScan {
   scan_type: string;
   enabled: boolean;
   host_filter: string;
+  packages_only: boolean;
   last_run: string | null;
   next_run: string | null;
   created_at: string;
@@ -797,7 +798,7 @@ export interface AssetGroup {
   id: string;
   name: string;
   description: string;
-  group_type: string;
+  rule_type: string;
   rule_expr: string;
   host_count: number;
   created_at: string;
@@ -1028,16 +1029,16 @@ export const api = {
     requestJSON<RetentionPruneResult>('/admin/retention/prune', body),
 
   // Phase 3: Fleet Management
-  schedules: () => request<ScheduledScan[]>('/admin/schedules'),
-  createSchedule: (body: { name: string; cron_expr: string; scan_type?: string; host_filter?: string; enabled?: boolean }) =>
+  schedules: () => request<{ items: ScheduledScan[] }>('/admin/schedules'),
+  createSchedule: (body: { name: string; cron_expr: string; scan_type?: string; host_filter?: string; packages_only?: boolean; enabled?: boolean }) =>
     requestJSON<ScheduledScan>('/admin/schedules', body),
   schedule: (id: string) => request<ScheduledScan>(`/admin/schedules/${id}`),
-  updateSchedule: (id: string, body: { name?: string; cron_expr?: string; scan_type?: string; host_filter?: string; enabled?: boolean }) =>
+  updateSchedule: (id: string, body: { name?: string; cron_expr?: string; scan_type?: string; host_filter?: string; packages_only?: boolean; enabled?: boolean }) =>
     requestJSON<ScheduledScan>(`/admin/schedules/${id}`, body),
   deleteSchedule: (id: string) => requestEmpty<{ status: string }>(`/admin/schedules/${id}`, 'DELETE'),
 
   assetGroups: () => request<{ items: AssetGroup[] }>('/asset-groups'),
-  createAssetGroup: (body: { name: string; description?: string; group_type?: string; rule_expr?: string }) =>
+  createAssetGroup: (body: { name: string; description?: string; rule_type?: string; rule_expr?: string }) =>
     requestJSON<AssetGroup>('/asset-groups', body),
   assetGroup: (id: string) => request<AssetGroupDetail>(`/asset-groups/${id}`),
   deleteAssetGroup: (id: string) => requestEmpty<{ status: string }>(`/asset-groups/${id}`, 'DELETE'),
