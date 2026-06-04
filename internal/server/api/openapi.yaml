@@ -1403,6 +1403,47 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/admin/agent-fleet/status:
+    get:
+      operationId: getAgentFleetStatus
+      tags: [admin]
+      summary: Agent fleet status
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: Agent fleet version and installer readiness
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  total_hosts:
+                    type: integer
+                  latest_agent_version:
+                    type: string
+                  agent_status_counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  agent_version_counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  agent_version_drift_counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  installer:
+                    $ref: "#/components/schemas/InstallerStatus"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
   # ── Stats ───────────────────────────────────────────────────────────────
 
   /api/stats:

@@ -1690,6 +1690,37 @@ SELECT
 	return &stats, nil
 }
 
+func (db *DB) GetCveReferenceKeyIndexHealthStats(ctx context.Context) (map[string]any, error) {
+	var count, indexedCVEs, canonicalCVEs, vendorKeys, repositoryKeys, orphans int
+	var lastUpdate *time.Time
+	err := db.QueryRowContext(ctx, `
+SELECT
+	(SELECT count(*) FROM cve_reference_keys),
+	(SELECT count(DISTINCT cve_id) FROM cve_reference_keys),
+	(SELECT count(DISTINCT cve_id) FROM cve_reference_keys WHERE reference_key LIKE 'cve:%'),
+	(SELECT count(*) FROM cve_reference_keys WHERE reference_key LIKE 'vendor:%'),
+	(SELECT count(*) FROM cve_reference_keys WHERE reference_key LIKE 'repo:%'),
+	(SELECT max(updated_at) FROM cve_reference_keys),
+	(SELECT count(*) FROM cve_reference_keys crk WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = crk.cve_id))`).Scan(
+		&count, &indexedCVEs, &canonicalCVEs, &vendorKeys, &repositoryKeys, &lastUpdate, &orphans)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]any{
+		"summary_mode":    "indexed-only",
+		"count":           count,
+		"indexed_cves":    indexedCVEs,
+		"canonical_cves":  canonicalCVEs,
+		"vendor_keys":     vendorKeys,
+		"repository_keys": repositoryKeys,
+		"orphans":         orphans,
+	}
+	if lastUpdate != nil {
+		out["last_update"] = lastUpdate
+	}
+	return out, nil
+}
+
 func (db *DB) ListCveAffectedPackages(ctx context.Context, cveID string, limit, offset int) ([]CveAffectedPackage, int, error) {
 	if limit <= 0 || limit > 500 {
 		limit = 100

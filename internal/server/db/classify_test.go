@@ -1992,6 +1992,39 @@ func TestCveAffectedPackageIndexStatsUsesSingleMatchableSourcePass(t *testing.T)
 	}
 }
 
+func TestCveReferenceKeyIndexHealthStatsAreIndexedOnly(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetCveReferenceKeyIndexHealthStats")
+	if start < 0 {
+		t.Fatal("GetCveReferenceKeyIndexHealthStats not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) ListCveAffectedPackages")
+	if end < 0 {
+		t.Fatal("GetCveReferenceKeyIndexHealthStats end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`"summary_mode":`,
+		`"indexed-only"`,
+		"count(DISTINCT cve_id) FROM cve_reference_keys",
+		"reference_key LIKE 'cve:%'",
+		"reference_key LIKE 'vendor:%'",
+		"reference_key LIKE 'repo:%'",
+		"NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = crk.cve_id)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("reference key index health stats missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "count(*) FROM cve_database") || strings.Contains(fn, "max(updated_at) FROM cve_database") {
+		t.Fatalf("reference key index health stats must avoid full CVE DB freshness joins: %s", fn)
+	}
+}
+
 func TestRemoveStaleRematchedVulnerabilitiesUsesCompatibleCandidateCheck(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {

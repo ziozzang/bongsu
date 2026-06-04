@@ -230,6 +230,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/downloads/bongsu-agent", s.handleAgentDownload)
 	s.mux.HandleFunc("GET /api/downloads/trivy", s.handleTrivyDownload)
 	s.mux.HandleFunc("GET /api/admin/installer/status", s.handleInstallerStatus)
+	s.mux.HandleFunc("GET /api/admin/agent-fleet/status", s.handleAgentFleetStatus)
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/ready", s.handleReady)

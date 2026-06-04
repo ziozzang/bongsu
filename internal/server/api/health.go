@@ -51,6 +51,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		var healthAffectedIndexDetailErr error
 		var healthAffectedIndexPartial bool
 		var healthReferenceIndexErr error
+		var healthReferenceIndexDetailErr error
+		var healthReferenceIndexPartial bool
 		dbCtx, cancel := withHealthDBTimeout()
 		if last := s.cveDBRematchLastResult(dbCtx, isAdmin); last != nil {
 			resp["cve_db_rematch"] = map[string]any{"last_result": last}
@@ -86,8 +88,19 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			healthReferenceIndex = referenceIndexStats
 			resp["cve_reference_key_index"] = referenceIndexStats
 		} else if isAdmin {
-			healthReferenceIndexErr = err
-			resp["cve_reference_key_index"] = map[string]any{"error": err.Error()}
+			detailErr := err
+			cancel()
+			dbCtx, cancel = withHealthDBTimeout()
+			if lightStats, lightErr := s.db.GetCveReferenceKeyIndexHealthStats(dbCtx); lightErr == nil {
+				lightStats["detail_error"] = detailErr.Error()
+				resp["cve_reference_key_index"] = lightStats
+				healthReferenceIndex = cveReferenceKeyIndexStatsFromHealthMap(lightStats)
+				healthReferenceIndexPartial = healthReferenceIndex != nil
+				healthReferenceIndexDetailErr = detailErr
+			} else {
+				healthReferenceIndexErr = detailErr
+				resp["cve_reference_key_index"] = map[string]any{"error": detailErr.Error(), "fallback_error": lightErr.Error()}
+			}
 		}
 		cancel()
 		dbCtx, cancel = withHealthDBTimeout()
@@ -100,6 +113,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			AffectedIndexDetail:   healthAffectedIndexDetailErr,
 			AffectedIndexError:    healthAffectedIndexErr,
 			ReferenceIndex:        healthReferenceIndex,
+			ReferenceIndexPartial: healthReferenceIndexPartial,
+			ReferenceIndexDetail:  healthReferenceIndexDetailErr,
 			ReferenceIndexError:   healthReferenceIndexErr,
 			SkipMissingFetch:      true,
 		}); quality != nil {
@@ -289,6 +304,37 @@ func cveAffectedPackageIndexStatsFromHealthMap(in map[string]any) *db.CveAffecte
 	}
 	if v, ok := intFromAny(in["indexed_cves"]); ok {
 		stats.IndexedCVEs = v
+	}
+	if v, ok := intFromAny(in["orphans"]); ok {
+		stats.Orphans = v
+	}
+	if v, ok := in["last_update"].(*time.Time); ok {
+		stats.LastUpdate = v
+	} else if v, ok := in["last_update"].(time.Time); ok {
+		stats.LastUpdate = &v
+	}
+	return stats
+}
+
+func cveReferenceKeyIndexStatsFromHealthMap(in map[string]any) *db.CveReferenceKeyIndexStats {
+	if in == nil {
+		return nil
+	}
+	stats := &db.CveReferenceKeyIndexStats{}
+	if v, ok := intFromAny(in["count"]); ok {
+		stats.Count = v
+	}
+	if v, ok := intFromAny(in["indexed_cves"]); ok {
+		stats.IndexedCVEs = v
+	}
+	if v, ok := intFromAny(in["canonical_cves"]); ok {
+		stats.CanonicalCVEs = v
+	}
+	if v, ok := intFromAny(in["vendor_keys"]); ok {
+		stats.VendorKeys = v
+	}
+	if v, ok := intFromAny(in["repository_keys"]); ok {
+		stats.RepositoryKeys = v
 	}
 	if v, ok := intFromAny(in["orphans"]); ok {
 		stats.Orphans = v

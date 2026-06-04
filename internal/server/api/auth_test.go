@@ -1294,6 +1294,30 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 	}
 }
 
+func TestAgentFleetStatusEndpointReportsVersionDrift(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	for _, want := range []string{
+		`"GET /api/admin/agent-fleet/status"`,
+		"func (s *Server) handleAgentFleetStatus",
+		"s.authenticateAdmin(r)",
+		"s.db.ListHosts(r.Context())",
+		"applyAgentStatus(&host, now)",
+		"installerBinaryReadiness(\"bongsu-agent\", agentBinaryPath())",
+		"installerBinaryReadiness(\"trivy\", trivyBinaryPath())",
+		"agentVersionDriftCounts(agentVersionCounts, latestVersion)",
+		`"agent_status_counts"`,
+		`"agent_version_counts"`,
+		`"agent_version_drift_counts"`,
+		`"latest_agent_version"`,
+		`"installer"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("agent fleet status endpoint missing %q", want)
+		}
+	}
+}
+
 func TestAgentVersionDriftCountsClassifyFleet(t *testing.T) {
 	got := agentVersionDriftCounts(map[string]int{
 		"1.0.0+abc": 2,
@@ -2095,6 +2119,10 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		"AffectedIndexDetail",
 		"fallback_error",
 		`resp["cve_reference_key_index"]`,
+		"GetCveReferenceKeyIndexHealthStats",
+		"cveReferenceKeyIndexStatsFromHealthMap",
+		"ReferenceIndexPartial",
+		"ReferenceIndexDetail",
 		`resp["cve_reference_index_rebuild"]`,
 		`resp["cve_db_quality"]`,
 		"cveDBQualitySummary",
@@ -2158,6 +2186,45 @@ func TestCveDBQualitySummarySupportsPartialAffectedIndexHealth(t *testing.T) {
 	})
 	if quality["status"] != "degraded" {
 		t.Fatalf("partial affected index orphan status = %#v, want degraded: %#v", quality["status"], quality)
+	}
+}
+
+func TestCveDBQualitySummarySupportsPartialReferenceIndexHealth(t *testing.T) {
+	quality := buildCveDBQualitySummary(cveDBQualityInput{
+		Placeholders:  &db.CvePlaceholderStats{},
+		AffectedIndex: &db.CveAffectedPackageIndexStats{},
+		ReferenceIndex: &db.CveReferenceKeyIndexStats{
+			Count:       100,
+			IndexedCVEs: 25,
+			Orphans:     0,
+		},
+		ReferenceIndexPartial: true,
+		ReferenceIndexDetail:  errors.New("reference detail timed out"),
+	})
+	if quality["status"] != "ok" {
+		t.Fatalf("partial reference index status = %#v, want ok: %#v", quality["status"], quality)
+	}
+	if quality["reference_index_summary_mode"] != "indexed-only" {
+		t.Fatalf("partial reference index summary mode = %#v", quality["reference_index_summary_mode"])
+	}
+	if quality["reference_index_detail_error"] != "reference detail timed out" {
+		t.Fatalf("partial reference index detail error = %#v", quality["reference_index_detail_error"])
+	}
+	if _, ok := quality["reference_index_coverage_percent"]; ok {
+		t.Fatalf("partial reference index must not expose unknown coverage: %#v", quality)
+	}
+	if _, ok := quality["reference_index_stale"]; ok {
+		t.Fatalf("partial reference index must not expose unknown stale state: %#v", quality)
+	}
+
+	quality = buildCveDBQualitySummary(cveDBQualityInput{
+		Placeholders:          &db.CvePlaceholderStats{},
+		AffectedIndex:         &db.CveAffectedPackageIndexStats{},
+		ReferenceIndex:        &db.CveReferenceKeyIndexStats{Orphans: 1},
+		ReferenceIndexPartial: true,
+	})
+	if quality["status"] != "degraded" {
+		t.Fatalf("partial reference index orphan status = %#v, want degraded: %#v", quality["status"], quality)
 	}
 }
 

@@ -242,6 +242,8 @@ func (s *Server) securityDbStatusQuality(parent context.Context, timeoutSeconds 
 	var affectedIndexErr error
 	var affectedIndexOut any
 	var referenceIndex *db.CveReferenceKeyIndexStats
+	var referenceIndexPartial bool
+	var referenceIndexDetailErr error
 	var referenceIndexErr error
 	var referenceIndexOut any
 
@@ -271,8 +273,19 @@ func (s *Server) securityDbStatusQuality(parent context.Context, timeoutSeconds 
 		referenceIndex = stats
 		referenceIndexOut = stats
 	} else {
-		referenceIndexErr = err
-		referenceIndexOut = map[string]any{"error": err.Error()}
+		detailErr := err
+		cancel()
+		dbCtx, cancel = withTimeout()
+		if lightStats, lightErr := s.db.GetCveReferenceKeyIndexHealthStats(dbCtx); lightErr == nil {
+			lightStats["detail_error"] = detailErr.Error()
+			referenceIndex = cveReferenceKeyIndexStatsFromHealthMap(lightStats)
+			referenceIndexPartial = referenceIndex != nil
+			referenceIndexDetailErr = detailErr
+			referenceIndexOut = lightStats
+		} else {
+			referenceIndexErr = detailErr
+			referenceIndexOut = map[string]any{"error": detailErr.Error(), "fallback_error": lightErr.Error()}
+		}
 	}
 	cancel()
 
@@ -286,6 +299,8 @@ func (s *Server) securityDbStatusQuality(parent context.Context, timeoutSeconds 
 		AffectedIndexDetail:   affectedIndexDetailErr,
 		AffectedIndexError:    affectedIndexErr,
 		ReferenceIndex:        referenceIndex,
+		ReferenceIndexPartial: referenceIndexPartial,
+		ReferenceIndexDetail:  referenceIndexDetailErr,
 		ReferenceIndexError:   referenceIndexErr,
 		SkipMissingFetch:      true,
 	})
@@ -2126,6 +2141,8 @@ type cveDBQualityInput struct {
 	AffectedIndexPartial  bool
 	AffectedIndexDetail   error
 	ReferenceIndex        *db.CveReferenceKeyIndexStats
+	ReferenceIndexPartial bool
+	ReferenceIndexDetail  error
 	EPSS                  *db.CveEPSSMergeStats
 	AffectedIndexError    error
 	ReferenceIndexError   error
@@ -2221,16 +2238,25 @@ func buildCveDBQualitySummary(input cveDBQualityInput) map[string]any {
 		addWarning(1, "affected package index quality unavailable")
 	}
 	if input.ReferenceIndex != nil {
-		out["reference_index_coverage_percent"] = input.ReferenceIndex.CoveragePercent
 		out["reference_index_orphans"] = input.ReferenceIndex.Orphans
-		out["reference_index_stale"] = input.ReferenceIndex.Stale
+		if input.ReferenceIndexPartial {
+			out["reference_index_summary_mode"] = "indexed-only"
+			out["reference_index_indexed_cves"] = input.ReferenceIndex.IndexedCVEs
+			out["reference_index_records"] = input.ReferenceIndex.Count
+			if input.ReferenceIndexDetail != nil {
+				out["reference_index_detail_error"] = input.ReferenceIndexDetail.Error()
+			}
+		} else {
+			out["reference_index_coverage_percent"] = input.ReferenceIndex.CoveragePercent
+			out["reference_index_stale"] = input.ReferenceIndex.Stale
+		}
 		if input.ReferenceIndex.Orphans > 0 {
 			addWarning(2, "reference key index has orphan rows")
 		}
-		if input.ReferenceIndex.Stale {
+		if !input.ReferenceIndexPartial && input.ReferenceIndex.Stale {
 			addWarning(2, "reference key index is stale")
 		}
-		if input.ReferenceIndex.TotalCVEs > 0 && input.ReferenceIndex.CoveragePercent < 90 {
+		if !input.ReferenceIndexPartial && input.ReferenceIndex.TotalCVEs > 0 && input.ReferenceIndex.CoveragePercent < 90 {
 			addWarning(1, "reference key coverage below 90%")
 		}
 	} else if input.ReferenceIndexError != nil {

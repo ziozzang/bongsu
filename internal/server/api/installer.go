@@ -411,6 +411,55 @@ func (s *Server) handleInstallerStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	agent := installerBinaryReadiness("bongsu-agent", agentBinaryPath())
+	trivy := installerBinaryReadiness("trivy", trivyBinaryPath())
+	latestVersion := agent.Version
+	if latestVersion == "" {
+		latestVersion = binaryVersion(agentBinaryPath())
+	}
+	agentStatusCounts := map[string]int{"online": 0, "stale": 0, "offline": 0, "unknown": 0}
+	agentVersionCounts := map[string]int{}
+	hosts, err := s.db.ListHosts(r.Context())
+	if err != nil {
+		log.Printf("agent fleet status hosts: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	now := time.Now()
+	for _, host := range hosts {
+		applyAgentStatus(&host, now)
+		status := host.AgentStatus
+		if status == "" {
+			status = "unknown"
+		}
+		agentStatusCounts[status]++
+		version := strings.TrimSpace(host.AgentVersion)
+		if version == "" {
+			version = "unknown"
+		}
+		agentVersionCounts[version]++
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":                     "ok",
+		"total_hosts":                len(hosts),
+		"latest_agent_version":       latestVersion,
+		"agent_status_counts":        agentStatusCounts,
+		"agent_version_counts":       agentVersionCounts,
+		"agent_version_drift_counts": agentVersionDriftCounts(agentVersionCounts, latestVersion),
+		"installer": map[string]any{
+			"install_token_configured": s.installToken != "",
+			"ready":                    s.installToken != "" && agent.Ready,
+			"agent":                    agent,
+			"trivy":                    trivy,
+		},
+	})
+}
+
 func agentBinaryPath() string {
 	agentPath := os.Getenv("BONGSU_AGENT_BIN")
 	if agentPath != "" {
