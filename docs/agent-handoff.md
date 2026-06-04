@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Harden generated installer systemd path
+master / origin/main latest commit: Verify OpenAPI operation security
 ```
 
 Important recent commits:
 
 ```text
-<latest> Harden generated installer systemd path
+<latest> Verify OpenAPI operation security
+190ff69 Harden generated installer systemd path
 477177c Verify static server build metadata
 d6f2f27 Verify latest SBOM package ontology
 c90c4df Verify stale CVE rematch cleanup
@@ -193,6 +194,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 - CVSS v2/v3.x/v4 recalculation support exists and startup recalculation is timeout-bounded.
 - Background stale-while-revalidate cache for `/api/cve-db/stats` is implemented.
 - The dashboard API client now reads `X-Bongsu-Cache` for CVE DB stats and the dashboard card exposes cache state, generated timestamp, and stats duration.
+- `scripts/verify-openapi.sh` now verifies not only route/spec sync but also that non-public operations declare security, admin operations include `AdminKey`, agent operations include `AgentKey`, installer/download operations include `InstallToken`/`AdminKey`, and export/SBOM operations are not documented as public.
 - The generated `/api/install.sh` one-line installer now supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN`, matching the packaged installer test hooks so systemd service/timer generation can be verified without touching `/etc/systemd/system` or real `systemctl`.
 - Static release verification now executes both `bongsu-agent --version` and `bongsu-server --version`, checking injected version/commit/build-date metadata after confirming both linux/amd64 binaries are statically linked; `scripts/package.sh` now builds release binaries with `-trimpath`.
 - `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
