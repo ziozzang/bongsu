@@ -219,12 +219,21 @@ print(urllib.parse.quote(sys.argv[1]))
 PY
 }
 
+sql_literal() {
+    python3 - "$1" <<'PY'
+import sys
+
+print("'" + sys.argv[1].replace("'", "''") + "'")
+PY
+}
+
 assert_osv_upstream_freshness() {
     local stats_json="$1"
     local local_last_update
     local local_epoch
     local max_upstream_epoch=0
     local max_upstream_ecosystem=""
+    local db_ready=false
 
     require_tool python3
     local_last_update="$(jq -r '.sources[]? | select(.source == "osv") | .last_update // empty' "$stats_json")"
@@ -234,6 +243,9 @@ assert_osv_upstream_freshness() {
         exit 1
     fi
     local_epoch="$(iso_to_epoch "$local_last_update")"
+    if prepare_db_checks; then
+        db_ready=true
+    fi
 
     IFS=',' read -ra OSV_UPSTREAM_ECOSYSTEM_ARRAY <<< "$BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS"
     for eco in "${OSV_UPSTREAM_ECOSYSTEM_ARRAY[@]}"; do
@@ -246,6 +258,28 @@ assert_osv_upstream_freshness() {
             max_upstream_epoch="$upstream_epoch"
             max_upstream_ecosystem="$eco"
         fi
+        if [ "$db_ready" = "true" ]; then
+            eco_literal="$(sql_literal "$eco")"
+            local_ecosystem_count="$(db_scalar "
+SELECT count(*)
+FROM cve_affected_packages
+WHERE source = 'osv'
+  AND lower(split_part(ecosystem, ':', 1)) = lower(${eco_literal})")"
+            if ! awk -v v="$local_ecosystem_count" 'BEGIN { exit !(v > 0) }'; then
+                echo "ERROR: local OSV affected-package index has no matchable rows for upstream sentinel ecosystem ${eco}" >&2
+                exit 1
+            fi
+            local_ecosystem_epoch="$(db_scalar "
+SELECT COALESCE(EXTRACT(EPOCH FROM max(updated_at))::bigint, 0)
+FROM cve_affected_packages
+WHERE source = 'osv'
+  AND lower(split_part(ecosystem, ':', 1)) = lower(${eco_literal})")"
+            if ! awk -v local="$local_ecosystem_epoch" -v upstream="$upstream_epoch" -v grace="$BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS" 'BEGIN { exit !((local + grace) >= upstream) }'; then
+                echo "ERROR: local OSV ecosystem ${eco} is older than upstream beyond grace" >&2
+                echo "local_ecosystem_epoch=${local_ecosystem_epoch} upstream_epoch=${upstream_epoch} grace_seconds=${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS}" >&2
+                exit 1
+            fi
+        fi
     done
 
     if ! awk -v local="$local_epoch" -v upstream="$max_upstream_epoch" -v grace="$BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS" 'BEGIN { exit !((local + grace) >= upstream) }'; then
@@ -256,6 +290,11 @@ assert_osv_upstream_freshness() {
     fi
 
     echo "OSV upstream freshness ok: local=${local_last_update}, newest_upstream_ecosystem=${max_upstream_ecosystem}"
+    if [ "$db_ready" = "true" ]; then
+        echo "OSV ecosystem-scoped freshness ok for: ${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS}"
+    else
+        echo "Skipping ecosystem-scoped OSV freshness; set BONGSU_DB_DSN for direct DB checks"
+    fi
 }
 
 require_tool curl

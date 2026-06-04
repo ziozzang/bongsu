@@ -29,7 +29,7 @@ BONGSU_RELEASE_READINESS_LIVE=true ./scripts/verify-release-readiness.sh
 ```
 
 Live release readiness enables strict CVE source freshness automatically; stale or missing required sources must be fixed before promotion.
-In connected live environments it also compares selected OSV upstream `all.zip` `Last-Modified` headers with the local OSV source timestamp, so an OSV feed that is behind upstream beyond the configured grace window fails promotion.
+In connected live environments it also compares selected OSV upstream `all.zip` `Last-Modified` headers with the local OSV source timestamp, so an OSV feed that is behind upstream beyond the configured grace window fails promotion. When `BONGSU_DB_DSN` is set, the same gate checks each sentinel ecosystem's affected-package index timestamp so one fresh OSV chunk cannot hide another stale ecosystem.
 It verifies the live API server build first: `/api/health` must expose a non-empty version, build date, and a commit matching the latest server/runtime source commit.
 It also verifies the live one-line installer payload: `/api/admin/installer/status` must report ready agent and Trivy binaries, valid SHA256 metadata, an install token, and an agent version containing the latest agent/installer source commit.
 
