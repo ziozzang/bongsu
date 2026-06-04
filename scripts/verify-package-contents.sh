@@ -55,6 +55,7 @@ for script in \
     'sync-all-cvedb.sh' \
     'export-security-db-bundle.sh' \
     'import-security-db-bundle.sh' \
+    'verify-release-readiness.sh' \
     'verify-agent-binary-workflow.sh' \
     'verify-airgap-release-archive.sh' \
     'verify-airgap-offline-rehearsal.sh' \

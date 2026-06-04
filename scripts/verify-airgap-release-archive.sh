@@ -91,6 +91,7 @@ for path in \
     "$ROOT_DIR/scripts/update-trivy-db.sh" \
     "$ROOT_DIR/scripts/import-security-db-bundle.sh" \
     "$ROOT_DIR/scripts/export-security-db-bundle.sh" \
+    "$ROOT_DIR/scripts/verify-release-readiness.sh" \
     "$ROOT_DIR/scripts/verify-operator-workflow.sh" \
     "$ROOT_DIR/scripts/verify-agent-binary-workflow.sh" \
     "$ROOT_DIR/scripts/verify-airgap-release-archive.sh" \

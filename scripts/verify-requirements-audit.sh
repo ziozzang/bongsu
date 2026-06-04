@@ -58,6 +58,7 @@ for command in \
     '\./scripts/verify-migrations\.sh' \
     '\./scripts/verify-deploy-config\.sh' \
     '\./scripts/verify-requirements-audit\.sh' \
+    '\./scripts/verify-release-readiness\.sh' \
     '\./scripts/verify-openapi\.sh' \
     '\./scripts/verify-operator-workflow\.sh' \
     '\./scripts/verify-agent-binary-workflow\.sh' \
@@ -94,7 +95,8 @@ for keyword in \
     'force scan' \
     'one-line installer' \
     'systemd' \
-    'Docker Compose'
+    'Docker Compose' \
+    'release readiness'
 do
     require_text "$AUDIT" "$keyword" "requirements audit missing keyword $keyword"
 done
@@ -108,6 +110,7 @@ require_text "$README" 'operations-runbook\.md' "README must link the operations
 require_text "$ARCH" 'BONGSU_SYSTEMD_DIR' "architecture must document systemd installer test hooks"
 require_text "$MATCHING" 'package/ecosystem/fixed evidence' "matching rules must describe package evidence"
 require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
+require_text "$PACKAGE_SCRIPT" 'verify-release-readiness\.sh' "airgap package must include release readiness verifier"
 
 for section in \
     'Production Readiness Checklist' \
@@ -140,6 +143,7 @@ for keyword in \
     'EPSS' \
     'requeue-stale' \
     'agent-token/reset' \
+    'verify-release-readiness\.sh' \
     'verify-live-web-smoke\.sh' \
     'two-host/two-container'
 do

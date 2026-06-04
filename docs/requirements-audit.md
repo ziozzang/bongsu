@@ -42,6 +42,7 @@ Run this suite before claiming a handoff state is healthy:
 
 ```bash
 git status --short --branch
+./scripts/verify-release-readiness.sh
 go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
@@ -71,6 +72,6 @@ git diff --check
 - Multi-host/container RBAC enforcement now has source-level coverage and a live two-host/two-container viewer-key scope verifier across host, package, container, scan, and scan-request APIs; broader multi-tenant staging fixtures with real installed agents should still be exercised before a commercial release.
 - Large imported CVE DB performance is now measured by `./scripts/verify-live-cvedb-quality.sh` against current production-scale snapshots; keep tightening thresholds as larger imports are exercised.
 - Airgap package contents are verified statically, the package script has an end-to-end smoke verifier, and generated archives can now be unpacked, verified, and run through an offline-like loader/compose rehearsal; a full real offline deployment with Docker image loading and security DB import should still be exercised before commercial release.
-- Operations runbook exists, but should be validated by an operator against a real connected and air-gapped deployment before a commercial release.
+- Release and handoff verification is consolidated as a release readiness gate in `./scripts/verify-release-readiness.sh`; the operations runbook still should be validated by an operator against a real connected and air-gapped deployment before a commercial release.
 - Schedules, asset groups, reports, notification rules, local session login, OpenAPI docs, backup dry-run, restore dry-run, agent claim, agent report ingestion, and scan-request completion now have live API workflow coverage through `./scripts/verify-operator-workflow.sh`; repeat it against staging and release candidates before a commercial release.
 - The real agent binary now has fixture-backed live coverage for Trivy host packages, Trivy container packages, osquery packages, container identity, daemon claim, report, and request completion through `./scripts/verify-agent-binary-workflow.sh`; a broader real multi-host/container deployment rehearsal remains useful before commercial release.

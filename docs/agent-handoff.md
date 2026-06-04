@@ -56,6 +56,7 @@ This handoff commit should include:
 - `scripts/verify-requirements-audit.sh`
 - `scripts/verify-package-contents.sh`
 - `scripts/verify-airgap-package-smoke.sh`
+- `scripts/verify-release-readiness.sh`
 - `scripts/package.sh`
 - `.github/workflows/ci.yml`
 - `README.md`
@@ -183,6 +184,7 @@ Run these after pulling this handoff state:
 
 ```bash
 git status --short --branch
+./scripts/verify-release-readiness.sh
 go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh

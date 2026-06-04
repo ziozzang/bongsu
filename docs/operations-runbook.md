@@ -18,6 +18,19 @@ docker compose -f deploy/docker-compose.yml config >/tmp/bongsu-compose.yml
 - Verify the deployment gates before release or handoff:
 
 ```bash
+./scripts/verify-release-readiness.sh
+```
+
+The consolidated release gate runs the non-live test, documentation, packaging, static-binary, web, and compose checks. Use the expanded form when validating a generated archive or a live staging deployment:
+
+```bash
+BONGSU_RELEASE_ARCHIVE=bongsu-0.1.0.tar.gz ./scripts/verify-release-readiness.sh
+BONGSU_RELEASE_READINESS_LIVE=true ./scripts/verify-release-readiness.sh
+```
+
+Individual gates remain useful while debugging:
+
+```bash
 go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
