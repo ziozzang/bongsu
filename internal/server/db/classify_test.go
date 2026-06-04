@@ -2511,7 +2511,10 @@ func TestSecuritySourceRegistryStatusTracksImportedCveSources(t *testing.T) {
 	for _, want := range []string{
 		"func (db *DB) RefreshSecuritySourceStatusTx",
 		"func (db *DB) RefreshSecuritySourceStatus",
+		"func (db *DB) ListSecuritySourceStatuses",
+		"type SecuritySourceStatus struct",
 		"db.RefreshSecuritySourceStatusTx(ctx, tx, source)",
+		"FROM security_sources",
 		"SELECT source FROM cve_database WHERE source != '' GROUP BY source",
 		"INSERT INTO security_sources",
 		"last_sync_started_at",

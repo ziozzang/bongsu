@@ -1339,6 +1339,9 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 		"latest_agent_version?: string",
 		"installerStatus: () => request<InstallerStatus>('/admin/installer/status')",
 		"SecurityDbOperationalStatus",
+		"SecuritySourceStatus",
+		"security_sources?: SecuritySourceStatus[]",
+		"security_sources_error?: string",
 		"AgentFleetStatus",
 		"recommended_actions?: string[]",
 		"securityDbStatus: () => request<SecurityDbOperationalStatus>('/admin/security-db/status')",
@@ -2073,6 +2076,7 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		"securityDBFreshnessStatus(dbCtx, true)",
 		"securityRecalculationStatus(true)",
 		"securityRecalculationLastResult(dbCtx, true)",
+		"ListSecuritySourceStatuses(dbCtx)",
 		"securityDBRevisionMeta(dbCtx)",
 		"securityDbStatusQuality",
 		"enrichSecurityDBManagerStatus(out[\"security_db\"], freshness)",
@@ -2080,6 +2084,8 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		"effective_status",
 		`out["warnings"]`,
 		`out["recommended_actions"]`,
+		`out["security_sources"]`,
+		`out["security_sources_error"]`,
 		`out["cve_db_quality"]`,
 		`out["cve_affected_package_index"]`,
 		`out["cve_reference_key_index"]`,
@@ -2860,6 +2866,11 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"Full Recalc",
 		"handleSecurityRecalc",
 		"Security Sync",
+		"Source Registry",
+		"securitySourceRegistry",
+		"security_sources_error",
+		"Security source registry:",
+		"Source registry attention:",
 		"securitySyncNext",
 		"securitySyncLast",
 		"securitySourcesReady",
@@ -3228,7 +3239,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
@@ -3931,6 +3942,33 @@ func TestOpenAPIDocumentsCveDbQualityPartialIndexFields(t *testing.T) {
 			} {
 				if !strings.Contains(body, want) {
 					t.Fatalf("OpenAPI CVE DB quality schema missing %q in %s", want, path)
+				}
+			}
+		})
+	}
+}
+
+func TestOpenAPIDocumentsSecuritySourceRegistryStatus(t *testing.T) {
+	for _, path := range []string{
+		"../../../internal/server/api/openapi.yaml",
+		"../../../docs/openapi.yaml",
+	} {
+		t.Run(path, func(t *testing.T) {
+			out, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := string(out)
+			for _, want := range []string{
+				"SecuritySourceStatus:",
+				"security_sources:",
+				"security_sources_error:",
+				"last_sync_finished_at:",
+				"last_status:",
+				"record_count:",
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("OpenAPI security source registry schema missing %q in %s", want, path)
 				}
 			}
 		})

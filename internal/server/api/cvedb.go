@@ -216,6 +216,14 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	cancel()
 
+	dbCtx, cancel = withTimeout()
+	if sources, err := s.db.ListSecuritySourceStatuses(dbCtx); err == nil {
+		out["security_sources"] = sources
+	} else {
+		out["security_sources_error"] = err.Error()
+	}
+	cancel()
+
 	cveQuality, affectedIndex, referenceIndex := s.securityDbStatusQuality(r.Context(), timeoutSeconds)
 	if affectedIndex != nil {
 		out["cve_affected_package_index"] = affectedIndex

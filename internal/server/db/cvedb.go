@@ -531,6 +531,57 @@ func (db *DB) RefreshSecuritySourceStatus(ctx context.Context, source string) er
 	return tx.Commit()
 }
 
+type SecuritySourceStatus struct {
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	Kind               string     `json:"kind"`
+	Category           string     `json:"category"`
+	Ecosystems         []string   `json:"ecosystems"`
+	Enabled            bool       `json:"enabled"`
+	UpdateIntervalSecs int        `json:"update_interval_seconds"`
+	LastSyncStartedAt  *time.Time `json:"last_sync_started_at,omitempty"`
+	LastSyncFinishedAt *time.Time `json:"last_sync_finished_at,omitempty"`
+	LastExportedAt     *time.Time `json:"last_exported_at,omitempty"`
+	LastStatus         string     `json:"last_status"`
+	LastError          string     `json:"last_error"`
+	RecordCount        int64      `json:"record_count"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+}
+
+func (db *DB) ListSecuritySourceStatuses(ctx context.Context) ([]SecuritySourceStatus, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT id, name, kind, category, ecosystems, enabled, update_interval_seconds,
+       last_sync_started_at, last_sync_finished_at, last_exported_at, last_status, last_error, record_count, updated_at
+FROM security_sources
+ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SecuritySourceStatus{}
+	for rows.Next() {
+		var item SecuritySourceStatus
+		var started, finished, exported sql.NullTime
+		if err := rows.Scan(&item.ID, &item.Name, &item.Kind, &item.Category, pq.Array(&item.Ecosystems), &item.Enabled, &item.UpdateIntervalSecs, &started, &finished, &exported, &item.LastStatus, &item.LastError, &item.RecordCount, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if started.Valid {
+			item.LastSyncStartedAt = &started.Time
+		}
+		if finished.Valid {
+			item.LastSyncFinishedAt = &finished.Time
+		}
+		if exported.Valid {
+			item.LastExportedAt = &exported.Time
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 type securitySourceRegistryMeta struct {
 	name       string
 	category   string

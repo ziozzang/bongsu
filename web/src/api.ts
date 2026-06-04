@@ -552,6 +552,23 @@ export interface HealthStatus {
   };
 }
 
+export interface SecuritySourceStatus {
+  id: string;
+  name: string;
+  kind: string;
+  category: string;
+  ecosystems: string[];
+  enabled: boolean;
+  update_interval_seconds: number;
+  last_sync_started_at?: string;
+  last_sync_finished_at?: string;
+  last_exported_at?: string;
+  last_status: string;
+  last_error: string;
+  record_count: number;
+  updated_at: string;
+}
+
 export interface CveSourceStat {
   source: string;
   count: number;
@@ -847,6 +864,8 @@ export interface SecurityDbOperationalStatus {
   status: string;
   warnings?: string[];
   recommended_actions?: string[];
+  security_sources?: SecuritySourceStatus[];
+  security_sources_error?: string;
   security_db?: HealthStatus['security_db'];
   security_db_freshness?: HealthStatus['security_db_freshness'];
   security_db_revision?: string;

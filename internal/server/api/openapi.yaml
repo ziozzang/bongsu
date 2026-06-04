@@ -2605,6 +2605,12 @@ paths:
                     type: array
                     items:
                       type: string
+                  security_sources:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SecuritySourceStatus"
+                  security_sources_error:
+                    type: string
                   timeout_seconds:
                     type: integer
                   security_db:
@@ -3653,6 +3659,45 @@ components:
         status:
           type: string
           example: ok
+
+    SecuritySourceStatus:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        kind:
+          type: string
+        category:
+          type: string
+        ecosystems:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        update_interval_seconds:
+          type: integer
+        last_sync_started_at:
+          type: string
+          format: date-time
+        last_sync_finished_at:
+          type: string
+          format: date-time
+        last_exported_at:
+          type: string
+          format: date-time
+        last_status:
+          type: string
+        last_error:
+          type: string
+        record_count:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
 
     CveDbQuality:
       type: object

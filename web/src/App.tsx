@@ -628,6 +628,21 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const cveQualityWarnings = cveDbQuality?.warnings || [];
   const securityDbWarnings = securityDbStatus?.warnings || [];
   const securityDbActions = securityDbStatus?.recommended_actions || [];
+  const securitySourceRegistry = securityDbStatus?.security_sources || [];
+  const securitySourceRegistryOk = securitySourceRegistry.filter(s => s.enabled && s.last_status === 'ok' && (s.record_count || 0) > 0).length;
+  const securitySourceRegistryEnabled = securitySourceRegistry.filter(s => s.enabled).length;
+  const securitySourceRegistryRecords = securitySourceRegistry.reduce((sum, s) => sum + (s.record_count || 0), 0);
+  const latestSecuritySourceRegistry = securitySourceRegistry.reduce<typeof securitySourceRegistry[number] | null>((latest, source) => {
+    if (!source.last_sync_finished_at) return latest;
+    if (!latest?.last_sync_finished_at) return source;
+    return new Date(source.last_sync_finished_at).getTime() > new Date(latest.last_sync_finished_at).getTime() ? source : latest;
+  }, null);
+  const securitySourceRegistryBroken = !!securityDbStatus?.security_sources_error || securitySourceRegistry.some(s => s.enabled && (s.last_status !== 'ok' || (s.record_count || 0) === 0 || s.last_error));
+  const securitySourceRegistryColor = securitySourceRegistryBroken
+    ? 'var(--critical)'
+    : securitySourceRegistry.length > 0
+      ? 'var(--low)'
+      : 'var(--medium)';
   const cveStatsCacheStatus = cveStatsMeta?.cache_status || 'unknown';
   const cveStatsGeneratedAt = cveStatsMeta?.generated_at ? new Date(cveStatsMeta.generated_at).toLocaleString() : 'not loaded';
   const cveStatsDuration = cveStatsMeta?.durations_ms?.total;
@@ -1397,6 +1412,25 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             </div>
           )}
         </div>
+        <div className="stat-card" title={latestSecuritySourceRegistry?.last_sync_finished_at ? `Latest registry source ${latestSecuritySourceRegistry.id} updated ${new Date(latestSecuritySourceRegistry.last_sync_finished_at).toLocaleString()}` : securityDbStatus?.security_sources_error || ''}>
+          <div className="accent-bar" style={{ background: securitySourceRegistryColor }} />
+          <div className="label">Source Registry</div>
+          <div className="value" style={{ color: securitySourceRegistryColor }}>
+            {securitySourceRegistry.length ? `${securitySourceRegistryOk}/${securitySourceRegistryEnabled || securitySourceRegistry.length}` : '-'}
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+            {securityDbStatus?.security_sources_error
+              ? 'registry status unavailable'
+              : securitySourceRegistry.length
+                ? `${securitySourceRegistryRecords.toLocaleString()} records tracked`
+                : 'waiting for source registry'}
+          </div>
+          {latestSecuritySourceRegistry?.last_sync_finished_at && (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              latest {latestSecuritySourceRegistry.id} {new Date(latestSecuritySourceRegistry.last_sync_finished_at).toLocaleString()}
+            </div>
+          )}
+        </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
           <div className="label">CVE DB Records</div>
@@ -1542,6 +1576,12 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {health?.security_db_freshness?.error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB freshness: {health.security_db_freshness.error}</div>}
       {securityDbWarnings.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: securityDbStatus?.status === 'degraded' ? 'var(--critical)' : 'var(--medium)' }}>Security DB: {securityDbWarnings.slice(0, 3).join('; ')}{securityDbWarnings.length > 3 ? `; +${securityDbWarnings.length - 3} more` : ''}</div>}
       {securityDbActions.length > 0 && <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Action: {securityDbActions.slice(0, 2).join('; ')}</div>}
+      {securityDbStatus?.security_sources_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security source registry: {securityDbStatus.security_sources_error}</div>}
+      {securitySourceRegistryBroken && !securityDbStatus?.security_sources_error && (
+        <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--medium)' }}>
+          Source registry attention: {securitySourceRegistry.filter(s => s.enabled && (s.last_status !== 'ok' || (s.record_count || 0) === 0 || s.last_error)).slice(0, 5).map(s => `${s.id} ${s.last_status}${s.record_count ? ` (${s.record_count.toLocaleString()})` : ''}`).join(', ')}
+        </div>
+      )}
       {cveQualityWarnings.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: cveQualityStatus === 'degraded' ? 'var(--critical)' : 'var(--medium)' }}>CVE DB quality: {cveQualityWarnings.slice(0, 3).join(', ')}{cveQualityWarnings.length > 3 ? `, +${cveQualityWarnings.length - 3} more` : ''}</div>}
       {cveStatsMeta?.osv_ecosystems_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--medium)' }}>OSV ecosystem stats: {cveStatsMeta.osv_ecosystems_error}</div>}
       {cveAffectedIndex?.detail_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--medium)' }}>Affected index detailed stats delayed; showing indexed-only health snapshot.</div>}
