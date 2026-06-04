@@ -6001,6 +6001,68 @@ func TestCveDbImportAndExportAuditSecurityDBRevision(t *testing.T) {
 	}
 }
 
+func TestSecurityDBRevisionMetaUsesBoundedCacheAndInvalidation(t *testing.T) {
+	apiGo, err := os.ReadFile("../../../internal/server/api/api.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"securityDBRevisionCacheUntil",
+		"securityDBRevisionCacheMeta",
+		"securityDBRevisionCacheGen",
+		"securityDBRevisionInflight",
+		"securityDBRevisionWaiters",
+	} {
+		if !strings.Contains(string(apiGo), want) {
+			t.Fatalf("server must carry security DB revision cache field %q", want)
+		}
+	}
+
+	cvedbGo, err := os.ReadFile("../../../internal/server/api/cvedb.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(cvedbGo)
+	start := strings.Index(body, "func (s *Server) securityDBRevisionMeta")
+	if start < 0 {
+		t.Fatal("securityDBRevisionMeta not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) fetchSecurityDBRevisionMeta")
+	if end < 0 {
+		t.Fatal("fetchSecurityDBRevisionMeta not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"securityDBRevisionCacheTTL()",
+		"now.Before(s.securityDBRevisionCacheUntil)",
+		"cloneMetaMap(s.securityDBRevisionCacheMeta)",
+		"s.securityDBRevisionInflight",
+		"s.securityDBRevisionWaiters = append",
+		"case <-ctx.Done()",
+		`map[string]any{"security_db_revision_error": ctx.Err().Error()}`,
+		"generation := s.securityDBRevisionCacheGen",
+		`meta["security_db_revision"]`,
+		"generation == s.securityDBRevisionCacheGen",
+		"s.securityDBRevisionCacheUntil = time.Now().Add(ttl)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("securityDBRevisionMeta cache behavior missing %q: %s", want, fn)
+		}
+	}
+	for _, want := range []string{
+		`envInt("BONGSU_SECURITY_DB_REVISION_CACHE_SECONDS", 30)`,
+		"seconds > 300",
+		"func cloneMetaMap",
+		"func (s *Server) clearSecurityDBRevisionCache",
+		"s.securityDBRevisionCacheGen++",
+		"s.clearSecurityDBRevisionCache()",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("security DB revision cache support missing %q", want)
+		}
+	}
+}
+
 func TestSecurityDBBundleExportStagesCompleteArchiveBeforeResponse(t *testing.T) {
 	out := readAllPackageGoFiles(t)
 	body := out

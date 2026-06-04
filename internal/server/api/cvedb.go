@@ -2001,6 +2001,52 @@ func (s *Server) handleCveDbExport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) securityDBRevisionMeta(ctx context.Context) map[string]any {
+	ttl := securityDBRevisionCacheTTL()
+	if ttl <= 0 {
+		return s.fetchSecurityDBRevisionMeta(ctx)
+	}
+	now := time.Now()
+	s.securityDBRevisionMu.Lock()
+	if now.Before(s.securityDBRevisionCacheUntil) && len(s.securityDBRevisionCacheMeta) > 0 {
+		meta := cloneMetaMap(s.securityDBRevisionCacheMeta)
+		s.securityDBRevisionMu.Unlock()
+		return meta
+	}
+	if s.securityDBRevisionInflight {
+		ch := make(chan map[string]any, 1)
+		s.securityDBRevisionWaiters = append(s.securityDBRevisionWaiters, ch)
+		s.securityDBRevisionMu.Unlock()
+		select {
+		case meta := <-ch:
+			return cloneMetaMap(meta)
+		case <-ctx.Done():
+			return map[string]any{"security_db_revision_error": ctx.Err().Error()}
+		}
+	}
+	s.securityDBRevisionInflight = true
+	generation := s.securityDBRevisionCacheGen
+	s.securityDBRevisionMu.Unlock()
+
+	meta := s.fetchSecurityDBRevisionMeta(ctx)
+	s.securityDBRevisionMu.Lock()
+	if revision, _ := meta["security_db_revision"].(string); revision != "" {
+		if generation == s.securityDBRevisionCacheGen {
+			s.securityDBRevisionCacheMeta = cloneMetaMap(meta)
+			s.securityDBRevisionCacheUntil = time.Now().Add(ttl)
+		}
+	}
+	waiters := s.securityDBRevisionWaiters
+	s.securityDBRevisionWaiters = nil
+	s.securityDBRevisionInflight = false
+	s.securityDBRevisionMu.Unlock()
+	for _, ch := range waiters {
+		ch <- meta
+		close(ch)
+	}
+	return cloneMetaMap(meta)
+}
+
+func (s *Server) fetchSecurityDBRevisionMeta(ctx context.Context) map[string]any {
 	meta := map[string]any{}
 	revision, err := s.db.GetSecurityDBRevision(ctx)
 	if err != nil {
@@ -2009,6 +2055,25 @@ func (s *Server) securityDBRevisionMeta(ctx context.Context) map[string]any {
 	}
 	meta["security_db_revision"] = revision
 	return meta
+}
+
+func securityDBRevisionCacheTTL() time.Duration {
+	seconds := envInt("BONGSU_SECURITY_DB_REVISION_CACHE_SECONDS", 30)
+	if seconds <= 0 {
+		return 0
+	}
+	if seconds > 300 {
+		seconds = 300
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func cloneMetaMap(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func (s *Server) writeCveJSONLTemp(ctx context.Context, source string) (string, int, string, error) {
@@ -2440,6 +2505,15 @@ func (s *Server) clearCveStatsCache() {
 	s.cveStatsCacheUntil = time.Time{}
 	s.cveStatsCacheJSON = nil
 	s.cveStatsCacheGen++
+	s.clearSecurityDBRevisionCache()
+}
+
+func (s *Server) clearSecurityDBRevisionCache() {
+	s.securityDBRevisionMu.Lock()
+	defer s.securityDBRevisionMu.Unlock()
+	s.securityDBRevisionCacheUntil = time.Time{}
+	s.securityDBRevisionCacheMeta = nil
+	s.securityDBRevisionCacheGen++
 }
 
 func rematchSourcePolicy(stats []db.CveSourceStats, opts db.RematchOptions) map[string]map[string]any {

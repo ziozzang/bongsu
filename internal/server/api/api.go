@@ -70,6 +70,13 @@ type Server struct {
 	cveStatsInflight   bool
 	cveStatsWaiters    []chan cveStatsBuildResult
 
+	securityDBRevisionMu         sync.Mutex
+	securityDBRevisionCacheUntil time.Time
+	securityDBRevisionCacheMeta  map[string]any
+	securityDBRevisionCacheGen   int64
+	securityDBRevisionInflight   bool
+	securityDBRevisionWaiters    []chan map[string]any
+
 	generalRateLimiter *ipRateLimiter
 	agentRateLimiter   *ipRateLimiter
 
