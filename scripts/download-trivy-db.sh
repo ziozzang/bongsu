@@ -6,12 +6,18 @@ set -euo pipefail
 
 TRIVY_VERSION="${TRIVY_VERSION:-0.70.0}"
 CACHE_DIR=""
+TRIVY_DOWNLOAD_DIR=""
 OUTPUT="${1:-trivy-db.tar.gz}"
 DB_REPO="${TRIVY_DB_REPO:-ghcr.io/aquasecurity/trivy-db}"
+TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "${TMP_PARENT}"
 
 cleanup() {
     if [ -n "$CACHE_DIR" ] && [ -d "$CACHE_DIR" ]; then
         rm -rf "$CACHE_DIR"
+    fi
+    if [ -n "$TRIVY_DOWNLOAD_DIR" ] && [ -d "$TRIVY_DOWNLOAD_DIR" ]; then
+        rm -rf "$TRIVY_DOWNLOAD_DIR"
     fi
 }
 trap cleanup EXIT
@@ -32,12 +38,13 @@ else
         aarch64) TRIVY_ARCH="ARM64" ;;
         *) echo "ERROR: Unsupported architecture: $ARCH"; exit 1 ;;
     esac
+    TRIVY_DOWNLOAD_DIR="$(mktemp -d "${TMP_PARENT%/}/bongsu-trivy-bin.XXXXXX")"
     curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-${TRIVY_ARCH}.tar.gz" | \
-        tar -xzf - -C /tmp trivy
-    TRIVY_BIN="/tmp/trivy"
+        tar -xzf - -C "${TRIVY_DOWNLOAD_DIR}" trivy
+    TRIVY_BIN="${TRIVY_DOWNLOAD_DIR}/trivy"
 fi
 
-CACHE_DIR=$(mktemp -d)
+CACHE_DIR="$(mktemp -d "${TMP_PARENT%/}/bongsu-trivy-db.XXXXXX")"
 echo "Downloading trivy-db from ${DB_REPO}..."
 "$TRIVY_BIN" image --download-db-only --cache-dir "$CACHE_DIR" 2>&1
 

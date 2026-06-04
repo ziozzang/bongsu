@@ -34,7 +34,9 @@ DB_PASSWORD="${BONGSU_DB_PASSWORD:-}"
 TRIVY_CACHE_DIR="${BONGSU_TRIVY_CACHE_DIR:-/app/trivy-cache}"
 SERVER_CONTAINER="${BONGSU_SERVER_CONTAINER:-bongsu-server-1}"
 
-TMP_DIR="$(mktemp -d)"
+TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "${TMP_PARENT}"
+TMP_DIR="$(mktemp -d "${TMP_PARENT%/}/bongsu-restore.XXXXXX")"
 cleanup() {
     if [ -d "$TMP_DIR" ]; then
         rm -rf "$TMP_DIR"

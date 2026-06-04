@@ -27,7 +27,9 @@ VALIDATE_ARCHIVE="${BONGSU_BACKUP_VALIDATE_ARCHIVE:-true}"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUTPUT="${OUTPUT_ARG:-bongsu-backup-${TIMESTAMP}.tar.gz}"
 
-TMP_DIR="$(mktemp -d)"
+TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "${TMP_PARENT}"
+TMP_DIR="$(mktemp -d "${TMP_PARENT%/}/bongsu-backup.XXXXXX")"
 cleanup() {
     if [ -d "$TMP_DIR" ]; then
         rm -rf "$TMP_DIR"

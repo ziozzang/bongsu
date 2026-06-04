@@ -345,6 +345,8 @@ docker compose -f deploy/docker-compose.yml exec -T postgres \
 sha256sum bongsu-postgres.sql bongsu-security-db-bundle.tar.gz > bongsu-backup.sha256
 ```
 
+For large backups, restores, Trivy DB downloads, or connected CVE source syncs on hosts with a small `/tmp`, set `BONGSU_TMPDIR=/path/with/space` before running the packaged scripts. The backup, restore, Trivy DB download, NVD/OSV/Trivy CVE sync, OSV download, and Trivy CVE extraction scripts create managed `bongsu-*` work directories under that path and remove them on exit.
+
 Restore PostgreSQL to a stopped or fresh deployment:
 
 ```bash

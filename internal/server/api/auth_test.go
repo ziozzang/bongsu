@@ -3664,6 +3664,45 @@ func TestSecurityDBSyncScriptsHonorCustomTempDirectory(t *testing.T) {
 	}
 }
 
+func TestAirgapTransferScriptsHonorCustomTempDirectory(t *testing.T) {
+	for _, path := range []string{
+		"../../../scripts/backup.sh",
+		"../../../scripts/restore.sh",
+		"../../../scripts/download-trivy-db.sh",
+	} {
+		out, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(out)
+		for _, want := range []string{
+			`TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"`,
+			`mkdir -p "${TMP_PARENT}"`,
+			`${TMP_PARENT%/}/bongsu-`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s must honor BONGSU_TMPDIR for large airgap transfer work, missing %q", path, want)
+			}
+		}
+	}
+
+	trivyDownloader, err := os.ReadFile("../../../scripts/download-trivy-db.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(trivyDownloader)
+	for _, want := range []string{
+		"TRIVY_DOWNLOAD_DIR",
+		`rm -rf "$TRIVY_DOWNLOAD_DIR"`,
+		`mktemp -d "${TMP_PARENT%/}/bongsu-trivy-bin.`,
+		`mktemp -d "${TMP_PARENT%/}/bongsu-trivy-db.`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("download-trivy-db must keep downloaded binary and cache under managed temp dirs, missing %q", want)
+		}
+	}
+}
+
 func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-operator-workflow.sh")
 	if err != nil {
