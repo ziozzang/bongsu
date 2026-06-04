@@ -97,6 +97,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-airgap-release-archive.sh" \
     "$ROOT_DIR/scripts/verify-airgap-offline-rehearsal.sh" \
     "$ROOT_DIR/scripts/verify-airgap-package-smoke.sh" \
+    "$ROOT_DIR/scripts/verify-live-agent-token-binding.sh" \
     "$ROOT_DIR/scripts/verify-live-cvedb-quality.sh" \
     "$ROOT_DIR/scripts/verify-live-rbac-scope.sh" \
     "$ROOT_DIR/scripts/verify-live-web-smoke.sh" \

@@ -63,6 +63,17 @@ BONGSU_AGENT_API_KEY="$BONGSU_AGENT_API_KEY" \
 
 This verifier uses `--host-id` to report two logical hosts with distinct container identities, then proves host-specific inventory and force-scan request completion stay separated.
 
+- Verify host-token binding against the live API:
+
+```bash
+BONGSU_API_BASE=http://localhost:5677 \
+BONGSU_API_KEY="$BONGSU_API_KEY" \
+BONGSU_AGENT_API_KEY="$BONGSU_AGENT_API_KEY" \
+./scripts/verify-live-agent-token-binding.sh
+```
+
+This verifier requires `BONGSU_AGENT_HOST_BINDING=true` on the API. It binds a host to one agent token, then proves a different token cannot report inventory, claim scan requests, or complete requests for that host.
+
 - Verify the deployed web UI on port `5678` with a live browser smoke test:
 
 ```bash
@@ -295,7 +306,7 @@ Compromised or reinstalled host agent:
 
 1. Reset the host agent token from Host Detail or `/api/hosts/{id}/agent-token/reset`.
 2. Reinstall the agent so it receives a fresh persistent `agent.token`.
-3. Confirm new reports bind successfully and old-token requests are rejected.
+3. Confirm new reports bind successfully and old-token requests are rejected; `./scripts/verify-live-agent-token-binding.sh` exercises the same report, claim, and completion rejection path in a fixture host.
 
 ## Routine Maintenance
 

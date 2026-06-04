@@ -43,7 +43,7 @@ for file in "$AUDIT" "$ARCH" "$MATCHING" "$README" "$CI" "$RUNBOOK" "$PACKAGE_SC
     require_file "$file"
 done
 
-for id in $(seq 1 18); do
+for id in $(seq 1 19); do
     require_text "$AUDIT" "^\\| R${id} \\|" "requirements audit must include R${id}"
 done
 
@@ -62,6 +62,7 @@ for command in \
     '\./scripts/verify-openapi\.sh' \
     '\./scripts/verify-operator-workflow\.sh' \
     '\./scripts/verify-agent-binary-workflow\.sh' \
+    '\./scripts/verify-live-agent-token-binding\.sh' \
     '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
@@ -93,6 +94,7 @@ for keyword in \
     'live CVE DB' \
     'live browser' \
     'BONGSU_HOST_ID' \
+    'host-token binding' \
     'two logical host' \
     'force scan' \
     'one-line installer' \
@@ -114,6 +116,7 @@ require_text "$ARCH" 'BONGSU_SYSTEMD_DIR' "architecture must document systemd in
 require_text "$MATCHING" 'package/ecosystem/fixed evidence' "matching rules must describe package evidence"
 require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness\.sh' "airgap package must include release readiness verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap package must include live agent token binding verifier"
 
 for section in \
     'Production Readiness Checklist' \
@@ -147,6 +150,7 @@ for keyword in \
     'EPSS' \
     'requeue-stale' \
     'agent-token/reset' \
+    'verify-live-agent-token-binding\.sh' \
     'verify-release-readiness\.sh' \
     'verify-live-web-smoke\.sh' \
     'two-host/two-container'

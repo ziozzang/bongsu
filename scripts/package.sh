@@ -92,6 +92,7 @@ for script in \
     verify-airgap-release-archive.sh \
     verify-airgap-offline-rehearsal.sh \
     verify-airgap-package-smoke.sh \
+    verify-live-agent-token-binding.sh \
     verify-live-cvedb-quality.sh \
     verify-live-rbac-scope.sh \
     verify-live-web-smoke.sh \

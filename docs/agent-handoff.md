@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 11:06:55 KST
+Updated: 2026-06-04 12:05:05 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -21,15 +21,22 @@ This document is the handoff point for the next agent session. Continue from the
 
 ## Current Git State
 
-Expected committed head before this continuation:
+Expected committed head at this handoff:
 
 ```text
-fa030f8 (master, origin/main) Verify live agent scan request completion
+master / origin/main latest commit: Verify live agent token binding
 ```
 
 Important recent commits:
 
 ```text
+<latest> Verify live agent token binding
+b0d4cd7 Verify multi-host agent identity
+39ce162 Run release readiness gate in CI
+c4237f3 Add release readiness gate
+8d58410 Document live multi-host RBAC coverage
+265cba9 Verify live web smoke workflow
+f4be3fd Verify airgap release archive
 fa030f8 Verify live agent scan request completion
 f6e99ac Add live operator workflow verification
 c86ada7 Expand operator workflow browser coverage
@@ -73,6 +80,7 @@ This handoff commit should include:
 - Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
 - Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
 - Real agent binary workflow verifier builds `cmd/agent`, runs it against fixture Trivy/osquery/docker tools for two logical host IDs, verifies host/container package ontology and host-id isolation through the live API, then runs daemon polling to claim and complete a host-specific scan request.
+- Live agent token binding verifier binds a host to one token, then proves a different token cannot report inventory, claim scan requests, or complete requests for the bound host when `BONGSU_AGENT_HOST_BINDING=true`.
 - Live CVE DB quality verifier checks production-scale source count, matchability, EPSS enrichment, affected/reference index health, placeholder rejection, affected package evidence, reference grouping, and endpoint responsiveness.
 - Live RBAC scope verifier ingests allowed and denied host/container fixtures, creates a viewer subject and host-scoped policy, then verifies viewer-key access filters hosts, packages, containers, scans, and scan requests.
 - Airgap package smoke verifier runs `scripts/package.sh` end-to-end with lightweight `go`/`npm`/`docker` stubs, then validates the generated `bongsu-*.tar.gz`.
@@ -192,6 +200,7 @@ go test ./...
 ./scripts/verify-openapi.sh
 ./scripts/verify-operator-workflow.sh
 ./scripts/verify-agent-binary-workflow.sh
+./scripts/verify-live-agent-token-binding.sh
 ./scripts/verify-live-cvedb-quality.sh
 ./scripts/verify-live-rbac-scope.sh
 ./scripts/verify-live-web-smoke.sh
@@ -217,6 +226,7 @@ curl -sS -H 'X-API-Key: test-admin' 'http://127.0.0.1:5677/api/cve-db/search?q=o
 curl -sS http://127.0.0.1:5678/ >/tmp/bongsu-web.html
 BONGSU_API_KEY=test-admin-key BONGSU_ADMIN_USERNAME=admin BONGSU_ADMIN_PASSWORD=password ./scripts/verify-operator-workflow.sh
 BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-agent-binary-workflow.sh
+BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-live-agent-token-binding.sh
 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-cvedb-quality.sh
 BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key BONGSU_VIEWER_API_KEY=viewer-test-key BONGSU_VIEWER_SUBJECT=rbac-live-viewer ./scripts/verify-live-rbac-scope.sh
 BONGSU_WEB_BASE=http://127.0.0.1:5678 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-web-smoke.sh

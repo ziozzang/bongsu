@@ -60,6 +60,7 @@ for script in \
     'verify-airgap-release-archive.sh' \
     'verify-airgap-offline-rehearsal.sh' \
     'verify-airgap-package-smoke.sh' \
+    'verify-live-agent-token-binding.sh' \
     'verify-live-cvedb-quality.sh' \
     'verify-live-rbac-scope.sh' \
     'verify-live-web-smoke.sh' \
@@ -82,7 +83,8 @@ for pattern in \
     'sha256sum "\$\{PACKAGE_NAME\}\.tar\.gz"' \
     'sha256sum -c SHA256SUMS' \
     'docker compose -f docker-compose\.airgap\.yml up -d' \
-    'import-security-db-bundle\.sh http://localhost:5677'
+    'import-security-db-bundle\.sh http://localhost:5677' \
+    'verify-live-agent-token-binding\.sh'
 do
     require_text "$PACKAGE_SCRIPT" "$pattern" "package script missing release invariant $pattern"
 done
