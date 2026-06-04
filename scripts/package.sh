@@ -111,6 +111,7 @@ for script in \
     verify-live-install-script.sh \
     verify-live-installer-payload.sh \
     verify-live-rbac-scope.sh \
+    verify-live-sbom-export-workflow.sh \
     verify-live-scan-request-recovery.sh \
     verify-live-security-db-schedule.sh \
     verify-live-session-auth.sh \

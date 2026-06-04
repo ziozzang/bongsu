@@ -40,6 +40,7 @@ It verifies local session auth with `./scripts/verify-live-session-auth.sh`: `/a
 It verifies CVE DB observability under concurrent operator load with `./scripts/verify-live-cvedb-concurrency.sh`: multiple forced stats refreshes, admin security DB status, and admin metrics must complete with `2xx` responses, valid JSON or Prometheus bodies, healthy CVE DB quality, and no new PostgreSQL shared-memory errors in the API log.
 It verifies stale scan-request recovery with `./scripts/verify-live-scan-request-recovery.sh`: a fixture host-specific request is claimed, aged in PostgreSQL, surfaced by the stale request filter, requeued through `/api/scan-requests/requeue-stale`, audited, and proven claimable again.
 It verifies CVE DB rematch end-to-end with `./scripts/verify-live-cve-rematch-workflow.sh`: a fixture SBOM reports `phenx/php-svg-lib@0.5.0` as a Packagist package, report-triggered automatic rematch must create `cve-db` findings from OSV, explicit scan-scoped rematch must be idempotent, and the findings must preserve package ecosystem, installed version, fixed-version, and OSV advisory evidence.
+It verifies SBOM export end-to-end with `./scripts/verify-live-sbom-export-workflow.sh`: a fixture report contains host OS packages, host code libraries, container OS packages, and container code libraries, then both CycloneDX and SPDX exports must preserve host ID, scan ID, package purl, asset type, container ID, image name, image ID, and target evidence.
 
 Individual gates remain useful while debugging:
 

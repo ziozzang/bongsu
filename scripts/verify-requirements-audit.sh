@@ -150,6 +150,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-cve-matching-invariants\.sh' "airgap pack
 require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap package must include backup/restore archive verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap package must include live agent token binding verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-cve-rematch-workflow\.sh' "airgap package must include live CVE rematch workflow verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-sbom-export-workflow\.sh' "airgap package must include live SBOM export workflow verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-install-script\.sh' "airgap package must include live install script verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-installer-payload\.sh' "airgap package must include live installer payload verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-schedule\.sh' "airgap package must include live security DB schedule verifier"
@@ -195,6 +196,7 @@ for keyword in \
     'agent-token/reset' \
     'verify-live-agent-token-binding\.sh' \
     'verify-live-cve-rematch-workflow\.sh' \
+    'verify-live-sbom-export-workflow\.sh' \
     'verify-live-install-script\.sh' \
     'verify-live-installer-payload\.sh' \
     'verify-live-security-db-schedule\.sh' \

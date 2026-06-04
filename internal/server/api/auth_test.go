@@ -3975,6 +3975,38 @@ func TestLiveCveRematchWorkflowVerifierUsesPackagistFixture(t *testing.T) {
 	}
 }
 
+func TestLiveSBOMExportWorkflowVerifierPreservesOntology(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-sbom-export-workflow.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`/api/hosts/${HOST_ID}/sbom?format=cyclonedx`,
+		`/api/hosts/${HOST_ID}/sbom?format=spdx`,
+		`bongsu-sbom-host-os`,
+		`bongsu-sbom-host-npm`,
+		`bongsu-sbom-container-os`,
+		`bongsu-sbom-container-pypi`,
+		`pkg:npm/bongsu-sbom-host-npm@4.5.6`,
+		`pkg:pypi/bongsu-sbom-container-pypi@1.2.3`,
+		`application/vnd\.cyclonedx\+json`,
+		`application/spdx\+json`,
+		`bongsu:host_id`,
+		`bongsu:scan_id`,
+		`bongsu:asset_type`,
+		`bongsu:container_id`,
+		`bongsu:image_name`,
+		`bongsu:image_id`,
+		`target=app/requirements.txt`,
+		`Live SBOM export workflow verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live SBOM export workflow verifier missing %q", want)
+		}
+	}
+}
+
 func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
 	if err != nil {

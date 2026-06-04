@@ -120,6 +120,7 @@ for script in \
     verify-live-rbac-scope.sh \
     verify-live-cvedb-concurrency.sh \
     verify-live-cve-rematch-workflow.sh \
+    verify-live-sbom-export-workflow.sh \
     verify-live-server-build.sh \
     verify-live-scan-request-recovery.sh \
     verify-live-security-db-schedule.sh \
@@ -142,6 +143,7 @@ require_text "$RELEASE" '"failed_gate_count"' "release readiness report must inc
 require_text "$RELEASE" 'BONGSU_VERIFY_CVEDB_REQUIRE_DB=\$\{REQUIRE_DB\}' "live release readiness must require direct CVE DB invariants by default"
 require_text "$RELEASE" 'verify-live-cvedb-concurrency\.sh' "live release readiness must verify concurrent CVE DB observability"
 require_text "$RELEASE" 'verify-live-cve-rematch-workflow\.sh' "live release readiness must verify CVE DB rematch workflow"
+require_text "$RELEASE" 'verify-live-sbom-export-workflow\.sh' "live release readiness must verify live SBOM export workflow"
 require_text "$RELEASE" 'verify-live-install-script\.sh' "live release readiness must verify one-line install script downloads"
 require_text "$RELEASE" 'verify-live-scan-request-recovery\.sh' "live release readiness must verify stale scan-request recovery"
 require_text "$RELEASE" 'verify-live-security-db-schedule\.sh' "live release readiness must verify security DB sync scheduling"
