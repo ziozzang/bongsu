@@ -25,6 +25,7 @@ require_text() {
 
 require_file "$PACKAGE_SCRIPT"
 require_file "$RUNBOOK"
+require_file "$ROOT/scripts/verify-airgap-release-archive.sh"
 
 for path in \
     'images/bongsu-server.tar.gz' \
@@ -121,6 +122,18 @@ for pattern in \
     'verify-live-vulnerability-export-rbac\.sh'
 do
     require_text "$PACKAGE_SCRIPT" "$pattern" "package script missing release invariant $pattern"
+done
+
+for pattern in \
+    'scripts/sync-all-cvedb\.sh' \
+    '\?async=true' \
+    'BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS' \
+    'BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS' \
+    '/api/health' \
+    'cve_affected_index_rebuild' \
+    'cve_reference_index_rebuild'
+do
+    require_text "$ROOT/scripts/verify-airgap-release-archive.sh" "$pattern" "airgap archive verifier missing OSV async finalize invariant $pattern"
 done
 
 for pattern in \

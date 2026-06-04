@@ -93,6 +93,7 @@ for path in \
     "$ROOT_DIR/scripts/restore.sh" \
     "$ROOT_DIR/scripts/install-agent.sh" \
     "$ROOT_DIR/scripts/update-trivy-db.sh" \
+    "$ROOT_DIR/scripts/sync-all-cvedb.sh" \
     "$ROOT_DIR/scripts/sync-nvd-cvedb.sh" \
     "$ROOT_DIR/scripts/sync-osv-cvedb.sh" \
     "$ROOT_DIR/scripts/sync-trivy-cvedb.sh" \
@@ -177,6 +178,14 @@ require_text "$ROOT_DIR/load-images.sh" 'docker load < images/bongsu-server\.tar
 require_text "$ROOT_DIR/load-images.sh" 'docker load < images/bongsu-agent\.tar\.gz' "loader must load agent image"
 require_text "$ROOT_DIR/load-images.sh" 'docker load < images/bongsu-web\.tar\.gz' "loader must load web image"
 require_text "$ROOT_DIR/load-images.sh" 'docker load < images/postgres-16-alpine\.tar\.gz' "loader must load postgres image"
+for script in "$ROOT_DIR/scripts/sync-all-cvedb.sh" "$ROOT_DIR/scripts/sync-osv-cvedb.sh"; do
+    require_text "$script" '\?async=true' "OSV sync finalization must queue async index rebuilds"
+    require_text "$script" 'BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS' "OSV sync finalization must expose rebuild wait tuning"
+    require_text "$script" 'BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS' "OSV sync finalization must expose rebuild poll tuning"
+    require_text "$script" '/api/health' "OSV sync finalization must poll rebuild status through health"
+    require_text "$script" 'cve_affected_index_rebuild' "OSV sync finalization must poll affected index rebuild state"
+    require_text "$script" 'cve_reference_index_rebuild' "OSV sync finalization must poll reference index rebuild state"
+done
 
 echo "[7/7] Checking airgap deployment invariants"
 require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_TRIVY_DB_INTERVAL_HOURS: "(0|\$\{BONGSU_TRIVY_DB_INTERVAL_HOURS:-0\})"' "airgap compose must disable Trivy DB auto refresh by default"
