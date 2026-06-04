@@ -73,27 +73,28 @@ require_tool sha256sum
 
 echo "=== Bongsu Backup/Restore Archive Verification ==="
 
-echo "[1/6] Valid backup archive is accepted"
+echo "[1/7] Valid backup archive is accepted"
 valid_dir="$TMP_DIR/valid"
 valid_archive="$TMP_DIR/valid-backup.tar.gz"
 make_valid_backup "$valid_dir" "$valid_archive"
+sha256sum "$valid_archive" > "${valid_archive}.sha256"
 expect_restore_ok "$valid_archive"
 
-echo "[2/6] Missing database dump is rejected"
+echo "[2/7] Missing database dump is rejected"
 missing_dir="$TMP_DIR/missing-db"
 mkdir -p "$missing_dir"
 printf '{"format_version":1,"database":"bongsu"}\n' > "$missing_dir/manifest.json"
 tar -C "$missing_dir" -czf "$TMP_DIR/missing-db.tar.gz" manifest.json
 expect_restore_fail "$TMP_DIR/missing-db.tar.gz" "database.dump"
 
-echo "[3/6] Unexpected archive path is rejected"
+echo "[3/7] Unexpected archive path is rejected"
 unexpected_dir="$TMP_DIR/unexpected"
 make_valid_backup "$unexpected_dir/root" "$TMP_DIR/unexpected-base.tar.gz"
 printf 'unexpected\n' > "$unexpected_dir/root/extra.txt"
 tar -C "$unexpected_dir/root" -czf "$TMP_DIR/unexpected.tar.gz" database.dump manifest.json extra.txt
 expect_restore_fail "$TMP_DIR/unexpected.tar.gz" "unexpected"
 
-echo "[4/6] Duplicate manifest is rejected"
+echo "[4/7] Duplicate manifest is rejected"
 dup_dir="$TMP_DIR/duplicate"
 make_valid_backup "$dup_dir/root" "$TMP_DIR/duplicate-base.tar.gz"
 mkdir -p "$dup_dir/one" "$dup_dir/two"
@@ -105,7 +106,7 @@ tar -C "$dup_dir/two" -rf "$TMP_DIR/duplicate.tar" manifest.json
 gzip -c "$TMP_DIR/duplicate.tar" > "$TMP_DIR/duplicate.tar.gz"
 expect_restore_fail "$TMP_DIR/duplicate.tar.gz" "manifest"
 
-echo "[5/6] Manifest checksum mismatch is rejected"
+echo "[5/7] Manifest checksum mismatch is rejected"
 bad_dir="$TMP_DIR/bad-checksum"
 bad_archive="$TMP_DIR/bad-checksum.tar.gz"
 make_valid_backup "$bad_dir" "$bad_archive"
@@ -113,7 +114,14 @@ printf 'tampered\n' > "$bad_dir/database.dump"
 tar -C "$bad_dir" -czf "$bad_archive" database.dump trivy-cache.tar manifest.json
 expect_restore_fail "$bad_archive" "checksum"
 
-echo "[6/6] Symlink archive members are rejected"
+echo "[6/7] Archive sidecar checksum mismatch is rejected"
+sidecar_dir="$TMP_DIR/bad-sidecar"
+sidecar_archive="$TMP_DIR/bad-sidecar.tar.gz"
+make_valid_backup "$sidecar_dir" "$sidecar_archive"
+printf '0000000000000000000000000000000000000000000000000000000000000000  %s\n' "$(basename "$sidecar_archive")" > "${sidecar_archive}.sha256"
+expect_restore_fail "$sidecar_archive" "archive checksum"
+
+echo "[7/7] Symlink archive members are rejected"
 symlink_dir="$TMP_DIR/symlink-member"
 mkdir -p "$symlink_dir"
 ln -s /etc/passwd "$symlink_dir/database.dump"

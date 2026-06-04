@@ -54,6 +54,30 @@ json_bool_value() {
     sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\\(true\\|false\\).*/\\1/p" "$file" | sed -n '1p'
 }
 
+verify_sidecar_checksum() {
+    local archive="$1"
+    local sidecar="${archive}.sha256"
+    if [ ! -f "$sidecar" ]; then
+        return 0
+    fi
+
+    local expected actual
+    expected="$(awk '{print $1}' "$sidecar" | sed -n '1p')"
+    if ! printf '%s' "$expected" | grep -Eq '^[0-9a-fA-F]{64}$'; then
+        echo "ERROR: invalid backup sidecar checksum: $sidecar" >&2
+        exit 1
+    fi
+
+    actual="$(sha256sum "$archive" | cut -d" " -f1)"
+    expected="$(printf '%s' "$expected" | tr 'A-F' 'a-f')"
+    actual="$(printf '%s' "$actual" | tr 'A-F' 'a-f')"
+    if [ "$actual" != "$expected" ]; then
+        echo "ERROR: backup archive checksum mismatch" >&2
+        exit 1
+    fi
+    echo "  sidecar checksum verified"
+}
+
 validate_backup_archive() {
     local archive="$1"
     local listing="$TMP_DIR/archive-list.txt"
@@ -140,6 +164,7 @@ fi
 # Step 1: Extract backup
 echo ""
 echo "[1/5] Validating and extracting backup..."
+verify_sidecar_checksum "$BACKUP_FILE"
 validate_backup_archive "$BACKUP_FILE"
 tar -xzf "$BACKUP_FILE" -C "$TMP_DIR" database.dump manifest.json
 if tar -tzf "$BACKUP_FILE" | grep -qx 'trivy-cache.tar'; then

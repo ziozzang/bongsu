@@ -258,7 +258,7 @@ curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/stat
 ./scripts/verify-live-cvedb-quality.sh
 ```
 
-Restore refuses archives with unsafe paths, duplicate or missing required members, unexpected files, or manifest checksum mismatches. Backup manifests include `database_dump_sha256` and, when present, `trivy_cache_sha256`.
+Restore refuses archives with unsafe paths, duplicate or missing required members, unexpected files, archive sidecar checksum mismatches, or manifest checksum mismatches. Backup exports write a `<backup>.sha256` sidecar for transfer integrity, and backup manifests include `database_dump_sha256` and, when present, `trivy_cache_sha256`.
 
 ## Security DB Operations
 

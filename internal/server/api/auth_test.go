@@ -3332,6 +3332,41 @@ func TestOsvDownloaderFailsClosedAndWritesAtomically(t *testing.T) {
 	}
 }
 
+func TestRestoreScriptVerifiesBackupSidecarChecksum(t *testing.T) {
+	restore, err := os.ReadFile("../../../scripts/restore.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	restoreBody := string(restore)
+	for _, want := range []string{
+		"verify_sidecar_checksum()",
+		`local sidecar="${archive}.sha256"`,
+		"invalid backup sidecar checksum",
+		"backup archive checksum mismatch",
+		`verify_sidecar_checksum "$BACKUP_FILE"`,
+	} {
+		if !strings.Contains(restoreBody, want) {
+			t.Fatalf("restore.sh must verify optional backup sidecar checksums, missing %q", want)
+		}
+	}
+
+	verifier, err := os.ReadFile("../../../scripts/verify-backup-restore-archive.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verifierBody := string(verifier)
+	for _, want := range []string{
+		"Archive sidecar checksum mismatch is rejected",
+		`sha256sum "$valid_archive" > "${valid_archive}.sha256"`,
+		"0000000000000000000000000000000000000000000000000000000000000000",
+		`expect_restore_fail "$sidecar_archive" "archive checksum"`,
+	} {
+		if !strings.Contains(verifierBody, want) {
+			t.Fatalf("backup/restore verifier must cover sidecar checksums, missing %q", want)
+		}
+	}
+}
+
 func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-live-cvedb-quality.sh")
 	if err != nil {
