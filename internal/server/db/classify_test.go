@@ -1995,6 +1995,45 @@ func TestCveAffectedPackageIndexStatsUsesSingleMatchableSourcePass(t *testing.T)
 	}
 }
 
+func TestCveAffectedPackageIndexHealthStatsAreIndexedOnly(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetCveAffectedPackageIndexHealthStats")
+	if start < 0 {
+		t.Fatal("GetCveAffectedPackageIndexHealthStats not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetCveReferenceKeyIndexStats")
+	if end < 0 {
+		t.Fatal("GetCveAffectedPackageIndexHealthStats end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`"summary_mode":`,
+		`"indexed-only"`,
+		"count(*) FROM cve_affected_packages",
+		"count(DISTINCT source) FROM cve_affected_packages",
+		"count(DISTINCT cve_id) FROM cve_affected_packages",
+		"max(updated_at) FROM cve_affected_packages",
+		`"indexed_cves": indexedCVEs`,
+		`"orphans":      0`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("affected package index health stats missing %q: %s", want, fn)
+		}
+	}
+	for _, reject := range []string{
+		"cveSourceMatchablePredicateSQL",
+		"cve_database",
+	} {
+		if strings.Contains(fn, reject) {
+			t.Fatalf("affected package health stats should stay lightweight, found %q: %s", reject, fn)
+		}
+	}
+}
+
 func TestCveReferenceKeyIndexHealthStatsAreIndexedOnly(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {
@@ -2014,7 +2053,9 @@ func TestCveReferenceKeyIndexHealthStatsAreIndexedOnly(t *testing.T) {
 		`"summary_mode":`,
 		`"indexed-only"`,
 		"count(*) FROM cve_reference_keys",
+		"count(DISTINCT cve_id) FROM cve_reference_keys",
 		"max(updated_at) FROM cve_reference_keys",
+		`"indexed_cves":    indexedCVEs`,
 		`"orphans":         0`,
 	} {
 		if !strings.Contains(fn, want) {
@@ -2024,7 +2065,6 @@ func TestCveReferenceKeyIndexHealthStatsAreIndexedOnly(t *testing.T) {
 	for _, reject := range []string{
 		"count(*) FROM cve_database",
 		"max(updated_at) FROM cve_database",
-		"count(DISTINCT cve_id)",
 		"reference_key LIKE",
 		"NOT EXISTS",
 	} {

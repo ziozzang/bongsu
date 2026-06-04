@@ -2038,6 +2038,7 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		`"GET /api/admin/security-db/status"`,
 		"func (s *Server) handleSecurityDbStatus",
 		"s.authenticateAdmin(r)",
+		`envInt("BONGSU_SECURITY_DB_STATUS_TIMEOUT_SECONDS", 15)`,
 		"s.secMgr.Status()",
 		"securityDBFreshnessStatus(dbCtx, true)",
 		"securityRecalculationStatus(true)",

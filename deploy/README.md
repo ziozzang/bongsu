@@ -258,6 +258,7 @@ spec:
 | `BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS` | `180` | Startup/admin timeout for rebuilding the derived affected-package index after migrations or manual repair |
 | `BONGSU_CVE_REFERENCE_INDEX_TIMEOUT_SECONDS` | `5` | Health timeout for reference-key index detail before falling back to lightweight status |
 | `BONGSU_HEALTH_DB_TIMEOUT_SECONDS` | `2` | Shared DB timeout for optional health details |
+| `BONGSU_SECURITY_DB_STATUS_TIMEOUT_SECONDS` | `15` | Maximum DB time for one admin `/api/admin/security-db/status` request; keep above health timeout for large OSV snapshots |
 | `BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS` | `30` | Maximum DB time for one `/api/admin/metrics` scrape; increase for very large CVE DB snapshots if `*_metrics_error` gauges appear |
 | `BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS` | `120` | Startup timeout for CVSS recalculation, vulnerability enrichment, and severity normalization after index preparation |
 | `BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE` | `10000` | Batch size for validating and deleting stale `cve-db` findings during security DB recalculation; clamped at 100000 |

@@ -1655,14 +1655,15 @@ FROM affected_index ai`, matchablePredicate)).Scan(
 }
 
 func (db *DB) GetCveAffectedPackageIndexHealthStats(ctx context.Context) (map[string]any, error) {
-	var count, sourceCount int
+	var count, sourceCount, indexedCVEs int
 	var lastUpdate *time.Time
 	err := db.QueryRowContext(ctx, `
 SELECT
 	(SELECT count(*) FROM cve_affected_packages),
 	(SELECT count(DISTINCT source) FROM cve_affected_packages WHERE source != ''),
+	(SELECT count(DISTINCT cve_id) FROM cve_affected_packages),
 	(SELECT max(updated_at) FROM cve_affected_packages)`).Scan(
-		&count, &sourceCount, &lastUpdate)
+		&count, &sourceCount, &indexedCVEs, &lastUpdate)
 	if err != nil {
 		return nil, err
 	}
@@ -1670,7 +1671,7 @@ SELECT
 		"summary_mode": "indexed-only",
 		"count":        count,
 		"source_count": sourceCount,
-		"indexed_cves": 0,
+		"indexed_cves": indexedCVEs,
 		"orphans":      0,
 	}
 	if lastUpdate != nil {
@@ -1705,20 +1706,21 @@ SELECT
 }
 
 func (db *DB) GetCveReferenceKeyIndexHealthStats(ctx context.Context) (map[string]any, error) {
-	var count int
+	var count, indexedCVEs int
 	var lastUpdate *time.Time
 	err := db.QueryRowContext(ctx, `
 SELECT
 	(SELECT count(*) FROM cve_reference_keys),
+	(SELECT count(DISTINCT cve_id) FROM cve_reference_keys),
 	(SELECT max(updated_at) FROM cve_reference_keys)`).Scan(
-		&count, &lastUpdate)
+		&count, &indexedCVEs, &lastUpdate)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]any{
 		"summary_mode":    "indexed-only",
 		"count":           count,
-		"indexed_cves":    0,
+		"indexed_cves":    indexedCVEs,
 		"canonical_cves":  0,
 		"vendor_keys":     0,
 		"repository_keys": 0,

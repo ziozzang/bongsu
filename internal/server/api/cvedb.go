@@ -165,7 +165,7 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	timeoutSeconds := envInt("BONGSU_HEALTH_DB_TIMEOUT_SECONDS", 2)
+	timeoutSeconds := envInt("BONGSU_SECURITY_DB_STATUS_TIMEOUT_SECONDS", 15)
 	if timeoutSeconds < 1 {
 		timeoutSeconds = 1
 	}
@@ -353,7 +353,7 @@ func securityDBOperationalGuidance(manager any, freshness, quality map[string]an
 		}
 	}
 	if freshnessTimedOut {
-		add("security DB freshness check timed out", "increase BONGSU_HEALTH_DB_TIMEOUT_SECONDS or inspect database load")
+		add("security DB freshness check timed out", "increase BONGSU_SECURITY_DB_STATUS_TIMEOUT_SECONDS or inspect database load")
 	}
 	if m, ok := manager.(map[string]any); ok {
 		if configured, ok := m["configured"].(bool); ok && !configured {
