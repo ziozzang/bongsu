@@ -141,6 +141,7 @@ require_text "$RELEASE" 'verify-operations-runbook\.sh' "release readiness must 
 require_text "$RELEASE" 'BONGSU_RELEASE_READINESS_REQUIRE_DB' "live release readiness must expose direct DB invariant requirement control"
 require_text "$RELEASE" 'BONGSU_RELEASE_READINESS_REPORT' "release readiness must support JSON evidence reports"
 require_text "$RELEASE" '"failed_gate_count"' "release readiness report must include failed gate count"
+require_text "$RELEASE" 'verify-release-readiness-report\.sh' "release readiness must verify JSON evidence report behavior"
 require_text "$RELEASE" 'BONGSU_VERIFY_CVEDB_REQUIRE_DB=\$\{REQUIRE_DB\}' "live release readiness must require direct CVE DB invariants by default"
 require_text "$RELEASE" 'verify-live-cvedb-concurrency\.sh' "live release readiness must verify concurrent CVE DB observability"
 require_text "$RELEASE" 'verify-live-cve-rematch-workflow\.sh' "live release readiness must verify CVE DB rematch workflow"

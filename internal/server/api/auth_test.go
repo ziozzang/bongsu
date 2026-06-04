@@ -3832,9 +3832,33 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`"failed_gate_count": sum(1 for gate in gates if gate.get("status") != "passed")`,
 		`record_gate "$*" "exec"`,
 		`record_gate "$*" "shell"`,
+		`./scripts/verify-release-readiness-report.sh`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("release readiness live gate must require fresh CVE sources, missing %q", want)
+		}
+	}
+}
+
+func TestReleaseReadinessReportVerifierExercisesSuccessAndFailureReports(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-release-readiness-report.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_RELEASE_READINESS_REPORT="$report"`,
+		`BONGSU_RELEASE_READINESS_SKIP_HEAVY=true`,
+		`.status == "passed" and .exit_code == 0`,
+		`.status == "failed" and .exit_code == 7`,
+		`.failed_gate_count == 1`,
+		`any(.gates[]; .kind == "exec" and .name == "go test ./...")`,
+		`any(.gates[]; .kind == "shell" and (.name | contains("docker compose -f deploy/docker-compose.yml config")))`,
+		`all(.gates[]; .name != "./scripts/verify-package-contents.sh")`,
+		`verify-release-readiness-report.sh`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("release readiness report verifier missing %q", want)
 		}
 	}
 }
