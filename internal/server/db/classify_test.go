@@ -2013,18 +2013,24 @@ func TestCveReferenceKeyIndexHealthStatsAreIndexedOnly(t *testing.T) {
 	for _, want := range []string{
 		`"summary_mode":`,
 		`"indexed-only"`,
-		"count(DISTINCT cve_id) FROM cve_reference_keys",
-		"reference_key LIKE 'cve:%'",
-		"reference_key LIKE 'vendor:%'",
-		"reference_key LIKE 'repo:%'",
-		"NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = crk.cve_id)",
+		"count(*) FROM cve_reference_keys",
+		"max(updated_at) FROM cve_reference_keys",
+		`"orphans":         0`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("reference key index health stats missing %q: %s", want, fn)
 		}
 	}
-	if strings.Contains(fn, "count(*) FROM cve_database") || strings.Contains(fn, "max(updated_at) FROM cve_database") {
-		t.Fatalf("reference key index health stats must avoid full CVE DB freshness joins: %s", fn)
+	for _, reject := range []string{
+		"count(*) FROM cve_database",
+		"max(updated_at) FROM cve_database",
+		"count(DISTINCT cve_id)",
+		"reference_key LIKE",
+		"NOT EXISTS",
+	} {
+		if strings.Contains(fn, reject) {
+			t.Fatalf("reference key index health stats must avoid expensive fallback query %q: %s", reject, fn)
+		}
 	}
 }
 

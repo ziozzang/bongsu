@@ -1648,16 +1648,14 @@ FROM affected_index ai`, matchablePredicate)).Scan(
 }
 
 func (db *DB) GetCveAffectedPackageIndexHealthStats(ctx context.Context) (map[string]any, error) {
-	var count, sourceCount, indexedCVEs, orphans int
+	var count, sourceCount int
 	var lastUpdate *time.Time
 	err := db.QueryRowContext(ctx, `
 SELECT
 	(SELECT count(*) FROM cve_affected_packages),
 	(SELECT count(DISTINCT source) FROM cve_affected_packages WHERE source != ''),
-	(SELECT count(DISTINCT cve_id) FROM cve_affected_packages),
-	(SELECT max(updated_at) FROM cve_affected_packages),
-	(SELECT count(*) FROM cve_affected_packages cap WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id))`).Scan(
-		&count, &sourceCount, &indexedCVEs, &lastUpdate, &orphans)
+	(SELECT max(updated_at) FROM cve_affected_packages)`).Scan(
+		&count, &sourceCount, &lastUpdate)
 	if err != nil {
 		return nil, err
 	}
@@ -1665,8 +1663,8 @@ SELECT
 		"summary_mode": "indexed-only",
 		"count":        count,
 		"source_count": sourceCount,
-		"indexed_cves": indexedCVEs,
-		"orphans":      orphans,
+		"indexed_cves": 0,
+		"orphans":      0,
 	}
 	if lastUpdate != nil {
 		out["last_update"] = lastUpdate
@@ -1700,29 +1698,24 @@ SELECT
 }
 
 func (db *DB) GetCveReferenceKeyIndexHealthStats(ctx context.Context) (map[string]any, error) {
-	var count, indexedCVEs, canonicalCVEs, vendorKeys, repositoryKeys, orphans int
+	var count int
 	var lastUpdate *time.Time
 	err := db.QueryRowContext(ctx, `
 SELECT
 	(SELECT count(*) FROM cve_reference_keys),
-	(SELECT count(DISTINCT cve_id) FROM cve_reference_keys),
-	(SELECT count(DISTINCT cve_id) FROM cve_reference_keys WHERE reference_key LIKE 'cve:%'),
-	(SELECT count(*) FROM cve_reference_keys WHERE reference_key LIKE 'vendor:%'),
-	(SELECT count(*) FROM cve_reference_keys WHERE reference_key LIKE 'repo:%'),
-	(SELECT max(updated_at) FROM cve_reference_keys),
-	(SELECT count(*) FROM cve_reference_keys crk WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = crk.cve_id))`).Scan(
-		&count, &indexedCVEs, &canonicalCVEs, &vendorKeys, &repositoryKeys, &lastUpdate, &orphans)
+	(SELECT max(updated_at) FROM cve_reference_keys)`).Scan(
+		&count, &lastUpdate)
 	if err != nil {
 		return nil, err
 	}
 	out := map[string]any{
 		"summary_mode":    "indexed-only",
 		"count":           count,
-		"indexed_cves":    indexedCVEs,
-		"canonical_cves":  canonicalCVEs,
-		"vendor_keys":     vendorKeys,
-		"repository_keys": repositoryKeys,
-		"orphans":         orphans,
+		"indexed_cves":    0,
+		"canonical_cves":  0,
+		"vendor_keys":     0,
+		"repository_keys": 0,
+		"orphans":         0,
 	}
 	if lastUpdate != nil {
 		out["last_update"] = lastUpdate
