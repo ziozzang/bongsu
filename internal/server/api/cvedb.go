@@ -1389,9 +1389,9 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 		if _, err := s.db.RefreshCveReferenceKeysForSourceTx(ctx, tx, source); err != nil {
 			return 0, err
 		}
-	}
-	if err := s.db.RefreshSecuritySourceStatusTx(ctx, tx, source); err != nil {
-		return 0, err
+		if err := s.db.RefreshSecuritySourceStatusTx(ctx, tx, source); err != nil {
+			return 0, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err

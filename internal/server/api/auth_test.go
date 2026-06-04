@@ -5934,6 +5934,31 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 	}
 }
 
+func TestDeferredCveJSONLImportDoesNotRefreshSourceStatus(t *testing.T) {
+	body := readAllPackageGoFiles(t)
+	start := strings.Index(body, "func (s *Server) importCveJSONL(")
+	if start < 0 {
+		t.Fatal("importCveJSONL not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) importCveJSONLTx")
+	if end < 0 {
+		t.Fatal("importCveJSONLTx not found")
+	}
+	fn := body[start : start+end]
+	finalizeStart := strings.Index(fn, "if finalize {")
+	if finalizeStart < 0 {
+		t.Fatal("finalize block not found")
+	}
+	refresh := "s.db.RefreshSecuritySourceStatusTx"
+	refreshPos := strings.Index(fn, refresh)
+	if refreshPos < 0 {
+		t.Fatalf("finalized cve jsonl import must refresh security source status with %s", refresh)
+	}
+	if refreshPos < finalizeStart {
+		t.Fatalf("deferred cve jsonl import must not refresh security source status before finalize: %s", fn)
+	}
+}
+
 func TestCveDbPruneStaleSourceEndpointRefreshesDerivedState(t *testing.T) {
 	body := readAllPackageGoFiles(t)
 	for _, want := range []string{
