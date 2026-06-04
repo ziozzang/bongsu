@@ -7,7 +7,9 @@ set -euo pipefail
 SERVER_URL="${1:-${BONGSU_SERVER_URL:-http://localhost:5677}}"
 API_KEY="${2:-${BONGSU_API_KEY:-}}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TMPDIR=$(mktemp -d)
+TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "${TMP_PARENT}"
+TMPDIR="$(mktemp -d "${TMP_PARENT%/}/bongsu-trivy-sync.XXXXXX")"
 trap 'rm -rf "$TMPDIR"' EXIT
 
 if [ -z "${API_KEY}" ]; then

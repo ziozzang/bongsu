@@ -3638,6 +3638,32 @@ func TestSecurityDBSyncScriptCoversCoreOSVEcosystems(t *testing.T) {
 	}
 }
 
+func TestSecurityDBSyncScriptsHonorCustomTempDirectory(t *testing.T) {
+	for _, path := range []string{
+		"../../../scripts/sync-all-cvedb.sh",
+		"../../../scripts/sync-osv-cvedb.sh",
+		"../../../scripts/sync-nvd-cvedb.sh",
+		"../../../scripts/sync-trivy-cvedb.sh",
+		"../../../scripts/download-osv.sh",
+		"../../../scripts/extract-trivy-cvedb.sh",
+	} {
+		out, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(out)
+		for _, want := range []string{
+			`TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"`,
+			`mkdir -p "${TMP_PARENT}"`,
+			`${TMP_PARENT%/}/bongsu-`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s must honor BONGSU_TMPDIR for large security DB work, missing %q", path, want)
+			}
+		}
+	}
+}
+
 func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-operator-workflow.sh")
 	if err != nil {

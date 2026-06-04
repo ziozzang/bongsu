@@ -9,8 +9,10 @@ set -euo pipefail
 SERVER_URL="${1:-http://localhost:5677}"
 API_KEY="${2:-${BONGSU_API_KEY:-}}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-TMPDIR=$(mktemp -d)
-trap "rm -rf ${TMPDIR}" EXIT
+TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"
+mkdir -p "${TMP_PARENT}"
+TMPDIR="$(mktemp -d "${TMP_PARENT%/}/bongsu-cvedb-sync.XXXXXX")"
+trap 'rm -rf "${TMPDIR}"' EXIT
 
 if [ -z "${API_KEY}" ]; then
     echo "ERROR: API key required. Usage: $0 [server_url] [api_key]"
