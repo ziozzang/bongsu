@@ -344,7 +344,7 @@ Compromised or reinstalled host agent:
 
 ## Routine Maintenance
 
-- Review CVE DB source freshness and matchability daily.
+- Review CVE DB source freshness and matchability daily. `/api/health` and the dashboard show the latest persisted CVE source update through `security_db_freshness.latest_source` / `latest_last_update`, and separately identify the oldest or stale source. If `security_db.status` is `never` immediately after a server restart but `latest_source` is recent, the persisted CVE DB is loaded and the next scheduled sync has not run yet in the new process.
 - Review failed/degraded scan requests daily.
 - Run retention dry-run before pruning:
 

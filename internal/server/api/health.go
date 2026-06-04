@@ -196,6 +196,9 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 	var oldestSource string
 	var oldestLastUpdate *time.Time
 	var oldestAge time.Duration
+	var latestSource string
+	var latestLastUpdate *time.Time
+	var latestAge time.Duration
 	staleSources := make([]map[string]any, 0)
 	presentSources := make(map[string]bool, len(stats))
 	for _, stat := range stats {
@@ -214,6 +217,11 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 				oldestSource = source
 				oldestLastUpdate = stat.LastUpdate
 				oldestAge = age
+			}
+			if latestLastUpdate == nil || stat.LastUpdate.After(*latestLastUpdate) {
+				latestSource = source
+				latestLastUpdate = stat.LastUpdate
+				latestAge = age
 			}
 			sourceStatus["last_update"] = stat.LastUpdate.Format(time.RFC3339)
 			sourceStatus["age_seconds"] = age.Seconds()
@@ -239,6 +247,11 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 		resp["oldest_age_seconds"] = oldestAge.Seconds()
 	} else if len(stats) > 0 {
 		resp["oldest_source"] = stats[0].Source
+	}
+	if latestLastUpdate != nil {
+		resp["latest_source"] = latestSource
+		resp["latest_last_update"] = latestLastUpdate.Format(time.RFC3339)
+		resp["latest_age_seconds"] = latestAge.Seconds()
 	}
 	if len(missingSources) > 0 {
 		resp["status"] = "missing_sources"

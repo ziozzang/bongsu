@@ -356,6 +356,9 @@ export interface HealthStatus {
     oldest_source?: string;
     oldest_last_update?: string;
     oldest_age_seconds?: number;
+    latest_source?: string;
+    latest_last_update?: string;
+    latest_age_seconds?: number;
     stale_sources?: Array<{
       source: string;
       last_update?: string;

@@ -614,6 +614,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     if (!latest?.last_update) return source;
     return new Date(source.last_update).getTime() > new Date(latest.last_update).getTime() ? source : latest;
   }, null);
+  const latestSecurityDbSource = latestCveSource?.last_update
+    ? { source: latestCveSource.source, last_update: latestCveSource.last_update }
+    : health?.security_db_freshness?.latest_source && health.security_db_freshness.latest_last_update
+      ? { source: health.security_db_freshness.latest_source, last_update: health.security_db_freshness.latest_last_update }
+      : null;
   const osvCveSource = cveSources.find(source => source.source.toLowerCase() === 'osv') || null;
   const staleCveSources = health?.security_db_freshness?.stale_sources || [];
   const missingCveSources = health?.security_db_freshness?.missing_sources || [];
@@ -643,13 +648,13 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     : '';
   const securitySyncStatus = health?.security_db?.running
     ? 'syncing'
-    : health?.security_db?.status === 'never' && latestCveSource?.last_update
+    : health?.security_db?.status === 'never' && latestSecurityDbSource?.last_update
       ? 'scheduled'
       : health?.security_db?.status || '-';
   const securitySyncDetail = securitySyncLast
     ? `last sync ${securitySyncLast}`
-    : latestCveSource?.last_update
-      ? `latest source ${latestCveSource.source.toUpperCase()} ${new Date(latestCveSource.last_update).toLocaleString()}`
+    : latestSecurityDbSource?.last_update
+      ? `latest source ${latestSecurityDbSource.source.toUpperCase()} ${new Date(latestSecurityDbSource.last_update).toLocaleString()}`
       : securitySyncNext
         ? `next ${securitySyncNext}`
         : `interval ${health?.security_db?.interval || '-'}`;
