@@ -2521,6 +2521,7 @@ func TestSecuritySourceRegistryStatusTracksImportedCveSources(t *testing.T) {
 		"last_sync_finished_at",
 		"last_status",
 		"record_count",
+		"COALESCE((SELECT max(updated_at) FROM cve_database WHERE source=$1), now())",
 		"(SELECT count(*) FROM cve_database WHERE source=$1)",
 		`case "osv":`,
 		`"Chainguard"`,

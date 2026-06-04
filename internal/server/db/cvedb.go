@@ -504,7 +504,20 @@ func (db *DB) RefreshSecuritySourceStatusTx(ctx context.Context, tx *sql.Tx, sou
 	meta := securitySourceRegistryMetadata(source)
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO security_sources (id, name, kind, category, ecosystems, update_interval_seconds, last_sync_started_at, last_sync_finished_at, last_status, last_error, record_count, updated_at)
-VALUES ($1, $2, 'vulnerability', $3, $4, 21600, now(), now(), 'ok', '', (SELECT count(*) FROM cve_database WHERE source=$1), now())
+VALUES (
+	$1,
+	$2,
+	'vulnerability',
+	$3,
+	$4,
+	21600,
+	COALESCE((SELECT max(updated_at) FROM cve_database WHERE source=$1), now()),
+	COALESCE((SELECT max(updated_at) FROM cve_database WHERE source=$1), now()),
+	'ok',
+	'',
+	(SELECT count(*) FROM cve_database WHERE source=$1),
+	now()
+)
 ON CONFLICT (id) DO UPDATE SET
 	name=EXCLUDED.name,
 	kind=EXCLUDED.kind,
