@@ -279,6 +279,13 @@ BONGSU_SECURITY_DB_SYNC_ON_START=true
 BONGSU_SYNC_REQUIRE_TRIVY_SOURCE=true
 ```
 
+If `/api/admin/security-db/status` reports only a stale `trivy` CVE source, refresh that source without running the full OSV/NVD/EPSS sync:
+
+```bash
+TRIVY_BIN=/usr/local/bin/trivy \
+./scripts/sync-trivy-cvedb.sh http://localhost:5677 "$BONGSU_API_KEY"
+```
+
 Air-gapped environments should disable online sync and import signed transfer bundles:
 
 ```text

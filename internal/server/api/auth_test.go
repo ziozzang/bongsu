@@ -3460,6 +3460,29 @@ func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
 	}
 }
 
+func TestTrivySourceSyncScriptRefreshesOnlyTrivySource(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/sync-trivy-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`TRIVY_BIN_FOR_SYNC="${TRIVY_BIN:-${BONGSU_TRIVY_PATH:-}}"`,
+		`find_trivy_binary()`,
+		`"${SCRIPT_DIR}/../bin/trivy"`,
+		`TRIVY_BIN="${TRIVY_BIN_FOR_SYNC}" "${SCRIPT_DIR}/extract-trivy-cvedb.sh"`,
+		`-F "source=trivy"`,
+		`-F "replace=true"`,
+		`-F "finalize=true"`,
+		`Trivy import returned zero imported rows`,
+		`/api/cve-db/stats`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-trivy-cvedb must provide targeted fail-closed Trivy refresh, missing %q", want)
+		}
+	}
+}
+
 func TestTrivyCveExtractionUsesConfiguredCacheDir(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/extract-trivy-cvedb.sh")
 	if err != nil {

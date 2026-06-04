@@ -100,6 +100,7 @@ for script in \
     verify-live-agent-token-binding.sh \
     verify-live-rbac-scope.sh \
     verify-live-cvedb-quality.sh \
+    sync-trivy-cvedb.sh \
     verify-live-web-smoke.sh \
     verify-backup-restore-archive.sh \
     verify-airgap-release-archive.sh \

@@ -92,6 +92,7 @@ for script in \
     download-osv.sh \
     extract-trivy-cvedb.sh \
     sync-all-cvedb.sh \
+    sync-trivy-cvedb.sh \
     export-security-db-bundle.sh \
     import-security-db-bundle.sh \
     verify-release-readiness.sh \

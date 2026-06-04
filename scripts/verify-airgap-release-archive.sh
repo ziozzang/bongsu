@@ -93,6 +93,7 @@ for path in \
     "$ROOT_DIR/scripts/restore.sh" \
     "$ROOT_DIR/scripts/install-agent.sh" \
     "$ROOT_DIR/scripts/update-trivy-db.sh" \
+    "$ROOT_DIR/scripts/sync-trivy-cvedb.sh" \
     "$ROOT_DIR/scripts/import-security-db-bundle.sh" \
     "$ROOT_DIR/scripts/export-security-db-bundle.sh" \
     "$ROOT_DIR/scripts/verify-release-readiness.sh" \
