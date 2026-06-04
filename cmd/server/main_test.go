@@ -171,3 +171,23 @@ func TestMainStartsHTTPListenerBeforeBackgroundSecuritySync(t *testing.T) {
 		t.Fatal("security DB startup sync must begin only after the HTTP listener is accepting requests")
 	}
 }
+
+func TestMainBackfillsSecuritySourceRegistryAfterMigrations(t *testing.T) {
+	out, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"BONGSU_SECURITY_SOURCE_STATUS_TIMEOUT_SECONDS",
+		`database.RefreshSecuritySourceStatus(sourceCtx, "")`,
+		"refresh security source registry status",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("server startup must backfill security source registry status, missing %q", want)
+		}
+	}
+	if strings.Index(body, `database.RunMigrations(migrationCtx)`) > strings.Index(body, `database.RefreshSecuritySourceStatus(sourceCtx, "")`) {
+		t.Fatal("security source registry status must refresh after migrations")
+	}
+}

@@ -3410,6 +3410,24 @@ func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
 	}
 }
 
+func TestCveDbImportRefreshesSecuritySourceRegistry(t *testing.T) {
+	out, err := os.ReadFile("cvedb.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"RefreshSecuritySourceStatusTx(ctx, tx, source)",
+		`RefreshSecuritySourceStatusTx(r.Context(), tx, "")`,
+		`"security source status update failed"`,
+		`"source_status"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE DB import must refresh security source registry, missing %q", want)
+		}
+	}
+}
+
 func TestSecurityDBSyncScriptPrunesStaleOSVAfterSuccessfulChunks(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
 	if err != nil {

@@ -475,6 +475,89 @@ func (db *DB) DeleteAllCveEntriesTx(ctx context.Context, tx *sql.Tx) (int, error
 	return int(n), nil
 }
 
+func (db *DB) RefreshSecuritySourceStatusTx(ctx context.Context, tx *sql.Tx, source string) error {
+	source = strings.TrimSpace(source)
+	if source == "" {
+		rows, err := tx.QueryContext(ctx, `SELECT source FROM cve_database WHERE source != '' GROUP BY source`)
+		if err != nil {
+			return err
+		}
+		sources := []string{}
+		for rows.Next() {
+			var rowSource string
+			if err := rows.Scan(&rowSource); err != nil {
+				return err
+			}
+			sources = append(sources, rowSource)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		rows.Close()
+		for _, rowSource := range sources {
+			if err := db.RefreshSecuritySourceStatusTx(ctx, tx, rowSource); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	meta := securitySourceRegistryMetadata(source)
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO security_sources (id, name, kind, category, ecosystems, update_interval_seconds, last_sync_started_at, last_sync_finished_at, last_status, last_error, record_count, updated_at)
+VALUES ($1, $2, 'vulnerability', $3, $4, 21600, now(), now(), 'ok', '', (SELECT count(*) FROM cve_database WHERE source=$1), now())
+ON CONFLICT (id) DO UPDATE SET
+	name=EXCLUDED.name,
+	kind=EXCLUDED.kind,
+	category=EXCLUDED.category,
+	ecosystems=EXCLUDED.ecosystems,
+	last_sync_started_at=EXCLUDED.last_sync_started_at,
+	last_sync_finished_at=EXCLUDED.last_sync_finished_at,
+	last_status=EXCLUDED.last_status,
+	last_error='',
+	record_count=EXCLUDED.record_count,
+	updated_at=now()`, source, meta.name, meta.category, pq.Array(meta.ecosystems))
+	return err
+}
+
+func (db *DB) RefreshSecuritySourceStatus(ctx context.Context, source string) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := db.RefreshSecuritySourceStatusTx(ctx, tx, source); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+type securitySourceRegistryMeta struct {
+	name       string
+	category   string
+	ecosystems []string
+}
+
+func securitySourceRegistryMetadata(source string) securitySourceRegistryMeta {
+	switch strings.ToLower(strings.TrimSpace(source)) {
+	case "osv":
+		return securitySourceRegistryMeta{name: "OSV.dev", category: "code-library", ecosystems: []string{"PyPI", "npm", "Go", "Maven", "crates.io", "NuGet", "RubyGems", "Packagist", "Hex", "Pub", "SwiftURL", "Hackage", "CRAN", "opam", "VSCode", "GitHub Actions", "Alpine", "Debian", "Ubuntu", "SUSE", "openSUSE", "AlmaLinux", "Red Hat", "Rocky Linux", "Azure Linux", "Wolfi", "Chainguard", "openEuler", "Mageia", "Android"}}
+	case "nvd":
+		return securitySourceRegistryMeta{name: "NVD CVE 2.0", category: "general-cve", ecosystems: []string{}}
+	case "trivy":
+		return securitySourceRegistryMeta{name: "Trivy vulnerability DB", category: "os-package", ecosystems: []string{"Debian", "Ubuntu", "Alpine", "RHEL", "SUSE", "Amazon Linux", "Wolfi"}}
+	case "cisa-kev":
+		return securitySourceRegistryMeta{name: "CISA Known Exploited Vulnerabilities", category: "priority-exploit", ecosystems: []string{}}
+	case "epss":
+		return securitySourceRegistryMeta{name: "FIRST EPSS", category: "priority-risk", ecosystems: []string{}}
+	default:
+		display := strings.ToUpper(strings.TrimSpace(source))
+		if display == "" {
+			display = "Custom CVE Source"
+		}
+		return securitySourceRegistryMeta{name: display, category: "custom", ecosystems: []string{}}
+	}
+}
+
 func (db *DB) SyncEPSSPriorityColumns(ctx context.Context) (int, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {

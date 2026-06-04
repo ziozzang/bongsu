@@ -2502,6 +2502,35 @@ func TestRejectPlaceholderCVEIdentifiersMigration(t *testing.T) {
 	}
 }
 
+func TestSecuritySourceRegistryStatusTracksImportedCveSources(t *testing.T) {
+	out, err := os.ReadFile("cvedb.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"func (db *DB) RefreshSecuritySourceStatusTx",
+		"func (db *DB) RefreshSecuritySourceStatus",
+		"db.RefreshSecuritySourceStatusTx(ctx, tx, source)",
+		"SELECT source FROM cve_database WHERE source != '' GROUP BY source",
+		"INSERT INTO security_sources",
+		"last_sync_started_at",
+		"last_sync_finished_at",
+		"last_status",
+		"record_count",
+		"(SELECT count(*) FROM cve_database WHERE source=$1)",
+		`case "osv":`,
+		`"Chainguard"`,
+		`case "cisa-kev":`,
+		`case "epss":`,
+		`last_error=''`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("security source registry status helper missing %q", want)
+		}
+	}
+}
+
 func TestCveAffectedPackageQualityConstraintsMigration(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/036_cve_affected_package_quality_constraints.sql")
 	if err != nil {

@@ -758,6 +758,11 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusInternalServerError, "cve reference key index failed", "index_cve_references", err)
 		return
 	}
+	if err := s.db.RefreshSecuritySourceStatusTx(r.Context(), tx, ""); err != nil {
+		tx.Rollback()
+		fail(http.StatusInternalServerError, "security source status update failed", "source_status", err)
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		fail(http.StatusInternalServerError, "cve import commit failed", "commit_cve", err)
 		return
@@ -1265,6 +1270,9 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 		if _, err := s.db.RefreshCveReferenceKeysForSourceTx(ctx, tx, source); err != nil {
 			return 0, err
 		}
+	}
+	if err := s.db.RefreshSecuritySourceStatusTx(ctx, tx, source); err != nil {
+		return 0, err
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
