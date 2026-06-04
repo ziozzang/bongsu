@@ -2004,6 +2004,31 @@ func TestRBACPolicyAPIAllowsExportPermission(t *testing.T) {
 	}
 }
 
+func TestRBACListHandlersUseStableArrayFields(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	for _, tt := range []struct {
+		fn   string
+		want string
+	}{
+		{"handleListAccessSubjects", "items = []models.AccessSubject{}"},
+		{"handleListAccessPolicies", "items = []models.AccessPolicy{}"},
+	} {
+		start := strings.Index(body, "func (s *Server) "+tt.fn)
+		if start < 0 {
+			t.Fatalf("%s not found", tt.fn)
+		}
+		end := strings.Index(body[start+1:], "\nfunc ")
+		if end < 0 {
+			t.Fatalf("%s end not found", tt.fn)
+		}
+		fn := body[start : start+1+end]
+		if !strings.Contains(fn, tt.want) || !strings.Contains(fn, `map[string]any{"items": items}`) {
+			t.Fatalf("%s must preserve stable items array using %q: %s", tt.fn, tt.want, fn)
+		}
+	}
+}
+
 func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	out := readAllPackageGoFiles(t)
 	body := out

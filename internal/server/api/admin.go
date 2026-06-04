@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ziozzang/bongsu/internal/server/db"
+	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
 func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
@@ -801,6 +802,9 @@ func (s *Server) handleListAccessSubjects(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	if items == nil {
+		items = []models.AccessSubject{}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
@@ -814,6 +818,9 @@ func (s *Server) handleListAccessPolicies(w http.ResponseWriter, r *http.Request
 		log.Printf("list access policies: %v", err)
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
+	}
+	if items == nil {
+		items = []models.AccessPolicy{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
