@@ -59,6 +59,9 @@ for command in \
     '\./scripts/verify-deploy-config\.sh' \
     '\./scripts/verify-requirements-audit\.sh' \
     '\./scripts/verify-openapi\.sh' \
+    '\./scripts/verify-operator-workflow\.sh' \
+    '\./scripts/verify-agent-binary-workflow\.sh' \
+    '\./scripts/verify-live-rbac-scope\.sh' \
     '\./scripts/verify-package-contents\.sh' \
     '\./scripts/verify-airgap-package-smoke\.sh' \
     '\./scripts/verify-installer-smoke\.sh' \
@@ -81,6 +84,7 @@ for keyword in \
     'EPSS' \
     'match' \
     'RBAC' \
+    'live RBAC' \
     'force scan' \
     'one-line installer' \
     'systemd' \

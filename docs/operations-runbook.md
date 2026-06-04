@@ -85,6 +85,15 @@ Agent enrollment:
 curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/install.sh" | sudo bash
 ```
 
+Live RBAC scope verification:
+
+```bash
+# Start the API with BONGSU_VIEWER_API_KEYS containing this key-to-subject mapping first.
+BONGSU_VIEWER_API_KEY=viewer-test-key \
+BONGSU_VIEWER_SUBJECT=rbac-live-viewer \
+./scripts/verify-live-rbac-scope.sh
+```
+
 Use systemd mode when immediate force-scan polling is required:
 
 ```bash

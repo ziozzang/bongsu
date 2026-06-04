@@ -72,6 +72,7 @@ This handoff commit should include:
 - Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
 - Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
 - Real agent binary workflow verifier builds `cmd/agent`, runs it against fixture Trivy/osquery/docker tools, verifies host/container package ontology through the live API, then runs daemon polling to claim and complete a host-specific scan request.
+- Live RBAC scope verifier ingests allowed and denied host/container fixtures, creates a viewer subject and host-scoped policy, then verifies viewer-key access filters hosts, packages, containers, scans, and scan requests.
 - Airgap package smoke verifier runs `scripts/package.sh` end-to-end with lightweight `go`/`npm`/`docker` stubs, then validates the generated `bongsu-*.tar.gz`.
 - Airgap release archive verifier unpacks a generated `bongsu-*.tar.gz`, checks outer and inner SHA256 manifests, required files, executable/static binaries, Docker image tarballs, loader script, runbook/audit references, and airgap compose invariants.
 - Frontend API contract fixes for schedules (`{items}` response plus `packages_only`) and asset groups (`rule_type` instead of stale `group_type`).
@@ -187,6 +188,7 @@ go test ./...
 ./scripts/verify-openapi.sh
 ./scripts/verify-operator-workflow.sh
 ./scripts/verify-agent-binary-workflow.sh
+./scripts/verify-live-rbac-scope.sh
 ./scripts/verify-package-contents.sh
 ./scripts/verify-airgap-package-smoke.sh
 ./scripts/verify-airgap-release-archive.sh <generated-bongsu-archive.tar.gz>
@@ -208,6 +210,7 @@ curl -sS -H 'X-API-Key: test-admin' 'http://127.0.0.1:5677/api/cve-db/search?q=o
 curl -sS http://127.0.0.1:5678/ >/tmp/bongsu-web.html
 BONGSU_API_KEY=test-admin-key BONGSU_ADMIN_USERNAME=admin BONGSU_ADMIN_PASSWORD=password ./scripts/verify-operator-workflow.sh
 BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-agent-binary-workflow.sh
+BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key BONGSU_VIEWER_API_KEY=viewer-test-key BONGSU_VIEWER_SUBJECT=rbac-live-viewer ./scripts/verify-live-rbac-scope.sh
 ./scripts/verify-airgap-release-archive.sh bongsu-0.1.0.tar.gz
 ```
 
