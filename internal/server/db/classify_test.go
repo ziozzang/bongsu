@@ -2023,18 +2023,26 @@ func TestCveAffectedPackageIndexStatsUsesSingleMatchableSourcePass(t *testing.T)
 	fn := body[start : start+end]
 	for _, want := range []string{
 		"WITH affected_index AS",
-		"matchable_sources AS",
-		"array_agg(ms.source ORDER BY ms.source)",
+		"indexed_source_freshness AS",
+		"FROM security_sources s",
+		"EXISTS (",
 		"pq.Array(&stats.MissingMatchableSources)",
-		"sum(matchable_cves)",
-		"max(latest_matchable_update)",
+		"COALESCE(ai.indexed_cves, 0)",
+		"ARRAY[]::text[]",
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("affected index stats missing %q: %s", want, fn)
 		}
 	}
-	if strings.Count(fn, "cveSourceMatchablePredicateSQL") != 1 {
-		t.Fatalf("affected index stats should build the matchable predicate once: %s", fn)
+	for _, forbidden := range []string{
+		"cveSourceMatchablePredicateSQL",
+		"jsonb_array_elements",
+		"affected_products",
+		"NOT EXISTS (SELECT 1 FROM cve_database",
+	} {
+		if strings.Contains(fn, forbidden) {
+			t.Fatalf("affected index stats must use materialized evidence instead of heavy CVE scans, found %q: %s", forbidden, fn)
+		}
 	}
 }
 
@@ -2945,18 +2953,49 @@ func TestBulkCveAffectedPackageRefreshCanScopeBySource(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(out)
+	start := strings.Index(body, "func (db *DB) RefreshCveAffectedPackagesForSourceTx")
+	if start < 0 {
+		t.Fatal("RefreshCveAffectedPackagesForSourceTx not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) RefreshCveReferenceKeysForCveTx")
+	if end < 0 {
+		t.Fatal("RefreshCveAffectedPackagesForSourceTx end not found")
+	}
+	refreshFn := body[start : start+end]
+	statsStart := strings.Index(body, "func (db *DB) GetCveAffectedPackageIndexStats")
+	if statsStart < 0 {
+		t.Fatal("GetCveAffectedPackageIndexStats not found")
+	}
+	statsEnd := strings.Index(body[statsStart:], "func (db *DB) GetCveAffectedPackageIndexHealthStats")
+	if statsEnd < 0 {
+		t.Fatal("GetCveAffectedPackageIndexStats end not found")
+	}
+	statsFn := body[statsStart : statsStart+statsEnd]
 	for _, want := range []string{
 		"func (db *DB) UpsertCveEntriesWithoutAffectedIndexTx",
 		"func (db *DB) RefreshCveAffectedPackagesForSourceTx",
-		"LatestMatchableUpdate",
-		"stats.Stale",
-		"max(c.updated_at)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("bulk affected package index refresh missing %q", want)
+		}
+	}
+	for _, want := range []string{
 		"DELETE FROM cve_affected_packages cap",
 		"AND c.source = $1",
 		"return db.insertCveAffectedPackagesTx(ctx, tx, source)",
 	} {
-		if !strings.Contains(body, want) {
+		if !strings.Contains(refreshFn, want) {
 			t.Fatalf("bulk affected package index refresh missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"LatestMatchableUpdate",
+		"stats.Stale",
+		"indexed_source_freshness AS",
+		"max(s.last_sync_finished_at)",
+	} {
+		if !strings.Contains(statsFn, want) {
+			t.Fatalf("affected package index stats missing %q", want)
 		}
 	}
 }

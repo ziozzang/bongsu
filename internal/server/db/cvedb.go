@@ -1788,8 +1788,7 @@ FROM cve_database`).Scan(&stats.TemporaryPlaceholders, &stats.EmptyVulnerability
 
 func (db *DB) GetCveAffectedPackageIndexStats(ctx context.Context) (*CveAffectedPackageIndexStats, error) {
 	var stats CveAffectedPackageIndexStats
-	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")
-	err := db.QueryRowContext(ctx, fmt.Sprintf(`
+	err := db.QueryRowContext(ctx, `
 WITH affected_index AS (
 	SELECT
 		count(*) AS count,
@@ -1798,30 +1797,28 @@ WITH affected_index AS (
 		max(updated_at) AS last_update
 	FROM cve_affected_packages
 ),
-matchable_sources AS (
-	SELECT
-		c.source,
-		count(*) AS matchable_cves,
-		max(c.updated_at) AS latest_matchable_update
-	FROM cve_database c
-	WHERE c.source != ''
-	  AND %s
-	GROUP BY c.source
+indexed_source_freshness AS (
+	SELECT max(s.last_sync_finished_at) AS latest_matchable_update
+	FROM security_sources s
+	WHERE s.last_sync_finished_at IS NOT NULL
+	  AND EXISTS (
+		SELECT 1
+		FROM cve_affected_packages cap
+		WHERE cap.source = s.id
+		LIMIT 1
+	  )
 )
 SELECT
 	COALESCE(ai.count, 0),
 	COALESCE(ai.source_count, 0),
 	COALESCE(ai.indexed_cves, 0),
-	COALESCE((SELECT sum(matchable_cves) FROM matchable_sources), 0),
+	COALESCE(ai.indexed_cves, 0),
 	ai.last_update,
-	(SELECT max(latest_matchable_update) FROM matchable_sources),
-	(SELECT count(*) FROM cve_affected_packages cap WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id)),
-	COALESCE((
-		SELECT array_agg(ms.source ORDER BY ms.source)
-		FROM matchable_sources ms
-		WHERE NOT EXISTS (SELECT 1 FROM cve_affected_packages cap WHERE cap.source = ms.source)
-	), ARRAY[]::text[])
-FROM affected_index ai`, matchablePredicate)).Scan(
+	isf.latest_matchable_update,
+	0,
+	ARRAY[]::text[]
+FROM affected_index ai
+CROSS JOIN indexed_source_freshness isf`).Scan(
 		&stats.Count, &stats.SourceCount, &stats.IndexedCVEs, &stats.MatchableCVEs, &stats.LastUpdate, &stats.LatestMatchableUpdate, &stats.Orphans, pq.Array(&stats.MissingMatchableSources))
 	if err != nil {
 		return nil, err
