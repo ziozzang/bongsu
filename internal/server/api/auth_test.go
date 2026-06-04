@@ -3446,6 +3446,12 @@ func TestAgentBinaryWorkflowVerifiesCodeLibrarySBOMContext(t *testing.T) {
 		`pkg:pypi/bongsu-container-python-library@1.2.3`,
 		"host Trivy code library must preserve npm ecosystem and purl",
 		"container Trivy code library must preserve PyPI ecosystem, purl, and container/image context",
+		"container Trivy package must preserve container instance name and image ID",
+		"container Trivy code library must preserve container instance name and image ID",
+		"container asset must preserve runtime name and image ID",
+		"secondary container query must not leak primary container assets",
+		"asset_id == $container_id",
+		"image_id == $image_id",
 		"latest package, code-library, and container inventory",
 		"OS package, code-library, and container counts",
 	} {
