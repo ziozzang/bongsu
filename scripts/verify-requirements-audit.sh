@@ -58,6 +58,7 @@ for command in \
     '\./scripts/verify-migrations\.sh' \
     '\./scripts/verify-deploy-config\.sh' \
     '\./scripts/verify-requirements-audit\.sh' \
+    '\./scripts/verify-operations-runbook\.sh' \
     '\./scripts/verify-cve-matching-invariants\.sh' \
     '\./scripts/verify-release-readiness\.sh' \
     '\./scripts/verify-openapi\.sh' \
@@ -118,6 +119,7 @@ do
 done
 
 require_text "$CI" 'verify-requirements-audit\.sh' "CI must run the requirements audit verifier"
+require_text "$CI" 'verify-operations-runbook\.sh' "CI must run the operations runbook verifier"
 require_text "$CI" 'verify-cve-matching-invariants\.sh' "CI must run the CVE matching invariant verifier"
 require_text "$CI" 'verify-release-readiness\.sh' "CI must run the consolidated release readiness verifier"
 require_text "$CI" 'verify-openapi\.sh' "CI must run the OpenAPI verifier"
@@ -129,6 +131,7 @@ require_text "$ARCH" 'BONGSU_SYSTEMD_DIR' "architecture must document systemd in
 require_text "$MATCHING" 'package/ecosystem/fixed evidence' "matching rules must describe package evidence"
 require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness\.sh' "airgap package must include release readiness verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-operations-runbook\.sh' "airgap package must include operations runbook verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-cve-matching-invariants\.sh' "airgap package must include CVE matching invariant verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap package must include backup/restore archive verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap package must include live agent token binding verifier"

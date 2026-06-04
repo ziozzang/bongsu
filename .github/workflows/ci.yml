@@ -36,6 +36,9 @@ jobs:
       - name: Verify requirements audit coverage
         run: ./scripts/verify-requirements-audit.sh
 
+      - name: Verify operations runbook coverage
+        run: ./scripts/verify-operations-runbook.sh
+
       - name: Verify CVE matching invariants
         run: ./scripts/verify-cve-matching-invariants.sh
 

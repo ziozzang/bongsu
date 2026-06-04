@@ -1,6 +1,6 @@
 # Bongsu Operations Runbook
 
-Updated: 2026-06-04 14:00:12 KST
+Updated: 2026-06-04 15:24:27 KST
 
 This runbook is for operators running Bongsu in connected or air-gapped environments. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu.
 
@@ -35,6 +35,7 @@ go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
 ./scripts/verify-requirements-audit.sh
+./scripts/verify-operations-runbook.sh
 ./scripts/verify-cve-matching-invariants.sh
 ./scripts/verify-openapi.sh
 ./scripts/verify-backup-restore-archive.sh

@@ -95,6 +95,7 @@ for script in \
     export-security-db-bundle.sh \
     import-security-db-bundle.sh \
     verify-release-readiness.sh \
+    verify-operations-runbook.sh \
     verify-cve-matching-invariants.sh \
     verify-backup-restore-archive.sh \
     verify-agent-binary-workflow.sh \

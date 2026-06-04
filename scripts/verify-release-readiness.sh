@@ -55,6 +55,7 @@ run go test ./...
 run ./scripts/verify-migrations.sh
 run ./scripts/verify-deploy-config.sh
 run ./scripts/verify-requirements-audit.sh
+run ./scripts/verify-operations-runbook.sh
 run ./scripts/verify-cve-matching-invariants.sh
 run ./scripts/verify-openapi.sh
 run ./scripts/verify-package-contents.sh
