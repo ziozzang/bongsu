@@ -38,6 +38,7 @@ It also verifies the live one-line installer payload: `/api/admin/installer/stat
 It then exercises the actual live one-line installer and download URLs with `./scripts/verify-live-install-script.sh`: `/api/install.sh`, `/api/downloads/bongsu-agent`, and `/api/downloads/trivy` must reject unauthenticated and query-token requests, accept header authentication, expose checksum headers, and serve binaries whose SHA256 matches the advertised value.
 It verifies the live security DB schedule with `./scripts/verify-live-security-db-schedule.sh`: `/api/health` must show configured source sync, healthy persisted freshness, and a `next_sync` timestamp no later than the latest persisted CVE source update plus `security_db.interval` and a small grace window. This catches API restarts that would otherwise delay the required 6-hour OSV/NVD/Trivy refresh cadence.
 It verifies local session auth with `./scripts/verify-live-session-auth.sh`: `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout` must work on the API port and through the web proxy, and a logged-out bearer token must be rejected.
+It verifies trusted identity RBAC with `./scripts/verify-live-trusted-identity-rbac.sh`: direct unauthenticated admin access must remain `401`, while the configured trusted reverse-proxy user/group headers must authorize `/api/admin/rbac/status` through `BONGSU_TRUSTED_ADMIN_GROUPS`.
 It verifies airgap bundle readiness with `./scripts/verify-live-security-db-export-freshness.sh`: `/api/admin/security-db/status` must report `security_db_export.status == "ok"`, no `outdated_sources`, complete `latest_exported_at` / `latest_source_update_at` timestamps, and healthy `security_db_freshness` by default. If this gate fails, export a new security DB bundle before moving data into an air-gapped deployment.
 It verifies export freshness failure handling with `./scripts/verify-security-db-export-freshness-fixtures.sh`: representative status fixtures for stale exports, never-exported DBs, missing export metadata, incomplete timestamps, and stale source freshness must fail closed without requiring a live API.
 It verifies CVE DB observability under concurrent operator load with `./scripts/verify-live-cvedb-concurrency.sh`: multiple forced stats refreshes, admin security DB status, and admin metrics must complete with `2xx` responses, valid JSON or Prometheus bodies, healthy CVE DB quality, and no new PostgreSQL shared-memory errors in the API log.
@@ -64,6 +65,7 @@ go test ./...
 ./scripts/verify-live-security-db-export-freshness.sh
 ./scripts/verify-security-db-export-freshness-fixtures.sh
 ./scripts/verify-live-session-auth.sh
+./scripts/verify-live-trusted-identity-rbac.sh
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-live-cvedb-concurrency.sh
 ./scripts/verify-live-cve-rematch-workflow.sh
@@ -262,6 +264,12 @@ BONGSU_VIEWER_SUBJECT=rbac-live-viewer \
 This verifier ingests a two-host/two-container fixture, grants the viewer through a dynamic `asset_group` policy such as `team:rbac-allowed`, and proves that the viewer can see the allowed host, its host and container packages, its container, scans, and scan requests while the denied host and denied container stay hidden or return `403` on explicit denied-host filters.
 
 For SSO-backed RBAC, terminate browser login in an auth/OIDC reverse proxy and let Bongsu trust only that proxy's identity headers. Set `BONGSU_TRUSTED_IDENTITY_HEADER` for the authenticated user header, `BONGSU_TRUSTED_GROUPS_HEADER` for comma- or semicolon-separated group memberships, and `BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS` to the proxy address range. Header values become RBAC subjects `user:<value>` and `group:<value>`, so create matching `access_subjects` and policies before granting access. Use `BONGSU_TRUSTED_ADMIN_USERS` or `BONGSU_TRUSTED_ADMIN_GROUPS` sparingly for administrative access, and keep direct browser OIDC variables such as `BONGSU_OIDC_ISSUER` unset until native login support is implemented.
+
+```bash
+BONGSU_API_BASE=http://localhost:5677 \
+BONGSU_VERIFY_TRUSTED_IDENTITY_ADMIN_GROUP=security-admins \
+./scripts/verify-live-trusted-identity-rbac.sh
+```
 
 Live CVE DB quality and performance verification:
 

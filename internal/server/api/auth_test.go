@@ -4358,6 +4358,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-security-db-export-freshness.sh`,
 		`./scripts/verify-live-cve-rematch-workflow.sh`,
 		`./scripts/verify-live-session-auth.sh`,
+		`./scripts/verify-live-trusted-identity-rbac.sh`,
 		`BONGSU_DB_DSN is required for live release readiness`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS=3600 BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh`,
 		`./scripts/verify-live-cvedb-concurrency.sh`,
@@ -4563,6 +4564,32 @@ func TestLiveSessionAuthVerifierExercisesApiAndWebProxy(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("live session auth verifier missing %q", want)
+		}
+	}
+}
+
+func TestLiveTrustedIdentityRBACVerifierExercisesHeaderAuth(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-trusted-identity-rbac.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_API_BASE:-http://127.0.0.1:5677`,
+		`BONGSU_VERIFY_TRUSTED_IDENTITY_HEADER:-X-Forwarded-User`,
+		`BONGSU_VERIFY_TRUSTED_GROUPS_HEADER:-X-Forwarded-Groups`,
+		`BONGSU_VERIFY_TRUSTED_IDENTITY_ADMIN_GROUP:-security-admins`,
+		`/api/admin/rbac/status`,
+		`want 401`,
+		`want 200`,
+		`BONGSU_TRUSTED_IDENTITY_HEADER`,
+		`BONGSU_TRUSTED_GROUPS_HEADER`,
+		`BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS`,
+		`BONGSU_TRUSTED_ADMIN_GROUPS`,
+		`Live trusted identity RBAC verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live trusted identity RBAC verifier missing %q", want)
 		}
 	}
 }

@@ -78,6 +78,7 @@ for command in \
     '\./scripts/verify-live-security-db-export-freshness\.sh' \
     '\./scripts/verify-live-session-auth\.sh' \
     '\./scripts/verify-live-server-build\.sh' \
+    '\./scripts/verify-live-trusted-identity-rbac\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
     '\./scripts/verify-package-contents\.sh' \
     '\./scripts/verify-airgap-package-smoke\.sh' \
@@ -185,6 +186,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-schedule\.sh' "airgap pa
 require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-export-freshness\.sh' "airgap package must include live security DB export freshness verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-session-auth\.sh' "airgap package must include live session auth verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-server-build\.sh' "airgap package must include live server build verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-trusted-identity-rbac\.sh' "airgap package must include live trusted identity RBAC verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-vulnerability-export-rbac\.sh' "airgap package must include live vulnerability export RBAC verifier"
 
 for section in \
@@ -235,6 +237,7 @@ for keyword in \
     'verify-live-security-db-export-freshness\.sh' \
     'verify-live-session-auth\.sh' \
     'verify-live-server-build\.sh' \
+    'verify-live-trusted-identity-rbac\.sh' \
     'verify-live-vulnerability-export-rbac\.sh' \
     'verify-release-readiness\.sh' \
     'verify-live-web-smoke\.sh' \

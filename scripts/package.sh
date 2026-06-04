@@ -120,6 +120,7 @@ for script in \
     verify-live-security-db-export-freshness.sh \
     verify-live-session-auth.sh \
     verify-live-server-build.sh \
+    verify-live-trusted-identity-rbac.sh \
     verify-live-vulnerability-export-rbac.sh \
     verify-live-web-smoke.sh \
     verify-operator-workflow.sh \
