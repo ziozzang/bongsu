@@ -609,6 +609,12 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const cveStatsDuration = cveStatsMeta?.durations_ms?.total;
   const weakestCveSource = cveSources.reduce<CveSourceStat | null>((worst, source) =>
     !worst || (source.matchable_percent ?? 0) < (worst.matchable_percent ?? 0) ? source : worst, null);
+  const latestCveSource = cveSources.reduce<CveSourceStat | null>((latest, source) => {
+    if (!source.last_update) return latest;
+    if (!latest?.last_update) return source;
+    return new Date(source.last_update).getTime() > new Date(latest.last_update).getTime() ? source : latest;
+  }, null);
+  const osvCveSource = cveSources.find(source => source.source.toLowerCase() === 'osv') || null;
   const staleCveSources = health?.security_db_freshness?.stale_sources || [];
   const missingCveSources = health?.security_db_freshness?.missing_sources || [];
   const staleCveSourceByName = new Map(staleCveSources.map(s => [s.source.toLowerCase(), s]));
@@ -635,6 +641,18 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const securitySyncLast = health?.security_db?.last_attempt && !health.security_db.last_attempt.startsWith('0001-')
     ? new Date(health.security_db.last_attempt).toLocaleString()
     : '';
+  const securitySyncStatus = health?.security_db?.running
+    ? 'syncing'
+    : health?.security_db?.status === 'never' && latestCveSource?.last_update
+      ? 'scheduled'
+      : health?.security_db?.status || '-';
+  const securitySyncDetail = securitySyncLast
+    ? `last sync ${securitySyncLast}`
+    : latestCveSource?.last_update
+      ? `latest source ${latestCveSource.source.toUpperCase()} ${new Date(latestCveSource.last_update).toLocaleString()}`
+      : securitySyncNext
+        ? `next ${securitySyncNext}`
+        : `interval ${health?.security_db?.interval || '-'}`;
   const cveFreshnessColor = missingCveSources.length > 0 || staleCveSourceCount > 0 || health?.security_db_freshness?.stale ? 'var(--critical)' : 'var(--low)';
   const cveMatchableColor = cveMatchablePercent < 50 && cveTotalRecords > 0
     ? 'var(--critical)'
@@ -1279,6 +1297,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           <div style={{ color: cveStatsCacheStatus === 'stale' ? 'var(--medium)' : 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
             stats {cveStatsCacheStatus}{cveStatsDuration !== undefined ? ` · ${cveStatsDuration}ms` : ''} · {cveStatsGeneratedAt}
           </div>
+          {osvCveSource?.last_update && (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              OSV updated {new Date(osvCveSource.last_update).toLocaleString()}
+            </div>
+          )}
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: cveQualityColor }} />
@@ -1291,10 +1314,15 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         <div className="stat-card">
           <div className="accent-bar" style={{ background: cveDbStatusColor }} />
           <div className="label">Security Sync</div>
-          <div className="value" style={{ color: cveDbStatusColor }}>{health?.security_db?.status || '-'}</div>
+          <div className="value" style={{ color: cveDbStatusColor }}>{securitySyncStatus}</div>
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            {securitySyncNext ? `next ${securitySyncNext}` : securitySyncLast ? `last ${securitySyncLast}` : `interval ${health?.security_db?.interval || '-'}`}
+            {securitySyncDetail}
           </div>
+          {securitySyncNext && securitySyncStatus !== 'syncing' && (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              next {securitySyncNext}
+            </div>
+          )}
         </div>
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
