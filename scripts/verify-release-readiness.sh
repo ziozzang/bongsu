@@ -235,6 +235,7 @@ run_shell "env -u BONGSU_DB_PASSWORD -u BONGSU_API_KEY -u BONGSU_AGENT_API_KEY -
 run ./scripts/verify-requirements-audit.sh
 run ./scripts/verify-operations-runbook.sh
 run ./scripts/verify-release-readiness-report.sh
+run ./scripts/verify-security-db-export-freshness-fixtures.sh
 run ./scripts/verify-cve-matching-invariants.sh
 run ./scripts/verify-openapi.sh
 run ./scripts/verify-package-contents.sh

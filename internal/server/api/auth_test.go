@@ -4131,6 +4131,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`record_gate "$*" "exec"`,
 		`record_gate "$*" "shell"`,
 		`./scripts/verify-release-readiness-report.sh`,
+		`./scripts/verify-security-db-export-freshness-fixtures.sh`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("release readiness live gate must require fresh CVE sources, missing %q", want)
@@ -4146,6 +4147,7 @@ func TestLiveSecurityDbExportFreshnessVerifierFailsClosed(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`BONGSU_API_KEY:-test-admin-key-0123456789`,
+		`BONGSU_VERIFY_SECURITY_DB_EXPORT_STATUS_FILE`,
 		`/api/admin/security-db/status`,
 		`.security_db_freshness.status == "ok"`,
 		`.security_db_export.status`,
@@ -4159,6 +4161,33 @@ func TestLiveSecurityDbExportFreshnessVerifierFailsClosed(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("live security DB export freshness verifier missing %q", want)
+		}
+	}
+}
+
+func TestSecurityDbExportFreshnessFixtureVerifierExercisesFailureModes(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-security-db-export-freshness-fixtures.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_VERIFY_SECURITY_DB_EXPORT_STATUS_FILE="$file" "$VERIFY"`,
+		`expect_pass ok`,
+		`expect_fail stale`,
+		`expect_fail never`,
+		`expect_fail missing`,
+		`expect_fail missing_timestamps`,
+		`expect_fail stale_freshness`,
+		`security DB export is stale`,
+		`never been exported`,
+		`security_db_export status is missing`,
+		`timestamps are incomplete`,
+		`source freshness is not ok`,
+		`Security DB export freshness fixture verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("security DB export freshness fixture verifier missing %q", want)
 		}
 	}
 }
@@ -4179,6 +4208,7 @@ func TestReleaseReadinessReportVerifierExercisesSuccessAndFailureReports(t *test
 		`any(.gates[]; .kind == "shell" and (.name | contains("docker compose -f deploy/docker-compose.yml config")))`,
 		`all(.gates[]; .name != "./scripts/verify-package-contents.sh")`,
 		`verify-release-readiness-report.sh`,
+		`verify-security-db-export-freshness-fixtures.sh`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("release readiness report verifier missing %q", want)

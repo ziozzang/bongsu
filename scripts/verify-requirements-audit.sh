@@ -63,6 +63,7 @@ for command in \
     '\./scripts/verify-cve-matching-invariants\.sh' \
     '\./scripts/verify-release-readiness\.sh' \
     'BONGSU_RELEASE_READINESS_REPORT=/tmp/bongsu-release-readiness\.json \./scripts/verify-release-readiness\.sh' \
+    '\./scripts/verify-security-db-export-freshness-fixtures\.sh' \
     '\./scripts/verify-openapi\.sh' \
     '\./scripts/verify-backup-restore-archive\.sh' \
     '\./scripts/verify-operator-workflow\.sh' \
@@ -157,6 +158,7 @@ require_text "$MATCHING" 'package/ecosystem/fixed evidence' "matching rules must
 require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness\.sh' "airgap package must include release readiness verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness-report\.sh' "airgap package must include release readiness report verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-security-db-export-freshness-fixtures\.sh' "airgap package must include security DB export freshness fixture verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-operations-runbook\.sh' "airgap package must include operations runbook verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-cve-matching-invariants\.sh' "airgap package must include CVE matching invariant verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap package must include backup/restore archive verifier"

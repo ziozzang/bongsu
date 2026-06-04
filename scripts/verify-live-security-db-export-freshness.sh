@@ -10,6 +10,7 @@ API_BASE="${BONGSU_API_BASE:-http://127.0.0.1:5677}"
 API_KEY="${BONGSU_API_KEY:-test-admin-key-0123456789}"
 CURL_MAX_TIME="${BONGSU_VERIFY_CURL_MAX_TIME_SECONDS:-60}"
 REQUIRE_FRESHNESS_OK="${BONGSU_VERIFY_SECURITY_DB_EXPORT_REQUIRE_FRESHNESS_OK:-true}"
+STATUS_FILE="${BONGSU_VERIFY_SECURITY_DB_EXPORT_STATUS_FILE:-}"
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {
@@ -24,17 +25,25 @@ require_tool() {
     fi
 }
 
-require_tool curl
 require_tool jq
 
 STATUS_JSON="$TMP_DIR/security-db-status.json"
-HTTP_STATUS="$(curl -sS --max-time "$CURL_MAX_TIME" -o "$STATUS_JSON" -w "%{http_code}" \
-    -H "X-API-Key: ${API_KEY}" \
-    "${API_BASE}/api/admin/security-db/status")"
-if [[ "$HTTP_STATUS" != 2* ]]; then
-    echo "ERROR: /api/admin/security-db/status returned HTTP ${HTTP_STATUS}" >&2
-    cat "$STATUS_JSON" >&2 || true
-    exit 1
+if [ -n "$STATUS_FILE" ]; then
+    if [ ! -f "$STATUS_FILE" ]; then
+        echo "ERROR: BONGSU_VERIFY_SECURITY_DB_EXPORT_STATUS_FILE does not exist: ${STATUS_FILE}" >&2
+        exit 1
+    fi
+    cp "$STATUS_FILE" "$STATUS_JSON"
+else
+    require_tool curl
+    HTTP_STATUS="$(curl -sS --max-time "$CURL_MAX_TIME" -o "$STATUS_JSON" -w "%{http_code}" \
+        -H "X-API-Key: ${API_KEY}" \
+        "${API_BASE}/api/admin/security-db/status")"
+    if [[ "$HTTP_STATUS" != 2* ]]; then
+        echo "ERROR: /api/admin/security-db/status returned HTTP ${HTTP_STATUS}" >&2
+        cat "$STATUS_JSON" >&2 || true
+        exit 1
+    fi
 fi
 
 if [ "$REQUIRE_FRESHNESS_OK" = "true" ]; then

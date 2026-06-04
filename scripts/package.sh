@@ -99,6 +99,7 @@ for script in \
     import-security-db-bundle.sh \
     verify-release-readiness.sh \
     verify-release-readiness-report.sh \
+    verify-security-db-export-freshness-fixtures.sh \
     verify-operations-runbook.sh \
     verify-cve-matching-invariants.sh \
     verify-backup-restore-archive.sh \

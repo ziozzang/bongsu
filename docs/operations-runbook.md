@@ -38,6 +38,7 @@ It then exercises the actual live one-line installer and download URLs with `./s
 It verifies the live security DB schedule with `./scripts/verify-live-security-db-schedule.sh`: `/api/health` must show configured source sync, healthy persisted freshness, and a `next_sync` timestamp no later than the latest persisted CVE source update plus `security_db.interval` and a small grace window. This catches API restarts that would otherwise delay the required 6-hour OSV/NVD/Trivy refresh cadence.
 It verifies local session auth with `./scripts/verify-live-session-auth.sh`: `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout` must work on the API port and through the web proxy, and a logged-out bearer token must be rejected.
 It verifies airgap bundle readiness with `./scripts/verify-live-security-db-export-freshness.sh`: `/api/admin/security-db/status` must report `security_db_export.status == "ok"`, no `outdated_sources`, complete `latest_exported_at` / `latest_source_update_at` timestamps, and healthy `security_db_freshness` by default. If this gate fails, export a new security DB bundle before moving data into an air-gapped deployment.
+It verifies export freshness failure handling with `./scripts/verify-security-db-export-freshness-fixtures.sh`: representative status fixtures for stale exports, never-exported DBs, missing export metadata, incomplete timestamps, and stale source freshness must fail closed without requiring a live API.
 It verifies CVE DB observability under concurrent operator load with `./scripts/verify-live-cvedb-concurrency.sh`: multiple forced stats refreshes, admin security DB status, and admin metrics must complete with `2xx` responses, valid JSON or Prometheus bodies, healthy CVE DB quality, and no new PostgreSQL shared-memory errors in the API log.
 It verifies stale scan-request recovery with `./scripts/verify-live-scan-request-recovery.sh`: a fixture host-specific request is claimed, aged in PostgreSQL, surfaced by the stale request filter, requeued through `/api/scan-requests/requeue-stale`, audited, and proven claimable again.
 It verifies CVE DB rematch end-to-end with `./scripts/verify-live-cve-rematch-workflow.sh`: a fixture SBOM reports `phenx/php-svg-lib@0.5.0` as a Packagist package, report-triggered automatic rematch must create `cve-db` findings from OSV, explicit scan-scoped rematch must be idempotent, and the findings must preserve package ecosystem, installed version, fixed-version, and OSV advisory evidence.
@@ -60,6 +61,7 @@ go test ./...
 ./scripts/verify-live-install-script.sh
 ./scripts/verify-live-security-db-schedule.sh
 ./scripts/verify-live-security-db-export-freshness.sh
+./scripts/verify-security-db-export-freshness-fixtures.sh
 ./scripts/verify-live-session-auth.sh
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-live-cvedb-concurrency.sh

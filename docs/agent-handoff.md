@@ -257,6 +257,7 @@ go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
 ./scripts/verify-requirements-audit.sh
+./scripts/verify-security-db-export-freshness-fixtures.sh
 ./scripts/verify-cve-matching-invariants.sh
 ./scripts/verify-openapi.sh
 ./scripts/verify-backup-restore-archive.sh

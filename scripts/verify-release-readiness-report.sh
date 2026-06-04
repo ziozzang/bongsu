@@ -77,7 +77,8 @@ prepare_release_root() {
         verify-backup-restore-archive.sh \
         verify-installer-smoke.sh \
         verify-static-binaries.sh \
-        verify-release-readiness-report.sh
+        verify-release-readiness-report.sh \
+        verify-security-db-export-freshness-fixtures.sh
     do
         write_stub_script "$target/scripts/$script"
     done
@@ -105,6 +106,7 @@ run_success_case() {
     PATH="$bin_dir:$PATH" \
         BONGSU_RELEASE_READINESS_REPORT="$report" \
         BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
+        BONGSU_RELEASE_READINESS_REQUIRE_DB=true \
         "$root_dir/scripts/verify-release-readiness.sh" >"$case_dir/stdout.log"
 
     assert_report "$report" '.format_version == 1' "report must include format version"
@@ -134,6 +136,7 @@ run_failure_case() {
     PATH="$bin_dir:$PATH" \
         BONGSU_RELEASE_READINESS_REPORT="$report" \
         BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
+        BONGSU_RELEASE_READINESS_REQUIRE_DB=true \
         "$root_dir/scripts/verify-release-readiness.sh" >"$case_dir/stdout.log" 2>"$case_dir/stderr.log"
     exit_code="$?"
     set -e

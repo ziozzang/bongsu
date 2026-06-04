@@ -65,6 +65,7 @@ go test ./...
 ./scripts/verify-live-scan-request-recovery.sh
 ./scripts/verify-live-security-db-schedule.sh
 ./scripts/verify-live-security-db-export-freshness.sh
+./scripts/verify-security-db-export-freshness-fixtures.sh
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-live-session-auth.sh
 ./scripts/verify-live-vulnerability-export-rbac.sh
