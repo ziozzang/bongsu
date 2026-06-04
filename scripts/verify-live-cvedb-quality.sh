@@ -126,7 +126,37 @@ db_scalar() {
     printf '%s\n' "$out" | sed -n '1p'
 }
 
+discover_live_db_dsn() {
+    if [ -n "$BONGSU_DB_DSN" ]; then
+        return 0
+    fi
+    if ! command -v ss >/dev/null 2>&1; then
+        return 1
+    fi
+    local port
+    local pid
+    port="$(python3 - "$API_BASE" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+parsed = urlparse(sys.argv[1])
+if parsed.port:
+    print(parsed.port)
+PY
+)"
+    if [ -z "$port" ]; then
+        return 1
+    fi
+    pid="$(ss -ltnp 2>/dev/null | sed -n "s/.*:${port} .*pid=\([0-9][0-9]*\).*/\1/p" | head -n1)"
+    if [ -z "$pid" ] || [ ! -r "/proc/${pid}/environ" ]; then
+        return 1
+    fi
+    BONGSU_DB_DSN="$(tr '\0' '\n' < "/proc/${pid}/environ" | sed -n 's/^BONGSU_DB_DSN=//p' | head -n1)"
+    [ -n "$BONGSU_DB_DSN" ]
+}
+
 prepare_db_checks() {
+    discover_live_db_dsn || true
     if [ -z "$BONGSU_DB_DSN" ]; then
         return 1
     fi
@@ -457,7 +487,7 @@ SELECT count(*)
 FROM security_sources s, latest_deferred_osv d, latest_final_osv f
 WHERE s.id='osv'
   AND d.at IS NOT NULL
-  AND s.last_sync_finished_at >= d.at
+  AND s.last_sync_finished_at >= date_trunc('second', d.at)
   AND (f.at IS NULL OR d.at > f.at)" "0" "OSV source registry freshness must not be promoted by deferred chunk imports"
     assert_db_zero "
 WITH bad AS (

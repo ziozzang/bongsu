@@ -4284,6 +4284,9 @@ func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t
 		`BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS="${BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS:-false}"`,
 		`BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS="${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS:-Packagist,Debian,Ubuntu,npm,PyPI,Wolfi}"`,
 		`BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS="${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS:-3600}"`,
+		"discover_live_db_dsn",
+		`ss -ltnp`,
+		`/proc/${pid}/environ`,
 		`https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip`,
 		`lower(split_part(ecosystem, ':', 1)) = lower(${eco_literal})`,
 		"local OSV affected-package index has no matchable rows for upstream sentinel ecosystem",
@@ -4291,6 +4294,7 @@ func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t
 		"local OSV source is older than upstream sentinel",
 		"health security DB freshness must be backed by security_sources registry",
 		"OSV source registry freshness must not be promoted by deferred chunk imports",
+		"date_trunc('second', d.at)",
 		"metadata->>'finalize' = 'false'",
 		`/api/cve-db/search?q=phenx%2Fphp-svg-lib&limit=10&matchable=true`,
 		`WHERE fixed_version !~ '[0-9]'`,
@@ -7033,10 +7037,18 @@ func TestAuthenticatorInterfaceExists(t *testing.T) {
 		"type Authenticator interface",
 		"Authenticate(ctx context.Context, username, password string) (*AuthResult, error)",
 		"type LocalAuthenticator struct",
-		"type OIDCAuthenticator struct",
-		"OIDC authentication not configured",
+		"type oidcTokenVerifier struct",
+		"newOIDCTokenVerifierFromEnv",
 		"BONGSU_OIDC_ISSUER",
-		"OIDC login is not implemented yet; using local authentication",
+		"BONGSU_OIDC_CLIENT_ID",
+		"BONGSU_OIDC_JWKS_URL",
+		"BONGSU_OIDC_ADMIN_GROUPS",
+		"OIDC bearer authentication enabled",
+		"rsa.VerifyPKCS1v15",
+		"audienceContains",
+		"oidcIdentity",
+		"oidcIdentityCacheMiddleware",
+		"oidcIdentityRequestCache",
 		"return &LocalAuthenticator{server: s}",
 		"initAuthenticator()",
 	} {
@@ -7046,12 +7058,15 @@ func TestAuthenticatorInterfaceExists(t *testing.T) {
 	}
 }
 
-func TestOIDCPlaceholderDoesNotDisableLocalAuthentication(t *testing.T) {
+func TestOIDCBearerConfigurationKeepsLocalPasswordAuthentication(t *testing.T) {
 	t.Setenv("BONGSU_OIDC_ISSUER", "https://idp.example.test")
 	t.Setenv("BONGSU_OIDC_CLIENT_ID", "bongsu")
 
-	s := &Server{}
+	s := &Server{oidcAuth: newOIDCTokenVerifierFromEnv()}
+	if s.oidcAuth == nil {
+		t.Fatal("OIDC bearer verifier should be configured")
+	}
 	if _, ok := s.initAuthenticator().(*LocalAuthenticator); !ok {
-		t.Fatal("unsupported OIDC configuration must keep local authentication active")
+		t.Fatal("OIDC bearer configuration must keep local password authentication active")
 	}
 }

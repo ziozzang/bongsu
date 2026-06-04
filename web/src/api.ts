@@ -783,6 +783,10 @@ export interface AccessControlStatus {
   auth?: {
     web_auth_enabled: boolean;
     viewer_key_count: number;
+    oidc_configured: boolean;
+    oidc_jwks_configured: boolean;
+    oidc_admin_user_count: number;
+    oidc_admin_group_count: number;
     trusted_identity_configured: boolean;
     trusted_user_header_configured: boolean;
     trusted_groups_header_configured: boolean;

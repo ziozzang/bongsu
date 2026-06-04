@@ -570,7 +570,7 @@ func (db *DB) MarkSecuritySourcesExportedTx(ctx context.Context, tx *sql.Tx, sou
 		exportedAt = time.Now()
 	}
 	exportedAt = exportedAt.UTC()
-	if err := db.RefreshSecuritySourceStatusTx(ctx, tx, source); err != nil {
+	if err := db.EnsureSecuritySourceStatusTx(ctx, tx, source); err != nil {
 		return err
 	}
 	if source == "" {
@@ -2051,9 +2051,10 @@ SELECT
 	GREATEST(base.with_fixed, COALESCE(matchable.matchable, 0)) AS with_fixed,
 	base.with_ranges,
 	base.with_cvss,
-	base.last_update
+	COALESCE(s.last_sync_finished_at, base.last_update) AS last_update
 FROM base
 LEFT JOIN matchable ON matchable.source = base.source
+LEFT JOIN security_sources s ON s.id = base.source
 ORDER BY base.source`)
 	if err != nil {
 		return nil, err

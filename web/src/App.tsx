@@ -4088,6 +4088,14 @@ function RBACView() {
           <span className={`status-dot ${(rbacStatus.auth?.viewer_key_count || 0) > 0 ? 'ready' : 'not-ready'}`}>
             Viewer keys: {(rbacStatus.auth?.viewer_key_count || 0).toLocaleString()}
           </span>
+          <span className={`status-dot ${rbacStatus.auth?.oidc_configured ? 'ready' : 'not-ready'}`}>
+            OIDC: {rbacStatus.auth?.oidc_configured ? 'on' : 'off'}
+          </span>
+          {rbacStatus.auth?.oidc_configured && (
+            <span className={`status-dot ${rbacStatus.auth.oidc_jwks_configured ? 'ready' : 'not-ready'}`}>
+              JWKS: {rbacStatus.auth.oidc_jwks_configured ? 'set' : 'missing'}
+            </span>
+          )}
           <span className={`status-dot ${rbacStatus.auth?.trusted_identity_configured ? 'ready' : 'not-ready'}`}>
             Trusted identity: {rbacStatus.auth?.trusted_identity_configured ? 'on' : 'off'}
           </span>

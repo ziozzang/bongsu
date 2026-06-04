@@ -40,6 +40,7 @@ type Server struct {
 	installToken string
 	viewerKeys   map[string]string
 	trustedAuth  trustedIdentityConfig
+	oidcAuth     *oidcTokenVerifier
 	webAuth      bool
 	corsOrigins  map[string]bool
 	corsAllowAll bool
@@ -129,6 +130,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		installToken: os.Getenv("BONGSU_INSTALL_TOKEN"),
 		viewerKeys:   parseViewerKeys(os.Getenv("BONGSU_VIEWER_API_KEYS")),
 		trustedAuth:  trustedIdentityConfigFromEnv(),
+		oidcAuth:     newOIDCTokenVerifierFromEnv(),
 		webAuth:      os.Getenv("BONGSU_WEB_AUTH") != "false",
 		corsOrigins:  parseAllowedOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
 		corsAllowAll: allowsAllOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
@@ -247,6 +249,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.corsMiddleware(h)
 	h = s.securityHeadersMiddleware(h)
 	h = s.rateLimitMiddleware(h)
+	h = s.oidcIdentityCacheMiddleware(h)
 	h = s.requestIDMiddleware(h)
 	h = s.accessLogMiddleware(h)
 	return h
@@ -414,7 +417,7 @@ func (s *Server) authenticateAdmin(r *http.Request) bool {
 		return true
 	}
 	u := s.sessionUser(r)
-	return (u != nil && u.Role == "admin") || s.trustedIdentity(r).Admin
+	return (u != nil && u.Role == "admin") || s.trustedIdentity(r).Admin || s.oidcIdentity(r).Admin
 }
 
 func (s *Server) authenticateAgent(r *http.Request) bool {
@@ -450,7 +453,53 @@ func (s *Server) viewerSubjects(r *http.Request) []string {
 	for _, subject := range identity.Subjects {
 		subjects = appendUniqueString(subjects, subject)
 	}
+	oidc := s.oidcIdentity(r)
+	for _, subject := range oidc.Subjects {
+		subjects = appendUniqueString(subjects, subject)
+	}
 	return subjects
+}
+
+func (s *Server) oidcIdentity(r *http.Request) oidcIdentity {
+	if s.oidcAuth == nil {
+		return oidcIdentity{}
+	}
+	if cache, ok := r.Context().Value(oidcIdentityCacheContextKey{}).(*oidcIdentityRequestCache); ok {
+		cache.mu.Lock()
+		defer cache.mu.Unlock()
+		if cache.checked {
+			return cache.identity
+		}
+		cache.checked = true
+		cache.identity, cache.err = s.oidcAuth.identityFromRequest(r.Context(), r)
+		if cache.err != nil {
+			log.Printf("oidc token rejected request_id=%s: %v", requestIDFromRequest(r), cache.err)
+			return oidcIdentity{}
+		}
+		return cache.identity
+	}
+	identity, err := s.oidcAuth.identityFromRequest(r.Context(), r)
+	if err != nil {
+		log.Printf("oidc token rejected request_id=%s: %v", requestIDFromRequest(r), err)
+		return oidcIdentity{}
+	}
+	return identity
+}
+
+type oidcIdentityCacheContextKey struct{}
+
+type oidcIdentityRequestCache struct {
+	mu       sync.Mutex
+	checked  bool
+	identity oidcIdentity
+	err      error
+}
+
+func (s *Server) oidcIdentityCacheMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), oidcIdentityCacheContextKey{}, &oidcIdentityRequestCache{})
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 type trustedIdentity struct {
@@ -720,6 +769,9 @@ func (s *Server) actorType(r *http.Request) string {
 	if s.trustedIdentity(r).User != "" {
 		return "trusted_user"
 	}
+	if s.oidcIdentity(r).User != "" {
+		return "oidc_user"
+	}
 	if len(s.viewerSubjects(r)) > 0 {
 		return "viewer"
 	}
@@ -731,6 +783,9 @@ func (s *Server) actorID(r *http.Request) string {
 		return u.Username
 	}
 	if identity := s.trustedIdentity(r); identity.User != "" {
+		return "user:" + identity.User
+	}
+	if identity := s.oidcIdentity(r); identity.User != "" {
 		return "user:" + identity.User
 	}
 	if subjects := s.viewerSubjects(r); len(subjects) > 0 {

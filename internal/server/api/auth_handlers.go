@@ -175,6 +175,9 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sessionFromRequest(r *http.Request) *models.Session {
+	if s.db == nil {
+		return nil
+	}
 	token := s.sessionToken(r)
 	if token == "" {
 		return nil

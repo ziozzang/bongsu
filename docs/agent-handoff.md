@@ -117,7 +117,7 @@ This handoff commit should include:
 - Live dashboard hardening: optional admin/summary widget failures no longer log out the no-auth dashboard, package/vulnerability summary SQL no longer references a package alias outside scope, and the dashboard action bar wraps instead of clipping controls.
 - API and DB decomposition into domain-specific files, preserving previous behavior while reducing the monolithic `api.go`/`db.go` maintenance risk.
 - Operational safety additions: per-IP rate limiting, `/api/live`, `/api/ready`, embedded OpenAPI 3.0, `scripts/backup.sh`, `scripts/restore.sh`, `scripts/verify-openapi.sh`, `scripts/verify-operator-workflow.sh`, `scripts/verify-agent-binary-workflow.sh`, and `scripts/verify-airgap-release-archive.sh`.
-- Local user/session authentication, initial admin bootstrap, secure session cookies, `Authorization: Bearer` support for the web client, and an OIDC authenticator interface placeholder.
+- Local user/session authentication, initial admin bootstrap, secure session cookies, `Authorization: Bearer` support for the web client, and OIDC bearer JWT verification that maps user/group claims into RBAC subjects while keeping local password login active.
 - Fleet management additions: scheduled scans, asset groups, asset-group force scans, agent report retry configuration, and frontend views for schedules and asset groups.
 - Actionable intelligence additions: vulnerability trends, top-risk hosts, remediation recommendations, notification rules/logs, executive/risk/SLA reports, report export, and corresponding frontend views.
 

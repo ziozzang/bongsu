@@ -1035,6 +1035,12 @@ func (s *Server) handleAccessControlStatus(w http.ResponseWriter, r *http.Reques
 			warnings = append(warnings, "trusted identity admin allowlists are configured without trusted identity headers")
 		}
 	}
+	if oidcConfigured, _ := authStatus["oidc_configured"].(bool); oidcConfigured {
+		if jwksConfigured, _ := authStatus["oidc_jwks_configured"].(bool); !jwksConfigured {
+			status = "degraded"
+			warnings = append(warnings, "OIDC is configured but JWKS URL is missing")
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":       status,
 		"generated_at": time.Now().UTC().Format(time.RFC3339),
@@ -1049,6 +1055,10 @@ func (s *Server) accessControlAuthStatus() map[string]any {
 	return map[string]any{
 		"web_auth_enabled":                  s.webAuth,
 		"viewer_key_count":                  len(s.viewerKeys),
+		"oidc_configured":                   s.oidcAuth != nil,
+		"oidc_jwks_configured":              s.oidcAuth != nil && s.oidcAuth.jwksURL != "",
+		"oidc_admin_user_count":             oidcAdminUserCount(s.oidcAuth),
+		"oidc_admin_group_count":            oidcAdminGroupCount(s.oidcAuth),
 		"trusted_identity_configured":       trustedConfigured,
 		"trusted_user_header_configured":    s.trustedAuth.userHeader != "",
 		"trusted_groups_header_configured":  s.trustedAuth.groupsHeader != "",
@@ -1057,6 +1067,20 @@ func (s *Server) accessControlAuthStatus() map[string]any {
 		"trusted_admin_group_count":         len(s.trustedAuth.adminGroups),
 		"trusted_identity_admin_configured": len(s.trustedAuth.adminUsers) > 0 || len(s.trustedAuth.adminGroups) > 0,
 	}
+}
+
+func oidcAdminUserCount(v *oidcTokenVerifier) int {
+	if v == nil {
+		return 0
+	}
+	return len(v.adminUsers)
+}
+
+func oidcAdminGroupCount(v *oidcTokenVerifier) int {
+	if v == nil {
+		return 0
+	}
+	return len(v.adminGroups)
 }
 
 func (s *Server) handleDeleteAccessSubject(w http.ResponseWriter, r *http.Request) {

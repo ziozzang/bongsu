@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -39,23 +38,9 @@ func (a *LocalAuthenticator) Authenticate(ctx context.Context, username, passwor
 	}, nil
 }
 
-type OIDCAuthenticator struct {
-	issuer   string
-	clientID string
-}
-
-func newOIDCAuthenticator(issuer, clientID string) *OIDCAuthenticator {
-	return &OIDCAuthenticator{issuer: issuer, clientID: clientID}
-}
-
-func (a *OIDCAuthenticator) Authenticate(_ context.Context, _, _ string) (*AuthResult, error) {
-	return nil, fmt.Errorf("OIDC authentication not configured")
-}
-
 func (s *Server) initAuthenticator() Authenticator {
-	oidcIssuer := strings.TrimSpace(envOr("BONGSU_OIDC_ISSUER", ""))
-	if oidcIssuer != "" {
-		log.Printf("WARNING: BONGSU_OIDC_ISSUER is set, but OIDC login is not implemented yet; using local authentication")
+	if s.oidcAuth != nil {
+		log.Printf("OIDC bearer authentication enabled for issuer %s; local password login remains enabled", s.oidcAuth.issuer)
 	}
 	return &LocalAuthenticator{server: s}
 }

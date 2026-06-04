@@ -226,6 +226,13 @@ spec:
 | `BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS` | loopback when trusted headers are enabled | Comma-separated proxy CIDRs allowed to supply trusted identity headers |
 | `BONGSU_TRUSTED_ADMIN_USERS` | empty | Comma-separated trusted identity users that may access admin APIs |
 | `BONGSU_TRUSTED_ADMIN_GROUPS` | empty | Comma-separated trusted identity groups that may access admin APIs |
+| `BONGSU_OIDC_ISSUER` | empty | Optional OIDC issuer for direct `Authorization: Bearer` JWT authentication |
+| `BONGSU_OIDC_CLIENT_ID` | empty | Required audience/client ID when OIDC bearer authentication is enabled |
+| `BONGSU_OIDC_JWKS_URL` | `${BONGSU_OIDC_ISSUER}/.well-known/jwks.json` | JWKS endpoint for RS256 token verification |
+| `BONGSU_OIDC_SUBJECT_CLAIM` | `sub` | JWT claim mapped to RBAC subject `user:<value>` |
+| `BONGSU_OIDC_GROUPS_CLAIM` | `groups` | JWT claim mapped to RBAC subjects `group:<value>` |
+| `BONGSU_OIDC_ADMIN_USERS` | empty | Comma-separated OIDC users that may access admin APIs |
+| `BONGSU_OIDC_ADMIN_GROUPS` | empty | Comma-separated OIDC groups that may access admin APIs |
 | `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
 | `BONGSU_API_PORT` | `5677` | Host port for the Bongsu API server |
 | `BONGSU_WEB_PORT` | `5678` | Host port for the Bongsu web UI |
@@ -377,6 +384,14 @@ One-line installer and binary download authentication is header-only. Use `X-Ins
 ```bash
 # Map a viewer API key to user subject "alice"
 echo 'BONGSU_VIEWER_API_KEYS=viewer-secret:user:alice' >> deploy/.env
+
+# Or verify direct OIDC bearer JWTs from an IdP.
+cat >> deploy/.env <<'EOF'
+BONGSU_OIDC_ISSUER=https://idp.example.com/realms/security
+BONGSU_OIDC_CLIENT_ID=bongsu
+BONGSU_OIDC_GROUPS_CLAIM=groups
+BONGSU_OIDC_ADMIN_GROUPS=security-admins
+EOF
 
 # Or trust an OIDC/auth proxy that injects identity headers from loopback.
 # Requests from other remote addresses ignore these headers.

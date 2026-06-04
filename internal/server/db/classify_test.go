@@ -1305,6 +1305,8 @@ func TestCveSourceStatsAvoidsAffectedProductExpansion(t *testing.T) {
 		"count(DISTINCT cve_id) AS matchable",
 		"COALESCE(matchable.matchable, 0) AS matchable",
 		"GREATEST(base.with_fixed, COALESCE(matchable.matchable, 0)) AS with_fixed",
+		"COALESCE(s.last_sync_finished_at, base.last_update) AS last_update",
+		"LEFT JOIN security_sources s ON s.id = base.source",
 		"count(*) FILTER (WHERE cvss_score > 0",
 	} {
 		if !strings.Contains(fn, want) {
@@ -2571,6 +2573,7 @@ func TestSecuritySourceRegistryStatusTracksImportedCveSources(t *testing.T) {
 		"type SecuritySourceStatus struct",
 		"db.refreshSecuritySourceStatusTx(ctx, tx, source, false)",
 		"db.refreshSecuritySourceStatusTx(ctx, tx, source, true)",
+		"db.EnsureSecuritySourceStatusTx(ctx, tx, source)",
 		"FROM security_sources",
 		"SELECT source FROM cve_database WHERE source != '' GROUP BY source",
 		"INSERT INTO security_sources",
