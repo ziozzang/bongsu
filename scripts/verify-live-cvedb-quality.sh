@@ -14,6 +14,8 @@ MIN_MATCHABLE_RECORDS="${BONGSU_VERIFY_CVEDB_MIN_MATCHABLE_RECORDS:-1}"
 MIN_AFFECTED_INDEX_COVERAGE="${BONGSU_VERIFY_CVEDB_MIN_AFFECTED_INDEX_COVERAGE:-99}"
 MIN_REFERENCE_INDEX_COVERAGE="${BONGSU_VERIFY_CVEDB_MIN_REFERENCE_INDEX_COVERAGE:-99}"
 MIN_EPSS_NON_EPSS_COVERAGE="${BONGSU_VERIFY_CVEDB_MIN_EPSS_NON_EPSS_COVERAGE:-50}"
+MIN_REFERENCE_MULTI_SOURCE_GROUPS="${BONGSU_VERIFY_CVEDB_MIN_REFERENCE_MULTI_SOURCE_GROUPS:-1}"
+MIN_REFERENCE_VENDOR_GROUPS="${BONGSU_VERIFY_CVEDB_MIN_REFERENCE_VENDOR_GROUPS:-1}"
 MAX_STATS_WALL_SECONDS="${BONGSU_VERIFY_CVEDB_MAX_STATS_WALL_SECONDS:-30}"
 MAX_STATS_INTERNAL_MS="${BONGSU_VERIFY_CVEDB_MAX_STATS_INTERNAL_MS:-20000}"
 MAX_SEARCH_WALL_SECONDS="${BONGSU_VERIFY_CVEDB_MAX_SEARCH_WALL_SECONDS:-10}"
@@ -154,6 +156,18 @@ assert_db_positive() {
     fi
 }
 
+assert_db_at_least() {
+    local sql="$1"
+    local min="$2"
+    local message="$3"
+    local value
+    value="$(db_scalar "$sql")"
+    if ! awk -v v="$value" -v m="$min" 'BEGIN { exit !(v >= m) }'; then
+        echo "ERROR: ${message}; got ${value}, want >= ${min}" >&2
+        exit 1
+    fi
+}
+
 require_tool curl
 require_tool jq
 require_tool awk
@@ -211,6 +225,8 @@ if [ -n "$reference_key" ] && [ "$reference_key" != "null" ]; then
     api_get_json "/api/cve-db/reference-group?key=${reference_key}" "$ref_json" "$ref_time"
     assert_elapsed_at_most "$ref_time" "$MAX_SEARCH_WALL_SECONDS" "reference group lookup"
     assert_jq_arg "$ref_json" vuln "$matchable_vuln" '(.total // 0) > 0 and (.items[] | select(.vulnerability_id == $vuln))' "reference group must include the sampled matchable CVE"
+    assert_jq_arg "$ref_json" key "$reference_key" '.key == $key and ((.reference_keys // []) | index($key)) and ((.sources // []) | length) > 0 and ((.source_groups // []) | length) > 0' "reference group must expose key, source buckets, and source/category/ecosystem buckets"
+    assert_jq "$ref_json" '(.affected_package_total // 0) >= 0 and all(.affected_packages[]?; (.package_name // "") != "" and (.ecosystem // "") != "" and (.fixed_version // "") != "")' "reference group affected-package evidence must preserve package/ecosystem/fixed fields"
 fi
 epss_json="$TMP_DIR/epss-search.json"
 epss_time="$TMP_DIR/epss-search.time"
@@ -260,6 +276,34 @@ WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id)" "affect
 SELECT count(*)
 FROM cve_reference_keys crk
 WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = crk.cve_id)" "reference key index must not contain orphan rows"
+    assert_db_at_least "
+SELECT count(*)
+FROM (
+    SELECT crk.reference_key
+    FROM cve_reference_keys crk
+    JOIN cve_database c ON c.id = crk.cve_id
+    WHERE crk.reference_key LIKE 'cve:CVE-%'
+      AND c.source NOT IN ('epss', 'cisa-kev')
+    GROUP BY crk.reference_key
+    HAVING count(DISTINCT c.source) >= 2
+) grouped" "$MIN_REFERENCE_MULTI_SOURCE_GROUPS" "direct DB must contain canonical CVE reference groups that merge multiple non-priority sources"
+    assert_db_at_least "
+SELECT count(*)
+FROM (
+    SELECT cve.reference_key
+    FROM cve_reference_keys cve
+    JOIN cve_reference_keys related ON related.cve_id = cve.cve_id
+    WHERE cve.reference_key LIKE 'cve:CVE-%'
+      AND (
+          related.reference_key LIKE 'vendor:%'
+          OR related.reference_key LIKE 'debian:%'
+          OR related.reference_key LIKE 'ubuntu:%'
+          OR related.reference_key LIKE 'rhel:%'
+          OR related.reference_key LIKE 'ghsa:%'
+    )
+    GROUP BY cve.reference_key
+    HAVING count(DISTINCT related.reference_key) >= 1
+) grouped" "$MIN_REFERENCE_VENDOR_GROUPS" "direct DB must materialize vendor/advisory reference keys alongside canonical CVE keys"
     assert_db_positive "
 SELECT count(*)
 FROM cve_database

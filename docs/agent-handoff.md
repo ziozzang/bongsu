@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 12:43:30 KST
+Updated: 2026-06-04 13:05:00 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,13 +24,17 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Verify live agent token binding
+master / origin/main latest commit: Verify CVE reference grouping quality
 ```
 
 Important recent commits:
 
 ```text
-<latest> Verify live agent token binding
+<latest> Verify CVE reference grouping quality
+a22626c Expand live web smoke coverage
+1183cfb Harden backup restore archives
+651f783 Verify CVE DB direct invariants
+e25c19a Verify live agent token binding
 b0d4cd7 Verify multi-host agent identity
 39ce162 Run release readiness gate in CI
 c4237f3 Add release readiness gate
@@ -151,17 +155,17 @@ Last quality snapshot:
 ```json
 {
   "temporary_placeholders": 0,
-  "total_records": 760499,
-  "total_matchable": 111300,
+  "total_records": 372310,
+  "total_matchable": 39,
   "affected_index_coverage": 100,
   "affected_index_orphans": 0,
   "reference_index_coverage": 100,
   "reference_index_orphans": 0,
-  "epss_non_epss_coverage": 96.5
+  "epss_non_epss_coverage": 95.9
 }
 ```
 
-Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_database` and `cve_affected_packages`.
+Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`, `cve_affected_packages`, and `cve_reference_keys`; affected-package rows all had package/ecosystem/fixed evidence; canonical CVE reference groups merged multiple non-priority sources; vendor/advisory reference keys were materialized beside canonical CVE keys.
 
 ## What Has Been Completed
 
@@ -170,6 +174,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - CVE DB quality and status are visible on the dashboard.
 - CVE search is backed by indexes and bounded request timeouts.
 - Affected packages lookup and reference grouping are bounded.
+- Live CVE DB quality verification now checks reference-group API structure, and direct DB mode verifies canonical CVE groups merge multiple non-priority sources while vendor/advisory keys are materialized beside canonical CVE keys.
 - Matchable CVE evidence is materialized into `cve_affected_packages`.
 - Vulnerability evidence/listing now uses matchable affected package rows instead of raw JSON name matches.
 - CVE DB rematch filters require compatible package name, ecosystem, fixed version/range, and affected range semantics.

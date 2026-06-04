@@ -94,6 +94,8 @@ for keyword in \
     'two-host/two-container' \
     'live CVE DB' \
     'direct DB invariant' \
+    'multi-source canonical CVE' \
+    'vendor/advisory key' \
     'live browser' \
     'Scan History' \
     'Notifications' \
@@ -156,6 +158,8 @@ for keyword in \
     'EPSS' \
     'BONGSU_DB_DSN' \
     'direct DB invariant' \
+    'canonical CVE reference keys' \
+    'vendor/advisory keys' \
     'requeue-stale' \
     'agent-token/reset' \
     'verify-live-agent-token-binding\.sh' \

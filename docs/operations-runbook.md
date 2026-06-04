@@ -146,7 +146,7 @@ BONGSU_DB_DSN="$BONGSU_DB_DSN" \
 ./scripts/verify-live-cvedb-quality.sh
 ```
 
-When `BONGSU_DB_DSN` is set, this verifier also queries PostgreSQL directly for `TEMP-*`/`CVD-*` placeholders across `cve_database`, `cve_affected_packages`, and `cve_reference_keys`, affected-package rows missing package/ecosystem/fixed evidence, index orphans, and EPSS columns on non-EPSS CVE rows. It uses local `psql` when available, or `docker exec` against `BONGSU_DB_PSQL_CONTAINER` which defaults to `bongsu-postgres`.
+When `BONGSU_DB_DSN` is set, this verifier also queries PostgreSQL directly for `TEMP-*`/`CVD-*` placeholders across `cve_database`, `cve_affected_packages`, and `cve_reference_keys`, affected-package rows missing package/ecosystem/fixed evidence, index orphans, EPSS columns on non-EPSS CVE rows, canonical CVE reference keys that merge multiple non-priority sources, and vendor/advisory keys materialized beside canonical CVE keys. It uses local `psql` when available, or `docker exec` against `BONGSU_DB_PSQL_CONTAINER` which defaults to `bongsu-postgres`.
 
 Live web UI route and API response verification:
 
