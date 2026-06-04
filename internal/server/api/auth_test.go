@@ -3634,9 +3634,12 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`BONGSU_RELEASE_READINESS_LIVE=true`,
+		`BONGSU_RELEASE_READINESS_REQUIRE_DB`,
+		`env -u BONGSU_DB_PASSWORD -u BONGSU_API_KEY -u BONGSU_AGENT_API_KEY -u BONGSU_INSTALL_TOKEN ./scripts/verify-deploy-config.sh`,
 		`./scripts/verify-live-server-build.sh`,
 		`./scripts/verify-live-installer-payload.sh`,
-		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true ./scripts/verify-live-cvedb-quality.sh`,
+		`BONGSU_DB_DSN is required for live release readiness`,
+		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("release readiness live gate must require fresh CVE sources, missing %q", want)

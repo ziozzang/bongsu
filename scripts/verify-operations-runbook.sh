@@ -52,6 +52,7 @@ for pattern in \
     'BONGSU_AGENT_HOST_BINDING=true' \
     '\./scripts/verify-release-readiness\.sh' \
     'BONGSU_RELEASE_READINESS_LIVE=true' \
+    'BONGSU_RELEASE_READINESS_REQUIRE_DB=false' \
     'BONGSU_RELEASE_ARCHIVE=bongsu-0\.1\.0\.tar\.gz' \
     '\./scripts/verify-operations-runbook\.sh' \
     '\./scripts/verify-operator-workflow\.sh' \
@@ -113,6 +114,9 @@ do
 done
 
 require_text "$RELEASE" 'verify-operations-runbook\.sh' "release readiness must verify the operations runbook"
+require_text "$RELEASE" 'BONGSU_RELEASE_READINESS_REQUIRE_DB' "live release readiness must expose direct DB invariant requirement control"
+require_text "$RELEASE" 'BONGSU_VERIFY_CVEDB_REQUIRE_DB=\$\{REQUIRE_DB\}' "live release readiness must require direct CVE DB invariants by default"
+require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "live release readiness must fail closed when direct DB checks are required but unavailable"
 require_text "$AUDIT" 'verify-operations-runbook\.sh' "requirements audit must list the operations runbook verifier"
 require_text "$ARCH" 'security_db_freshness\.latest_source' "architecture must document persisted freshness health fields"
 reject_text "$RUNBOOK" 'Caddyfile|caddy reload|docker compose .*caddy|systemctl .*caddy' "runbook must not tell operators to manage Caddy from Bongsu"

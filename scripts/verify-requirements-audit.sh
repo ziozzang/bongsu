@@ -85,6 +85,9 @@ do
     require_text "$AUDIT" "$command" "requirements audit verification suite missing $command"
 done
 
+require_text "$AUDIT" 'BONGSU_DB_DSN="\$BONGSU_DB_DSN" BONGSU_RELEASE_READINESS_LIVE=true \./scripts/verify-release-readiness\.sh' "requirements audit must include DB-backed live release readiness"
+require_text "$AUDIT" 'direct PostgreSQL CVE DB invariants by default' "requirements audit must document DB-backed live release readiness"
+
 for keyword in \
     '5677' \
     '5678' \
