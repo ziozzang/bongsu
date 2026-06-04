@@ -2613,19 +2613,21 @@ func TestNonVersionFixedAffectedPackagesMigration(t *testing.T) {
 	}
 	body := string(migration)
 	for _, want := range []string{
-		"DELETE FROM cve_affected_packages",
-		"fixed_version !~ '[0-9]'",
-		"fixed_version ~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
-		"fixed_version ~* '^(?:https?|git|ssh)://'",
-		"fixed_version ~ '/'",
+		"DROP CONSTRAINT IF EXISTS cve_affected_packages_fixed_version_not_hash_check",
+		"DROP CONSTRAINT IF EXISTS cve_affected_packages_fixed_version_safe_check",
 		"cve_affected_packages_fixed_version_safe_check",
 		"fixed_version ~ '[0-9]'",
+		"fixed_version !~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
 		"fixed_version !~* '^(?:https?|git|ssh)://'",
 		"fixed_version !~ '/'",
+		"NOT VALID",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("non-version fixed affected-package migration missing %q: %s", want, body)
 		}
+	}
+	if strings.Contains(body, "DELETE FROM cve_affected_packages") {
+		t.Fatalf("non-version fixed migration must not full-scan affected packages during startup: %s", body)
 	}
 }
 
