@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 10:05:43 KST
+Updated: 2026-06-04 10:41:16 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,12 +24,13 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head before this continuation:
 
 ```text
-6627f13 (master, origin/main) Allow short admin password when BONGSU_ALLOW_WEAK_SECRETS is set
+cced8c1 (master, origin/main) Sync OpenAPI docs and audit handoff
 ```
 
 Important recent commits:
 
 ```text
+cced8c1 Sync OpenAPI docs and audit handoff
 6627f13 Allow short admin password when BONGSU_ALLOW_WEAK_SECRETS is set
 4f13d45 Add admin credentials to .env.example
 0c110c7 Add Phase 5 polish: performance indexes, frontend integration, error consistency
@@ -63,6 +64,7 @@ This handoff commit should include:
 - Systemd-mode installer verification that writes service/timer/daemon unit files into a test systemd directory, validates hardening directives and daemon polling command, calls `systemctl daemon-reload` plus timer/daemon enablement, and runs the first scan without touching `/etc/systemd` during tests.
 - Requirements audit coverage that maps the original product requirements to evidence, verification commands, and remaining commercial-readiness gaps without declaring the overall goal complete.
 - Browser smoke coverage for Hosts force-scan requests and RBAC subject/policy creation, including POST body verification.
+- Browser workflow coverage for scheduled scan creation, dynamic asset-group creation, asset-group scan trigger, report rendering/export, notification rule creation/test delivery, and notification-log loading, including request payload verification.
 - Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
 - RBAC enforcement regression coverage for package/container/scan/scan-request endpoint scoping and container/image/asset-group policy expansion through latest container assets and host metadata.
 - Airgap package contents verifier that checks the release package script includes static binaries, Docker images, deploy files, migrations, docs, web assets, source sync/import/export tools, loader script, and SHA256 manifests.
@@ -154,13 +156,13 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - Background stale-while-revalidate cache for `/api/cve-db/stats` is implemented.
 - The dashboard API client now reads `X-Bongsu-Cache` for CVE DB stats and the dashboard card exposes cache state, generated timestamp, and stats duration.
 - `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
-- Playwright coverage now verifies dashboard CVE DB status, CVE Search fixed-version evidence, Hosts force-scan POST bodies, and RBAC subject/policy POST bodies.
+- Playwright coverage now verifies dashboard CVE DB status, CVE Search fixed-version evidence, Hosts force-scan POST bodies, RBAC subject/policy POST bodies, scheduled scan creation payloads, dynamic asset-group creation and scan trigger payloads, report export query parameters, notification rule creation/test payloads, and notification-log rendering.
 - `docs/operations-runbook.md` is available and `scripts/package.sh` includes documentation in release archives.
 - Go tests now assert RBAC access scope expansion for host, container, image, and asset-group policies and verify inventory/scan list endpoints apply those scopes.
 - CI runs `scripts/verify-package-contents.sh` to keep air-gapped release archives from silently losing required files.
 - Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
 - Live Playwright smoke passed against `http://10.2.2.10:5678/` for the dashboard, CVE Search, and Hosts. The live `/api/packages?limit=1` and `/api/vuln-summary?group_by=owner` endpoints returned 200 after the mismatch-filter SQL fix.
-- Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state.
+- Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state, and the newest browser suite now covers the added schedule/asset-group/report/notification views with mocked API contract assertions.
 
 ## Verification Commands
 
@@ -217,7 +219,7 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
 6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.
-8. Exercise the new sessions, schedules, asset groups, reports, notification rules, backup/restore, and OpenAPI docs in a realistic live operator workflow.
+8. Exercise local sessions, backup/restore, OpenAPI docs, and the new schedules/asset groups/reports/notification rules against a realistic live operator workflow with a real API and enrolled agents.
 
 ## Matching Rules Reminder
 
