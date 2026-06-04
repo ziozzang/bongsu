@@ -158,6 +158,8 @@ require_text "$MATCHING" 'package/ecosystem/fixed evidence' "matching rules must
 require_text "$MATCHING" 'URL, package URL, git URL, branch 이름, 32/40/64자 hex hash' "matching rules must reject non-version fixed evidence"
 require_text "$ARCH" 'URL/package URL/git URL/branch/hash-like fixed evidence' "architecture must document non-version fixed evidence rejection"
 require_text "$AUDIT" 'non-version fixed-version rejection for URL/package URL/git URL/branch/hash-like values' "requirements audit must document non-version fixed evidence gate"
+require_text "$ARCH" 'BONGSU_VULNERABILITY_EXPORT_TIMEOUT_SECONDS' "architecture must document vulnerability export timeout"
+require_text "$AUDIT" 'bounded vulnerability export timeout' "requirements audit must document bounded vulnerability export timeout"
 require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness\.sh' "airgap package must include release readiness verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness-report\.sh' "airgap package must include release readiness report verifier"
