@@ -66,6 +66,7 @@ for pattern in \
     '\./scripts/verify-live-security-db-schedule\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
     '\./scripts/verify-backup-restore-archive\.sh' \
+    'BONGSU_BACKUP_VALIDATE_ARCHIVE=false' \
     '\./scripts/verify-airgap-release-archive\.sh' \
     '\./scripts/verify-airgap-offline-rehearsal\.sh' \
     'BONGSU_DB_DSN="\$BONGSU_DB_DSN"' \

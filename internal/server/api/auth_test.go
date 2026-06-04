@@ -3703,6 +3703,21 @@ func TestOsvDownloaderFailsClosedAndWritesAtomically(t *testing.T) {
 }
 
 func TestRestoreScriptVerifiesBackupSidecarChecksum(t *testing.T) {
+	backup, err := os.ReadFile("../../../scripts/backup.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	backupBody := string(backup)
+	for _, want := range []string{
+		`VALIDATE_ARCHIVE="${BONGSU_BACKUP_VALIDATE_ARCHIVE:-true}"`,
+		`"$ROOT/scripts/restore.sh" --dry-run "${OUTPUT}"`,
+		"archive validation passed",
+	} {
+		if !strings.Contains(backupBody, want) {
+			t.Fatalf("backup.sh must self-validate generated archives, missing %q", want)
+		}
+	}
+
 	restore, err := os.ReadFile("../../../scripts/restore.sh")
 	if err != nil {
 		t.Fatal(err)
@@ -3731,6 +3746,7 @@ func TestRestoreScriptVerifiesBackupSidecarChecksum(t *testing.T) {
 		`"$ROOT/scripts/backup.sh" "$backup_archive"`,
 		`grep -q '"database": "bongsu_fixture"'`,
 		`grep -q '"trivy_cache_included": true'`,
+		`grep -q 'archive validation passed'`,
 		`expect_restore_ok "$backup_archive"`,
 		"Archive sidecar checksum mismatch is rejected",
 		`sha256sum "$valid_archive" > "${valid_archive}.sha256"`,

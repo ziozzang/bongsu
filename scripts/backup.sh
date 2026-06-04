@@ -22,6 +22,7 @@ DB_NAME="${BONGSU_DB_NAME:-bongsu}"
 DB_USER="${BONGSU_DB_USER:-bongsu}"
 DB_PASSWORD="${BONGSU_DB_PASSWORD:-}"
 TRIVY_CACHE_DIR="${BONGSU_TRIVY_CACHE_DIR:-/app/trivy-cache}"
+VALIDATE_ARCHIVE="${BONGSU_BACKUP_VALIDATE_ARCHIVE:-true}"
 
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 OUTPUT="${OUTPUT_ARG:-bongsu-backup-${TIMESTAMP}.tar.gz}"
@@ -112,6 +113,13 @@ fi
 
 SHA=$(sha256sum "${OUTPUT}" | cut -d" " -f1)
 echo "${SHA}  $(basename "${OUTPUT}")" > "${OUTPUT}.sha256"
+
+if [ "$VALIDATE_ARCHIVE" = "true" ]; then
+    echo ""
+    echo "Validating backup archive..."
+    "$ROOT/scripts/restore.sh" --dry-run "${OUTPUT}" >/dev/null
+    echo "  archive validation passed"
+fi
 
 echo ""
 echo "=== Backup Complete ==="

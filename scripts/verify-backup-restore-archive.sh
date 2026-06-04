@@ -96,6 +96,7 @@ PATH="$backup_bin_dir:$PATH" \
 test -f "$backup_archive"
 test -f "${backup_archive}.sha256"
 grep -q 'Backup Complete' "$backup_case_dir/backup.out"
+grep -q 'archive validation passed' "$backup_case_dir/backup.out"
 tar -tzf "$backup_archive" | grep -qx 'database.dump'
 tar -tzf "$backup_archive" | grep -qx 'manifest.json'
 tar -tzf "$backup_archive" | grep -qx 'trivy-cache.tar'

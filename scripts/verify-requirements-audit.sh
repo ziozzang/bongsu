@@ -186,6 +186,7 @@ for keyword in \
     'SHA256SUMS' \
     'pg_dump' \
     'restore' \
+    'backup self-validation' \
     'verify-backup-restore-archive\.sh' \
     'admin/metrics' \
     'TEMP-\*' \
