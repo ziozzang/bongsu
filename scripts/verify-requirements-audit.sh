@@ -61,6 +61,7 @@ for command in \
     '\./scripts/verify-operations-runbook\.sh' \
     '\./scripts/verify-cve-matching-invariants\.sh' \
     '\./scripts/verify-release-readiness\.sh' \
+    'BONGSU_RELEASE_READINESS_REPORT=/tmp/bongsu-release-readiness\.json \./scripts/verify-release-readiness\.sh' \
     '\./scripts/verify-openapi\.sh' \
     '\./scripts/verify-backup-restore-archive\.sh' \
     '\./scripts/verify-operator-workflow\.sh' \
@@ -118,7 +119,8 @@ for keyword in \
     'one-line installer' \
     'systemd' \
     'Docker Compose' \
-    'release readiness'
+    'release readiness' \
+    'JSON evidence report'
 do
     require_text "$AUDIT" "$keyword" "requirements audit missing keyword $keyword"
 done

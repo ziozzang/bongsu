@@ -3673,6 +3673,14 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-installer-payload.sh`,
 		`BONGSU_DB_DSN is required for live release readiness`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh`,
+		`BONGSU_RELEASE_READINESS_REPORT`,
+		`trap on_exit EXIT`,
+		`"format_version": 1`,
+		`"tool": "verify-release-readiness.sh"`,
+		`"gate_count": len(gates)`,
+		`"failed_gate_count": sum(1 for gate in gates if gate.get("status") != "passed")`,
+		`record_gate "$*" "exec"`,
+		`record_gate "$*" "shell"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("release readiness live gate must require fresh CVE sources, missing %q", want)
