@@ -254,6 +254,39 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		if status, _ := freshness["status"].(string); status == "error" {
 			writePromGauge(&b, "bongsu_security_db_freshness_metrics_error", nil, 1)
 		}
+		if registrySources, err := s.db.ListSecuritySourceStatuses(ctx); err == nil {
+			enabledCount := 0
+			okCount := 0
+			totalRegistryRecords := int64(0)
+			for _, source := range registrySources {
+				labels := map[string]string{
+					"source":   source.ID,
+					"category": source.Category,
+					"status":   source.LastStatus,
+				}
+				if source.Enabled {
+					enabledCount++
+				}
+				if source.Enabled && source.LastStatus == "ok" && source.RecordCount > 0 && source.LastError == "" {
+					okCount++
+				}
+				totalRegistryRecords += source.RecordCount
+				writePromGauge(&b, "bongsu_security_source_registry_enabled", labels, boolMetric(source.Enabled))
+				writePromGauge(&b, "bongsu_security_source_registry_ok", labels, boolMetric(source.Enabled && source.LastStatus == "ok" && source.RecordCount > 0 && source.LastError == ""))
+				writePromGauge(&b, "bongsu_security_source_registry_records", labels, float64(source.RecordCount))
+				writePromGauge(&b, "bongsu_security_source_registry_error", labels, boolMetric(source.LastError != "" || source.LastStatus == "error"))
+				if source.LastSyncFinishedAt != nil {
+					writePromGauge(&b, "bongsu_security_source_registry_last_sync_timestamp_seconds", labels, float64(source.LastSyncFinishedAt.Unix()))
+					writePromGauge(&b, "bongsu_security_source_registry_age_seconds", labels, time.Since(*source.LastSyncFinishedAt).Seconds())
+				}
+			}
+			writePromGauge(&b, "bongsu_security_source_registry_sources", nil, float64(len(registrySources)))
+			writePromGauge(&b, "bongsu_security_source_registry_enabled_sources", nil, float64(enabledCount))
+			writePromGauge(&b, "bongsu_security_source_registry_ok_sources", nil, float64(okCount))
+			writePromGauge(&b, "bongsu_security_source_registry_records_total", nil, float64(totalRegistryRecords))
+		} else {
+			writePromGauge(&b, "bongsu_security_source_registry_metrics_error", nil, 1)
+		}
 		totalRecords := 0
 		totalMatchable := 0
 		eligibleSources := 0

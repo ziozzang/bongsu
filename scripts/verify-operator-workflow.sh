@@ -294,6 +294,16 @@ if ! grep -Eq '^bongsu_security_db_effective_age_seconds |^bongsu_security_db_fr
     sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
     exit 1
 fi
+if ! grep -Eq '^bongsu_security_source_registry_ok_sources |^bongsu_security_source_registry_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose security source registry health or registry metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_security_source_registry_records[{]category="[^"]+",source="osv",status="ok"} |^bongsu_security_source_registry_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose OSV source registry record counts or registry metrics error" >&2
+    sed -n '1,240p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
 if ! grep -Eq '^bongsu_cve_affected_package_index_coverage_percent |^bongsu_cve_affected_package_index_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
     echo "ERROR: admin metrics must expose affected-package index coverage or metrics error" >&2
     sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2

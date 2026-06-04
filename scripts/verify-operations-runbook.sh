@@ -92,6 +92,9 @@ for pattern in \
     'bongsu_security_db_effective_status' \
     'bongsu_security_db_effective_source_info' \
     'bongsu_security_db_effective_last_sync_timestamp_seconds' \
+    'bongsu_security_source_registry_ok_sources' \
+    'bongsu_security_source_registry_enabled_sources' \
+    'bongsu_security_source_registry_records' \
     'bongsu_cve_placeholder_records' \
     'bongsu_security_db_rescan_open' \
     'bongsu_\*_metrics_error' \
