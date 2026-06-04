@@ -43,6 +43,9 @@ set -euo pipefail
 
 SERVER=%s
 API_KEY=%s
+if [ -n "${BONGSU_AGENT_API_KEY:-}" ]; then
+    API_KEY="$BONGSU_AGENT_API_KEY"
+fi
 INSTALL_TOKEN=%s
 WORK_DIR="${BONGSU_WORK_DIR:-/opt/bongsu}"
 INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"

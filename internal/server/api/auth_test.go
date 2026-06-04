@@ -1418,6 +1418,8 @@ func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
 		"shellQuote(serverURL)",
 		"shellQuote(apiKey)",
 		"shellQuote(s.installToken)",
+		`if [ -n "${BONGSU_AGENT_API_KEY:-}" ]; then`,
+		`API_KEY="$BONGSU_AGENT_API_KEY"`,
 		`w.Header().Set("Cache-Control", "no-store")`,
 		`printf 'header = "X-Install-Token: %%s"\n' "$INSTALL_TOKEN" > "$curl_config"`,
 		`curl_download "$SERVER/api/downloads/bongsu-agent" "$WORK_DIR/bin/bongsu-agent"`,
@@ -3052,6 +3054,8 @@ func TestStaticInstallScriptUsesHeaderAuthenticatedDownloads(t *testing.T) {
 		`agent_token: ${AGENT_TOKEN}`,
 		`chmod 600 "$WORK_DIR/agent.token"`,
 		"Optional persistent per-host token",
+		`API_KEY="${2:-${BONGSU_AGENT_API_KEY:-}}"`,
+		"BONGSU_AGENT_API_KEY",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("static installer header download missing %q", want)

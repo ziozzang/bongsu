@@ -145,6 +145,12 @@ Agent enrollment:
 curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/install.sh" | sudo bash
 ```
 
+For packaged or offline `scripts/install-agent.sh` use `BONGSU_AGENT_API_KEY` instead of putting the agent API key in the shell command arguments:
+
+```bash
+sudo BONGSU_AGENT_API_KEY="$BONGSU_AGENT_API_KEY" ./scripts/install-agent.sh http://server:5677
+```
+
 For cloned, golden-image, or containerized hosts where `/etc/machine-id` is not unique, set a stable identity during install so SBOM, force-scan, and RBAC records do not collapse into one host:
 
 ```bash

@@ -138,6 +138,22 @@ if grep -Fq "17 4 * * *" "$TMP_DIR/crontab.installed"; then
     exit 1
 fi
 
+ENV_ONLY_WORK_DIR="$TMP_DIR/env-key-work"
+PATH="$STUB_DIR:/usr/bin:/bin" \
+BONGSU_WORK_DIR="$ENV_ONLY_WORK_DIR" \
+BONGSU_AGENT_API_KEY="$API_KEY" \
+BONGSU_PACKAGES_ONLY=true \
+BONGSU_CRON="41 8 * * *" \
+BONGSU_INSTALL_MODE=cron \
+BONGSU_FORCE_SCAN_DAEMON=false \
+BONGSU_TEST_AGENT_TOKEN="$TOKEN" \
+BONGSU_TEST_CRONTAB="$TMP_DIR/env-key-crontab.installed" \
+bash "$INSTALLER_DIR/install-agent.sh" "$SERVER_URL" > "$TMP_DIR/env-key-install.out"
+
+assert_file "$ENV_ONLY_WORK_DIR/config.yaml"
+assert_contains "$ENV_ONLY_WORK_DIR/config.yaml" "api_key: $API_KEY"
+assert_contains "$TMP_DIR/env-key-crontab.installed" "41 8 * * * $ENV_ONLY_WORK_DIR/bin/bongsu-agent --config $ENV_ONLY_WORK_DIR/config.yaml --type daily --packages-only >> $ENV_ONLY_WORK_DIR/agent.log 2>&1"
+
 echo "Installer smoke verification passed"
 
 DOWNLOAD_INSTALLER_DIR="$TMP_DIR/download-installer"

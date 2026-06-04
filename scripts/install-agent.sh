@@ -2,10 +2,11 @@
 set -euo pipefail
 
 # install-agent.sh — Install Bongsu agent on a target host
-# Usage: ./install-agent.sh <server-url> <agent-api-key>
+# Usage: ./install-agent.sh <server-url> [agent-api-key]
+#        BONGSU_AGENT_API_KEY=... ./install-agent.sh <server-url>
 
 SERVER_URL="${1:-}"
-API_KEY="${2:-}"
+API_KEY="${2:-${BONGSU_AGENT_API_KEY:-}}"
 WORK_DIR="${BONGSU_WORK_DIR:-/opt/bongsu}"
 PACKAGES_ONLY="${BONGSU_PACKAGES_ONLY:-true}"
 CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
@@ -102,7 +103,8 @@ generate_agent_token() {
 }
 
 if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
-    echo "Usage: $0 <server-url> <api-key>"
+    echo "Usage: $0 <server-url> [agent-api-key]"
+    echo "   or: BONGSU_AGENT_API_KEY=... $0 <server-url>"
     echo ""
     echo "Environment variables:"
     echo "  BONGSU_WORK_DIR       Installation directory (default: /opt/bongsu)"
@@ -111,6 +113,7 @@ if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "  BONGSU_INSTALL_MODE   cron or systemd (default: cron)"
     echo "  BONGSU_FORCE_SCAN_DAEMON  Install force scan daemon in systemd mode (default: true)"
     echo "  BONGSU_INSTALL_TOKEN  Optional server install/download token"
+    echo "  BONGSU_AGENT_API_KEY  Agent API key when not passed as an argument"
     echo "  BONGSU_AGENT_TOKEN    Optional persistent per-host token"
     echo "  BONGSU_HOST_ID        Optional stable host id override for cloned/containerized hosts"
     echo "  BONGSU_SYSTEMD_DIR    Systemd unit directory (default: /etc/systemd/system)"
