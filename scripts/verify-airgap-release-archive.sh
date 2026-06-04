@@ -95,6 +95,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-agent-binary-workflow.sh" \
     "$ROOT_DIR/scripts/verify-airgap-release-archive.sh" \
     "$ROOT_DIR/scripts/verify-airgap-package-smoke.sh" \
+    "$ROOT_DIR/scripts/verify-live-cvedb-quality.sh" \
     "$ROOT_DIR/scripts/verify-live-rbac-scope.sh" \
     "$ROOT_DIR/deploy/docker-compose.yml" \
     "$ROOT_DIR/deploy/docker-compose.airgap.yml" \

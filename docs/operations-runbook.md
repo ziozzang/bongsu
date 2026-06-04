@@ -94,6 +94,12 @@ BONGSU_VIEWER_SUBJECT=rbac-live-viewer \
 ./scripts/verify-live-rbac-scope.sh
 ```
 
+Live CVE DB quality and performance verification:
+
+```bash
+./scripts/verify-live-cvedb-quality.sh
+```
+
 Use systemd mode when immediate force-scan polling is required:
 
 ```bash
@@ -158,6 +164,7 @@ After restore, verify:
 ```bash
 curl -fsS -H "X-API-Key: $BONGSU_API_KEY" http://localhost:5677/api/health
 curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/stats?refresh=true"
+./scripts/verify-live-cvedb-quality.sh
 ```
 
 ## Security DB Operations

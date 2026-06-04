@@ -61,6 +61,7 @@ for command in \
     '\./scripts/verify-openapi\.sh' \
     '\./scripts/verify-operator-workflow\.sh' \
     '\./scripts/verify-agent-binary-workflow\.sh' \
+    '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
     '\./scripts/verify-package-contents\.sh' \
     '\./scripts/verify-airgap-package-smoke\.sh' \
@@ -85,6 +86,7 @@ for keyword in \
     'match' \
     'RBAC' \
     'live RBAC' \
+    'live CVE DB' \
     'force scan' \
     'one-line installer' \
     'systemd' \

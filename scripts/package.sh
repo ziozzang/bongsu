@@ -90,6 +90,7 @@ for script in \
     verify-agent-binary-workflow.sh \
     verify-airgap-release-archive.sh \
     verify-airgap-package-smoke.sh \
+    verify-live-cvedb-quality.sh \
     verify-live-rbac-scope.sh \
     verify-operator-workflow.sh \
     verify-static-binaries.sh
