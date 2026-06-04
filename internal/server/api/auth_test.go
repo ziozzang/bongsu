@@ -1443,6 +1443,7 @@ func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
 	for _, path := range []string{
 		"../../../scripts/verify-live-cvedb-quality.sh",
 		"../../../scripts/verify-live-installer-payload.sh",
+		"../../../scripts/verify-live-server-build.sh",
 		"../../../scripts/verify-live-web-smoke.sh",
 	} {
 		out, err := os.ReadFile(path)
@@ -3609,11 +3610,37 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`BONGSU_RELEASE_READINESS_LIVE=true`,
+		`./scripts/verify-live-server-build.sh`,
 		`./scripts/verify-live-installer-payload.sh`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true ./scripts/verify-live-cvedb-quality.sh`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("release readiness live gate must require fresh CVE sources, missing %q", want)
+		}
+	}
+}
+
+func TestLiveServerBuildVerifierChecksSourceAlignedServerBuild(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-server-build.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`/api/health`,
+		`EXPECTED_SERVER_COMMIT="${BONGSU_VERIFY_SERVER_COMMIT:-}"`,
+		`BONGSU_VERIFY_SERVER_ALLOW_DEV_VERSION`,
+		`git log -1 --format=%H --`,
+		`cmd/server`,
+		`internal/server`,
+		`deploy/Dockerfile.server`,
+		`.status == "ok" or .status == "degraded"`,
+		`server_version`,
+		`build_date`,
+		`Live server build verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live server build verifier missing %q", want)
 		}
 	}
 }

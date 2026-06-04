@@ -108,6 +108,7 @@ for script in \
     verify-live-cvedb-quality.sh \
     verify-live-installer-payload.sh \
     verify-live-rbac-scope.sh \
+    verify-live-server-build.sh \
     verify-live-web-smoke.sh \
     verify-operator-workflow.sh \
     verify-static-binaries.sh

@@ -73,6 +73,7 @@ for script in \
     'verify-live-cvedb-quality.sh' \
     'verify-live-installer-payload.sh' \
     'verify-live-rbac-scope.sh' \
+    'verify-live-server-build.sh' \
     'verify-live-web-smoke.sh' \
     'verify-operator-workflow.sh' \
     'verify-static-binaries.sh'
@@ -97,7 +98,8 @@ for pattern in \
     'docker compose -f docker-compose\.airgap\.yml up -d' \
     'import-security-db-bundle\.sh http://localhost:5677' \
     'verify-live-agent-token-binding\.sh' \
-    'verify-live-installer-payload\.sh'
+    'verify-live-installer-payload\.sh' \
+    'verify-live-server-build\.sh'
 do
     require_text "$PACKAGE_SCRIPT" "$pattern" "package script missing release invariant $pattern"
 done

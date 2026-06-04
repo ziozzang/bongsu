@@ -100,6 +100,7 @@ for script in \
     verify-live-agent-token-binding.sh \
     verify-live-installer-payload.sh \
     verify-live-rbac-scope.sh \
+    verify-live-server-build.sh \
     verify-live-cvedb-quality.sh \
     sync-osv-cvedb.sh \
     sync-trivy-cvedb.sh \

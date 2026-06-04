@@ -29,6 +29,7 @@ BONGSU_RELEASE_READINESS_LIVE=true ./scripts/verify-release-readiness.sh
 ```
 
 Live release readiness enables strict CVE source freshness automatically; stale or missing required sources must be fixed before promotion.
+It verifies the live API server build first: `/api/health` must expose a non-empty version, build date, and a commit matching the latest server/runtime source commit.
 It also verifies the live one-line installer payload: `/api/admin/installer/status` must report ready agent and Trivy binaries, valid SHA256 metadata, an install token, and an agent version containing the latest agent/installer source commit.
 
 Individual gates remain useful while debugging:
@@ -44,6 +45,7 @@ go test ./...
 ./scripts/verify-backup-restore-archive.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-live-installer-payload.sh
+./scripts/verify-live-server-build.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
 npm --prefix web run test:e2e
@@ -92,6 +94,16 @@ BONGSU_API_KEY="$BONGSU_API_KEY" \
 ```
 
 This verifier checks `/api/admin/installer/status` for ready agent and Trivy payloads, valid SHA256 and byte metadata, install-token configuration, and an agent version that includes the latest commit touching agent or installer source paths. Set `BONGSU_VERIFY_INSTALLER_AGENT_COMMIT=<12-char-commit>` for packaged or externally built releases where the source checkout is not available.
+
+- Verify the live API server binary before promoting a running deployment:
+
+```bash
+BONGSU_API_BASE=http://localhost:5677 \
+BONGSU_API_KEY="$BONGSU_API_KEY" \
+./scripts/verify-live-server-build.sh
+```
+
+This verifier checks `/api/health` for usable health, non-empty version/build-date metadata, and a commit matching the latest commit that touched server/runtime source paths. Set `BONGSU_VERIFY_SERVER_COMMIT=<12-char-commit>` for externally built releases where the source checkout is not available. Set `BONGSU_VERIFY_SERVER_ALLOW_DEV_VERSION=true` only for local development gates.
 
 Live verifier scripts create short-lived hosts and delete them during cleanup through `DELETE /api/hosts/{id}`. If an interrupted verifier leaves synthetic hosts behind, remove only hosts whose IDs match the verifier prefixes, such as `host-operator-verify-*`, `host-rbac-live-*`, `host-agent-binding-*`, or `host-agent-binary-*`; the host delete API cascades collected inventory and host-scoped operational rows while preserving audit logs. Do not delete real enrolled hosts just to clear an agent-fleet warning; an actual `dev` or outdated agent version should be fixed by redeploying the one-line installer or restarting the updated service.
 
