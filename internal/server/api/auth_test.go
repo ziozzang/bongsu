@@ -2780,6 +2780,34 @@ func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
 	}
 }
 
+func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-operator-workflow.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"Checking health and admin metrics observability",
+		"health_json=\"$(api_json GET /api/health)\"",
+		".security_db_revision",
+		".security_recalculation.running",
+		`.cve_affected_package_index.summary_mode == "indexed-only"`,
+		".cve_reference_key_index.stale == false",
+		"/api/admin/metrics",
+		"bongsu_security_db_revision_info",
+		"bongsu_security_recalculation_running",
+		"bongsu_security_recalculation_pending",
+		"bongsu_cve_affected_package_index_coverage_percent",
+		"bongsu_cve_reference_key_index_coverage_percent",
+		"bongsu_cve_epss_enriched_records",
+		"bongsu_security_db_rescan_open",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("operator workflow must verify health/metrics observability, missing %q", want)
+		}
+	}
+}
+
 func TestDownloadCisaKevScriptIsFailClosedAndAtomic(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/download-cisa-kev.sh")
 	if err != nil {

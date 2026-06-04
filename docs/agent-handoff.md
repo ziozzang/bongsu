@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 13:54:52 KST
+Updated: 2026-06-04 14:00:12 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Defer OSV chunk import finalization
+master / origin/main latest commit: Verify live observability surfaces
 ```
 
 Important recent commits:
 
 ```text
-<latest> Defer OSV chunk import finalization
+<latest> Verify live observability surfaces
+e93f242 Defer OSV chunk import finalization
 4cbd557 Fix OSV chunk imports and admin sessions
 32652bf Reject non-regular backup archive entries
 8d312c4 Verify OpenAPI operation security
@@ -95,6 +96,7 @@ This handoff commit should include:
 - Browser smoke coverage for Hosts force-scan requests and RBAC subject/policy creation, including POST body verification.
 - Browser workflow coverage for scheduled scan creation, dynamic asset-group creation, asset-group scan trigger, report rendering/export, notification rule creation/test delivery, and notification-log loading, including request payload verification.
 - Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
+- Live operator workflow verifier now also checks `/api/health` and `/api/admin/metrics` for security DB revision, recalculation state, usable affected/reference index status, EPSS enrichment, and security DB rescan progress observability.
 - Backup/restore archive verifier covers safe tar entries, regular-file enforcement, required members, duplicate member rejection, symlink member rejection, and manifest checksum rejection without requiring a live database.
 - Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
 - Real agent binary workflow verifier builds `cmd/agent`, runs it against fixture Trivy/osquery/docker tools for two logical host IDs, verifies host/container package ontology and host-id isolation through the live API, then runs daemon polling to claim and complete a host-specific scan request.

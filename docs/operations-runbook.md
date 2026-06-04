@@ -1,6 +1,6 @@
 # Bongsu Operations Runbook
 
-Updated: 2026-06-04 13:54:52 KST
+Updated: 2026-06-04 14:00:12 KST
 
 This runbook is for operators running Bongsu in connected or air-gapped environments. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu.
 
@@ -53,6 +53,8 @@ BONGSU_ADMIN_USERNAME="$BONGSU_ADMIN_USERNAME" \
 BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
 ./scripts/verify-operator-workflow.sh
 ```
+
+The operator workflow also validates the live observability surfaces that should back production monitoring: `/api/health` must expose security DB revision, security recalculation state, and usable affected/reference index status, while `/api/admin/metrics` must expose Prometheus gauges for security DB revision, recalculation, affected/reference indexes, EPSS enrichment, and security DB rescan progress.
 
 - Verify the real agent binary collection path with fixture Trivy/osquery/docker tools:
 
