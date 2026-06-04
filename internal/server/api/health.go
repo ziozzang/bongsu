@@ -48,6 +48,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		var healthAffectedIndex *db.CveAffectedPackageIndexStats
 		var healthReferenceIndex *db.CveReferenceKeyIndexStats
 		var healthAffectedIndexErr error
+		var healthAffectedIndexDetailErr error
+		var healthAffectedIndexPartial bool
 		var healthReferenceIndexErr error
 		dbCtx, cancel := withHealthDBTimeout()
 		if last := s.cveDBRematchLastResult(dbCtx, isAdmin); last != nil {
@@ -64,14 +66,17 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			healthAffectedIndex = indexStats
 			resp["cve_affected_package_index"] = indexStats
 		} else if isAdmin {
-			healthAffectedIndexErr = err
 			detailErr := err
 			cancel()
 			dbCtx, cancel = withHealthDBTimeout()
 			if lightStats, lightErr := s.db.GetCveAffectedPackageIndexHealthStats(dbCtx); lightErr == nil {
 				lightStats["detail_error"] = detailErr.Error()
 				resp["cve_affected_package_index"] = lightStats
+				healthAffectedIndex = cveAffectedPackageIndexStatsFromHealthMap(lightStats)
+				healthAffectedIndexPartial = healthAffectedIndex != nil
+				healthAffectedIndexDetailErr = detailErr
 			} else {
+				healthAffectedIndexErr = detailErr
 				resp["cve_affected_package_index"] = map[string]any{"error": detailErr.Error(), "fallback_error": lightErr.Error()}
 			}
 		}
@@ -91,6 +96,8 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 			Placeholders:          placeholderStats,
 			PlaceholderStatsError: placeholderErr,
 			AffectedIndex:         healthAffectedIndex,
+			AffectedIndexPartial:  healthAffectedIndexPartial,
+			AffectedIndexDetail:   healthAffectedIndexDetailErr,
 			AffectedIndexError:    healthAffectedIndexErr,
 			ReferenceIndex:        healthReferenceIndex,
 			ReferenceIndexError:   healthReferenceIndexErr,
@@ -267,6 +274,46 @@ func (s *Server) securityDBFreshnessStatus(ctx context.Context, includeDetails b
 		resp["stale_sources"] = staleSources
 	}
 	return resp
+}
+
+func cveAffectedPackageIndexStatsFromHealthMap(in map[string]any) *db.CveAffectedPackageIndexStats {
+	if in == nil {
+		return nil
+	}
+	stats := &db.CveAffectedPackageIndexStats{}
+	if v, ok := intFromAny(in["count"]); ok {
+		stats.Count = v
+	}
+	if v, ok := intFromAny(in["source_count"]); ok {
+		stats.SourceCount = v
+	}
+	if v, ok := intFromAny(in["indexed_cves"]); ok {
+		stats.IndexedCVEs = v
+	}
+	if v, ok := intFromAny(in["orphans"]); ok {
+		stats.Orphans = v
+	}
+	if v, ok := in["last_update"].(*time.Time); ok {
+		stats.LastUpdate = v
+	} else if v, ok := in["last_update"].(time.Time); ok {
+		stats.LastUpdate = &v
+	}
+	return stats
+}
+
+func intFromAny(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case int32:
+		return int(n), true
+	case float64:
+		return int(n), true
+	default:
+		return 0, false
+	}
 }
 
 func requiredSecurityDBSources() []string {

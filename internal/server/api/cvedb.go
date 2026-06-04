@@ -1990,6 +1990,8 @@ type cveDBQualityInput struct {
 	ExcludedSources       int
 	Placeholders          *db.CvePlaceholderStats
 	AffectedIndex         *db.CveAffectedPackageIndexStats
+	AffectedIndexPartial  bool
+	AffectedIndexDetail   error
 	ReferenceIndex        *db.CveReferenceKeyIndexStats
 	EPSS                  *db.CveEPSSMergeStats
 	AffectedIndexError    error
@@ -2060,16 +2062,25 @@ func buildCveDBQualitySummary(input cveDBQualityInput) map[string]any {
 		addWarning(1, "placeholder quality check unavailable")
 	}
 	if input.AffectedIndex != nil {
-		out["affected_index_coverage_percent"] = input.AffectedIndex.CoveragePercent
 		out["affected_index_orphans"] = input.AffectedIndex.Orphans
-		out["affected_index_stale"] = input.AffectedIndex.Stale
+		if input.AffectedIndexPartial {
+			out["affected_index_summary_mode"] = "indexed-only"
+			out["affected_index_indexed_cves"] = input.AffectedIndex.IndexedCVEs
+			out["affected_index_records"] = input.AffectedIndex.Count
+			if input.AffectedIndexDetail != nil {
+				out["affected_index_detail_error"] = input.AffectedIndexDetail.Error()
+			}
+		} else {
+			out["affected_index_coverage_percent"] = input.AffectedIndex.CoveragePercent
+			out["affected_index_stale"] = input.AffectedIndex.Stale
+		}
 		if input.AffectedIndex.Orphans > 0 {
 			addWarning(2, "affected package index has orphan rows")
 		}
-		if input.AffectedIndex.Stale {
+		if !input.AffectedIndexPartial && input.AffectedIndex.Stale {
 			addWarning(2, "affected package index is stale")
 		}
-		if len(input.AffectedIndex.MissingMatchableSources) > 0 {
+		if !input.AffectedIndexPartial && len(input.AffectedIndex.MissingMatchableSources) > 0 {
 			addWarning(2, "affected package index missing matchable sources")
 		}
 	} else if input.AffectedIndexError != nil {

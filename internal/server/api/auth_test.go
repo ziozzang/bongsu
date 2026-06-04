@@ -2063,6 +2063,9 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		"affectedIndexRebuildStatus",
 		"GetCveAffectedPackageIndexHealthStats",
 		"detail_error",
+		"cveAffectedPackageIndexStatsFromHealthMap",
+		"AffectedIndexPartial",
+		"AffectedIndexDetail",
 		"fallback_error",
 		`resp["cve_reference_key_index"]`,
 		`resp["cve_reference_index_rebuild"]`,
@@ -2086,6 +2089,48 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	}
 	if strings.Index(fn, "s.dbMgr.PublicStatus()") < strings.Index(fn, "else") {
 		t.Fatalf("public Trivy DB status should be used only for non-admin health: %s", fn)
+	}
+}
+
+func TestCveDBQualitySummarySupportsPartialAffectedIndexHealth(t *testing.T) {
+	quality := buildCveDBQualitySummary(cveDBQualityInput{
+		Placeholders: &db.CvePlaceholderStats{},
+		AffectedIndex: &db.CveAffectedPackageIndexStats{
+			Count:       100,
+			SourceCount: 1,
+			IndexedCVEs: 25,
+			Orphans:     0,
+		},
+		AffectedIndexPartial: true,
+		AffectedIndexDetail:  errors.New("detail timed out"),
+		ReferenceIndex:       &db.CveReferenceKeyIndexStats{},
+	})
+	if quality["status"] != "ok" {
+		t.Fatalf("partial affected index status = %#v, want ok: %#v", quality["status"], quality)
+	}
+	if quality["affected_index_summary_mode"] != "indexed-only" {
+		t.Fatalf("partial affected index summary mode = %#v", quality["affected_index_summary_mode"])
+	}
+	if quality["affected_index_detail_error"] != "detail timed out" {
+		t.Fatalf("partial affected index detail error = %#v", quality["affected_index_detail_error"])
+	}
+	if _, ok := quality["affected_index_coverage_percent"]; ok {
+		t.Fatalf("partial affected index must not expose unknown coverage: %#v", quality)
+	}
+	if _, ok := quality["affected_index_stale"]; ok {
+		t.Fatalf("partial affected index must not expose unknown stale state: %#v", quality)
+	}
+
+	quality = buildCveDBQualitySummary(cveDBQualityInput{
+		Placeholders: &db.CvePlaceholderStats{},
+		AffectedIndex: &db.CveAffectedPackageIndexStats{
+			Orphans: 1,
+		},
+		AffectedIndexPartial: true,
+		ReferenceIndex:       &db.CveReferenceKeyIndexStats{},
+	})
+	if quality["status"] != "degraded" {
+		t.Fatalf("partial affected index orphan status = %#v, want degraded: %#v", quality["status"], quality)
 	}
 }
 
