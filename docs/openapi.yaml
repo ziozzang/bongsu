@@ -1420,9 +1420,20 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: ok
+                    enum: [ok, degraded]
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                  recommended_actions:
+                    type: array
+                    items:
+                      type: string
                   total_hosts:
                     type: integer
+                  outdated_percent:
+                    type: number
+                    format: double
                   latest_agent_version:
                     type: string
                   agent_status_counts:

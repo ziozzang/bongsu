@@ -444,13 +444,18 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 		}
 		agentVersionCounts[version]++
 	}
+	driftCounts := agentVersionDriftCounts(agentVersionCounts, latestVersion)
+	status, warnings, actions := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, s.installToken != "", agent, trivy)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":                     "ok",
+		"status":                     status,
+		"warnings":                   warnings,
+		"recommended_actions":        actions,
 		"total_hosts":                len(hosts),
 		"latest_agent_version":       latestVersion,
 		"agent_status_counts":        agentStatusCounts,
 		"agent_version_counts":       agentVersionCounts,
-		"agent_version_drift_counts": agentVersionDriftCounts(agentVersionCounts, latestVersion),
+		"agent_version_drift_counts": driftCounts,
+		"outdated_percent":           percent(driftCounts["outdated"], len(hosts)),
 		"installer": map[string]any{
 			"install_token_configured": s.installToken != "",
 			"ready":                    s.installToken != "" && agent.Ready,
@@ -458,6 +463,46 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 			"trivy":                    trivy,
 		},
 	})
+}
+
+func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts map[string]int, installTokenConfigured bool, agent, trivy installerBinaryStatus) (string, []string, []string) {
+	warnings := []string{}
+	actions := []string{}
+	add := func(warning, action string) {
+		if warning != "" {
+			warnings = append(warnings, warning)
+		}
+		if action != "" {
+			actions = append(actions, action)
+		}
+	}
+	if !installTokenConfigured {
+		add("install token is not configured", "set BONGSU_INSTALL_TOKEN before enrolling agents")
+	}
+	if !agent.Ready {
+		add("bongsu-agent installer binary is not ready", "build or place the agent binary at BONGSU_AGENT_BIN")
+	}
+	if !trivy.Ready {
+		add("trivy installer binary is not ready", "install or package trivy at BONGSU_TRIVY_PATH so one-line installs can scan hosts")
+	}
+	if totalHosts > 0 {
+		if statusCounts["offline"] > 0 {
+			add("one or more agents are offline", "inspect offline hosts and rerun the one-line installer or service")
+		}
+		if statusCounts["stale"] > 0 {
+			add("one or more agents have stale heartbeats", "check agent services and network connectivity on stale hosts")
+		}
+		if driftCounts["outdated"] > 0 {
+			add("one or more agents run an outdated version", "redeploy the generated one-line installer or restart updated agent services")
+		}
+		if driftCounts["unknown"] > 0 {
+			add("one or more agents did not report a version", "upgrade agents so reports include agent_version")
+		}
+	}
+	if len(warnings) > 0 {
+		return "degraded", warnings, actions
+	}
+	return "ok", warnings, actions
 }
 
 func agentBinaryPath() string {

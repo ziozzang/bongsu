@@ -45,6 +45,15 @@ func readAllPackageGoFiles(t *testing.T) string {
 	return buf.String()
 }
 
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
 func extractFuncBody(src string, start int) string {
 	depth := 0
 	inFunc := false
@@ -1306,15 +1315,60 @@ func TestAgentFleetStatusEndpointReportsVersionDrift(t *testing.T) {
 		"installerBinaryReadiness(\"bongsu-agent\", agentBinaryPath())",
 		"installerBinaryReadiness(\"trivy\", trivyBinaryPath())",
 		"agentVersionDriftCounts(agentVersionCounts, latestVersion)",
+		"agentFleetOperationalStatus",
 		`"agent_status_counts"`,
 		`"agent_version_counts"`,
 		`"agent_version_drift_counts"`,
+		`"outdated_percent"`,
+		`"warnings"`,
+		`"recommended_actions"`,
 		`"latest_agent_version"`,
 		`"installer"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("agent fleet status endpoint missing %q", want)
 		}
+	}
+}
+
+func TestAgentFleetOperationalStatusDegradesOnActionableIssues(t *testing.T) {
+	status, warnings, actions := agentFleetOperationalStatus(
+		3,
+		map[string]int{"online": 1, "stale": 1, "offline": 1, "unknown": 0},
+		map[string]int{"current": 1, "outdated": 1, "unknown": 1},
+		false,
+		installerBinaryStatus{Name: "bongsu-agent", Ready: false},
+		installerBinaryStatus{Name: "trivy", Ready: false},
+	)
+	if status != "degraded" {
+		t.Fatalf("status = %q, want degraded", status)
+	}
+	for _, want := range []string{
+		"install token is not configured",
+		"bongsu-agent installer binary is not ready",
+		"trivy installer binary is not ready",
+		"one or more agents are offline",
+		"one or more agents have stale heartbeats",
+		"one or more agents run an outdated version",
+		"one or more agents did not report a version",
+	} {
+		if !containsString(warnings, want) {
+			t.Fatalf("warnings missing %q: %#v", want, warnings)
+		}
+	}
+	if len(actions) != len(warnings) {
+		t.Fatalf("actions should track warnings, warnings=%#v actions=%#v", warnings, actions)
+	}
+	status, warnings, actions = agentFleetOperationalStatus(
+		1,
+		map[string]int{"online": 1, "stale": 0, "offline": 0, "unknown": 0},
+		map[string]int{"current": 1, "outdated": 0, "unknown": 0},
+		true,
+		installerBinaryStatus{Name: "bongsu-agent", Ready: true},
+		installerBinaryStatus{Name: "trivy", Ready: true},
+	)
+	if status != "ok" || len(warnings) != 0 || len(actions) != 0 {
+		t.Fatalf("healthy fleet status=%q warnings=%#v actions=%#v", status, warnings, actions)
 	}
 }
 
