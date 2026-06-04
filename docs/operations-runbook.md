@@ -36,6 +36,7 @@ It verifies the live API server build first: `/api/health` must expose a non-emp
 It also verifies the live one-line installer payload: `/api/admin/installer/status` must report ready agent and Trivy binaries, valid SHA256 metadata, an install token, and an agent version containing the latest agent/installer source commit.
 It then exercises the actual live one-line installer and download URLs with `./scripts/verify-live-install-script.sh`: `/api/install.sh`, `/api/downloads/bongsu-agent`, and `/api/downloads/trivy` must reject unauthenticated and query-token requests, accept header authentication, expose checksum headers, and serve binaries whose SHA256 matches the advertised value.
 It verifies the live security DB schedule with `./scripts/verify-live-security-db-schedule.sh`: `/api/health` must show configured source sync, healthy persisted freshness, and a `next_sync` timestamp no later than the latest persisted CVE source update plus `security_db.interval` and a small grace window. This catches API restarts that would otherwise delay the required 6-hour OSV/NVD/Trivy refresh cadence.
+It verifies local session auth with `./scripts/verify-live-session-auth.sh`: `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout` must work on the API port and through the web proxy, and a logged-out bearer token must be rejected.
 It verifies CVE DB observability under concurrent operator load with `./scripts/verify-live-cvedb-concurrency.sh`: multiple forced stats refreshes, admin security DB status, and admin metrics must complete with `2xx` responses, valid JSON or Prometheus bodies, healthy CVE DB quality, and no new PostgreSQL shared-memory errors in the API log.
 It verifies stale scan-request recovery with `./scripts/verify-live-scan-request-recovery.sh`: a fixture host-specific request is claimed, aged in PostgreSQL, surfaced by the stale request filter, requeued through `/api/scan-requests/requeue-stale`, audited, and proven claimable again.
 
@@ -54,6 +55,7 @@ go test ./...
 ./scripts/verify-live-installer-payload.sh
 ./scripts/verify-live-install-script.sh
 ./scripts/verify-live-security-db-schedule.sh
+./scripts/verify-live-session-auth.sh
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-live-cvedb-concurrency.sh
 ./scripts/verify-live-scan-request-recovery.sh
@@ -147,6 +149,18 @@ BONGSU_ADMIN_USERNAME="$BONGSU_ADMIN_USERNAME" \
 BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
 ./scripts/verify-live-web-smoke.sh
 ```
+
+For a faster API/proxy session-auth check without a browser, run:
+
+```bash
+BONGSU_API_BASE=http://localhost:5677 \
+BONGSU_WEB_BASE=http://localhost:5678 \
+BONGSU_ADMIN_USERNAME="$BONGSU_ADMIN_USERNAME" \
+BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
+./scripts/verify-live-session-auth.sh
+```
+
+This verifier logs in on `5677` and, if reachable, `5678`, checks the returned bearer token against `/api/auth/me` and `/api/admin/rbac/status`, logs out, and confirms the same bearer token no longer authenticates.
 
 If `POST http://<web>:5678/api/auth/login` returns HTTP 500, first verify that the API is actually listening on `5677` and that the running binary was built from the current checkout:
 

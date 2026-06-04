@@ -72,6 +72,7 @@ for command in \
     '\./scripts/verify-live-installer-payload\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
     '\./scripts/verify-live-security-db-schedule\.sh' \
+    '\./scripts/verify-live-session-auth\.sh' \
     '\./scripts/verify-live-server-build\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
     '\./scripts/verify-package-contents\.sh' \
@@ -150,6 +151,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap pac
 require_text "$PACKAGE_SCRIPT" 'verify-live-install-script\.sh' "airgap package must include live install script verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-installer-payload\.sh' "airgap package must include live installer payload verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-schedule\.sh' "airgap package must include live security DB schedule verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-session-auth\.sh' "airgap package must include live session auth verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-server-build\.sh' "airgap package must include live server build verifier"
 
 for section in \
@@ -193,6 +195,7 @@ for keyword in \
     'verify-live-install-script\.sh' \
     'verify-live-installer-payload\.sh' \
     'verify-live-security-db-schedule\.sh' \
+    'verify-live-session-auth\.sh' \
     'verify-live-server-build\.sh' \
     'verify-release-readiness\.sh' \
     'verify-live-web-smoke\.sh' \

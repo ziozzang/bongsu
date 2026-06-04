@@ -112,6 +112,7 @@ for script in \
     verify-live-rbac-scope.sh \
     verify-live-scan-request-recovery.sh \
     verify-live-security-db-schedule.sh \
+    verify-live-session-auth.sh \
     verify-live-server-build.sh \
     verify-live-web-smoke.sh \
     verify-operator-workflow.sh \

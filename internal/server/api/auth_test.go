@@ -3793,6 +3793,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-installer-payload.sh`,
 		`./scripts/verify-live-install-script.sh`,
 		`./scripts/verify-live-scan-request-recovery.sh`,
+		`./scripts/verify-live-session-auth.sh`,
 		`BONGSU_DB_DSN is required for live release readiness`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh`,
 		`./scripts/verify-live-cvedb-concurrency.sh`,
@@ -3890,6 +3891,31 @@ func TestLiveInstallScriptVerifierExercisesAuthenticatedDownloads(t *testing.T) 
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("live install script verifier missing %q", want)
+		}
+	}
+}
+
+func TestLiveSessionAuthVerifierExercisesApiAndWebProxy(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-session-auth.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_API_BASE:-http://127.0.0.1:5677`,
+		`BONGSU_WEB_BASE:-http://127.0.0.1:5678`,
+		`BONGSU_ADMIN_USERNAME:-admin`,
+		`BONGSU_ADMIN_PASSWORD:-password`,
+		`/api/auth/login`,
+		`/api/auth/me`,
+		`/api/admin/rbac/status`,
+		`/api/auth/logout`,
+		`Authorization: Bearer ${token}`,
+		`reused token after logout returned HTTP`,
+		`Live session auth verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live session auth verifier missing %q", want)
 		}
 	}
 }
