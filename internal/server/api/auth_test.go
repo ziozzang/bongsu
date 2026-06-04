@@ -2081,6 +2081,39 @@ func TestRBACListHandlersUseStableArrayFields(t *testing.T) {
 	}
 }
 
+func TestRBACStatusEndpointExposesOperationalCounters(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	for _, want := range []string{
+		`"GET /api/admin/rbac/status"`,
+		"func (s *Server) handleAccessControlStatus",
+		"s.authenticateAdmin(r)",
+		"GetAccessControlStats",
+		"OrphanPolicyCount",
+		`"stats":        stats`,
+		`"access policies reference missing subjects"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("RBAC status endpoint missing %q", want)
+		}
+	}
+
+	script, err := os.ReadFile("../../../scripts/verify-operator-workflow.sh")
+	if err != nil {
+		t.Fatalf("read operator workflow verifier: %v", err)
+	}
+	for _, want := range []string{
+		`/api/admin/rbac/status`,
+		`.stats.subject_count`,
+		`.stats.policy_count`,
+		`.stats.orphan_policy_count`,
+	} {
+		if !strings.Contains(string(script), want) {
+			t.Fatalf("operator workflow must verify RBAC status, missing %q", want)
+		}
+	}
+}
+
 func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	out := readAllPackageGoFiles(t)
 	body := out

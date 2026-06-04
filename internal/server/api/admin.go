@@ -825,6 +825,31 @@ func (s *Server) handleListAccessPolicies(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (s *Server) handleAccessControlStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	stats, err := s.db.GetAccessControlStats(r.Context())
+	if err != nil {
+		log.Printf("access control status: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	status := "ok"
+	warnings := []string{}
+	if stats.OrphanPolicyCount > 0 {
+		status = "degraded"
+		warnings = append(warnings, "access policies reference missing subjects")
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":       status,
+		"generated_at": time.Now().UTC().Format(time.RFC3339),
+		"warnings":     warnings,
+		"stats":        stats,
+	})
+}
+
 func (s *Server) handleDeleteAccessSubject(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateAdmin(r) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")

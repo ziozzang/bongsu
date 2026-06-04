@@ -16,6 +16,22 @@ type AccessScope struct {
 	HostIDs []string
 }
 
+type AccessControlStats struct {
+	SubjectCount        int            `json:"subject_count"`
+	PolicyCount         int            `json:"policy_count"`
+	UserSubjectCount    int            `json:"user_subject_count"`
+	GroupSubjectCount   int            `json:"group_subject_count"`
+	ReadPolicyCount     int            `json:"read_policy_count"`
+	WritePolicyCount    int            `json:"write_policy_count"`
+	AdminPolicyCount    int            `json:"admin_policy_count"`
+	ExportPolicyCount   int            `json:"export_policy_count"`
+	WildcardPolicyCount int            `json:"wildcard_policy_count"`
+	OrphanPolicyCount   int            `json:"orphan_policy_count"`
+	SubjectTypeCounts   map[string]int `json:"subject_type_counts"`
+	ResourceTypeCounts  map[string]int `json:"resource_type_counts"`
+	PermissionCounts    map[string]int `json:"permission_counts"`
+}
+
 func (s AccessScope) CanReadHost(hostID string) bool {
 	if s.All {
 		return true
@@ -35,7 +51,6 @@ func (s AccessScope) Empty() bool {
 func pqStringArray(v []string) any {
 	return pq.Array(v)
 }
-
 
 func (db *DB) GetAccessScope(ctx context.Context, subjectRef string) (AccessScope, error) {
 	return db.getAccessScopeForPermissions(ctx, subjectRef, []string{"read", "admin"})
@@ -349,6 +364,71 @@ JOIN access_subjects s ON s.id = p.subject_id`
 	return out, rows.Err()
 }
 
+func (db *DB) GetAccessControlStats(ctx context.Context) (*AccessControlStats, error) {
+	stats := &AccessControlStats{
+		SubjectTypeCounts:  map[string]int{},
+		ResourceTypeCounts: map[string]int{},
+		PermissionCounts:   map[string]int{},
+	}
+	if err := db.QueryRowContext(ctx, `
+SELECT
+	(SELECT count(*) FROM access_subjects),
+	(SELECT count(*) FROM access_policies),
+	(SELECT count(*) FROM access_subjects WHERE subject_type='user'),
+	(SELECT count(*) FROM access_subjects WHERE subject_type='group'),
+	(SELECT count(*) FROM access_policies WHERE permission='read'),
+	(SELECT count(*) FROM access_policies WHERE permission='write'),
+	(SELECT count(*) FROM access_policies WHERE permission='admin'),
+	(SELECT count(*) FROM access_policies WHERE permission='export'),
+	(SELECT count(*) FROM access_policies WHERE resource_id='*' OR resource_id=''),
+	(SELECT count(*) FROM access_policies p WHERE NOT EXISTS (SELECT 1 FROM access_subjects s WHERE s.id=p.subject_id))`).Scan(
+		&stats.SubjectCount,
+		&stats.PolicyCount,
+		&stats.UserSubjectCount,
+		&stats.GroupSubjectCount,
+		&stats.ReadPolicyCount,
+		&stats.WritePolicyCount,
+		&stats.AdminPolicyCount,
+		&stats.ExportPolicyCount,
+		&stats.WildcardPolicyCount,
+		&stats.OrphanPolicyCount,
+	); err != nil {
+		return nil, err
+	}
+	var err error
+	stats.SubjectTypeCounts, err = db.countRowsByValue(ctx, `SELECT subject_type, count(*) FROM access_subjects GROUP BY subject_type`)
+	if err != nil {
+		return nil, err
+	}
+	stats.ResourceTypeCounts, err = db.countRowsByValue(ctx, `SELECT resource_type, count(*) FROM access_policies GROUP BY resource_type`)
+	if err != nil {
+		return nil, err
+	}
+	stats.PermissionCounts, err = db.countRowsByValue(ctx, `SELECT permission, count(*) FROM access_policies GROUP BY permission`)
+	if err != nil {
+		return nil, err
+	}
+	return stats, nil
+}
+
+func (db *DB) countRowsByValue(ctx context.Context, q string) (map[string]int, error) {
+	rows, err := db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var key string
+		var count int
+		if err := rows.Scan(&key, &count); err != nil {
+			return nil, err
+		}
+		out[key] = count
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) DeleteAccessSubject(ctx context.Context, id string) (*models.AccessSubject, int, error) {
 	var policyCount int
 	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM access_policies WHERE subject_id=$1`, id).Scan(&policyCount); err != nil {
@@ -442,4 +522,3 @@ func (db *DB) resolveAccessSubjectID(ctx context.Context, subjectExternalID stri
 	}
 	return ids[0], nil
 }
-

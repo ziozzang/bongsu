@@ -253,6 +253,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
 	s.mux.HandleFunc("GET /api/admin/metrics", s.handleAdminMetrics)
 	s.mux.HandleFunc("POST /api/admin/retention/prune", s.handleRetentionPrune)
+	s.mux.HandleFunc("GET /api/admin/rbac/status", s.handleAccessControlStatus)
 	s.mux.HandleFunc("GET /api/admin/rbac/subjects", s.handleListAccessSubjects)
 	s.mux.HandleFunc("POST /api/admin/rbac/subjects", s.handleUpsertAccessSubject)
 	s.mux.HandleFunc("DELETE /api/admin/rbac/subjects/{id}", s.handleDeleteAccessSubject)

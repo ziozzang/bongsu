@@ -1582,6 +1582,69 @@ paths:
 
   # ── Admin RBAC ──────────────────────────────────────────────────────────
 
+  /api/admin/rbac/status:
+    get:
+      operationId: getAccessControlStatus
+      tags: [admin]
+      summary: Get RBAC operational status
+      security:
+        - AdminKey: []
+      responses:
+        "200":
+          description: RBAC subject and policy status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                  generated_at:
+                    type: string
+                    format: date-time
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                  stats:
+                    type: object
+                    properties:
+                      subject_count:
+                        type: integer
+                      policy_count:
+                        type: integer
+                      user_subject_count:
+                        type: integer
+                      group_subject_count:
+                        type: integer
+                      read_policy_count:
+                        type: integer
+                      write_policy_count:
+                        type: integer
+                      admin_policy_count:
+                        type: integer
+                      export_policy_count:
+                        type: integer
+                      wildcard_policy_count:
+                        type: integer
+                      orphan_policy_count:
+                        type: integer
+                      subject_type_counts:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                      resource_type_counts:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                      permission_counts:
+                        type: object
+                        additionalProperties:
+                          type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/admin/rbac/subjects:
     get:
       operationId: listAccessSubjects

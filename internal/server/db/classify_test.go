@@ -3656,3 +3656,37 @@ func TestInsertableVulnerabilitiesDropsDanglingRows(t *testing.T) {
 		t.Fatalf("skipped vulnerabilities = %d, want 2", skipped)
 	}
 }
+
+func TestAccessControlStatsExposeRBACOperationalInvariants(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetAccessControlStats")
+	if start < 0 {
+		t.Fatal("GetAccessControlStats not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) countRowsByValue")
+	if end < 0 {
+		t.Fatal("GetAccessControlStats end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"type AccessControlStats struct",
+		"SubjectTypeCounts",
+		"ResourceTypeCounts",
+		"PermissionCounts",
+		"SELECT count(*) FROM access_subjects WHERE subject_type='user'",
+		"SELECT count(*) FROM access_subjects WHERE subject_type='group'",
+		"SELECT count(*) FROM access_policies WHERE resource_id='*' OR resource_id=''",
+		"SELECT count(*) FROM access_policies p WHERE NOT EXISTS",
+		"SELECT subject_type, count(*) FROM access_subjects GROUP BY subject_type",
+		"SELECT resource_type, count(*) FROM access_policies GROUP BY resource_type",
+		"SELECT permission, count(*) FROM access_policies GROUP BY permission",
+	} {
+		if !strings.Contains(body, want) && !strings.Contains(fn, want) {
+			t.Fatalf("RBAC stats invariant missing %q: %s", want, fn)
+		}
+	}
+}
