@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 10:47:38 KST
+Updated: 2026-06-04 10:54:22 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -67,6 +67,7 @@ This handoff commit should include:
 - Browser smoke coverage for Hosts force-scan requests and RBAC subject/policy creation, including POST body verification.
 - Browser workflow coverage for scheduled scan creation, dynamic asset-group creation, asset-group scan trigger, report rendering/export, notification rule creation/test delivery, and notification-log loading, including request payload verification.
 - Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
+- Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
 - Frontend API contract fixes for schedules (`{items}` response plus `packages_only`) and asset groups (`rule_type` instead of stale `group_type`).
 - Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
 - RBAC enforcement regression coverage for package/container/scan/scan-request endpoint scoping and container/image/asset-group policy expansion through latest container assets and host metadata.
@@ -165,7 +166,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - CI runs `scripts/verify-package-contents.sh` to keep air-gapped release archives from silently losing required files.
 - Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
 - Live Playwright smoke passed against `http://10.2.2.10:5678/` for the dashboard, CVE Search, and Hosts. The live `/api/packages?limit=1` and `/api/vuln-summary?group_by=owner` endpoints returned 200 after the mismatch-filter SQL fix.
-- Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state, the newest browser suite now covers the added schedule/asset-group/report/notification views with mocked API contract assertions, and the live operator verifier passed against `127.0.0.1:5677` using the running API process credentials.
+- Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state, the newest browser suite now covers the added schedule/asset-group/report/notification views with mocked API contract assertions, and the live operator verifier passed against `127.0.0.1:5677` using the running API and agent credentials, including agent claim/report/complete.
 
 ## Verification Commands
 
@@ -224,7 +225,7 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
 6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.
-8. Extend the live operator workflow from API-level verification to a real enrolled-agent end-to-end pass where scheduled and asset-group scan requests are claimed and completed by an agent.
+8. Extend verification from API-level agent claim/report/complete to a real installed agent binary collecting host and container inventory in a multi-host/container fixture.
 
 ## Matching Rules Reminder
 

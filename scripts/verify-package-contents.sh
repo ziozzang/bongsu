@@ -55,6 +55,7 @@ for script in \
     'sync-all-cvedb.sh' \
     'export-security-db-bundle.sh' \
     'import-security-db-bundle.sh' \
+    'verify-operator-workflow.sh' \
     'verify-static-binaries.sh'
 do
     require_text "$PACKAGE_SCRIPT" "$script" "package script must include scripts/$script"
