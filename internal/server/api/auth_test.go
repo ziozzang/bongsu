@@ -2523,14 +2523,17 @@ func TestCveDBQualitySummarySupportsPartialAffectedIndexHealth(t *testing.T) {
 		AffectedIndexDetail:  errors.New("detail timed out"),
 		ReferenceIndex:       &db.CveReferenceKeyIndexStats{},
 	})
-	if quality["status"] != "ok" {
-		t.Fatalf("partial affected index status = %#v, want ok: %#v", quality["status"], quality)
+	if quality["status"] != "warning" {
+		t.Fatalf("partial affected index status = %#v, want warning: %#v", quality["status"], quality)
 	}
 	if quality["affected_index_summary_mode"] != "indexed-only" {
 		t.Fatalf("partial affected index summary mode = %#v", quality["affected_index_summary_mode"])
 	}
 	if quality["affected_index_detail_error"] != "detail timed out" {
 		t.Fatalf("partial affected index detail error = %#v", quality["affected_index_detail_error"])
+	}
+	if !stringSliceContains(quality["warnings"], "affected package index detailed quality unavailable") {
+		t.Fatalf("partial affected index warning missing: %#v", quality)
 	}
 	if _, ok := quality["affected_index_coverage_percent"]; ok {
 		t.Fatalf("partial affected index must not expose unknown coverage: %#v", quality)
@@ -2558,6 +2561,24 @@ func TestCveDBQualitySummarySupportsPartialAffectedIndexHealth(t *testing.T) {
 	}
 }
 
+func stringSliceContains(value any, want string) bool {
+	switch items := value.(type) {
+	case []string:
+		for _, item := range items {
+			if item == want {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range items {
+			if s, ok := item.(string); ok && s == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func TestCveDBQualitySummarySupportsPartialReferenceIndexHealth(t *testing.T) {
 	quality := buildCveDBQualitySummary(cveDBQualityInput{
 		Placeholders:  &db.CvePlaceholderStats{},
@@ -2570,14 +2591,17 @@ func TestCveDBQualitySummarySupportsPartialReferenceIndexHealth(t *testing.T) {
 		ReferenceIndexPartial: true,
 		ReferenceIndexDetail:  errors.New("reference detail timed out"),
 	})
-	if quality["status"] != "ok" {
-		t.Fatalf("partial reference index status = %#v, want ok: %#v", quality["status"], quality)
+	if quality["status"] != "warning" {
+		t.Fatalf("partial reference index status = %#v, want warning: %#v", quality["status"], quality)
 	}
 	if quality["reference_index_summary_mode"] != "indexed-only" {
 		t.Fatalf("partial reference index summary mode = %#v", quality["reference_index_summary_mode"])
 	}
 	if quality["reference_index_detail_error"] != "reference detail timed out" {
 		t.Fatalf("partial reference index detail error = %#v", quality["reference_index_detail_error"])
+	}
+	if !stringSliceContains(quality["warnings"], "reference key index detailed quality unavailable") {
+		t.Fatalf("partial reference index warning missing: %#v", quality)
 	}
 	if _, ok := quality["reference_index_coverage_percent"]; ok {
 		t.Fatalf("partial reference index must not expose unknown coverage: %#v", quality)

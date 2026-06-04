@@ -2448,6 +2448,7 @@ func buildCveDBQualitySummary(input cveDBQualityInput) map[string]any {
 			out["affected_index_records"] = input.AffectedIndex.Count
 			if input.AffectedIndexDetail != nil {
 				out["affected_index_detail_error"] = input.AffectedIndexDetail.Error()
+				addWarning(1, "affected package index detailed quality unavailable")
 			}
 		} else {
 			out["affected_index_coverage_percent"] = input.AffectedIndex.CoveragePercent
@@ -2474,6 +2475,7 @@ func buildCveDBQualitySummary(input cveDBQualityInput) map[string]any {
 			out["reference_index_records"] = input.ReferenceIndex.Count
 			if input.ReferenceIndexDetail != nil {
 				out["reference_index_detail_error"] = input.ReferenceIndexDetail.Error()
+				addWarning(1, "reference key index detailed quality unavailable")
 			}
 		} else {
 			out["reference_index_coverage_percent"] = input.ReferenceIndex.CoveragePercent
