@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 12:05:05 KST
+Updated: 2026-06-04 12:14:30 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -81,7 +81,7 @@ This handoff commit should include:
 - Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
 - Real agent binary workflow verifier builds `cmd/agent`, runs it against fixture Trivy/osquery/docker tools for two logical host IDs, verifies host/container package ontology and host-id isolation through the live API, then runs daemon polling to claim and complete a host-specific scan request.
 - Live agent token binding verifier binds a host to one token, then proves a different token cannot report inventory, claim scan requests, or complete requests for the bound host when `BONGSU_AGENT_HOST_BINDING=true`.
-- Live CVE DB quality verifier checks production-scale source count, matchability, EPSS enrichment, affected/reference index health, placeholder rejection, affected package evidence, reference grouping, and endpoint responsiveness.
+- Live CVE DB quality verifier checks production-scale source count, matchability, EPSS enrichment, affected/reference index health, placeholder rejection, affected package evidence, reference grouping, endpoint responsiveness, and optional direct PostgreSQL invariants when `BONGSU_DB_DSN` is set; direct checks use local `psql` or `docker exec` against `BONGSU_DB_PSQL_CONTAINER`.
 - Live RBAC scope verifier ingests allowed and denied host/container fixtures, creates a viewer subject and host-scoped policy, then verifies viewer-key access filters hosts, packages, containers, scans, and scan requests.
 - Airgap package smoke verifier runs `scripts/package.sh` end-to-end with lightweight `go`/`npm`/`docker` stubs, then validates the generated `bongsu-*.tar.gz`.
 - Airgap offline rehearsal verifier extracts a generated package, checks checksums, rehearses `load-images.sh` with a Docker-load stub, renders packaged airgap compose with real `docker compose config`, and checks import/export script targets.
@@ -227,7 +227,7 @@ curl -sS http://127.0.0.1:5678/ >/tmp/bongsu-web.html
 BONGSU_API_KEY=test-admin-key BONGSU_ADMIN_USERNAME=admin BONGSU_ADMIN_PASSWORD=password ./scripts/verify-operator-workflow.sh
 BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-agent-binary-workflow.sh
 BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-live-agent-token-binding.sh
-BONGSU_API_KEY=test-admin-key ./scripts/verify-live-cvedb-quality.sh
+BONGSU_API_KEY=test-admin-key BONGSU_DB_DSN='postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable' ./scripts/verify-live-cvedb-quality.sh
 BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key BONGSU_VIEWER_API_KEY=viewer-test-key BONGSU_VIEWER_SUBJECT=rbac-live-viewer ./scripts/verify-live-rbac-scope.sh
 BONGSU_WEB_BASE=http://127.0.0.1:5678 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-web-smoke.sh
 ./scripts/verify-airgap-release-archive.sh bongsu-0.1.0.tar.gz

@@ -141,8 +141,11 @@ This verifier ingests a two-host/two-container fixture and proves that the viewe
 Live CVE DB quality and performance verification:
 
 ```bash
+BONGSU_DB_DSN="$BONGSU_DB_DSN" \
 ./scripts/verify-live-cvedb-quality.sh
 ```
+
+When `BONGSU_DB_DSN` is set, this verifier also queries PostgreSQL directly for `TEMP-*`/`CVD-*` placeholders across `cve_database`, `cve_affected_packages`, and `cve_reference_keys`, affected-package rows missing package/ecosystem/fixed evidence, index orphans, and EPSS columns on non-EPSS CVE rows. It uses local `psql` when available, or `docker exec` against `BONGSU_DB_PSQL_CONTAINER` which defaults to `bongsu-postgres`.
 
 Live web UI route and API response verification:
 
@@ -246,7 +249,7 @@ curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/stat
 curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/metrics"
 ```
 
-The CVE DB is operationally degraded if required sources are missing, `TEMP-*` or `CVD-*` placeholders appear, affected/reference indexes are stale, or EPSS enrichment coverage unexpectedly drops.
+The CVE DB is operationally degraded if required sources are missing, `TEMP-*` or `CVD-*` placeholders appear in API results or direct DB invariants, affected/reference indexes are stale, affected-package index rows lack package/ecosystem/fixed evidence, or EPSS enrichment coverage unexpectedly drops.
 
 ## Monitoring And Alerting
 

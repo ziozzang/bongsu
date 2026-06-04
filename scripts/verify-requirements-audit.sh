@@ -92,6 +92,7 @@ for keyword in \
     'live RBAC' \
     'two-host/two-container' \
     'live CVE DB' \
+    'direct DB invariant' \
     'live browser' \
     'BONGSU_HOST_ID' \
     'host-token binding' \
@@ -148,6 +149,8 @@ for keyword in \
     'TEMP-\*' \
     'CVD-\*' \
     'EPSS' \
+    'BONGSU_DB_DSN' \
+    'direct DB invariant' \
     'requeue-stale' \
     'agent-token/reset' \
     'verify-live-agent-token-binding\.sh' \
