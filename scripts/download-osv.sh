@@ -7,7 +7,7 @@
 set -euo pipefail
 
 OUTPUT="${1:-osv-cve.jsonl}"
-ECOSYSTEMS="${2:-PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,Alpine,Debian,SUSE,AlmaLinux,Chainguard}"
+ECOSYSTEMS="${2:-${BONGSU_OSV_ECOSYSTEMS:-PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,SwiftURL,Hackage,CRAN,opam,VSCode,GitHub Actions,Alpine,Debian,Ubuntu,SUSE,openSUSE,AlmaLinux,Red Hat,Rocky Linux,Azure Linux,Wolfi,Chainguard,openEuler,Mageia,Android}}"
 OUTPUT_TMP="${OUTPUT}.tmp.$$"
 
 TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"

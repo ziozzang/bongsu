@@ -127,7 +127,7 @@ fi
 echo ""
 
 # --- 3. OSV.dev (per-ecosystem to avoid upload timeouts) ---
-OSV_ECOSYSTEMS="PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,Alpine,Debian,SUSE,AlmaLinux,Chainguard"
+OSV_ECOSYSTEMS="${BONGSU_OSV_ECOSYSTEMS:-PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,SwiftURL,Hackage,CRAN,opam,VSCode,GitHub Actions,Alpine,Debian,Ubuntu,SUSE,openSUSE,AlmaLinux,Red Hat,Rocky Linux,Azure Linux,Wolfi,Chainguard,openEuler,Mageia,Android}"
 OSV_TOTAL=0
 OSV_FAILED=0
 ECO_COUNT=$(echo "${OSV_ECOSYSTEMS}" | tr ',' '\n' | wc -l)

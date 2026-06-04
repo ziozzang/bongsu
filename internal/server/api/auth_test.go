@@ -2780,6 +2780,32 @@ func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
 	}
 }
 
+func TestSecurityDBSyncScriptCoversCoreOSVEcosystems(t *testing.T) {
+	for _, path := range []string{
+		"../../../scripts/sync-all-cvedb.sh",
+		"../../../scripts/download-osv.sh",
+	} {
+		out, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(out)
+		for _, want := range []string{
+			"BONGSU_OSV_ECOSYSTEMS",
+			"Ubuntu",
+			"Red Hat",
+			"Rocky Linux",
+			"Wolfi",
+			"openSUSE",
+			"Azure Linux",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s must include core OSV ecosystem %q in the default/update path", path, want)
+			}
+		}
+	}
+}
+
 func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-operator-workflow.sh")
 	if err != nil {
