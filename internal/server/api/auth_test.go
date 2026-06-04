@@ -3837,6 +3837,7 @@ func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t
 		`.security_db_freshness.status == "ok"`,
 		"security DB required sources must not be stale",
 		`BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS="${BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS:-false}"`,
+		`BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS="${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS:-Packagist,Debian,Ubuntu,npm,PyPI,Wolfi}"`,
 		`https://osv-vulnerabilities.storage.googleapis.com/${encoded_eco}/all.zip`,
 		`lower(split_part(ecosystem, ':', 1)) = lower(${eco_literal})`,
 		"local OSV affected-package index has no matchable rows for upstream sentinel ecosystem",
@@ -3846,6 +3847,11 @@ func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t
 		`WHERE fixed_version ~* '^[0-9a-f]{40}$'`,
 		"affected package index rows must not keep hash-like fixed versions",
 		"OSV Packagist sentinel must preserve phenx/php-svg-lib package/ecosystem/fixed evidence",
+		`MIN_OSV_CHAINGUARD_WOLFI_SENTINEL_MATCHES`,
+		`lower(ecosystem) = 'chainguard'`,
+		`lower(split_part(cap.ecosystem, ':', 1)) = 'wolfi'`,
+		"direct DB must preserve Chainguard OSV source ecosystem evidence",
+		"OSV Chainguard sentinel must preserve Wolfi package/ecosystem/fixed match evidence",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("live CVE DB quality verifier missing %q", want)

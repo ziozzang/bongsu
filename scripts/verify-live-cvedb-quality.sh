@@ -18,6 +18,7 @@ MIN_REFERENCE_MULTI_SOURCE_GROUPS="${BONGSU_VERIFY_CVEDB_MIN_REFERENCE_MULTI_SOU
 MIN_REFERENCE_VENDOR_GROUPS="${BONGSU_VERIFY_CVEDB_MIN_REFERENCE_VENDOR_GROUPS:-1}"
 MIN_OSV_PACKAGIST_SENTINEL_ROWS="${BONGSU_VERIFY_CVEDB_MIN_OSV_PACKAGIST_SENTINEL_ROWS:-1000}"
 MIN_OSV_PACKAGIST_SENTINEL_MATCHES="${BONGSU_VERIFY_CVEDB_MIN_OSV_PACKAGIST_SENTINEL_MATCHES:-3}"
+MIN_OSV_CHAINGUARD_WOLFI_SENTINEL_MATCHES="${BONGSU_VERIFY_CVEDB_MIN_OSV_CHAINGUARD_WOLFI_SENTINEL_MATCHES:-10}"
 MAX_STATS_WALL_SECONDS="${BONGSU_VERIFY_CVEDB_MAX_STATS_WALL_SECONDS:-30}"
 MAX_STATS_INTERNAL_MS="${BONGSU_VERIFY_CVEDB_MAX_STATS_INTERNAL_MS:-20000}"
 MAX_SEARCH_WALL_SECONDS="${BONGSU_VERIFY_CVEDB_MAX_SEARCH_WALL_SECONDS:-10}"
@@ -26,7 +27,7 @@ BONGSU_DB_PSQL_CONTAINER="${BONGSU_DB_PSQL_CONTAINER:-bongsu-postgres}"
 BONGSU_VERIFY_CVEDB_REQUIRE_DB="${BONGSU_VERIFY_CVEDB_REQUIRE_DB:-false}"
 BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES="${BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES:-false}"
 BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS="${BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS:-false}"
-BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS="${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS:-Packagist,Debian,Ubuntu,npm,PyPI}"
+BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS="${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS:-Packagist,Debian,Ubuntu,npm,PyPI,Wolfi}"
 BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS="${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS:-28800}"
 PSQL_MODE=""
 TMP_DIR="$(mktemp -d)"
@@ -499,6 +500,36 @@ WHERE source = 'osv'
         assert_elapsed_at_most "$packagist_time" "$MAX_SEARCH_WALL_SECONDS" "OSV Packagist sentinel search"
         assert_jq_numarg "$packagist_json" min "$MIN_OSV_PACKAGIST_SENTINEL_MATCHES" '(.total // 0) >= $min and ([.items[]? | select((.source // "") == "osv" and ((.ecosystem // "") | ascii_downcase) == "packagist" and (.matchable_affected_count // 0) > 0)] | length) >= $min' "CVE Search must return matchable phenx/php-svg-lib Packagist OSV evidence"
     fi
+    assert_db_positive "
+SELECT count(*)
+FROM cve_database
+WHERE source = 'osv'
+  AND lower(ecosystem) = 'chainguard'
+  AND EXISTS (
+      SELECT 1
+      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(affected_products) = 'array' THEN affected_products ELSE '[]'::jsonb END) ap
+      WHERE lower(COALESCE(ap->>'ecosystem', '')) = 'chainguard'
+        AND COALESCE(ap->>'name', '') != ''
+  )" "direct DB must preserve Chainguard OSV source ecosystem evidence"
+    assert_db_at_least "
+SELECT count(*)
+FROM cve_affected_packages cap
+WHERE cap.source = 'osv'
+  AND lower(split_part(cap.ecosystem, ':', 1)) = 'wolfi'
+  AND trim(cap.package_name) != ''
+  AND trim(cap.fixed_version) != ''
+  AND cap.vulnerability_id IN (
+      SELECT c.vulnerability_id
+      FROM cve_database c
+      WHERE c.source = 'osv'
+        AND lower(c.ecosystem) = 'chainguard'
+        AND EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
+            WHERE lower(COALESCE(ap->>'ecosystem', '')) = 'chainguard'
+              AND COALESCE(ap->>'name', '') != ''
+        )
+  )" "$MIN_OSV_CHAINGUARD_WOLFI_SENTINEL_MATCHES" "OSV Chainguard sentinel must preserve Wolfi package/ecosystem/fixed match evidence"
 else
     if [ "$BONGSU_VERIFY_CVEDB_REQUIRE_DB" = "true" ]; then
         echo "ERROR: BONGSU_DB_DSN is required for direct CVE DB invariant checks" >&2
