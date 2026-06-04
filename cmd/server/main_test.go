@@ -160,6 +160,8 @@ func TestMainStartsHTTPListenerBeforeBackgroundSecuritySync(t *testing.T) {
 		`database.RunMigrations(migrationCtx)`,
 		`BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS`,
 		`database.EnsureCveAffectedPackages(indexCtx)`,
+		`BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS`,
+		`database.EnsureCveReferenceKeys(refCtx)`,
 		`BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS`,
 		`database.EnrichVulnerabilities(recalcCtx)`,
 	} {

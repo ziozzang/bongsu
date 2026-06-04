@@ -70,7 +70,7 @@ func main() {
 			indexCancel()
 		}
 		go func() {
-			refCtx, refCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_CVE_REFERENCE_INDEX_TIMEOUT_SECONDS", 180))*time.Second)
+			refCtx, refCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS", 180))*time.Second)
 			defer refCancel()
 			if n, err := database.EnsureCveReferenceKeys(refCtx); err != nil {
 				log.Printf("WARNING: prepare CVE reference key index: %v", err)

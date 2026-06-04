@@ -182,6 +182,7 @@ require_text "$RUNBOOK" 'BONGSU_VULNERABILITY_EXPORT_TIMEOUT_SECONDS' "runbook m
 require_text "$RUNBOOK" '504 vulnerability export timeout' "runbook must document vulnerability export timeout behavior"
 require_text "$RUNBOOK" 'BONGSU_SECURITY_DB_REVISION_TIMEOUT_SECONDS' "runbook must document security DB revision timeout tuning"
 require_text "$RUNBOOK" 'BONGSU_OIDC_ISSUER' "runbook must document current OIDC placeholder behavior"
+require_text "$RUNBOOK" 'BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS' "runbook must document reference index rebuild timeout tuning"
 require_text "$AUDIT" 'verify-operations-runbook\.sh' "requirements audit must list the operations runbook verifier"
 require_text "$ARCH" 'security_db_freshness\.latest_source' "architecture must document persisted freshness health fields"
 require_text "$ARCH" 'bundle creation timestamp' "architecture must document security DB bundle provenance metadata"

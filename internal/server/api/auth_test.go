@@ -3559,6 +3559,30 @@ func TestSecurityDBSyncScriptsFinalizeDeferredImportsAsynchronously(t *testing.T
 	}
 }
 
+func TestAsyncCveIndexRebuildsUseRebuildTimeouts(t *testing.T) {
+	out, err := os.ReadFile("cvedb.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`envInt("BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS", 180)`,
+		`envInt("BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS", 180)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("async CVE index rebuilds must use rebuild timeout %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`envInt("BONGSU_CVE_AFFECTED_INDEX_TIMEOUT_SECONDS", 180)`,
+		`envInt("BONGSU_CVE_REFERENCE_INDEX_TIMEOUT_SECONDS", 180)`,
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("async CVE index rebuilds must not use health/detail timeout %q", forbidden)
+		}
+	}
+}
+
 func TestCveDbImportRefreshesSecuritySourceRegistry(t *testing.T) {
 	out, err := os.ReadFile("cvedb.go")
 	if err != nil {

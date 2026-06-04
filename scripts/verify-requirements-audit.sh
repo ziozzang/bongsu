@@ -163,6 +163,8 @@ require_text "$AUDIT" 'bounded vulnerability export timeout' "requirements audit
 require_text "$ARCH" 'BONGSU_SECURITY_DB_REVISION_TIMEOUT_SECONDS' "architecture must document independent security DB revision timeout"
 require_text "$ARCH" 'BONGSU_OIDC_ISSUER' "architecture must document current OIDC placeholder behavior"
 require_text "$AUDIT" 'OIDC placeholder safety' "requirements audit must document OIDC placeholder safety"
+require_text "$ARCH" 'BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS' "architecture must document reference index rebuild timeout"
+require_text "$AUDIT" 'reference-key index rebuild timeout' "requirements audit must document reference index rebuild timeout separation"
 require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness\.sh' "airgap package must include release readiness verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness-report\.sh' "airgap package must include release readiness report verifier"

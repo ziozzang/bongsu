@@ -257,6 +257,7 @@ spec:
 | `BONGSU_CVE_AFFECTED_INDEX_TIMEOUT_SECONDS` | `5` | Health timeout for affected-package index detail before falling back to lightweight status |
 | `BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS` | `180` | Startup/admin timeout for rebuilding the derived affected-package index after migrations or manual repair |
 | `BONGSU_CVE_REFERENCE_INDEX_TIMEOUT_SECONDS` | `5` | Health timeout for reference-key index detail before falling back to lightweight status |
+| `BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS` | `180` | Startup/admin timeout for rebuilding the materialized CVE reference-key index after migrations or source imports |
 | `BONGSU_HEALTH_DB_TIMEOUT_SECONDS` | `2` | Shared DB timeout for optional health details |
 | `BONGSU_SECURITY_DB_STATUS_TIMEOUT_SECONDS` | `15` | Maximum DB time for one admin `/api/admin/security-db/status` request; keep above health timeout for large OSV snapshots |
 | `BONGSU_SECURITY_DB_REVISION_TIMEOUT_SECONDS` | `30` | Bounded DB time for one shared `security_db_revision` calculation; the in-flight calculation is not cancelled by short health/export callers |
