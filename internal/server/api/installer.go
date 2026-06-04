@@ -49,6 +49,7 @@ INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 CRON_SCHEDULE="${BONGSU_CRON:-0 3 * * *}"
 FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
 AGENT_TOKEN="${BONGSU_AGENT_TOKEN:-}"
+HOST_ID="${BONGSU_HOST_ID:-${BONGSU_AGENT_HOST_ID:-}}"
 
 curl_download() {
     local url="$1"
@@ -178,6 +179,9 @@ api_key: ${API_KEY}
 agent_token: ${AGENT_TOKEN}
 work_dir: ${WORK_DIR}
 EOF
+if [ -n "$HOST_ID" ]; then
+    printf 'host_id: %%s\n' "$HOST_ID" >> "$WORK_DIR/config.yaml"
+fi
 chmod 600 "$WORK_DIR/config.yaml"
 chmod 600 "$WORK_DIR/agent.token" 2>/dev/null || true
 

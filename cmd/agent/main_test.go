@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ziozzang/bongsu/internal/agent/reporter"
+	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
 func TestAgentVersionStringIncludesBuildMetadata(t *testing.T) {
@@ -170,9 +171,9 @@ func TestScanRequestCompletionFromReportPreservesDegradedScans(t *testing.T) {
 	}
 }
 
-func TestLoadConfigReadsAgentToken(t *testing.T) {
+func TestLoadConfigReadsAgentTokenAndHostID(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("server_url: http://server\napi_key: key\nagent_token: token-123\nwork_dir: /tmp/bongsu\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("server_url: http://server\napi_key: key\nagent_token: token-123\nwork_dir: /tmp/bongsu\nhost_id: host-override-1\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := loadConfig(path)
@@ -181,6 +182,21 @@ func TestLoadConfigReadsAgentToken(t *testing.T) {
 	}
 	if cfg.AgentToken != "token-123" {
 		t.Fatalf("agent token = %q", cfg.AgentToken)
+	}
+	if cfg.HostID != "host-override-1" {
+		t.Fatalf("host id = %q", cfg.HostID)
+	}
+}
+
+func TestApplyHostIDOverride(t *testing.T) {
+	host := &models.Host{ID: "derived"}
+	applyHostIDOverride(host, " explicit-host ")
+	if host.ID != "explicit-host" {
+		t.Fatalf("host id = %q", host.ID)
+	}
+	applyHostIDOverride(host, " ")
+	if host.ID != "explicit-host" {
+		t.Fatalf("blank override changed host id to %q", host.ID)
 	}
 }
 

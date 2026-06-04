@@ -61,6 +61,8 @@ BONGSU_AGENT_API_KEY="$BONGSU_AGENT_API_KEY" \
 ./scripts/verify-agent-binary-workflow.sh
 ```
 
+This verifier uses `--host-id` to report two logical hosts with distinct container identities, then proves host-specific inventory and force-scan request completion stay separated.
+
 - Verify the deployed web UI on port `5678` with a live browser smoke test:
 
 ```bash
@@ -105,6 +107,13 @@ Agent enrollment:
 
 ```bash
 curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/install.sh" | sudo bash
+```
+
+For cloned, golden-image, or containerized hosts where `/etc/machine-id` is not unique, set a stable identity during install so SBOM, force-scan, and RBAC records do not collapse into one host:
+
+```bash
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/install.sh" | \
+  sudo BONGSU_HOST_ID="$(hostname -f)" bash
 ```
 
 Live RBAC scope verification:

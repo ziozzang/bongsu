@@ -92,6 +92,8 @@ for keyword in \
     'two-host/two-container' \
     'live CVE DB' \
     'live browser' \
+    'BONGSU_HOST_ID' \
+    'two logical host' \
     'force scan' \
     'one-line installer' \
     'systemd' \
@@ -133,6 +135,7 @@ for keyword in \
     'BONGSU_ALLOW_WEAK_SECRETS=false' \
     'BONGSU_WEB_AUTH=true' \
     'BONGSU_AGENT_HOST_BINDING=true' \
+    'BONGSU_HOST_ID' \
     'docker compose' \
     'air-gapped' \
     'SHA256SUMS' \

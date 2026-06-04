@@ -95,6 +95,7 @@ BONGSU_PACKAGES_ONLY=true \
 BONGSU_CRON="17 4 * * *" \
 BONGSU_INSTALL_MODE=cron \
 BONGSU_FORCE_SCAN_DAEMON=false \
+BONGSU_HOST_ID="installer-host-override" \
 BONGSU_TEST_AGENT_TOKEN="$TOKEN" \
 BONGSU_TEST_CRONTAB="$TMP_DIR/crontab.installed" \
 bash "$INSTALLER_DIR/install-agent.sh" "$SERVER_URL" "$API_KEY" > "$TMP_DIR/install.out"
@@ -111,6 +112,7 @@ assert_contains "$WORK_DIR/config.yaml" "server_url: $SERVER_URL"
 assert_contains "$WORK_DIR/config.yaml" "api_key: $API_KEY"
 assert_contains "$WORK_DIR/config.yaml" "agent_token: $TOKEN"
 assert_contains "$WORK_DIR/config.yaml" "work_dir: $WORK_DIR"
+assert_contains "$WORK_DIR/config.yaml" "host_id: installer-host-override"
 assert_contains "$WORK_DIR/agent.token" "$TOKEN"
 assert_contains "$TMP_DIR/crontab.installed" "17 4 * * * $WORK_DIR/bin/bongsu-agent --config $WORK_DIR/config.yaml --type daily --packages-only >> $WORK_DIR/agent.log 2>&1"
 assert_contains "$TMP_DIR/install.out" "Running first scan"
@@ -122,12 +124,14 @@ BONGSU_PACKAGES_ONLY=true \
 BONGSU_CRON="23 5 * * *" \
 BONGSU_INSTALL_MODE=cron \
 BONGSU_FORCE_SCAN_DAEMON=false \
+BONGSU_HOST_ID="installer-host-override" \
 BONGSU_TEST_AGENT_TOKEN="should-not-be-used" \
 BONGSU_TEST_CRONTAB="$TMP_DIR/crontab.installed" \
 bash "$INSTALLER_DIR/install-agent.sh" "$SERVER_URL" "$API_KEY" > "$TMP_DIR/reinstall.out"
 
 assert_contains "$WORK_DIR/agent.token" "$TOKEN"
 assert_contains "$WORK_DIR/config.yaml" "agent_token: $TOKEN"
+assert_contains "$WORK_DIR/config.yaml" "host_id: installer-host-override"
 assert_contains "$TMP_DIR/crontab.installed" "23 5 * * * $WORK_DIR/bin/bongsu-agent --config $WORK_DIR/config.yaml --type daily --packages-only >> $WORK_DIR/agent.log 2>&1"
 if grep -Fq "17 4 * * *" "$TMP_DIR/crontab.installed"; then
     echo "ERROR: reinstall did not replace the previous bongsu cron entry" >&2

@@ -13,6 +13,7 @@ INSTALL_MODE="${BONGSU_INSTALL_MODE:-cron}"
 FORCE_SCAN_DAEMON="${BONGSU_FORCE_SCAN_DAEMON:-true}"
 INSTALL_TOKEN="${BONGSU_INSTALL_TOKEN:-}"
 AGENT_TOKEN="${BONGSU_AGENT_TOKEN:-}"
+HOST_ID="${BONGSU_HOST_ID:-${BONGSU_AGENT_HOST_ID:-}}"
 SYSTEMD_DIR="${BONGSU_SYSTEMD_DIR:-/etc/systemd/system}"
 SYSTEMCTL_BIN="${BONGSU_SYSTEMCTL_BIN:-systemctl}"
 
@@ -111,6 +112,7 @@ if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "  BONGSU_FORCE_SCAN_DAEMON  Install force scan daemon in systemd mode (default: true)"
     echo "  BONGSU_INSTALL_TOKEN  Optional server install/download token"
     echo "  BONGSU_AGENT_TOKEN    Optional persistent per-host token"
+    echo "  BONGSU_HOST_ID        Optional stable host id override for cloned/containerized hosts"
     echo "  BONGSU_SYSTEMD_DIR    Systemd unit directory (default: /etc/systemd/system)"
     echo "  BONGSU_SYSTEMCTL_BIN  systemctl command path/name (default: systemctl)"
     exit 1
@@ -199,6 +201,9 @@ api_key: ${API_KEY}
 agent_token: ${AGENT_TOKEN}
 work_dir: ${WORK_DIR}
 EOF
+if [ -n "$HOST_ID" ]; then
+    printf 'host_id: %s\n' "$HOST_ID" >> "$WORK_DIR/config.yaml"
+fi
 chmod 600 "$WORK_DIR/config.yaml"
 chmod 600 "$WORK_DIR/agent.token" 2>/dev/null || true
 echo "Config written: $WORK_DIR/config.yaml"

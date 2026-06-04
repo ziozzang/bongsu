@@ -14,6 +14,11 @@ TMP_DIR="$(mktemp -d)"
 AGENT_BIN="$TMP_DIR/bongsu-agent"
 STUB_DIR="$TMP_DIR/stubs"
 SCAN_REQUEST_ID=""
+RUN_ID="agent-binary-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+HOST_ID_PRIMARY="host-${RUN_ID}-primary"
+HOST_ID_SECONDARY="host-${RUN_ID}-secondary"
+PRIMARY_CONTAINER_ID="fixture-container-${HOST_ID_PRIMARY}"
+SECONDARY_CONTAINER_ID="fixture-container-${HOST_ID_SECONDARY}"
 
 cleanup() {
     set +e
@@ -95,18 +100,6 @@ assert_json_arg2() {
     fi
 }
 
-derive_host_id() {
-    if [ -r /etc/machine-id ] && [ -s /etc/machine-id ]; then
-        tr -d '[:space:]' </etc/machine-id
-        return
-    fi
-    if [ -r /var/lib/dbus/machine-id ] && [ -s /var/lib/dbus/machine-id ]; then
-        tr -d '[:space:]' </var/lib/dbus/machine-id
-        return
-    fi
-    hostname
-}
-
 write_fixture_tools() {
     mkdir -p "$WORK_DIR/bin" "$STUB_DIR"
 
@@ -147,17 +140,25 @@ OSQUERY
 #!/bin/bash
 set -euo pipefail
 if [ "${1:-}" = "ps" ]; then
-    printf 'fixture-container-id\n'
+    printf '%s\n' "fixture-container-${BONGSU_VERIFY_AGENT_HOST_ID:-default}"
     exit 0
 fi
 if [ "${1:-}" = "inspect" ] && [ "${2:-}" = "--format" ]; then
-    printf 'fixture.registry/bongsu-agent-fixture:1.0\n'
+    printf 'fixture.registry/bongsu-agent-fixture:%s\n' "${BONGSU_VERIFY_AGENT_HOST_ID:-default}"
     exit 0
 fi
 if [ "${1:-}" = "inspect" ]; then
-    cat <<'JSON'
-[{"Id":"fixture-container-id","Name":"/bongsu-fixture-container","Image":"sha256:fixture-image-id","Config":{"Image":"fixture.registry/bongsu-agent-fixture:1.0","Labels":{"com.example.service":"bongsu-fixture"}},"State":{"Status":"running","StartedAt":"2026-06-01T00:00:00Z"}}]
-JSON
+    host_id="${BONGSU_VERIFY_AGENT_HOST_ID:-default}"
+    jq -nc --arg host_id "$host_id" '[{
+      Id: ("fixture-container-" + $host_id),
+      Name: ("/bongsu-fixture-container-" + $host_id),
+      Image: ("sha256:fixture-image-" + $host_id),
+      Config: {
+        Image: ("fixture.registry/bongsu-agent-fixture:" + $host_id),
+        Labels: {"com.example.service":"bongsu-fixture"}
+      },
+      State: {Status:"running", StartedAt:"2026-06-01T00:00:00Z"}
+    }]'
     exit 0
 fi
 echo "unsupported docker fixture command: $*" >&2
@@ -168,14 +169,39 @@ DOCKER
 }
 
 run_agent_once() {
+    local host_id="$1"
+    local work_dir="$2"
+    local token="$3"
+    shift 3
     local extra_args=("$@")
+    prepare_agent_work_dir "$work_dir"
     PATH="$STUB_DIR:$PATH" \
     BONGSU_AGENT_RETRY_ATTEMPTS=1 \
     BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS=1 \
     BONGSU_SERVER_URL="$API_BASE" \
     BONGSU_AGENT_API_KEY="$AGENT_API_KEY" \
-    BONGSU_AGENT_TOKEN="$AGENT_TOKEN" \
-    "$AGENT_BIN" --work-dir "$WORK_DIR" "${extra_args[@]}"
+    BONGSU_AGENT_TOKEN="$token" \
+    BONGSU_VERIFY_AGENT_HOST_ID="$host_id" \
+    "$AGENT_BIN" --work-dir "$work_dir" --host-id "$host_id" "${extra_args[@]}"
+}
+
+prepare_agent_work_dir() {
+    local work_dir="$1"
+    mkdir -p "$work_dir/bin"
+    cp "$WORK_DIR/bin/trivy" "$work_dir/bin/trivy"
+    cp "$WORK_DIR/bin/osqueryi" "$work_dir/bin/osqueryi"
+    chmod +x "$work_dir/bin/trivy" "$work_dir/bin/osqueryi"
+}
+
+ensure_token() {
+    local work_dir="$1"
+    local token_file="$work_dir/agent.token"
+    mkdir -p "$work_dir"
+    if [ ! -s "$token_file" ]; then
+        printf 'verify-agent-token-%s-%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$$" > "$token_file"
+        chmod 0600 "$token_file"
+    fi
+    tr -d '[:space:]' < "$token_file"
 }
 
 require_tool curl
@@ -184,65 +210,71 @@ require_tool go
 require_tool timeout
 
 echo "=== Bongsu Agent Binary Workflow Verification ==="
-echo "API:      ${API_BASE}"
-echo "Work dir: ${WORK_DIR}"
+echo "API:       ${API_BASE}"
+echo "Work dir:  ${WORK_DIR}"
+echo "Primary:   ${HOST_ID_PRIMARY}"
+echo "Secondary: ${HOST_ID_SECONDARY}"
 
-mkdir -p "$WORK_DIR"
-if [ ! -s "$WORK_DIR/agent.token" ]; then
-    printf 'verify-agent-token-%s-%s\n' "$(date -u +%Y%m%dT%H%M%SZ)" "$$" > "$WORK_DIR/agent.token"
-    chmod 0600 "$WORK_DIR/agent.token"
-fi
-AGENT_TOKEN="$(tr -d '[:space:]' < "$WORK_DIR/agent.token")"
-if [ "${#AGENT_TOKEN}" -lt 32 ]; then
+PRIMARY_WORK_DIR="$WORK_DIR/primary"
+SECONDARY_WORK_DIR="$WORK_DIR/secondary"
+PRIMARY_AGENT_TOKEN="$(ensure_token "$PRIMARY_WORK_DIR")"
+SECONDARY_AGENT_TOKEN="$(ensure_token "$SECONDARY_WORK_DIR")"
+if [ "${#PRIMARY_AGENT_TOKEN}" -lt 32 ] || [ "${#SECONDARY_AGENT_TOKEN}" -lt 32 ]; then
     echo "ERROR: verifier agent token is too short" >&2
     exit 1
 fi
 
 write_fixture_tools
 
-echo "[1/6] Building agent binary"
+echo "[1/7] Building agent binary"
 go build -o "$AGENT_BIN" ./cmd/agent
 
-HOST_ID="$(derive_host_id)"
-if [ -z "$HOST_ID" ]; then
-    echo "ERROR: could not derive host id" >&2
-    exit 1
-fi
+echo "[2/7] Running one-shot package/container inventory scans for two logical hosts"
+run_agent_once "$HOST_ID_PRIMARY" "$PRIMARY_WORK_DIR" "$PRIMARY_AGENT_TOKEN" --type manual --packages-only
+run_agent_once "$HOST_ID_SECONDARY" "$SECONDARY_WORK_DIR" "$SECONDARY_AGENT_TOKEN" --type manual --packages-only
 
-echo "[2/6] Running one-shot package/container inventory scan"
-run_agent_once --type manual --packages-only
-
-echo "[3/6] Verifying host, container, package, and port inventory"
+echo "[3/7] Verifying primary host, container, package, and port inventory"
 hosts_json="$(api_json GET /api/hosts)"
-assert_json_arg "$hosts_json" id "$HOST_ID" '.[] | select(.id == $id and .latest_inventory.latest_package_count >= 3 and .latest_inventory.latest_container_count >= 1)' "agent host must have latest package and container inventory"
-packages_json="$(api_json GET "/api/packages?host_id=${HOST_ID}&limit=200")"
+assert_json_arg "$hosts_json" id "$HOST_ID_PRIMARY" '.[] | select(.id == $id and .latest_inventory.latest_package_count >= 3 and .latest_inventory.latest_container_count >= 1)' "primary agent host must have latest package and container inventory"
+assert_json_arg "$hosts_json" id "$HOST_ID_SECONDARY" '.[] | select(.id == $id and .latest_inventory.latest_package_count >= 3 and .latest_inventory.latest_container_count >= 1)' "secondary agent host must have latest package and container inventory"
+packages_json="$(api_json GET "/api/packages?host_id=${HOST_ID_PRIMARY}&limit=200")"
 assert_json "$packages_json" '.items[] | select(.name == "bongsu-host-fixture-package" and .asset_type == "host" and .ecosystem == "Ubuntu" and .target == "/")' "host Trivy package must preserve host target context"
-assert_json "$packages_json" '.items[] | select(.name == "bongsu-container-fixture-package" and .asset_type == "container" and .container == "bongsu-fixture-container" and .container_id == "fixture-container-id" and .image_name == "fixture.registry/bongsu-agent-fixture:1.0")' "container Trivy package must preserve container/image context"
+assert_json_arg2 "$packages_json" container_id "$PRIMARY_CONTAINER_ID" image_name "fixture.registry/bongsu-agent-fixture:${HOST_ID_PRIMARY}" '.items[] | select(.name == "bongsu-container-fixture-package" and .asset_type == "container" and .container_id == $container_id and .image_name == $image_name)' "container Trivy package must preserve container/image context"
 assert_json "$packages_json" '.items[] | select(.name == "bongsu-osquery-fixture-package" and .source == "osquery" and .asset_type == "host")' "osquery package must be ingested as host package"
-containers_json="$(api_json GET "/api/containers?host_id=${HOST_ID}&limit=20")"
-assert_json "$containers_json" '.items[] | select(.name == "bongsu-fixture-container" and .container_id == "fixture-container-id" and .image_name == "fixture.registry/bongsu-agent-fixture:1.0" and .state == "running")' "container asset must be persisted"
+containers_json="$(api_json GET "/api/containers?host_id=${HOST_ID_PRIMARY}&limit=20")"
+assert_json_arg2 "$containers_json" container_id "$PRIMARY_CONTAINER_ID" image_name "fixture.registry/bongsu-agent-fixture:${HOST_ID_PRIMARY}" '.items[] | select(.container_id == $container_id and .image_name == $image_name and .state == "running")' "container asset must be persisted"
 
-echo "[4/6] Creating host-specific scan request"
-request_body="$(jq -nc --arg host_id "$HOST_ID" '{host_id:$host_id, scan_type:"manual", packages_only:true, reason:"agent binary verifier"}')"
+echo "[4/7] Verifying secondary host inventory is separately queryable"
+secondary_packages_json="$(api_json GET "/api/packages?host_id=${HOST_ID_SECONDARY}&limit=200")"
+assert_json "$secondary_packages_json" '.items[] | select(.name == "bongsu-host-fixture-package" and .asset_type == "host")' "secondary host package must be queryable by secondary host id"
+assert_json_arg2 "$secondary_packages_json" container_id "$SECONDARY_CONTAINER_ID" image_name "fixture.registry/bongsu-agent-fixture:${HOST_ID_SECONDARY}" '.items[] | select(.name == "bongsu-container-fixture-package" and .asset_type == "container" and .container_id == $container_id and .image_name == $image_name)' "secondary container package must preserve secondary container/image context"
+assert_json_arg "$secondary_packages_json" host "$HOST_ID_PRIMARY" 'all(.items[]; .host_id != $host)' "secondary host package query must not leak primary host packages"
+
+echo "[5/7] Creating host-specific scan request"
+request_body="$(jq -nc --arg host_id "$HOST_ID_PRIMARY" '{host_id:$host_id, scan_type:"manual", packages_only:true, reason:"agent binary verifier"}')"
 request_json="$(api_json POST /api/scan-requests "$request_body")"
 SCAN_REQUEST_ID="$(jq -r '.id' <<<"$request_json")"
 assert_json "$request_json" '.status == "pending" and .packages_only == true' "scan request must be pending packages-only"
 
-echo "[5/6] Running agent daemon long enough to claim and complete the request"
+echo "[6/7] Running primary agent daemon long enough to claim and complete the request"
 PATH="$STUB_DIR:$PATH" \
 BONGSU_AGENT_RETRY_ATTEMPTS=1 \
 BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS=1 \
 BONGSU_SERVER_URL="$API_BASE" \
 BONGSU_AGENT_API_KEY="$AGENT_API_KEY" \
-BONGSU_AGENT_TOKEN="$AGENT_TOKEN" \
-timeout 25 "$AGENT_BIN" --work-dir "$WORK_DIR" --daemon --poll-interval 1s >/tmp/bongsu-agent-binary-verifier-daemon.log 2>&1 || true
+BONGSU_AGENT_TOKEN="$PRIMARY_AGENT_TOKEN" \
+BONGSU_VERIFY_AGENT_HOST_ID="$HOST_ID_PRIMARY" \
+timeout 25 "$AGENT_BIN" --work-dir "$PRIMARY_WORK_DIR" --host-id "$HOST_ID_PRIMARY" --daemon --poll-interval 1s >/tmp/bongsu-agent-binary-verifier-daemon.log 2>&1 || true
 
-request_done="$(api_json GET "/api/scan-requests?host_id=${HOST_ID}&limit=20")"
-assert_json_arg2 "$request_done" id "$SCAN_REQUEST_ID" host_id "$HOST_ID" '.items[] | select(.id == $id and (.status == "completed" or .status == "degraded") and .claimed_by_host_id == $host_id)' "daemon must claim and complete the host-specific scan request"
+request_done="$(api_json GET "/api/scan-requests?host_id=${HOST_ID_PRIMARY}&limit=20")"
+assert_json_arg2 "$request_done" id "$SCAN_REQUEST_ID" host_id "$HOST_ID_PRIMARY" '.items[] | select(.id == $id and (.status == "completed" or .status == "degraded") and .claimed_by_host_id == $host_id)' "daemon must claim and complete the host-specific scan request"
 SCAN_REQUEST_ID=""
 
-echo "[6/6] Verifying scan request is tied to a completed inventory scan"
-scans_json="$(api_json GET "/api/scans?host_id=${HOST_ID}&limit=20")"
+echo "[7/7] Verifying scans are tied to the correct host identities"
+scans_json="$(api_json GET "/api/scans?host_id=${HOST_ID_PRIMARY}&limit=20")"
 assert_json "$scans_json" '.items[] | select((.status == "completed" or .status == "degraded") and .package_count >= 3 and .container_count >= 1)' "agent binary scan must persist package and container counts"
+assert_json_arg "$scans_json" host "$HOST_ID_SECONDARY" 'all(.items[]; .host_id != $host)' "primary scan query must not include secondary host scans"
+secondary_scans_json="$(api_json GET "/api/scans?host_id=${HOST_ID_SECONDARY}&limit=20")"
+assert_json "$secondary_scans_json" '.items[] | select((.status == "completed" or .status == "degraded") and .package_count >= 3 and .container_count >= 1)' "secondary agent scan must persist package and container counts"
 
 echo "Agent binary workflow verification passed"

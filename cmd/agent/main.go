@@ -37,6 +37,7 @@ func main() {
 	packagesOnly := flag.Bool("packages-only", false, "Collect packages only (server-side CVE matching)")
 	daemon := flag.Bool("daemon", false, "Poll server for force scan requests")
 	pollInterval := flag.Duration("poll-interval", 60*time.Second, "Force scan polling interval")
+	hostID := flag.String("host-id", "", "Override host identity for cloned/containerized environments")
 	configFile := flag.String("config", "", "Config file path (YAML)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
@@ -62,6 +63,9 @@ func main() {
 		if *workDir == "/opt/bongsu" && cfg.WorkDir != "" {
 			*workDir = cfg.WorkDir
 		}
+		if *hostID == "" {
+			*hostID = cfg.HostID
+		}
 	}
 
 	if *serverURL == "" {
@@ -79,6 +83,12 @@ func main() {
 	if agentToken == "" {
 		agentToken = os.Getenv("BONGSU_AGENT_TOKEN")
 	}
+	if *hostID == "" {
+		*hostID = os.Getenv("BONGSU_HOST_ID")
+	}
+	if *hostID == "" {
+		*hostID = os.Getenv("BONGSU_AGENT_HOST_ID")
+	}
 	if agentToken == "" {
 		var err error
 		agentToken, err = ensureAgentToken(*workDir)
@@ -88,13 +98,13 @@ func main() {
 	}
 
 	if *daemon {
-		if err := runDaemon(*serverURL, *apiKey, agentToken, *workDir, *pollInterval); err != nil {
+		if err := runDaemon(*serverURL, *apiKey, agentToken, *workDir, *hostID, *pollInterval); err != nil {
 			log.Fatalf("daemon failed: %v", err)
 		}
 		return
 	}
 
-	if _, err := run(*serverURL, *apiKey, agentToken, *workDir, *scanType, *packagesOnly, "", ""); err != nil {
+	if _, err := run(*serverURL, *apiKey, agentToken, *workDir, *hostID, *scanType, *packagesOnly, "", ""); err != nil {
 		log.Fatalf("scan failed: %v", err)
 	}
 }
@@ -104,6 +114,7 @@ type config struct {
 	APIKey     string `yaml:"api_key"`
 	AgentToken string `yaml:"agent_token"`
 	WorkDir    string `yaml:"work_dir"`
+	HostID     string `yaml:"host_id"`
 }
 
 func loadConfig(path string) (*config, error) {
@@ -127,6 +138,8 @@ func loadConfig(path string) (*config, error) {
 			cfg.AgentToken = trimQuotes(v)
 		case "work_dir":
 			cfg.WorkDir = trimQuotes(v)
+		case "host_id":
+			cfg.HostID = trimQuotes(v)
 		}
 	}
 	return cfg, nil
@@ -172,12 +185,23 @@ func ensureAgentToken(workDir string) (string, error) {
 	return token, nil
 }
 
-func runDaemon(serverURL, apiKey, agentToken, workDir string, pollInterval time.Duration) error {
+func applyHostIDOverride(host *models.Host, override string) {
+	if host == nil {
+		return
+	}
+	override = strings.TrimSpace(override)
+	if override != "" {
+		host.ID = override
+	}
+}
+
+func runDaemon(serverURL, apiKey, agentToken, workDir, hostIDOverride string, pollInterval time.Duration) error {
 	log.Println("=== Bongsu Agent Daemon Starting ===")
 	host, err := system.CollectHostInfo()
 	if err != nil {
 		return fmt.Errorf("system info: %w", err)
 	}
+	applyHostIDOverride(host, hostIDOverride)
 	rep := reporter.New(serverURL, apiKey, agentToken)
 	for {
 		req, err := rep.ClaimScanRequest(host.ID)
@@ -191,7 +215,7 @@ func runDaemon(serverURL, apiKey, agentToken, workDir string, pollInterval time.
 			continue
 		}
 		log.Printf("claimed scan request %s type=%s packages_only=%v", req.ID, req.ScanType, req.PackagesOnly)
-		result, err := run(serverURL, apiKey, agentToken, workDir, req.ScanType, req.PackagesOnly, req.ID, req.SecurityDBRevision)
+		result, err := run(serverURL, apiKey, agentToken, workDir, hostIDOverride, req.ScanType, req.PackagesOnly, req.ID, req.SecurityDBRevision)
 		if err != nil {
 			log.Printf("scan request %s failed: %v", req.ID, err)
 			_ = rep.CompleteScanRequest(req.ID, host.ID, "failed", err.Error())
@@ -204,7 +228,7 @@ func runDaemon(serverURL, apiKey, agentToken, workDir string, pollInterval time.
 	}
 }
 
-func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly bool, scanRequestID, securityDBRevision string) (*reporter.ReportResult, error) {
+func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string, packagesOnly bool, scanRequestID, securityDBRevision string) (*reporter.ReportResult, error) {
 	log.Println("=== Bongsu Agent Starting ===")
 	log.Printf("Server: %s", serverURL)
 	log.Printf("Work dir: %s", workDir)
@@ -220,6 +244,7 @@ func run(serverURL, apiKey, agentToken, workDir, scanType string, packagesOnly b
 	if err != nil {
 		return nil, fmt.Errorf("system info: %w", err)
 	}
+	applyHostIDOverride(host, hostIDOverride)
 	host.AgentVersion = agentVersionString()
 	log.Printf("Host: %s (%s %s)", host.Hostname, host.OSName, host.OSVersion)
 	collectionErrors := []string{}
