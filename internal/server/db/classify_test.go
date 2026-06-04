@@ -3394,6 +3394,25 @@ func TestFixedVersionSQLConditionDoesNotHidePrereleases(t *testing.T) {
 	}
 }
 
+func TestFixedVersionEvidenceSQLRejectsNonVersionEvidence(t *testing.T) {
+	got := fixedVersionEvidenceSQL("v")
+	for _, want := range []string{
+		"v.fixed_version IS NOT NULL",
+		"v.fixed_version != ''",
+		"v.fixed_version ~ '[0-9]'",
+		"v.fixed_version !~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+		"v.fixed_version !~* '^(?:https?|git|ssh)://'",
+		"v.fixed_version !~* '^git\\+'",
+		"v.fixed_version !~* '^pkg:'",
+		"v.fixed_version !~ '/'",
+		"v.fixed_version !~* '^(?:main|master|trunk|head|latest|stable|unstable|develop|development)$'",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("fixed evidence condition missing %q: %s", want, got)
+		}
+	}
+}
+
 func TestCurrentActionableVulnSQLUsesRemediationFilters(t *testing.T) {
 	got := currentActionableVulnSQL()
 	for _, want := range []string{
@@ -3410,6 +3429,36 @@ func TestCurrentActionableVulnSQLUsesRemediationFilters(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("current actionable SQL missing %q: %s", want, got)
 		}
+	}
+}
+
+func TestVulnerabilitySearchUsesSafeFixedEvidenceForNoFixFilter(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) ListVulnerabilities")
+	if start < 0 {
+		t.Fatal("ListVulnerabilities not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetVulnCountsByHost")
+	if end < 0 {
+		t.Fatal("ListVulnerabilities end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"if f.HideNoFix",
+		"fixedVersionEvidenceSQL(\"v\")",
+		"fixedVersionSQLCondition(\"v\")",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("vulnerability search missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "v.fixed_version !~ '^[0-9a-f]{40}$'") ||
+		strings.Contains(fn, "v.fixed_version IS NOT NULL AND v.fixed_version != ''") {
+		t.Fatalf("vulnerability search must not use legacy fixed evidence checks: %s", fn)
 	}
 }
 

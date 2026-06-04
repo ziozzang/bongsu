@@ -510,19 +510,29 @@ func fixedVersionSQLCondition(alias string) string {
 	}
 	installed := prefix + "installed_version"
 	fixed := prefix + "fixed_version"
-	return fmt.Sprintf(`%s IS NOT NULL AND %s != ''
+	return fmt.Sprintf(`%s
 			AND %s IS NOT NULL AND %s != ''
+			AND %s !~* '(~|alpha|beta|rc|pre|preview|dev|snapshot)'
+			AND regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
+			AND regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
+			AND array_remove(string_to_array(regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]
+			  >= array_remove(string_to_array(regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]`,
+		fixedVersionEvidenceSQL(alias), installed, installed, installed, installed, fixed, installed, fixed)
+}
+
+func fixedVersionEvidenceSQL(alias string) string {
+	prefix := ""
+	if alias != "" {
+		prefix = alias + "."
+	}
+	fixed := prefix + "fixed_version"
+	return fmt.Sprintf(`%s IS NOT NULL AND %s != ''
 			AND %s ~ '[0-9]'
 			AND %s !~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'
 			AND %s !~* '^(?:https?|git|ssh)://'
 			AND %s !~* '^git\+'
 			AND %s !~* '^pkg:'
 			AND %s !~ '/'
-			AND %s !~* '^(?:main|master|trunk|head|latest|stable|unstable|develop|development)$'
-			AND %s !~* '(~|alpha|beta|rc|pre|preview|dev|snapshot)'
-			AND regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
-			AND regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g') != ''
-			AND array_remove(string_to_array(regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]
-			  >= array_remove(string_to_array(regexp_replace(regexp_replace(%s, '^[0-9]+:', ''), '[^0-9.]', '.', 'g'), '.'), '')::numeric[]`,
-		fixed, fixed, installed, installed, fixed, fixed, fixed, fixed, fixed, fixed, fixed, installed, installed, fixed, installed, fixed)
+			AND %s !~* '^(?:main|master|trunk|head|latest|stable|unstable|develop|development)$'`,
+		fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed)
 }
