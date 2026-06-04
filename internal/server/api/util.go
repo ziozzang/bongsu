@@ -32,11 +32,19 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any, allowEmpty 
 		return io.EOF
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes())
-	err := json.NewDecoder(r.Body).Decode(dst)
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(dst)
 	if err == io.EOF && allowEmpty {
 		return nil
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	var extra struct{}
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return fmt.Errorf("invalid trailing json")
+	}
+	return nil
 }
 
 func writeJSONBodyError(w http.ResponseWriter, err error, fallback string) {

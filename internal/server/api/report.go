@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -27,12 +28,18 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxAgentReportBytes())
 
 	var report models.ScanReport
-	if err := json.NewDecoder(r.Body).Decode(&report); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&report); err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
 			writeError(w, http.StatusRequestEntityTooLarge, "report too large")
 			return
 		}
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	var extra struct{}
+	if err := decoder.Decode(&extra); err != io.EOF {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}

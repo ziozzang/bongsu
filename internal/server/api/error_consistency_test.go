@@ -54,3 +54,36 @@ func TestNoHTTPErrorInHandlers(t *testing.T) {
 		}
 	}
 }
+
+func TestDecodeJSONBodyRejectsTrailingData(t *testing.T) {
+	req := httptest.NewRequest("POST", "/api/test", strings.NewReader(`{"ok":true}{"extra":true}`))
+	w := httptest.NewRecorder()
+	var body map[string]bool
+	if err := decodeJSONBody(w, req, &body, false); err == nil {
+		t.Fatal("expected trailing JSON to be rejected")
+	}
+
+	req = httptest.NewRequest("POST", "/api/test", strings.NewReader(`{"ok":true} trailing`))
+	w = httptest.NewRecorder()
+	if err := decodeJSONBody(w, req, &body, false); err == nil {
+		t.Fatal("expected trailing garbage to be rejected")
+	}
+}
+
+func TestAgentReportRejectsTrailingData(t *testing.T) {
+	data, err := os.ReadFile("report.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		"decoder := json.NewDecoder(r.Body)",
+		"decoder.Decode(&report)",
+		"decoder.Decode(&extra)",
+		"err != io.EOF",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("agent report strict JSON decode missing %q", want)
+		}
+	}
+}
