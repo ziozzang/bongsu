@@ -8,7 +8,7 @@ This runbook is for operators running Bongsu in connected or air-gapped environm
 
 - Set unique strong values for `BONGSU_DB_PASSWORD`, `BONGSU_API_KEY`, `BONGSU_AGENT_API_KEY`, and `BONGSU_INSTALL_TOKEN`.
 - Keep `BONGSU_ALLOW_WEAK_SECRETS=false`, `BONGSU_WEB_AUTH=true`, `BONGSU_AGENT_HOST_BINDING=true`, and same-origin CORS unless a specific origin is required.
-- Keep `BONGSU_OIDC_ISSUER` unset in production until real OIDC login support is implemented. If the variable is accidentally set today, the API logs a warning and keeps local username/password authentication active instead of switching to an unusable placeholder.
+- Keep `BONGSU_OIDC_ISSUER` unset until browser OIDC login support is implemented. For production SSO today, put Bongsu behind a trusted OIDC/auth proxy and configure `BONGSU_TRUSTED_IDENTITY_HEADER`, `BONGSU_TRUSTED_GROUPS_HEADER`, and `BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS` so only that proxy can supply user/group RBAC subjects.
 - Confirm Docker Compose renders the intended connected or air-gapped mode before startup:
 
 ```bash
@@ -260,6 +260,8 @@ BONGSU_VIEWER_SUBJECT=rbac-live-viewer \
 ```
 
 This verifier ingests a two-host/two-container fixture, grants the viewer through a dynamic `asset_group` policy such as `team:rbac-allowed`, and proves that the viewer can see the allowed host, its host and container packages, its container, scans, and scan requests while the denied host and denied container stay hidden or return `403` on explicit denied-host filters.
+
+For SSO-backed RBAC, terminate browser login in an auth/OIDC reverse proxy and let Bongsu trust only that proxy's identity headers. Set `BONGSU_TRUSTED_IDENTITY_HEADER` for the authenticated user header, `BONGSU_TRUSTED_GROUPS_HEADER` for comma- or semicolon-separated group memberships, and `BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS` to the proxy address range. Header values become RBAC subjects `user:<value>` and `group:<value>`, so create matching `access_subjects` and policies before granting access. Use `BONGSU_TRUSTED_ADMIN_USERS` or `BONGSU_TRUSTED_ADMIN_GROUPS` sparingly for administrative access, and keep direct browser OIDC variables such as `BONGSU_OIDC_ISSUER` unset until native login support is implemented.
 
 Live CVE DB quality and performance verification:
 

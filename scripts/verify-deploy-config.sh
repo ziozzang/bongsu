@@ -51,6 +51,11 @@ for config in "$CONNECTED_CONFIG" "$AIRGAP_CONFIG"; do
     require_line "$config" 'BONGSU_WEB_AUTH: "true"' "Web auth must default to enabled"
     require_line "$config" 'BONGSU_ALLOW_WEAK_SECRETS: "false"' "Weak-secret override must default to false"
     require_line "$config" 'BONGSU_AGENT_HOST_BINDING: "true"' "Agent host token binding must default to true"
+    require_line "$config" 'BONGSU_TRUSTED_IDENTITY_HEADER: ""' "Trusted identity header must default to disabled"
+    require_line "$config" 'BONGSU_TRUSTED_GROUPS_HEADER: ""' "Trusted groups header must default to disabled"
+    require_line "$config" 'BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS: ""' "Trusted identity proxy CIDRs must default to unset"
+    require_line "$config" 'BONGSU_TRUSTED_ADMIN_USERS: ""' "Trusted admin users must default to unset"
+    require_line "$config" 'BONGSU_TRUSTED_ADMIN_GROUPS: ""' "Trusted admin groups must default to unset"
     require_line "$config" 'BONGSU_CORS_ALLOWED_ORIGINS: ""' "CORS must default to same-origin only"
     require_line "$config" 'max_wal_size=4GB' "PostgreSQL must allow large WAL bursts during CVE DB imports"
     require_line "$config" 'checkpoint_timeout=15min' "PostgreSQL checkpoint timeout must be tuned for CVE DB imports"
@@ -76,6 +81,11 @@ require_line "$ENV_EXAMPLE" '^BONGSU_AGENT_API_KEY=change-me-to-a-different-agen
 require_line "$ENV_EXAMPLE" '^BONGSU_INSTALL_TOKEN=change-me-to-an-install-token$' ".env.example must mark install token as operator-provided"
 require_line "$ENV_EXAMPLE" '^BONGSU_ALLOW_WEAK_SECRETS=false$' ".env.example must keep weak-secret override disabled"
 require_line "$ENV_EXAMPLE" '^BONGSU_WEB_AUTH=true$' ".env.example must keep web auth enabled"
+require_line "$ENV_EXAMPLE" '^BONGSU_TRUSTED_IDENTITY_HEADER=$' ".env.example must expose trusted identity header configuration"
+require_line "$ENV_EXAMPLE" '^BONGSU_TRUSTED_GROUPS_HEADER=$' ".env.example must expose trusted groups header configuration"
+require_line "$ENV_EXAMPLE" '^BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS=$' ".env.example must expose trusted identity proxy CIDR configuration"
+require_line "$ENV_EXAMPLE" '^BONGSU_TRUSTED_ADMIN_USERS=$' ".env.example must expose trusted admin user configuration"
+require_line "$ENV_EXAMPLE" '^BONGSU_TRUSTED_ADMIN_GROUPS=$' ".env.example must expose trusted admin group configuration"
 
 GO_MINOR="$(awk '$1 == "go" { split($2, v, "."); print v[1] "." v[2]; exit }' "$ROOT/go.mod")"
 if [ -z "$GO_MINOR" ]; then

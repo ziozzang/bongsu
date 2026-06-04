@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -850,6 +852,57 @@ func TestViewerKeys(t *testing.T) {
 	if got := s.viewerSubject(req); got != "alice" {
 		t.Fatalf("viewer subject = %q", got)
 	}
+}
+
+func TestTrustedIdentityHeadersRequireTrustedProxyAndProduceRBACSubjects(t *testing.T) {
+	s := &Server{
+		apiKey:  "admin-key",
+		webAuth: true,
+		trustedAuth: trustedIdentityConfig{
+			userHeader:   "X-Forwarded-User",
+			groupsHeader: "X-Forwarded-Groups",
+			adminUsers:   map[string]bool{"root@example.com": true},
+			adminGroups:  map[string]bool{"security-admins": true},
+			proxyNets: []*net.IPNet{
+				mustCIDR(t, "127.0.0.1/32"),
+			},
+		},
+	}
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "127.0.0.1:44000"
+	req.Header.Set("X-Forwarded-User", "alice@example.com")
+	req.Header.Set("X-Forwarded-Groups", "platform, security-admins;ignored-empty,,")
+	subjects := s.viewerSubjects(req)
+	for _, want := range []string{"user:alice@example.com", "group:platform", "group:security-admins", "group:ignored-empty"} {
+		if !slices.Contains(subjects, want) {
+			t.Fatalf("trusted identity subjects missing %q: %#v", want, subjects)
+		}
+	}
+	if !s.authenticateWeb(req) {
+		t.Fatal("trusted identity should authenticate web")
+	}
+	if !s.authenticateAdmin(req) {
+		t.Fatal("trusted admin group should authenticate admin")
+	}
+
+	untrusted := httptest.NewRequest("GET", "/", nil)
+	untrusted.RemoteAddr = "203.0.113.9:44000"
+	untrusted.Header = req.Header.Clone()
+	if got := s.viewerSubjects(untrusted); len(got) != 0 {
+		t.Fatalf("untrusted proxy subjects = %#v, want none", got)
+	}
+	if s.authenticateAdmin(untrusted) {
+		t.Fatal("untrusted forwarded identity must not authenticate admin")
+	}
+}
+
+func mustCIDR(t *testing.T, raw string) *net.IPNet {
+	t.Helper()
+	_, network, err := net.ParseCIDR(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return network
 }
 
 func TestCveDBReadUsesRBACResource(t *testing.T) {
@@ -4738,6 +4791,11 @@ func TestDeployComposeRequiresOperationalSecrets(t *testing.T) {
 				"BONGSU_HTTP_WRITE_TIMEOUT_SECONDS: ${BONGSU_HTTP_WRITE_TIMEOUT_SECONDS:-900}",
 				"BONGSU_HTTP_IDLE_TIMEOUT_SECONDS: ${BONGSU_HTTP_IDLE_TIMEOUT_SECONDS:-120}",
 				"BONGSU_HTTP_MAX_HEADER_BYTES: ${BONGSU_HTTP_MAX_HEADER_BYTES:-1048576}",
+				"BONGSU_TRUSTED_IDENTITY_HEADER: ${BONGSU_TRUSTED_IDENTITY_HEADER:-}",
+				"BONGSU_TRUSTED_GROUPS_HEADER: ${BONGSU_TRUSTED_GROUPS_HEADER:-}",
+				"BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS: ${BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS:-}",
+				"BONGSU_TRUSTED_ADMIN_USERS: ${BONGSU_TRUSTED_ADMIN_USERS:-}",
+				"BONGSU_TRUSTED_ADMIN_GROUPS: ${BONGSU_TRUSTED_ADMIN_GROUPS:-}",
 				`BONGSU_PORT: "5677"`,
 				`${BONGSU_API_PORT:-5677}:5677`,
 				`${BONGSU_WEB_PORT:-5678}:80`,
@@ -4832,6 +4890,11 @@ func TestDeployEnvExampleKeepsWebAuthEnabled(t *testing.T) {
 		"BONGSU_SYNC_REQUIRE_TRIVY_SOURCE=true",
 		"BONGSU_SECURITY_DB_REQUIRED_SOURCES=cisa-kev,epss,osv,nvd,trivy",
 		"BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS=30",
+		"BONGSU_TRUSTED_IDENTITY_HEADER=",
+		"BONGSU_TRUSTED_GROUPS_HEADER=",
+		"BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS=",
+		"BONGSU_TRUSTED_ADMIN_USERS=",
+		"BONGSU_TRUSTED_ADMIN_GROUPS=",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("example deployment auto-update default missing %q", want)

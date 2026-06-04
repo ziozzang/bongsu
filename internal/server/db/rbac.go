@@ -16,6 +16,21 @@ type AccessScope struct {
 	HostIDs []string
 }
 
+func MergeAccessScopes(scopes ...AccessScope) AccessScope {
+	out := AccessScope{}
+	for _, scope := range scopes {
+		if scope.All {
+			out.All = true
+			out.HostIDs = nil
+			return out
+		}
+		for _, id := range scope.HostIDs {
+			out.HostIDs = appendUnique(out.HostIDs, id)
+		}
+	}
+	return out
+}
+
 type AccessControlStats struct {
 	SubjectCount        int            `json:"subject_count"`
 	PolicyCount         int            `json:"policy_count"`

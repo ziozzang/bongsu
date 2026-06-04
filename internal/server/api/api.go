@@ -39,6 +39,7 @@ type Server struct {
 	agentKey     string
 	installToken string
 	viewerKeys   map[string]string
+	trustedAuth  trustedIdentityConfig
 	webAuth      bool
 	corsOrigins  map[string]bool
 	corsAllowAll bool
@@ -87,6 +88,14 @@ type Server struct {
 	buildInfo BuildInfo
 }
 
+type trustedIdentityConfig struct {
+	userHeader   string
+	groupsHeader string
+	adminUsers   map[string]bool
+	adminGroups  map[string]bool
+	proxyNets    []*net.IPNet
+}
+
 type cveStatsBuildResult struct {
 	body   []byte
 	status int
@@ -119,6 +128,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		agentKey:     agentKey,
 		installToken: os.Getenv("BONGSU_INSTALL_TOKEN"),
 		viewerKeys:   parseViewerKeys(os.Getenv("BONGSU_VIEWER_API_KEYS")),
+		trustedAuth:  trustedIdentityConfigFromEnv(),
 		webAuth:      os.Getenv("BONGSU_WEB_AUTH") != "false",
 		corsOrigins:  parseAllowedOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
 		corsAllowAll: allowsAllOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
@@ -186,6 +196,47 @@ func parseViewerKeys(raw string) map[string]string {
 			continue
 		}
 		out[parts[0]] = parts[1]
+	}
+	return out
+}
+
+func trustedIdentityConfigFromEnv() trustedIdentityConfig {
+	userHeader := strings.TrimSpace(os.Getenv("BONGSU_TRUSTED_IDENTITY_HEADER"))
+	groupsHeader := strings.TrimSpace(os.Getenv("BONGSU_TRUSTED_GROUPS_HEADER"))
+	cfg := trustedIdentityConfig{
+		userHeader:   userHeader,
+		groupsHeader: groupsHeader,
+		adminUsers:   mapFromList(splitCSV(os.Getenv("BONGSU_TRUSTED_ADMIN_USERS"))),
+		adminGroups:  mapFromList(splitCSV(os.Getenv("BONGSU_TRUSTED_ADMIN_GROUPS"))),
+	}
+	if userHeader == "" && groupsHeader == "" {
+		return cfg
+	}
+	cidrs := splitCSV(os.Getenv("BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS"))
+	if len(cidrs) == 0 {
+		cidrs = []string{"127.0.0.1/32", "::1/128"}
+	}
+	for _, raw := range cidrs {
+		_, network, err := net.ParseCIDR(raw)
+		if err != nil {
+			log.Printf("WARNING: ignoring invalid BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS entry %q: %v", raw, err)
+			continue
+		}
+		cfg.proxyNets = append(cfg.proxyNets, network)
+	}
+	if len(cfg.proxyNets) == 0 {
+		log.Printf("WARNING: trusted identity headers configured but no valid trusted proxy CIDRs are available")
+	}
+	return cfg
+}
+
+func mapFromList(items []string) map[string]bool {
+	out := map[string]bool{}
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			out[item] = true
+		}
 	}
 	return out
 }
@@ -354,7 +405,7 @@ func (s *Server) authenticateWeb(r *http.Request) bool {
 	if !s.webAuth {
 		return true
 	}
-	return s.authenticateAdmin(r) || s.viewerSubject(r) != "" || s.authenticateSession(r)
+	return s.authenticateAdmin(r) || len(s.viewerSubjects(r)) > 0 || s.authenticateSession(r)
 }
 
 func (s *Server) authenticateAdmin(r *http.Request) bool {
@@ -362,7 +413,7 @@ func (s *Server) authenticateAdmin(r *http.Request) bool {
 		return true
 	}
 	u := s.sessionUser(r)
-	return u != nil && u.Role == "admin"
+	return (u != nil && u.Role == "admin") || s.trustedIdentity(r).Admin
 }
 
 func (s *Server) authenticateAgent(r *http.Request) bool {
@@ -379,11 +430,105 @@ func (s *Server) authenticateInstall(r *http.Request) bool {
 }
 
 func (s *Server) viewerSubject(r *http.Request) string {
-	key := r.Header.Get("X-API-Key")
-	if key == "" {
+	subjects := s.viewerSubjects(r)
+	if len(subjects) == 0 {
 		return ""
 	}
-	return s.viewerKeys[key]
+	return subjects[0]
+}
+
+func (s *Server) viewerSubjects(r *http.Request) []string {
+	subjects := []string{}
+	key := r.Header.Get("X-API-Key")
+	if key != "" {
+		if subject := s.viewerKeys[key]; subject != "" {
+			subjects = appendUniqueString(subjects, subject)
+		}
+	}
+	identity := s.trustedIdentity(r)
+	for _, subject := range identity.Subjects {
+		subjects = appendUniqueString(subjects, subject)
+	}
+	return subjects
+}
+
+type trustedIdentity struct {
+	User     string
+	Groups   []string
+	Subjects []string
+	Admin    bool
+}
+
+func (s *Server) trustedIdentity(r *http.Request) trustedIdentity {
+	cfg := s.trustedAuth
+	if cfg.userHeader == "" && cfg.groupsHeader == "" {
+		return trustedIdentity{}
+	}
+	if !cfg.trustsRemoteAddr(r.RemoteAddr) {
+		return trustedIdentity{}
+	}
+	user := ""
+	if cfg.userHeader != "" {
+		user = strings.TrimSpace(r.Header.Get(cfg.userHeader))
+	}
+	groups := []string{}
+	if cfg.groupsHeader != "" {
+		groups = splitIdentityHeaderValues(r.Header.Get(cfg.groupsHeader))
+	}
+	if user == "" && len(groups) == 0 {
+		return trustedIdentity{}
+	}
+	subjects := []string{}
+	admin := false
+	if user != "" {
+		subjects = appendUniqueString(subjects, "user:"+user)
+		admin = cfg.adminUsers[user]
+	}
+	for _, group := range groups {
+		subjects = appendUniqueString(subjects, "group:"+group)
+		if cfg.adminGroups[group] {
+			admin = true
+		}
+	}
+	return trustedIdentity{User: user, Groups: groups, Subjects: subjects, Admin: admin}
+}
+
+func (c trustedIdentityConfig) trustsRemoteAddr(remoteAddr string) bool {
+	if len(c.proxyNets) == 0 {
+		return false
+	}
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		host = remoteAddr
+	}
+	ip := net.ParseIP(strings.TrimSpace(host))
+	if ip == nil {
+		return false
+	}
+	for _, network := range c.proxyNets {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func splitIdentityHeaderValues(raw string) []string {
+	raw = strings.ReplaceAll(raw, ";", ",")
+	return cleanCSV(strings.Split(raw, ","))
+}
+
+func appendUniqueString(items []string, item string) []string {
+	item = strings.TrimSpace(item)
+	if item == "" {
+		return items
+	}
+	for _, existing := range items {
+		if existing == item {
+			return items
+		}
+	}
+	return append(items, item)
 }
 
 func (s *Server) accessScope(r *http.Request) db.AccessScope {
@@ -393,36 +538,44 @@ func (s *Server) accessScope(r *http.Request) db.AccessScope {
 	if u := s.sessionUser(r); u != nil && u.Role == "admin" {
 		return db.AccessScope{All: true}
 	}
-	subject := s.viewerSubject(r)
-	if subject == "" {
+	subjects := s.viewerSubjects(r)
+	if len(subjects) == 0 {
 		return db.AccessScope{}
 	}
-	scope, err := s.db.GetAccessScope(r.Context(), subject)
-	if err != nil {
-		log.Printf("rbac scope %s: %v", subject, err)
-		return db.AccessScope{}
+	scopes := make([]db.AccessScope, 0, len(subjects))
+	for _, subject := range subjects {
+		scope, err := s.db.GetAccessScope(r.Context(), subject)
+		if err != nil {
+			log.Printf("rbac scope %s: %v", subject, err)
+			continue
+		}
+		scopes = append(scopes, scope)
 	}
-	return scope
+	return db.MergeAccessScopes(scopes...)
 }
 
 func (s *Server) authenticateExport(r *http.Request) bool {
-	return s.authenticateAdmin(r) || s.viewerSubject(r) != "" || s.authenticateSession(r)
+	return s.authenticateAdmin(r) || len(s.viewerSubjects(r)) > 0 || s.authenticateSession(r)
 }
 
 func (s *Server) exportScope(r *http.Request) db.AccessScope {
 	if s.authenticateAdmin(r) {
 		return db.AccessScope{All: true}
 	}
-	subject := s.viewerSubject(r)
-	if subject == "" {
+	subjects := s.viewerSubjects(r)
+	if len(subjects) == 0 {
 		return db.AccessScope{}
 	}
-	scope, err := s.db.GetExportScope(r.Context(), subject)
-	if err != nil {
-		log.Printf("rbac export scope %s: %v", subject, err)
-		return db.AccessScope{}
+	scopes := make([]db.AccessScope, 0, len(subjects))
+	for _, subject := range subjects {
+		scope, err := s.db.GetExportScope(r.Context(), subject)
+		if err != nil {
+			log.Printf("rbac export scope %s: %v", subject, err)
+			continue
+		}
+		scopes = append(scopes, scope)
 	}
-	return scope
+	return db.MergeAccessScopes(scopes...)
 }
 
 func (s *Server) canReadHost(r *http.Request, hostID string) bool {
@@ -434,16 +587,21 @@ func (s *Server) canReadCveDB(r *http.Request) bool {
 	if s.authenticateAdmin(r) || !s.webAuth {
 		return true
 	}
-	subject := s.viewerSubject(r)
-	if subject == "" {
+	subjects := s.viewerSubjects(r)
+	if len(subjects) == 0 {
 		return false
 	}
-	ok, err := s.db.HasResourcePermission(r.Context(), subject, "cve_db", []string{"read", "admin"})
-	if err != nil {
-		log.Printf("rbac cve_db scope %s: %v", subject, err)
-		return false
+	for _, subject := range subjects {
+		ok, err := s.db.HasResourcePermission(r.Context(), subject, "cve_db", []string{"read", "admin"})
+		if err != nil {
+			log.Printf("rbac cve_db scope %s: %v", subject, err)
+			continue
+		}
+		if ok {
+			return true
+		}
 	}
-	return ok
+	return false
 }
 
 func (s *Server) matchKey(got, want string) bool {
@@ -558,7 +716,10 @@ func (s *Server) actorType(r *http.Request) string {
 	if u := s.sessionUser(r); u != nil {
 		return u.Role
 	}
-	if s.viewerSubject(r) != "" {
+	if s.trustedIdentity(r).User != "" {
+		return "trusted_user"
+	}
+	if len(s.viewerSubjects(r)) > 0 {
 		return "viewer"
 	}
 	return "anonymous"
@@ -568,8 +729,11 @@ func (s *Server) actorID(r *http.Request) string {
 	if u := s.sessionUser(r); u != nil {
 		return u.Username
 	}
-	if subject := s.viewerSubject(r); subject != "" {
-		return subject
+	if identity := s.trustedIdentity(r); identity.User != "" {
+		return "user:" + identity.User
+	}
+	if subjects := s.viewerSubjects(r); len(subjects) > 0 {
+		return subjects[0]
 	}
 	if s.authenticateAdmin(r) {
 		return "admin"

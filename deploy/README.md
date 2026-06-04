@@ -221,6 +221,11 @@ spec:
 | `BONGSU_HTTP_IDLE_TIMEOUT_SECONDS` | `120` | Maximum keep-alive idle seconds per connection |
 | `BONGSU_HTTP_MAX_HEADER_BYTES` | `1048576` | Maximum accepted HTTP request header size |
 | `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC; use `key:user:alice` or `key:group:platform` when user and group IDs may overlap |
+| `BONGSU_TRUSTED_IDENTITY_HEADER` | empty | Optional trusted reverse-proxy user header such as `X-Forwarded-User`; the value becomes RBAC subject `user:<value>` |
+| `BONGSU_TRUSTED_GROUPS_HEADER` | empty | Optional trusted reverse-proxy groups header; comma or semicolon separated values become RBAC subjects `group:<value>` |
+| `BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS` | loopback when trusted headers are enabled | Comma-separated proxy CIDRs allowed to supply trusted identity headers |
+| `BONGSU_TRUSTED_ADMIN_USERS` | empty | Comma-separated trusted identity users that may access admin APIs |
+| `BONGSU_TRUSTED_ADMIN_GROUPS` | empty | Comma-separated trusted identity groups that may access admin APIs |
 | `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
 | `BONGSU_API_PORT` | `5677` | Host port for the Bongsu API server |
 | `BONGSU_WEB_PORT` | `5678` | Host port for the Bongsu web UI |
@@ -372,6 +377,15 @@ One-line installer and binary download authentication is header-only. Use `X-Ins
 ```bash
 # Map a viewer API key to user subject "alice"
 echo 'BONGSU_VIEWER_API_KEYS=viewer-secret:user:alice' >> deploy/.env
+
+# Or trust an OIDC/auth proxy that injects identity headers from loopback.
+# Requests from other remote addresses ignore these headers.
+cat >> deploy/.env <<'EOF'
+BONGSU_TRUSTED_IDENTITY_HEADER=X-Forwarded-User
+BONGSU_TRUSTED_GROUPS_HEADER=X-Forwarded-Groups
+BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS=127.0.0.1/32,::1/128
+BONGSU_TRUSTED_ADMIN_GROUPS=security-admins
+EOF
 
 # Create subject and grant read access to one host
 curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
