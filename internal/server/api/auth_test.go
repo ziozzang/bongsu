@@ -4007,6 +4007,33 @@ func TestLiveSBOMExportWorkflowVerifierPreservesOntology(t *testing.T) {
 	}
 }
 
+func TestLiveVulnerabilityExportRBACVerifierScopesExports(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-vulnerability-export-rbac.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`phenx/php-svg-lib`,
+		`pkg:composer/phenx/php-svg-lib@0.5.0`,
+		`permission:"export"`,
+		`resource_type:"asset_group"`,
+		`resource_id:"team:export-allowed"`,
+		`/api/vulnerabilities/export?format=json&limit=50`,
+		`/api/vulnerabilities/export?format=csv&limit=50`,
+		`/api/vulnerabilities/export?format=json&host_id=${DENIED_HOST_ID}&limit=10`,
+		`expected 403`,
+		`scope_host_count == 1`,
+		`finding_source == "cve-db"`,
+		`CSV vulnerability export leaked denied fixture`,
+		`Live vulnerability export RBAC verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live vulnerability export RBAC verifier missing %q", want)
+		}
+	}
+}
+
 func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
 	if err != nil {

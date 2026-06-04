@@ -81,6 +81,7 @@ for script in \
     'verify-live-security-db-schedule.sh' \
     'verify-live-session-auth.sh' \
     'verify-live-server-build.sh' \
+    'verify-live-vulnerability-export-rbac.sh' \
     'verify-live-web-smoke.sh' \
     'verify-operator-workflow.sh' \
     'verify-static-binaries.sh'
@@ -111,7 +112,8 @@ for pattern in \
     'verify-live-security-db-schedule\.sh' \
     'verify-live-sbom-export-workflow\.sh' \
     'verify-live-session-auth\.sh' \
-    'verify-live-server-build\.sh'
+    'verify-live-server-build\.sh' \
+    'verify-live-vulnerability-export-rbac\.sh'
 do
     require_text "$PACKAGE_SCRIPT" "$pattern" "package script missing release invariant $pattern"
 done

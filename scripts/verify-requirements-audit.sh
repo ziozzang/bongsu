@@ -156,6 +156,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-live-installer-payload\.sh' "airgap packa
 require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-schedule\.sh' "airgap package must include live security DB schedule verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-session-auth\.sh' "airgap package must include live session auth verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-server-build\.sh' "airgap package must include live server build verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-vulnerability-export-rbac\.sh' "airgap package must include live vulnerability export RBAC verifier"
 
 for section in \
     'Production Readiness Checklist' \
@@ -202,6 +203,7 @@ for keyword in \
     'verify-live-security-db-schedule\.sh' \
     'verify-live-session-auth\.sh' \
     'verify-live-server-build\.sh' \
+    'verify-live-vulnerability-export-rbac\.sh' \
     'verify-release-readiness\.sh' \
     'verify-live-web-smoke\.sh' \
     'two-host/two-container' \

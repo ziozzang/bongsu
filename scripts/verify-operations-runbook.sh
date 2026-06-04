@@ -126,6 +126,7 @@ for script in \
     verify-live-security-db-schedule.sh \
     verify-live-session-auth.sh \
     verify-live-cvedb-quality.sh \
+    verify-live-vulnerability-export-rbac.sh \
     sync-osv-cvedb.sh \
     sync-trivy-cvedb.sh \
     verify-live-web-smoke.sh \
@@ -148,6 +149,7 @@ require_text "$RELEASE" 'verify-live-install-script\.sh' "live release readiness
 require_text "$RELEASE" 'verify-live-scan-request-recovery\.sh' "live release readiness must verify stale scan-request recovery"
 require_text "$RELEASE" 'verify-live-security-db-schedule\.sh' "live release readiness must verify security DB sync scheduling"
 require_text "$RELEASE" 'verify-live-session-auth\.sh' "live release readiness must verify local session login"
+require_text "$RELEASE" 'verify-live-vulnerability-export-rbac\.sh' "live release readiness must verify vulnerability export RBAC scoping"
 require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "live release readiness must fail closed when direct DB checks are required but unavailable"
 require_text "$AUDIT" 'verify-operations-runbook\.sh' "requirements audit must list the operations runbook verifier"
 require_text "$ARCH" 'security_db_freshness\.latest_source' "architecture must document persisted freshness health fields"

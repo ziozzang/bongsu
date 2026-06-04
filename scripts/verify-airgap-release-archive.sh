@@ -116,6 +116,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-live-security-db-schedule.sh" \
     "$ROOT_DIR/scripts/verify-live-session-auth.sh" \
     "$ROOT_DIR/scripts/verify-live-server-build.sh" \
+    "$ROOT_DIR/scripts/verify-live-vulnerability-export-rbac.sh" \
     "$ROOT_DIR/scripts/verify-live-web-smoke.sh" \
     "$ROOT_DIR/deploy/docker-compose.yml" \
     "$ROOT_DIR/deploy/docker-compose.airgap.yml" \
