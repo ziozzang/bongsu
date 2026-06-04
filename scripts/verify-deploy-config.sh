@@ -74,4 +74,12 @@ require_line "$ENV_EXAMPLE" '^BONGSU_INSTALL_TOKEN=change-me-to-an-install-token
 require_line "$ENV_EXAMPLE" '^BONGSU_ALLOW_WEAK_SECRETS=false$' ".env.example must keep weak-secret override disabled"
 require_line "$ENV_EXAMPLE" '^BONGSU_WEB_AUTH=true$' ".env.example must keep web auth enabled"
 
+GO_MINOR="$(awk '$1 == "go" { split($2, v, "."); print v[1] "." v[2]; exit }' "$ROOT/go.mod")"
+if [ -z "$GO_MINOR" ]; then
+    echo "ERROR: go.mod must declare a Go version" >&2
+    exit 1
+fi
+require_line "$ROOT/deploy/Dockerfile.server" "^FROM golang:${GO_MINOR}-alpine AS backend$" "Server Dockerfile Go image must match go.mod minor version"
+require_line "$ROOT/deploy/Dockerfile.agent" "^FROM golang:${GO_MINOR}-alpine AS builder$" "Agent Dockerfile Go image must match go.mod minor version"
+
 echo "Deployment configuration verification passed"
