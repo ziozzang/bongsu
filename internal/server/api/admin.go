@@ -245,9 +245,17 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		if status, _ := freshness["status"].(string); status == "error" {
 			writePromGauge(&b, "bongsu_security_db_freshness_metrics_error", nil, 1)
 		}
+		totalRecords := 0
+		totalMatchable := 0
+		eligibleSources := 0
+		excludedSources := 0
 		if sourceStats, err := s.db.GetCveSourceStats(ctx); err == nil {
-			rematchPolicy, _, _ := rematchSourcePolicySummary(sourceStats, rematchOptionsFromEnv())
+			rematchPolicy, eligible, excluded := rematchSourcePolicySummary(sourceStats, rematchOptionsFromEnv())
+			eligibleSources = eligible
+			excludedSources = excluded
 			for _, stat := range sourceStats {
+				totalRecords += stat.Count
+				totalMatchable += stat.Matchable
 				labels := map[string]string{"source": stat.Source}
 				writePromGauge(&b, "bongsu_security_db_source_records", labels, float64(stat.Count))
 				writePromGauge(&b, "bongsu_security_db_source_matchable_records", labels, float64(stat.Matchable))
@@ -273,7 +281,9 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		} else {
 			writePromGauge(&b, "bongsu_cve_osv_ecosystem_metrics_error", nil, 1)
 		}
-		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(ctx); err == nil {
+		var indexStats *db.CveAffectedPackageIndexStats
+		var indexErr error
+		if indexStats, indexErr = s.db.GetCveAffectedPackageIndexStats(ctx); indexErr == nil {
 			writePromGauge(&b, "bongsu_cve_affected_package_index_records", nil, float64(indexStats.Count))
 			writePromGauge(&b, "bongsu_cve_affected_package_index_sources", nil, float64(indexStats.SourceCount))
 			writePromGauge(&b, "bongsu_cve_affected_package_index_indexed_cves", nil, float64(indexStats.IndexedCVEs))
@@ -291,7 +301,9 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		} else {
 			writePromGauge(&b, "bongsu_cve_affected_package_index_metrics_error", nil, 1)
 		}
-		if referenceIndexStats, err := s.db.GetCveReferenceKeyIndexStats(ctx); err == nil {
+		var referenceIndexStats *db.CveReferenceKeyIndexStats
+		var referenceIndexErr error
+		if referenceIndexStats, referenceIndexErr = s.db.GetCveReferenceKeyIndexStats(ctx); referenceIndexErr == nil {
 			writePromGauge(&b, "bongsu_cve_reference_key_index_records", nil, float64(referenceIndexStats.Count))
 			writePromGauge(&b, "bongsu_cve_reference_key_index_indexed_cves", nil, float64(referenceIndexStats.IndexedCVEs))
 			writePromGauge(&b, "bongsu_cve_reference_key_index_total_cves", nil, float64(referenceIndexStats.TotalCVEs))
@@ -310,7 +322,9 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		} else {
 			writePromGauge(&b, "bongsu_cve_reference_key_index_metrics_error", nil, 1)
 		}
-		if epssStats, err := s.db.GetCveEPSSMergeStats(ctx); err == nil {
+		var epssStats *db.CveEPSSMergeStats
+		var epssErr error
+		if epssStats, epssErr = s.db.GetCveEPSSMergeStats(ctx); epssErr == nil {
 			writePromGauge(&b, "bongsu_cve_epss_records", nil, float64(epssStats.EPSSRecords))
 			writePromGauge(&b, "bongsu_cve_epss_cves", nil, float64(epssStats.EPSSCVEs))
 			writePromGauge(&b, "bongsu_cve_epss_matched_cves", nil, float64(epssStats.MatchedCVEs))
@@ -327,7 +341,22 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		} else {
 			writePromGauge(&b, "bongsu_cve_epss_merge_metrics_error", nil, 1)
 		}
-		if quality := s.cveDBQualitySummary(ctx, cveDBQualityInput{}); quality != nil {
+		placeholderStats, placeholderErr := s.db.GetCvePlaceholderStats(ctx)
+		quality := buildCveDBQualitySummary(cveDBQualityInput{
+			TotalRecords:          totalRecords,
+			TotalMatchable:        totalMatchable,
+			EligibleSources:       eligibleSources,
+			ExcludedSources:       excludedSources,
+			Placeholders:          placeholderStats,
+			AffectedIndex:         indexStats,
+			ReferenceIndex:        referenceIndexStats,
+			EPSS:                  epssStats,
+			AffectedIndexError:    indexErr,
+			ReferenceIndexError:   referenceIndexErr,
+			EPSSMergeError:        epssErr,
+			PlaceholderStatsError: placeholderErr,
+		})
+		if quality != nil {
 			writePromGauge(&b, "bongsu_cve_db_quality_status", map[string]string{"status": "ok"}, boolMetric(quality["status"] == "ok"))
 			writePromGauge(&b, "bongsu_cve_db_quality_status", map[string]string{"status": "warning"}, boolMetric(quality["status"] == "warning"))
 			writePromGauge(&b, "bongsu_cve_db_quality_status", map[string]string{"status": "degraded"}, boolMetric(quality["status"] == "degraded"))
