@@ -762,7 +762,10 @@ func (s *Server) securityDBAutoRescanLastResult(ctx context.Context, includeDeta
 func (s *Server) referenceIndexRebuildStatus() map[string]any {
 	s.referenceIndexMu.Lock()
 	defer s.referenceIndexMu.Unlock()
-	status := map[string]any{"running": s.referenceIndexRunning}
+	status := map[string]any{
+		"running":         s.referenceIndexRunning,
+		"timeout_seconds": envInt("BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS", 900),
+	}
 	if s.referenceIndexRunning && !s.referenceIndexStartedAt.IsZero() {
 		status["started_at"] = s.referenceIndexStartedAt.UTC().Format(time.RFC3339)
 		status["duration_ms"] = time.Since(s.referenceIndexStartedAt).Milliseconds()
@@ -776,7 +779,10 @@ func (s *Server) referenceIndexRebuildStatus() map[string]any {
 func (s *Server) affectedIndexRebuildStatus() map[string]any {
 	s.affectedIndexMu.Lock()
 	defer s.affectedIndexMu.Unlock()
-	status := map[string]any{"running": s.affectedIndexRunning}
+	status := map[string]any{
+		"running":         s.affectedIndexRunning,
+		"timeout_seconds": envInt("BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS", 900),
+	}
 	if s.affectedIndexRunning && !s.affectedIndexStartedAt.IsZero() {
 		status["started_at"] = s.affectedIndexStartedAt.UTC().Format(time.RFC3339)
 		status["duration_ms"] = time.Since(s.affectedIndexStartedAt).Milliseconds()

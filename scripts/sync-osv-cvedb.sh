@@ -24,6 +24,7 @@ AFFECTED_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/affected-index/rebuil
 REFERENCE_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/reference-index/rebuild"
 INDEX_REBUILD_WAIT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS:-900}"
 INDEX_REBUILD_POLL_SECONDS="${BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS:-5}"
+INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS:-600}"
 DEFAULT_OSV_ECOSYSTEMS="PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,SwiftURL,Hackage,CRAN,opam,VSCode,GitHub Actions,Alpine,Debian,Ubuntu,SUSE,openSUSE,AlmaLinux,Red Hat,Rocky Linux,Azure Linux,Wolfi,Chainguard,openEuler,Mageia,Android"
 OSV_ECOSYSTEMS="${BONGSU_OSV_ECOSYSTEMS:-${DEFAULT_OSV_ECOSYSTEMS}}"
 OSV_PRUNE_BEFORE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -34,6 +35,35 @@ fi
 OSV_TOTAL=0
 OSV_FAILED=0
 FAILED_ECOSYSTEMS=()
+
+preflight_index_rebuild_timeouts() {
+    local response_file
+    local affected_timeout
+    local reference_timeout
+    response_file="${TMPDIR}/security-db-status-preflight.json"
+    if ! curl -fsS -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/admin/security-db/status" > "${response_file}"; then
+        echo "ERROR: failed to check server CVE index rebuild timeout settings" >&2
+        return 1
+    fi
+    IFS='|' read -r affected_timeout reference_timeout < <(python3 -c '
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception as exc:
+    print(f"0|0")
+    sys.exit(0)
+print("|".join([
+    str((data.get("cve_affected_index") or {}).get("timeout_seconds") or 0),
+    str((data.get("cve_reference_index") or {}).get("timeout_seconds") or 0),
+]))
+' "${response_file}")
+    if [ "${affected_timeout}" -lt "${INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS}" ] || [ "${reference_timeout}" -lt "${INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS}" ]; then
+        echo "ERROR: server CVE index rebuild timeout is too low for production-sized OSV sync" >&2
+        echo "affected_timeout_seconds=${affected_timeout} reference_timeout_seconds=${reference_timeout} required_min_seconds=${INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS}" >&2
+        echo "Increase BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS and BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS, then restart the API." >&2
+        return 1
+    fi
+}
 
 import_osv_file() {
     local file="$1"
@@ -156,6 +186,7 @@ echo " Bongsu OSV CVE Database Sync"
 echo " Server: ${SERVER_URL}"
 echo "=========================================="
 echo ""
+preflight_index_rebuild_timeouts
 
 IFS=',' read -ra ECO_ARRAY <<< "${OSV_ECOSYSTEMS}"
 ECO_COUNT="${#ECO_ARRAY[@]}"

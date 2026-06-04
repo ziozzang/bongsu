@@ -26,11 +26,41 @@ AFFECTED_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/affected-index/rebuil
 REFERENCE_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/reference-index/rebuild"
 INDEX_REBUILD_WAIT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS:-900}"
 INDEX_REBUILD_POLL_SECONDS="${BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS:-5}"
+INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS:-600}"
 
 TOTAL_IMPORTED=0
 FAILED_SOURCES=()
 REQUIRE_TRIVY_SOURCE="${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-true}"
 TRIVY_BIN_FOR_SYNC="${TRIVY_BIN:-${BONGSU_TRIVY_PATH:-}}"
+
+preflight_index_rebuild_timeouts() {
+    local response_file
+    local affected_timeout
+    local reference_timeout
+    response_file="${TMPDIR}/security-db-status-preflight.json"
+    if ! curl -fsS -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/admin/security-db/status" > "${response_file}"; then
+        echo "ERROR: failed to check server CVE index rebuild timeout settings" >&2
+        return 1
+    fi
+    IFS='|' read -r affected_timeout reference_timeout < <(python3 -c '
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except Exception:
+    print("0|0")
+    sys.exit(0)
+print("|".join([
+    str((data.get("cve_affected_index") or {}).get("timeout_seconds") or 0),
+    str((data.get("cve_reference_index") or {}).get("timeout_seconds") or 0),
+]))
+' "${response_file}")
+    if [ "${affected_timeout}" -lt "${INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS}" ] || [ "${reference_timeout}" -lt "${INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS}" ]; then
+        echo "ERROR: server CVE index rebuild timeout is too low for production-sized CVE sync" >&2
+        echo "affected_timeout_seconds=${affected_timeout} reference_timeout_seconds=${reference_timeout} required_min_seconds=${INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS}" >&2
+        echo "Increase BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS and BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS, then restart the API." >&2
+        return 1
+    fi
+}
 
 find_trivy_binary() {
     if [ -n "${TRIVY_BIN_FOR_SYNC}" ] && [ -x "${TRIVY_BIN_FOR_SYNC}" ]; then
@@ -170,6 +200,7 @@ echo " Bongsu CVE Database Sync"
 echo " Server: ${SERVER_URL}"
 echo "=========================================="
 echo ""
+preflight_index_rebuild_timeouts
 
 # --- 1. CISA KEV ---
 echo "[1/4] Downloading CISA KEV data..."

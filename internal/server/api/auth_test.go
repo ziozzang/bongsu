@@ -3543,6 +3543,11 @@ func TestSecurityDBSyncScriptsFinalizeDeferredImportsAsynchronously(t *testing.T
 			"cve_reference_index_rebuild",
 			"BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS",
 			"BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS",
+			"BONGSU_CVE_INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS",
+			"preflight_index_rebuild_timeouts()",
+			"/api/admin/security-db/status",
+			"server CVE index rebuild timeout is too low",
+			"timeout_seconds",
 			`timed out waiting for ${label} rebuild`,
 			`rebuild complete: indexed=`,
 		} {
@@ -3568,8 +3573,8 @@ func TestAsyncCveIndexRebuildsUseRebuildTimeouts(t *testing.T) {
 	}
 	body := string(out)
 	for _, want := range []string{
-		`envInt("BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS", 180)`,
-		`envInt("BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS", 180)`,
+		`envInt("BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS", 900)`,
+		`envInt("BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS", 900)`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("async CVE index rebuilds must use rebuild timeout %q", want)
@@ -3581,6 +3586,22 @@ func TestAsyncCveIndexRebuildsUseRebuildTimeouts(t *testing.T) {
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("async CVE index rebuilds must not use health/detail timeout %q", forbidden)
+		}
+	}
+}
+
+func TestCveIndexRebuildStatusExposesTimeoutBudgets(t *testing.T) {
+	out, err := os.ReadFile("admin.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`"timeout_seconds": envInt("BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS", 900)`,
+		`"timeout_seconds": envInt("BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS", 900)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("CVE index rebuild status must expose timeout budget %q", want)
 		}
 	}
 }
