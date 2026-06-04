@@ -5719,6 +5719,7 @@ func TestCveDbPruneStaleSourceEndpointRefreshesDerivedState(t *testing.T) {
 		`POST /api/admin/cve-db/source/{source}/prune-stale`,
 		"func (s *Server) handleCveDbPruneStaleSource",
 		"s.db.DeleteCveEntriesBySourceUpdatedBeforeTx",
+		"s.db.RefreshSecuritySourceStatusTx",
 		`s.SecurityDatabaseUpdated("cve-db stale source prune")`,
 	} {
 		if !strings.Contains(body, want) {

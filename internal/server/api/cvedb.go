@@ -1326,6 +1326,11 @@ func (s *Server) handleCveDbPruneStaleSource(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	if err := s.db.RefreshSecuritySourceStatusTx(r.Context(), tx, source); err != nil {
+		log.Printf("cve-db prune stale refresh source status: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
 	if err := tx.Commit(); err != nil {
 		log.Printf("cve-db prune stale commit: %v", err)
 		writeError(w, http.StatusInternalServerError, "db error")
