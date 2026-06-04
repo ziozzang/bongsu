@@ -42,6 +42,9 @@ jobs:
       - name: Verify airgap package contents
         run: ./scripts/verify-package-contents.sh
 
+      - name: Verify airgap package generation smoke path
+        run: ./scripts/verify-airgap-package-smoke.sh
+
       - name: Verify one-line installer smoke path
         run: ./scripts/verify-installer-smoke.sh
 
