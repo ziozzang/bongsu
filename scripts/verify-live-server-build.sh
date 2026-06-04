@@ -4,9 +4,12 @@ set -euo pipefail
 # verify-live-server-build.sh - Verify the live API server build metadata.
 #
 # Defaults target the local live deployment. The expected commit is the latest
-# commit touching server/runtime source paths, so docs-only commits do not force
-# a server rebuild. Set BONGSU_VERIFY_SERVER_ALLOW_DEV_VERSION=true for local
-# development builds that intentionally use version=dev.
+# commit touching server/runtime source paths, so docs-only or deploy-only
+# commits do not force a server rebuild. If the live binary reports a newer
+# commit, the verifier accepts it only when the server build input files are
+# identical between the expected commit and the reported commit. Set
+# BONGSU_VERIFY_SERVER_ALLOW_DEV_VERSION=true for local development builds that
+# intentionally use version=dev.
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_BASE="${BONGSU_API_BASE:-http://127.0.0.1:5677}"
@@ -85,10 +88,15 @@ if [ -z "$server_commit" ] || [ "$server_commit" = "unknown" ]; then
     exit 1
 fi
 if [ "$EXPECTED_SERVER_COMMIT" != "skip" ] && [ "$server_commit" != "$EXPECTED_SERVER_COMMIT" ]; then
-    echo "ERROR: live API server commit does not match expected source commit" >&2
-    echo "Expected: $EXPECTED_SERVER_COMMIT" >&2
-    echo "Actual:   $server_commit" >&2
-    exit 1
+    if ! git -C "$ROOT" cat-file -e "${server_commit}^{commit}" 2>/dev/null ||
+        ! git -C "$ROOT" merge-base --is-ancestor "$EXPECTED_SERVER_COMMIT" "$server_commit" ||
+        ! git -C "$ROOT" diff --quiet "$EXPECTED_SERVER_COMMIT" "$server_commit" -- "${SERVER_BUILD_FILES[@]}"; then
+        echo "ERROR: live API server commit does not match expected source commit" >&2
+        echo "Expected: $EXPECTED_SERVER_COMMIT" >&2
+        echo "Actual:   $server_commit" >&2
+        exit 1
+    fi
+    echo "Server commit ${server_commit} is newer than expected ${EXPECTED_SERVER_COMMIT}; server build inputs are unchanged"
 fi
 
 if [ -z "$server_version" ] || [ "$server_version" = "unknown" ]; then
