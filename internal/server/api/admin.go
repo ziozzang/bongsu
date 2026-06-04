@@ -505,7 +505,10 @@ func writePromCounter(b *strings.Builder, name string, labels map[string]string,
 }
 
 func writePromMetric(b *strings.Builder, metricType, name string, labels map[string]string, value float64) {
-	fmt.Fprintf(b, "# TYPE %s %s\n", name, metricType)
+	typeLine := fmt.Sprintf("# TYPE %s %s\n", name, metricType)
+	if !promMetricTypeWritten(b, name) {
+		b.WriteString(typeLine)
+	}
 	fmt.Fprint(b, name)
 	if len(labels) > 0 {
 		keys := make([]string, 0, len(labels))
@@ -523,6 +526,10 @@ func writePromMetric(b *strings.Builder, metricType, name string, labels map[str
 		b.WriteByte('}')
 	}
 	fmt.Fprintf(b, " %g\n", value)
+}
+
+func promMetricTypeWritten(b *strings.Builder, name string) bool {
+	return strings.Contains(b.String(), "# TYPE "+name+" ")
 }
 
 func prometheusLabelValue(v string) string {

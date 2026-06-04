@@ -249,6 +249,12 @@ agent_fleet_status_json="$(api_json GET /api/admin/agent-fleet/status)"
 assert_json "$agent_fleet_status_json" '(.status == "ok" or .status == "degraded") and (.warnings | type == "array") and (.recommended_actions | type == "array") and (.total_hosts | type == "number") and (.outdated_percent | type == "number") and (.agent_status_counts | type == "object") and (.agent_version_counts | type == "object") and (.agent_version_drift_counts.current | type == "number") and (.agent_version_drift_counts.outdated | type == "number") and (.agent_version_drift_counts.unknown | type == "number")' "agent fleet status must expose status, warnings, host/version/drift counts, and outdated percentage"
 assert_json "$agent_fleet_status_json" '.installer and (.installer.ready | type == "boolean") and .installer.agent and (.installer.agent.ready | type == "boolean")' "agent fleet status must expose installer readiness"
 curl -fsS --max-time "$CURL_MAX_TIME" -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/admin/metrics" -o "$TMP_DIR/admin-metrics.txt"
+duplicate_metric_types="$(awk '/^# TYPE / {count[$3]++} END {for (metric in count) if (count[metric] > 1) print metric, count[metric]}' "$TMP_DIR/admin-metrics.txt" | sort)"
+if [ -n "$duplicate_metric_types" ]; then
+    echo "ERROR: admin metrics must emit one TYPE line per metric family" >&2
+    echo "$duplicate_metric_types" >&2
+    exit 1
+fi
 if grep -Eq '^bongsu_.*_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
     echo "ERROR: admin metrics reported one or more metrics_error gauges" >&2
     grep -E '^bongsu_.*_metrics_error ' "$TMP_DIR/admin-metrics.txt" >&2

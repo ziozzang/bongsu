@@ -234,6 +234,32 @@ func TestAdminMetricsRequiresAdminAndReportsRuntimeState(t *testing.T) {
 	}
 }
 
+func TestPromMetricTypeLineWrittenOncePerMetricFamily(t *testing.T) {
+	var b strings.Builder
+	writePromGauge(&b, "bongsu_test_metric", map[string]string{"status": "ok"}, 1)
+	writePromGauge(&b, "bongsu_test_metric", map[string]string{"status": "degraded"}, 0)
+	writePromCounter(&b, "bongsu_test_counter_total", nil, 2)
+	writePromCounter(&b, "bongsu_test_counter_total", nil, 3)
+
+	body := b.String()
+	if got := strings.Count(body, "# TYPE bongsu_test_metric gauge"); got != 1 {
+		t.Fatalf("gauge TYPE count = %d, want 1\n%s", got, body)
+	}
+	if got := strings.Count(body, "# TYPE bongsu_test_counter_total counter"); got != 1 {
+		t.Fatalf("counter TYPE count = %d, want 1\n%s", got, body)
+	}
+	for _, want := range []string{
+		`bongsu_test_metric{status="ok"} 1`,
+		`bongsu_test_metric{status="degraded"} 0`,
+		`bongsu_test_counter_total 2`,
+		`bongsu_test_counter_total 3`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("metric body missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func TestAdminMetricsUsesBoundedDatabaseContext(t *testing.T) {
 	out := readAllPackageGoFiles(t)
 	body := out
@@ -3450,6 +3476,8 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 		`.cve_affected_package_index.summary_mode == "indexed-only"`,
 		".cve_reference_key_index.stale == false",
 		"/api/admin/metrics",
+		"admin metrics must emit one TYPE line per metric family",
+		`awk '/^# TYPE / {count[$3]++}`,
 		"bongsu_security_db_revision_info",
 		"bongsu_security_db_revision_metrics_error",
 		"bongsu_security_db_effective_status",
