@@ -80,7 +80,10 @@ for pattern in \
     'security_db_freshness\.latest_source' \
     'latest_last_update' \
     'security_db\.effective_status' \
+    'effective_source' \
     'effective_last_sync' \
+    'latest_source' \
+    'latest_last_update' \
     'server_match' \
     'mixed-SBOM aggregation failure' \
     'TEMP-\*' \

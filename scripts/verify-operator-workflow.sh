@@ -228,7 +228,22 @@ assert_json "$health_json" '.status and ((.security_db_revision // "") != "" or 
 assert_json "$health_json" '.cve_affected_package_index and ((.cve_affected_package_index.count // 0) > 0) and (.cve_affected_package_index.orphans == 0) and ((.cve_affected_package_index.summary_mode == "indexed-only") or (.cve_affected_package_index.stale == false))' "health must expose usable affected-package index state"
 assert_json "$health_json" '.cve_reference_key_index and (.cve_reference_key_index.orphans == 0) and ((.cve_reference_key_index.summary_mode == "indexed-only") or (.cve_reference_key_index.stale == false))' "health must expose usable reference-key index state"
 security_db_status_json="$(api_json GET /api/admin/security-db/status)"
-assert_json "$security_db_status_json" '.status and (.warnings | type == "array") and (.recommended_actions | type == "array") and .security_db and .security_db.configured == true and .security_db_freshness and .security_recalculation and ((.security_db_revision // "") != "" or (.security_db_revision_error // "") != "")' "security DB status must expose sync manager, freshness, recalculation, revision or revision error, warnings, and recommended actions"
+assert_json "$security_db_status_json" '
+  .status
+  and (.warnings | type == "array")
+  and (.recommended_actions | type == "array")
+  and .security_db
+  and .security_db.configured == true
+  and ((.security_db.effective_status // "") != "")
+  and ((.security_db.effective_source // "") != "")
+  and ((.security_db.effective_last_sync // "") != "")
+  and .security_db_freshness
+  and (.security_db.effective_status == .security_db_freshness.status)
+  and (.security_db.effective_source == .security_db_freshness.latest_source)
+  and (.security_db.effective_last_sync == .security_db_freshness.latest_last_update)
+  and .security_recalculation
+  and ((.security_db_revision // "") != "" or (.security_db_revision_error // "") != "")
+' "security DB status must expose sync manager, effective persisted freshness, recalculation, revision or revision error, warnings, and recommended actions"
 assert_json "$security_db_status_json" '.cve_db_quality and .cve_db_quality.status and .cve_affected_package_index and ((.cve_affected_package_index.count // 0) > 0) and .cve_reference_key_index' "security DB status must expose CVE quality and index health"
 agent_fleet_status_json="$(api_json GET /api/admin/agent-fleet/status)"
 assert_json "$agent_fleet_status_json" '(.status == "ok" or .status == "degraded") and (.warnings | type == "array") and (.recommended_actions | type == "array") and (.total_hosts | type == "number") and (.outdated_percent | type == "number") and (.agent_status_counts | type == "object") and (.agent_version_counts | type == "object") and (.agent_version_drift_counts.current | type == "number") and (.agent_version_drift_counts.outdated | type == "number") and (.agent_version_drift_counts.unknown | type == "number")' "agent fleet status must expose status, warnings, host/version/drift counts, and outdated percentage"

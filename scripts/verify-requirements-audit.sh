@@ -113,6 +113,9 @@ for keyword in \
     'direct DB invariant' \
     'security DB schedule' \
     'effective_status' \
+    'effective_source' \
+    'effective_last_sync' \
+    'operator workflow requires those effective fields' \
     'multi-source canonical CVE' \
     'vendor/advisory key' \
     'live browser' \
