@@ -217,6 +217,12 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 	cancel()
 
 	dbCtx, cancel = withTimeout()
+	if last := s.securityDBBundleImportLastResult(dbCtx, true); last != nil {
+		out["security_db_bundle_import"] = map[string]any{"last_result": last}
+	}
+	cancel()
+
+	dbCtx, cancel = withTimeout()
 	if sources, err := s.db.ListSecuritySourceStatuses(dbCtx); err == nil {
 		out["security_sources"] = sources
 	} else {

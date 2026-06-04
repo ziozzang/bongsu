@@ -871,6 +871,22 @@ export interface SecurityDbOperationalStatus {
   security_db_revision?: string;
   security_db_revision_error?: string;
   security_recalculation?: HealthStatus['security_recalculation'];
+  security_db_bundle_import?: {
+    last_result?: {
+      status: string;
+      finished_at?: string;
+      stage?: string;
+      message?: string;
+      imported?: number;
+      trivy_db_loaded?: boolean;
+      security_db_revision?: string;
+      bundle_created_at?: string;
+      bundle_source_count?: number;
+      bundle_cve_records?: number;
+      bundle_trivy_db_included?: boolean;
+      error?: string;
+    };
+  };
   cve_db_quality?: CveDbQuality;
   cve_affected_package_index?: HealthStatus['cve_affected_package_index'];
   cve_reference_key_index?: HealthStatus['cve_reference_key_index'];

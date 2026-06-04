@@ -2087,6 +2087,7 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		"securityDBFreshnessStatus(dbCtx, true)",
 		"securityRecalculationStatus(true)",
 		"securityRecalculationLastResult(dbCtx, true)",
+		"securityDBBundleImportLastResult(dbCtx, true)",
 		"ListSecuritySourceStatuses(dbCtx)",
 		"securityDBRevisionMeta(dbCtx)",
 		"securityDbStatusQuality",
@@ -2101,6 +2102,7 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		`out["cve_affected_package_index"]`,
 		`out["cve_reference_key_index"]`,
 		`out["security_db_freshness"]`,
+		`out["security_db_bundle_import"]`,
 		`out["status"] = "degraded"`,
 		"affectedIndexRebuildStatus",
 		"referenceIndexRebuildStatus",
@@ -2849,6 +2851,40 @@ func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
 	}
 }
 
+func TestSecurityDBBundleImportLastResultCarriesProvenance(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	start := strings.Index(body, "func (s *Server) securityDBBundleImportLastResult")
+	if start < 0 {
+		t.Fatal("securityDBBundleImportLastResult not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) securityDBAutoRescanLastResult")
+	if end < 0 {
+		t.Fatal("securityDBAutoRescanLastResult not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`Action:       "security_db.import"`,
+		`ResourceType: "security_db"`,
+		`ResourceID:   "bundle"`,
+		`"finished_at"`,
+		`"finished_at_unix"`,
+		`"stage"`,
+		`"message"`,
+		`"imported"`,
+		`"trivy_db_loaded"`,
+		`"security_db_revision"`,
+		`"bundle_created_at"`,
+		`"bundle_source_count"`,
+		`"bundle_cve_records"`,
+		`"bundle_trivy_db_included"`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("bundle import last-result helper missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 	out, err := os.ReadFile("../../../web/src/App.tsx")
 	if err != nil {
@@ -2870,6 +2906,10 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"lastManualRematch",
 		"Auto Rescan Queue",
 		"lastAutoRescan",
+		"lastSecurityBundleImport",
+		"Bundle import:",
+		"bundle_created_at",
+		"bundle_source_count",
 		"security_db_auto_rescan",
 		"CVE rematch hit candidate limit",
 		"rematch_candidates",
@@ -3269,7 +3309,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "security_db_bundle_import?:", "bundle_created_at?: string", "bundle_source_count?: number", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
@@ -3566,6 +3606,7 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 		".security_db.effective_status == .security_db_freshness.status",
 		".security_db.effective_source == .security_db_freshness.latest_source",
 		".security_db.effective_last_sync == .security_db_freshness.latest_last_update",
+		".security_db_bundle_import.last_result.status",
 		".security_recalculation.running",
 		`.cve_affected_package_index.summary_mode == "indexed-only"`,
 		".cve_reference_key_index.stale == false",
@@ -4002,6 +4043,7 @@ func TestOpenAPIDocumentsSecuritySourceRegistryStatus(t *testing.T) {
 				"SecuritySourceStatus:",
 				"security_sources:",
 				"security_sources_error:",
+				"security_db_bundle_import:",
 				"last_sync_finished_at:",
 				"last_status:",
 				"record_count:",

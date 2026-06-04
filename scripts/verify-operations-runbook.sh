@@ -82,6 +82,7 @@ for pattern in \
     'security_db\.effective_status' \
     'effective_source' \
     'effective_last_sync' \
+    'security_db_bundle_import\.last_result' \
     'latest_source' \
     'latest_last_update' \
     'server_match' \

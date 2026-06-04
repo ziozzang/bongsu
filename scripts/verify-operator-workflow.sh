@@ -244,6 +244,7 @@ assert_json "$security_db_status_json" '
   and .security_recalculation
   and ((.security_db_revision // "") != "" or (.security_db_revision_error // "") != "")
 ' "security DB status must expose sync manager, effective persisted freshness, recalculation, revision or revision error, warnings, and recommended actions"
+assert_json "$security_db_status_json" '(.security_db_bundle_import == null) or (.security_db_bundle_import.last_result.status and ((.security_db_bundle_import.last_result.bundle_source_count // 0) >= 0))' "security DB status bundle import summary must expose status and provenance shape when present"
 assert_json "$security_db_status_json" '.cve_db_quality and .cve_db_quality.status and .cve_affected_package_index and ((.cve_affected_package_index.count // 0) > 0) and .cve_reference_key_index' "security DB status must expose CVE quality and index health"
 agent_fleet_status_json="$(api_json GET /api/admin/agent-fleet/status)"
 assert_json "$agent_fleet_status_json" '(.status == "ok" or .status == "degraded") and (.warnings | type == "array") and (.recommended_actions | type == "array") and (.total_hosts | type == "number") and (.outdated_percent | type == "number") and (.agent_status_counts | type == "object") and (.agent_version_counts | type == "object") and (.agent_version_drift_counts.current | type == "number") and (.agent_version_drift_counts.outdated | type == "number") and (.agent_version_drift_counts.unknown | type == "number")' "agent fleet status must expose status, warnings, host/version/drift counts, and outdated percentage"

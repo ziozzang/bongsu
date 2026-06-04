@@ -651,6 +651,56 @@ func (s *Server) securityRecalculationLastResult(ctx context.Context, includeDet
 	return out
 }
 
+func (s *Server) securityDBBundleImportLastResult(ctx context.Context, includeDetails bool) map[string]any {
+	if s.db == nil {
+		return nil
+	}
+	item, err := s.db.GetLatestAuditLog(ctx, db.AuditLogFilter{
+		Action:       "security_db.import",
+		ResourceType: "security_db",
+		ResourceID:   "bundle",
+	}, nil)
+	if err != nil {
+		if includeDetails {
+			return map[string]any{"status": "error", "error": err.Error()}
+		}
+		return nil
+	}
+	if item == nil {
+		return nil
+	}
+	meta := map[string]any{}
+	if len(item.Metadata) > 0 {
+		_ = json.Unmarshal(item.Metadata, &meta)
+	}
+	out := map[string]any{
+		"status":           item.Status,
+		"finished_at":      item.CreatedAt.Format(time.RFC3339),
+		"finished_at_unix": float64(item.CreatedAt.Unix()),
+	}
+	for _, key := range []string{
+		"stage",
+		"message",
+		"imported",
+		"trivy_db_loaded",
+		"security_db_revision",
+		"bundle_created_at",
+		"bundle_source_count",
+		"bundle_cve_records",
+		"bundle_trivy_db_included",
+	} {
+		if v, ok := meta[key]; ok {
+			out[key] = v
+		}
+	}
+	if includeDetails {
+		if errText, ok := meta["error"]; ok {
+			out["error"] = errText
+		}
+	}
+	return out
+}
+
 func (s *Server) securityDBAutoRescanLastResult(ctx context.Context, includeDetails bool) map[string]any {
 	if s.db == nil {
 		return nil

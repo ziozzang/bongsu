@@ -2621,6 +2621,9 @@ paths:
                     type: string
                   security_recalculation:
                     type: object
+                  security_db_bundle_import:
+                    type: object
+                    description: Latest security DB bundle import audit summary, including bundle provenance when available.
                   cve_db_quality:
                     $ref: "#/components/schemas/CveDbQuality"
                   cve_affected_package_index:

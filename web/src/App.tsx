@@ -738,6 +738,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const lastRecalc = health?.security_recalculation?.last_result;
   const lastManualRematch = health?.cve_db_rematch?.last_result;
   const lastAutoRescan = health?.security_db_auto_rescan?.last_result;
+  const lastSecurityBundleImport = securityDbStatus?.security_db_bundle_import?.last_result;
   const lastRecalcLimited = !!lastRecalc?.rematch_limited;
   const lastManualRematchLimited = !!lastManualRematch?.limited;
   const lastRecalcColor = lastRecalc?.status === 'error'
@@ -1294,6 +1295,16 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         {health?.security_db_revision && (
           <span className="mono" title="Current merged security database revision" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
             DB rev: {health.security_db_revision}
+          </span>
+        )}
+        {lastSecurityBundleImport && (
+          <span
+            className={`status-dot ${lastSecurityBundleImport.status === 'ok' ? 'ready' : 'not-ready'}`}
+            title={lastSecurityBundleImport.bundle_created_at ? `Bundle created ${new Date(lastSecurityBundleImport.bundle_created_at).toLocaleString()}` : lastSecurityBundleImport.message || lastSecurityBundleImport.error || ''}
+          >
+            Bundle import: {lastSecurityBundleImport.status === 'ok'
+              ? `${lastSecurityBundleImport.bundle_source_count ?? '-'} sources${lastSecurityBundleImport.security_db_revision ? `, rev ${lastSecurityBundleImport.security_db_revision}` : ''}`
+              : lastSecurityBundleImport.stage || lastSecurityBundleImport.status}
           </span>
         )}
         {(health?.trivy_db_last_update || health?.trivy_db?.last_update) && (
