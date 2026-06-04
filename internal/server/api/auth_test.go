@@ -1312,6 +1312,16 @@ func TestShellQuoteEscapesInstallerCredentials(t *testing.T) {
 		`curl_download "$SERVER/api/downloads/bongsu-agent" "$WORK_DIR/bin/bongsu-agent"`,
 		`curl_download "$SERVER/api/downloads/trivy" "$WORK_DIR/bin/trivy"`,
 		`rm -f "$WORK_DIR/bin/bongsu-agent"`,
+		`SYSTEMD_DIR="${BONGSU_SYSTEMD_DIR:-/etc/systemd/system}"`,
+		`SYSTEMCTL_BIN="${BONGSU_SYSTEMCTL_BIN:-systemctl}"`,
+		`command -v "$SYSTEMCTL_BIN"`,
+		`mkdir -p "$SYSTEMD_DIR"`,
+		`cat > "$SYSTEMD_DIR/bongsu-agent.service"`,
+		`cat > "$SYSTEMD_DIR/bongsu-agent.timer"`,
+		`cat > "$SYSTEMD_DIR/bongsu-agent-daemon.service"`,
+		`"$SYSTEMCTL_BIN" daemon-reload`,
+		`"$SYSTEMCTL_BIN" enable --now bongsu-agent.timer`,
+		`"$SYSTEMCTL_BIN" enable --now bongsu-agent-daemon.service`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("installer credential rendering missing %q", want)
