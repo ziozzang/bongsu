@@ -87,11 +87,14 @@ for path in \
     "$ROOT_DIR/images/bongsu-agent.tar.gz" \
     "$ROOT_DIR/bin/bongsu-server" \
     "$ROOT_DIR/bin/bongsu-agent" \
+    "$ROOT_DIR/scripts/backup.sh" \
+    "$ROOT_DIR/scripts/restore.sh" \
     "$ROOT_DIR/scripts/install-agent.sh" \
     "$ROOT_DIR/scripts/update-trivy-db.sh" \
     "$ROOT_DIR/scripts/import-security-db-bundle.sh" \
     "$ROOT_DIR/scripts/export-security-db-bundle.sh" \
     "$ROOT_DIR/scripts/verify-release-readiness.sh" \
+    "$ROOT_DIR/scripts/verify-backup-restore-archive.sh" \
     "$ROOT_DIR/scripts/verify-operator-workflow.sh" \
     "$ROOT_DIR/scripts/verify-agent-binary-workflow.sh" \
     "$ROOT_DIR/scripts/verify-airgap-release-archive.sh" \

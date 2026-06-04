@@ -36,6 +36,7 @@ go test ./...
 ./scripts/verify-deploy-config.sh
 ./scripts/verify-requirements-audit.sh
 ./scripts/verify-openapi.sh
+./scripts/verify-backup-restore-archive.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
@@ -217,10 +218,13 @@ docker compose -f deploy/docker-compose.yml up -d
 After restore, verify:
 
 ```bash
+./scripts/verify-backup-restore-archive.sh
 curl -fsS -H "X-API-Key: $BONGSU_API_KEY" http://localhost:5677/api/health
 curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/stats?refresh=true"
 ./scripts/verify-live-cvedb-quality.sh
 ```
+
+Restore refuses archives with unsafe paths, duplicate or missing required members, unexpected files, or manifest checksum mismatches. Backup manifests include `database_dump_sha256` and, when present, `trivy_cache_sha256`.
 
 ## Security DB Operations
 

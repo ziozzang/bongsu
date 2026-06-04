@@ -42,6 +42,88 @@ cleanup() {
 }
 trap cleanup EXIT
 
+json_string_value() {
+    local file="$1"
+    local key="$2"
+    sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\\([^\"]*\\)\".*/\\1/p" "$file" | sed -n '1p'
+}
+
+json_bool_value() {
+    local file="$1"
+    local key="$2"
+    sed -n "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\\(true\\|false\\).*/\\1/p" "$file" | sed -n '1p'
+}
+
+validate_backup_archive() {
+    local archive="$1"
+    local listing="$TMP_DIR/archive-list.txt"
+    tar -tzf "$archive" > "$listing"
+
+    local database_count manifest_count trivy_count
+    database_count="$(grep -xc 'database.dump' "$listing" || true)"
+    manifest_count="$(grep -xc 'manifest.json' "$listing" || true)"
+    trivy_count="$(grep -xc 'trivy-cache.tar' "$listing" || true)"
+
+    if [ "$database_count" != "1" ]; then
+        echo "ERROR: backup archive must contain exactly one database.dump" >&2
+        exit 1
+    fi
+    if [ "$manifest_count" != "1" ]; then
+        echo "ERROR: backup archive must contain exactly one manifest.json" >&2
+        exit 1
+    fi
+    if [ "$trivy_count" -gt 1 ]; then
+        echo "ERROR: backup archive contains duplicate trivy-cache.tar" >&2
+        exit 1
+    fi
+
+    while IFS= read -r entry; do
+        case "$entry" in
+            database.dump|manifest.json|trivy-cache.tar) ;;
+            /*|*../*|../*|*/..|.)
+                echo "ERROR: unsafe backup archive entry: $entry" >&2
+                exit 1
+                ;;
+            *)
+                echo "ERROR: unexpected backup archive entry: $entry" >&2
+                exit 1
+                ;;
+        esac
+    done < "$listing"
+}
+
+validate_manifest_checksums() {
+    local manifest="${TMP_DIR}/manifest.json"
+    if [ ! -f "$manifest" ]; then
+        echo "ERROR: manifest.json not found in backup archive" >&2
+        exit 1
+    fi
+
+    local db_sha trivy_included trivy_sha actual
+    db_sha="$(json_string_value "$manifest" "database_dump_sha256")"
+    if [ -n "$db_sha" ]; then
+        actual="$(sha256sum "${TMP_DIR}/database.dump" | cut -d" " -f1)"
+        if [ "$actual" != "$db_sha" ]; then
+            echo "ERROR: database.dump checksum mismatch" >&2
+            exit 1
+        fi
+    fi
+
+    trivy_included="$(json_bool_value "$manifest" "trivy_cache_included")"
+    trivy_sha="$(json_string_value "$manifest" "trivy_cache_sha256")"
+    if [ "$trivy_included" = "true" ] && [ ! -f "${TMP_DIR}/trivy-cache.tar" ]; then
+        echo "ERROR: manifest requires trivy-cache.tar but archive is missing" >&2
+        exit 1
+    fi
+    if [ -n "$trivy_sha" ] && [ -f "${TMP_DIR}/trivy-cache.tar" ]; then
+        actual="$(sha256sum "${TMP_DIR}/trivy-cache.tar" | cut -d" " -f1)"
+        if [ "$actual" != "$trivy_sha" ]; then
+            echo "ERROR: trivy-cache.tar checksum mismatch" >&2
+            exit 1
+        fi
+    fi
+}
+
 echo "=== Bongsu Restore ==="
 echo "Backup:     ${BACKUP_FILE}"
 echo "Database:   ${DB_NAME}@${DB_HOST}:${DB_PORT}"
@@ -52,8 +134,12 @@ fi
 
 # Step 1: Extract backup
 echo ""
-echo "[1/5] Extracting backup..."
-tar -xzf "$BACKUP_FILE" -C "$TMP_DIR"
+echo "[1/5] Validating and extracting backup..."
+validate_backup_archive "$BACKUP_FILE"
+tar -xzf "$BACKUP_FILE" -C "$TMP_DIR" database.dump manifest.json
+if tar -tzf "$BACKUP_FILE" | grep -qx 'trivy-cache.tar'; then
+    tar -xzf "$BACKUP_FILE" -C "$TMP_DIR" trivy-cache.tar
+fi
 
 if [ ! -f "${TMP_DIR}/database.dump" ]; then
     echo "ERROR: database.dump not found in backup archive" >&2
@@ -64,6 +150,7 @@ echo "  database.dump found ($(du -h "${TMP_DIR}/database.dump" | cut -f1))"
 if [ -f "${TMP_DIR}/manifest.json" ]; then
     echo "  manifest.json found"
 fi
+validate_manifest_checksums
 
 if [ "$DRY_RUN" = true ]; then
     echo ""

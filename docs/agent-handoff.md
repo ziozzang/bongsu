@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 12:14:30 KST
+Updated: 2026-06-04 12:28:30 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -78,6 +78,7 @@ This handoff commit should include:
 - Browser smoke coverage for Hosts force-scan requests and RBAC subject/policy creation, including POST body verification.
 - Browser workflow coverage for scheduled scan creation, dynamic asset-group creation, asset-group scan trigger, report rendering/export, notification rule creation/test delivery, and notification-log loading, including request payload verification.
 - Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
+- Backup/restore archive verifier covers safe tar entries, required members, duplicate member rejection, and manifest checksum rejection without requiring a live database.
 - Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
 - Real agent binary workflow verifier builds `cmd/agent`, runs it against fixture Trivy/osquery/docker tools for two logical host IDs, verifies host/container package ontology and host-id isolation through the live API, then runs daemon polling to claim and complete a host-specific scan request.
 - Live agent token binding verifier binds a host to one token, then proves a different token cannot report inventory, claim scan requests, or complete requests for the bound host when `BONGSU_AGENT_HOST_BINDING=true`.
@@ -198,6 +199,7 @@ go test ./...
 ./scripts/verify-deploy-config.sh
 ./scripts/verify-requirements-audit.sh
 ./scripts/verify-openapi.sh
+./scripts/verify-backup-restore-archive.sh
 ./scripts/verify-operator-workflow.sh
 ./scripts/verify-agent-binary-workflow.sh
 ./scripts/verify-live-agent-token-binding.sh

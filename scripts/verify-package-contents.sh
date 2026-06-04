@@ -45,6 +45,8 @@ do
 done
 
 for script in \
+    'backup.sh' \
+    'restore.sh' \
     'install-agent.sh' \
     'download-trivy-db.sh' \
     'download-cisa-kev.sh' \
@@ -56,6 +58,7 @@ for script in \
     'export-security-db-bundle.sh' \
     'import-security-db-bundle.sh' \
     'verify-release-readiness.sh' \
+    'verify-backup-restore-archive.sh' \
     'verify-agent-binary-workflow.sh' \
     'verify-airgap-release-archive.sh' \
     'verify-airgap-offline-rehearsal.sh' \

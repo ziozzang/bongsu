@@ -83,11 +83,21 @@ fi
 # Step 3: Create manifest
 echo ""
 echo "[3/4] Creating manifest..."
+DB_SHA="$(sha256sum "${TMP_DIR}/database.dump" | cut -d" " -f1)"
+TRIVY_INCLUDED=false
+TRIVY_SHA=""
+if [ -f "${TMP_DIR}/trivy-cache.tar" ]; then
+    TRIVY_INCLUDED=true
+    TRIVY_SHA="$(sha256sum "${TMP_DIR}/trivy-cache.tar" | cut -d" " -f1)"
+fi
 cat > "${TMP_DIR}/manifest.json" <<EOF
 {
   "format_version": 1,
   "timestamp": "${TIMESTAMP}",
-  "database": "${DB_NAME}"
+  "database": "${DB_NAME}",
+  "database_dump_sha256": "${DB_SHA}",
+  "trivy_cache_included": ${TRIVY_INCLUDED},
+  "trivy_cache_sha256": "${TRIVY_SHA}"
 }
 EOF
 
@@ -107,3 +117,4 @@ echo ""
 echo "=== Backup Complete ==="
 echo "Archive: ${OUTPUT} ($(du -h "${OUTPUT}" | cut -f1))"
 echo "SHA256:  ${SHA}"
+echo "DB SHA:  ${DB_SHA}"

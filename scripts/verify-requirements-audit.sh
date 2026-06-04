@@ -60,6 +60,7 @@ for command in \
     '\./scripts/verify-requirements-audit\.sh' \
     '\./scripts/verify-release-readiness\.sh' \
     '\./scripts/verify-openapi\.sh' \
+    '\./scripts/verify-backup-restore-archive\.sh' \
     '\./scripts/verify-operator-workflow\.sh' \
     '\./scripts/verify-agent-binary-workflow\.sh' \
     '\./scripts/verify-live-agent-token-binding\.sh' \
@@ -117,6 +118,7 @@ require_text "$ARCH" 'BONGSU_SYSTEMD_DIR' "architecture must document systemd in
 require_text "$MATCHING" 'package/ecosystem/fixed evidence' "matching rules must describe package evidence"
 require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness\.sh' "airgap package must include release readiness verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap package must include backup/restore archive verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap package must include live agent token binding verifier"
 
 for section in \
@@ -145,6 +147,7 @@ for keyword in \
     'SHA256SUMS' \
     'pg_dump' \
     'restore' \
+    'verify-backup-restore-archive\.sh' \
     'admin/metrics' \
     'TEMP-\*' \
     'CVD-\*' \

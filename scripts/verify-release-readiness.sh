@@ -57,6 +57,7 @@ run ./scripts/verify-deploy-config.sh
 run ./scripts/verify-requirements-audit.sh
 run ./scripts/verify-openapi.sh
 run ./scripts/verify-package-contents.sh
+run ./scripts/verify-backup-restore-archive.sh
 run ./scripts/verify-installer-smoke.sh
 run ./scripts/verify-static-binaries.sh
 
