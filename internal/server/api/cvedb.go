@@ -2027,7 +2027,9 @@ func (s *Server) securityDBRevisionMeta(ctx context.Context) map[string]any {
 	generation := s.securityDBRevisionCacheGen
 	s.securityDBRevisionMu.Unlock()
 
-	meta := s.fetchSecurityDBRevisionMeta(ctx)
+	fetchCtx, fetchCancel := context.WithTimeout(context.Background(), securityDBRevisionQueryTimeout())
+	meta := s.fetchSecurityDBRevisionMeta(fetchCtx)
+	fetchCancel()
 	s.securityDBRevisionMu.Lock()
 	if revision, _ := meta["security_db_revision"].(string); revision != "" {
 		if generation == s.securityDBRevisionCacheGen {
@@ -2061,6 +2063,17 @@ func securityDBRevisionCacheTTL() time.Duration {
 	seconds := envInt("BONGSU_SECURITY_DB_REVISION_CACHE_SECONDS", 30)
 	if seconds <= 0 {
 		return 0
+	}
+	if seconds > 300 {
+		seconds = 300
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+func securityDBRevisionQueryTimeout() time.Duration {
+	seconds := envInt("BONGSU_SECURITY_DB_REVISION_TIMEOUT_SECONDS", 30)
+	if seconds <= 0 {
+		seconds = 30
 	}
 	if seconds > 300 {
 		seconds = 300
