@@ -3437,6 +3437,22 @@ func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t
 	}
 }
 
+func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-release-readiness.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_RELEASE_READINESS_LIVE=true`,
+		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true ./scripts/verify-live-cvedb-quality.sh`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("release readiness live gate must require fresh CVE sources, missing %q", want)
+		}
+	}
+}
+
 func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
 	if err != nil {

@@ -28,6 +28,8 @@ BONGSU_RELEASE_ARCHIVE=bongsu-0.1.0.tar.gz ./scripts/verify-release-readiness.sh
 BONGSU_RELEASE_READINESS_LIVE=true ./scripts/verify-release-readiness.sh
 ```
 
+Live release readiness enables strict CVE source freshness automatically; stale or missing required sources must be fixed before promotion.
+
 Individual gates remain useful while debugging:
 
 ```bash
