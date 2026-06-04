@@ -665,6 +665,15 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     ? health.security_db_freshness.oldest_age_seconds / 86400
     : 0;
   const securityDbFreshnessStatus = health?.security_db_freshness?.status || '';
+  const securitySourcesReady = !!health?.security_db?.configured && (
+    health?.security_db?.status === 'ok' ||
+    securityDbFreshnessStatus === 'ok'
+  );
+  const securitySourcesLabel = !health?.security_db?.configured
+    ? 'not configured'
+    : securitySourcesReady
+      ? 'ok'
+      : health?.security_db?.status || securityDbFreshnessStatus || 'unknown';
   const cveDbStatus = !securityDbConfigured
     ? 'not configured'
     : health?.security_db?.running
@@ -1239,8 +1248,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           Trivy: {health?.trivy_db?.status || (health?.trivy_db_ready ? 'ok' : 'not loaded')}
         </span>
         {health?.security_db && (
-          <span className={`status-dot ${health.security_db.status === 'ok' ? 'ready' : 'not-ready'}`}>
-            Sources: {health.security_db.configured ? health.security_db.status : 'not configured'}
+          <span className={`status-dot ${securitySourcesReady ? 'ready' : 'not-ready'}`} title={health.security_db.status_detail || ''}>
+            Sources: {securitySourcesLabel}
           </span>
         )}
         {health?.security_recalculation && (

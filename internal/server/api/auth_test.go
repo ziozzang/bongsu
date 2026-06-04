@@ -2801,6 +2801,8 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"Security Sync",
 		"securitySyncNext",
 		"securitySyncLast",
+		"securitySourcesReady",
+		"securitySourcesLabel",
 		"health?.security_db_revision",
 		"health?.security_db_revision_error",
 		"health?.security_db_freshness",

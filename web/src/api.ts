@@ -533,11 +533,18 @@ export interface HealthStatus {
     configured: boolean;
     running: boolean;
     status: string;
+    status_detail?: string;
     last_error: string;
     interval: string;
     last_sync?: string;
     last_attempt?: string;
     next_sync?: string;
+    last_sync_persisted?: string;
+    persisted_latest_source?: string;
+    persisted_latest_update?: string;
+    persisted_status?: string;
+    persisted_missing_sources?: string[];
+    persisted_stale_sources?: string[];
   };
 }
 
