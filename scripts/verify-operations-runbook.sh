@@ -81,6 +81,8 @@ for pattern in \
     'latest_last_update' \
     'security_db\.effective_status' \
     'effective_last_sync' \
+    'server_match' \
+    'mixed-SBOM aggregation failure' \
     'TEMP-\*' \
     'CVD-\*' \
     'bongsu_security_db_source_stale' \

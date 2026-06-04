@@ -4056,6 +4056,7 @@ func TestLiveSBOMExportWorkflowVerifierPreservesOntology(t *testing.T) {
 		`bongsu:image_name`,
 		`bongsu:image_id`,
 		`target=app/requirements.txt`,
+		`server_match|multiple types of OS packages`,
 		`Live SBOM export workflow verification passed`,
 	} {
 		if !strings.Contains(body, want) {

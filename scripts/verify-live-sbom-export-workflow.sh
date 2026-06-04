@@ -244,7 +244,11 @@ report_body="$(jq -nc \
       timestamp: $ts
     }')"
 report_json="$(agent_json POST /api/report "$report_body")"
-if ! jq -e '.status == "ok" and (.scan_status == "completed" or .scan_status == "degraded")' >/dev/null <<<"$report_json"; then
+if ! jq -e '
+  .status == "ok"
+  and (.scan_status == "completed" or .scan_status == "degraded")
+  and ((.ingest_errors // []) | map(select(test("server_match|multiple types of OS packages"; "i"))) | length == 0)
+' >/dev/null <<<"$report_json"; then
     echo "ERROR: fixture report did not complete" >&2
     echo "$report_json" | jq . >&2 || echo "$report_json" >&2
     exit 1

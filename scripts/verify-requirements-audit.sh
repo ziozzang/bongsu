@@ -122,6 +122,8 @@ for keyword in \
     'BONGSU_HOST_ID' \
     'host-token binding' \
     'two logical host' \
+    'server_match' \
+    'mixed OS package' \
     'force scan' \
     'one-line installer' \
     'systemd' \
@@ -201,6 +203,7 @@ for keyword in \
     'verify-live-agent-token-binding\.sh' \
     'verify-live-cve-rematch-workflow\.sh' \
     'verify-live-sbom-export-workflow\.sh' \
+    'server_match' \
     'verify-live-install-script\.sh' \
     'verify-live-installer-payload\.sh' \
     'verify-live-security-db-schedule\.sh' \
