@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 14:00:12 KST
+Updated: 2026-06-05 04:08:18 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,15 +24,16 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Verify live observability surfaces
+master / origin/main latest commit: Update live CVE DB verification handoff
 ```
 
 Important recent commits:
 
 ```text
-<latest> Verify live observability surfaces
-e93f242 Defer OSV chunk import finalization
-4cbd557 Fix OSV chunk imports and admin sessions
+<latest> Update live CVE DB verification handoff
+cfde381 Cache security DB revision lookups
+7da00c3 Add fixture coverage for export freshness gate
+379194a Include export freshness gate in handoff checks
 32652bf Reject non-regular backup archive entries
 8d312c4 Verify OpenAPI operation security
 190ff69 Harden generated installer systemd path
@@ -136,21 +137,18 @@ Last known listener state:
 API was last started with a fresh build from the current checkout:
 
 ```bash
-go build -o /tmp/bongsu-server-current ./cmd/server
-setsid env BONGSU_DB_DSN="postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable" \
-BONGSU_API_KEY=test-admin-key-0123456789 BONGSU_AGENT_API_KEY=test-agent-key-0123456789 BONGSU_INSTALL_TOKEN=test-install-token-0123456789 \
-BONGSU_ADMIN_USERNAME=admin BONGSU_ADMIN_PASSWORD=password \
-BONGSU_ALLOW_WEAK_SECRETS=true BONGSU_WEB_AUTH=true \
-BONGSU_SECURITY_DB_SYNC_ON_START=false BONGSU_SECURITY_DB_SYNC_CMD="" \
-BONGSU_TRIVY_DB_INTERVAL_HOURS=0 BONGSU_AGENT_BIN=/home/ziozzang/bongsu/bin/bongsu-agent \
-BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS=30 \
-BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS=1 \
-BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE=10000 \
-BONGSU_CVE_SEARCH_TIMEOUT_SECONDS=15 \
-BONGSU_CVE_REFERENCE_GROUP_TIMEOUT_SECONDS=10 \
-BONGSU_CVE_AFFECTED_PACKAGES_TIMEOUT_SECONDS=10 \
-BONGSU_VULNERABILITY_LIST_TIMEOUT_SECONDS=15 \
-BONGSU_PORT=5677 /tmp/bongsu-server-current >/tmp/bongsu-api-5677.log 2>&1 < /dev/null &
+commit=$(git rev-parse --short=12 HEAD)
+build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+go build -trimpath -ldflags "-s -w -X main.version=0.1.0 -X main.commit=${commit} -X main.buildDate=${build_date}" -o /tmp/bongsu-server-current ./cmd/server
+setsid -f bash -c 'while IFS= read -r -d "" kv; do export "$kv"; done < /tmp/bongsu-server-current.env; exec /tmp/bongsu-server-current' >/tmp/bongsu-server-current.log 2>&1 < /dev/null
+```
+
+The current live API process is detached with parent PID `1` and session ID equal to the process PID. Last verified live build metadata:
+
+```text
+version=0.1.0
+commit=cfde381ed045
+build_date=2026-06-04T19:03:28Z
 ```
 
 Do not change this to `8080`. Keep API and web split as `5677` and `5678`. If `http://10.2.2.10:5678/api/auth/login` returns HTTP 500, check that `5677` is listening and that the running API binary was rebuilt from the current checkout. A stale `/tmp/bongsu-server-live` binary previously lacked the current login routes.
@@ -161,6 +159,17 @@ Latest login check passed through both the API and the web proxy:
 POST http://127.0.0.1:5677/api/auth/login admin/password -> 200
 POST http://127.0.0.1:5678/api/auth/login admin/password -> 200
 ```
+
+Latest live verification passed after redeploying `cfde381ed045`:
+
+```bash
+./scripts/verify-live-session-auth.sh
+./scripts/verify-live-security-db-export-freshness.sh
+./scripts/verify-live-server-build.sh
+BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=true ./scripts/verify-live-cvedb-quality.sh
+```
+
+The direct-DB CVE quality run passed with `961359` records, `208854` matchable records, `5` sources, direct placeholder rejection, affected/reference orphan checks, EPSS column enrichment checks, and multi-source reference-group checks.
 
 ## Current CVE DB Status
 
