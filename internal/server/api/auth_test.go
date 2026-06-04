@@ -6794,10 +6794,22 @@ func TestAuthenticatorInterfaceExists(t *testing.T) {
 		"type OIDCAuthenticator struct",
 		"OIDC authentication not configured",
 		"BONGSU_OIDC_ISSUER",
+		"OIDC login is not implemented yet; using local authentication",
+		"return &LocalAuthenticator{server: s}",
 		"initAuthenticator()",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("authenticator interface missing %q", want)
 		}
+	}
+}
+
+func TestOIDCPlaceholderDoesNotDisableLocalAuthentication(t *testing.T) {
+	t.Setenv("BONGSU_OIDC_ISSUER", "https://idp.example.test")
+	t.Setenv("BONGSU_OIDC_CLIENT_ID", "bongsu")
+
+	s := &Server{}
+	if _, ok := s.initAuthenticator().(*LocalAuthenticator); !ok {
+		t.Fatal("unsupported OIDC configuration must keep local authentication active")
 	}
 }

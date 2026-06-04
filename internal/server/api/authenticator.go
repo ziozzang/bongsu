@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -51,10 +53,9 @@ func (a *OIDCAuthenticator) Authenticate(_ context.Context, _, _ string) (*AuthR
 }
 
 func (s *Server) initAuthenticator() Authenticator {
-	oidcIssuer := envOr("BONGSU_OIDC_ISSUER", "")
+	oidcIssuer := strings.TrimSpace(envOr("BONGSU_OIDC_ISSUER", ""))
 	if oidcIssuer != "" {
-		clientID := envOr("BONGSU_OIDC_CLIENT_ID", "")
-		return newOIDCAuthenticator(oidcIssuer, clientID)
+		log.Printf("WARNING: BONGSU_OIDC_ISSUER is set, but OIDC login is not implemented yet; using local authentication")
 	}
 	return &LocalAuthenticator{server: s}
 }

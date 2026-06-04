@@ -8,6 +8,7 @@ This runbook is for operators running Bongsu in connected or air-gapped environm
 
 - Set unique strong values for `BONGSU_DB_PASSWORD`, `BONGSU_API_KEY`, `BONGSU_AGENT_API_KEY`, and `BONGSU_INSTALL_TOKEN`.
 - Keep `BONGSU_ALLOW_WEAK_SECRETS=false`, `BONGSU_WEB_AUTH=true`, `BONGSU_AGENT_HOST_BINDING=true`, and same-origin CORS unless a specific origin is required.
+- Keep `BONGSU_OIDC_ISSUER` unset in production until real OIDC login support is implemented. If the variable is accidentally set today, the API logs a warning and keeps local username/password authentication active instead of switching to an unusable placeholder.
 - Confirm Docker Compose renders the intended connected or air-gapped mode before startup:
 
 ```bash
