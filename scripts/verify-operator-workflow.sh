@@ -261,6 +261,21 @@ if ! grep -Eq '^bongsu_cve_osv_ecosystem_indexed_rows[{]ecosystem="|^bongsu_cve_
     sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
     exit 1
 fi
+if ! grep -Eq '^bongsu_agent_fleet_degraded |^bongsu_agent_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose agent fleet operational status or metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_agent_fleet_warnings |^bongsu_agent_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose agent fleet warning count or metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_agent_outdated_percent |^bongsu_agent_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose agent outdated percentage or metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
 if ! grep -Eq '^bongsu_security_db_rescan_open |^bongsu_security_db_rescan_metrics_error |^bongsu_security_db_revision_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
     echo "ERROR: admin metrics must expose security DB rescan metrics or metrics error" >&2
     sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2

@@ -138,10 +138,19 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			for version, count := range agentVersionCounts {
 				writePromGauge(&b, "bongsu_agent_version_hosts", map[string]string{"version": version}, float64(count))
 			}
-			latestVersion := binaryVersion(agentBinaryPath())
-			for state, count := range agentVersionDriftCounts(agentVersionCounts, latestVersion) {
+			latestVersion := agentInstaller.Version
+			if latestVersion == "" {
+				latestVersion = binaryVersion(agentBinaryPath())
+			}
+			driftCounts := agentVersionDriftCounts(agentVersionCounts, latestVersion)
+			for state, count := range driftCounts {
 				writePromGauge(&b, "bongsu_agent_version_drift_hosts", map[string]string{"state": state}, float64(count))
 			}
+			fleetStatus, warnings, _ := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, s.installToken != "", agentInstaller, trivyInstaller)
+			writePromGauge(&b, "bongsu_agent_fleet_degraded", nil, boolMetric(fleetStatus != "ok"))
+			writePromGauge(&b, "bongsu_agent_fleet_warnings", nil, float64(len(warnings)))
+			writePromGauge(&b, "bongsu_agent_fleet_total_hosts", nil, float64(len(hosts)))
+			writePromGauge(&b, "bongsu_agent_outdated_percent", nil, percent(driftCounts["outdated"], len(hosts)))
 		} else {
 			writePromGauge(&b, "bongsu_agent_metrics_error", nil, 1)
 		}

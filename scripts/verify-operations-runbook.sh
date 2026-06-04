@@ -71,7 +71,9 @@ for pattern in \
     'CVD-\*' \
     'bongsu_security_db_source_stale' \
     'bongsu_cve_placeholder_records' \
-    'bongsu_security_db_rescan_open'
+    'bongsu_security_db_rescan_open' \
+    'bongsu_agent_fleet_degraded' \
+    'bongsu_agent_outdated_percent'
 do
     require_text "$RUNBOOK" "$pattern" "operations runbook missing operational invariant $pattern"
 done

@@ -362,6 +362,11 @@ func TestAdminMetricsExposeAgentFleetState(t *testing.T) {
 		"bongsu_agent_version_drift_hosts",
 		`map[string]string{"state": state}`,
 		"agentVersionDriftCounts(agentVersionCounts, latestVersion)",
+		"agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, s.installToken != \"\", agentInstaller, trivyInstaller)",
+		"bongsu_agent_fleet_degraded",
+		"bongsu_agent_fleet_warnings",
+		"bongsu_agent_fleet_total_hosts",
+		"bongsu_agent_outdated_percent",
 		"bongsu_agent_metrics_error",
 	} {
 		if !strings.Contains(fn, want) {
@@ -2729,6 +2734,10 @@ func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
 		"bongsu_installer_binary_bytes",
 		"bongsu_installer_binary_info",
 		"bongsu_installer_binary_error",
+		"bongsu_agent_fleet_degraded",
+		"bongsu_agent_fleet_warnings",
+		"bongsu_agent_fleet_total_hosts",
+		"bongsu_agent_outdated_percent",
 		"metricTimestamp",
 		"metricNumber",
 	} {
@@ -3369,6 +3378,9 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 		"bongsu_cve_epss_merge_metrics_error",
 		"bongsu_cve_osv_ecosystem_indexed_rows",
 		"bongsu_cve_osv_ecosystem_metrics_error",
+		"bongsu_agent_fleet_degraded",
+		"bongsu_agent_fleet_warnings",
+		"bongsu_agent_outdated_percent",
 		"bongsu_security_db_rescan_open",
 		"bongsu_security_db_rescan_metrics_error",
 	} {

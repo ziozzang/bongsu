@@ -364,6 +364,7 @@ Scrape `/api/admin/metrics` with the admin API key and alert on:
 - `bongsu_cve_epss_loaded_without_enrichment` greater than zero.
 - `bongsu_security_db_rescan_open` remaining high after a DB update.
 - `bongsu_scan_request_stale` for pending or claimed requests.
+- `bongsu_agent_fleet_degraded` greater than zero, nonzero `bongsu_agent_fleet_warnings`, or unexpectedly high `bongsu_agent_outdated_percent`.
 - `bongsu_installer_ready` equal to zero.
 - PostgreSQL pool exhaustion or repeated health-check failures.
 
