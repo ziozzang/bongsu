@@ -114,11 +114,11 @@ for arg in "$@"; do
 done
 if [ "$mode" = "image" ]; then
     cat <<'JSON'
-{"Results":[{"Target":"fixture.registry/bongsu-agent-fixture:1.0","Type":"alpine","Packages":[{"Name":"bongsu-container-fixture-package","Version":"2.0.0-r0","Arch":"x86_64","SrcName":"bongsu-container-fixture-package","FilePath":"/lib/apk/db/installed","Layer":{"DiffID":"sha256:fixture-container-layer"}}]}]}
+{"Results":[{"Target":"fixture.registry/bongsu-agent-fixture:1.0","Type":"alpine","Packages":[{"Name":"bongsu-container-fixture-package","Version":"2.0.0-r0","Arch":"x86_64","SrcName":"bongsu-container-fixture-package","FilePath":"/lib/apk/db/installed","Layer":{"DiffID":"sha256:fixture-container-layer"}}]},{"Target":"app/requirements.txt","Type":"python-pkg","Packages":[{"Name":"bongsu-container-python-library","Version":"1.2.3","FilePath":"/app/requirements.txt","Layer":{"DiffID":"sha256:fixture-container-python-layer"}}]}]}
 JSON
 else
     cat <<'JSON'
-{"Results":[{"Target":"/","Type":"ubuntu","Packages":[{"Name":"bongsu-host-fixture-package","Version":"1.0.0","Arch":"amd64","SrcName":"bongsu-host-fixture-package","FilePath":"/var/lib/dpkg/status","Layer":{"DiffID":"sha256:fixture-host-layer"}}]}]}
+{"Results":[{"Target":"/","Type":"ubuntu","Packages":[{"Name":"bongsu-host-fixture-package","Version":"1.0.0","Arch":"amd64","SrcName":"bongsu-host-fixture-package","FilePath":"/var/lib/dpkg/status","Layer":{"DiffID":"sha256:fixture-host-layer"}}]},{"Target":"package-lock.json","Type":"npm","Packages":[{"Name":"bongsu-host-npm-library","Version":"4.5.6","FilePath":"/srv/app/package-lock.json","Layer":{"DiffID":"sha256:fixture-host-npm-layer"}}]}]}
 JSON
 fi
 TRIVY
@@ -235,11 +235,13 @@ run_agent_once "$HOST_ID_SECONDARY" "$SECONDARY_WORK_DIR" "$SECONDARY_AGENT_TOKE
 
 echo "[3/7] Verifying primary host, container, package, and port inventory"
 hosts_json="$(api_json GET /api/hosts)"
-assert_json_arg "$hosts_json" id "$HOST_ID_PRIMARY" '.[] | select(.id == $id and .latest_inventory.latest_package_count >= 3 and .latest_inventory.latest_container_count >= 1)' "primary agent host must have latest package and container inventory"
-assert_json_arg "$hosts_json" id "$HOST_ID_SECONDARY" '.[] | select(.id == $id and .latest_inventory.latest_package_count >= 3 and .latest_inventory.latest_container_count >= 1)' "secondary agent host must have latest package and container inventory"
+assert_json_arg "$hosts_json" id "$HOST_ID_PRIMARY" '.[] | select(.id == $id and .latest_inventory.latest_package_count >= 5 and .latest_inventory.latest_container_count >= 1)' "primary agent host must have latest package, code-library, and container inventory"
+assert_json_arg "$hosts_json" id "$HOST_ID_SECONDARY" '.[] | select(.id == $id and .latest_inventory.latest_package_count >= 5 and .latest_inventory.latest_container_count >= 1)' "secondary agent host must have latest package, code-library, and container inventory"
 packages_json="$(api_json GET "/api/packages?host_id=${HOST_ID_PRIMARY}&limit=200")"
 assert_json "$packages_json" '.items[] | select(.name == "bongsu-host-fixture-package" and .asset_type == "host" and .ecosystem == "Ubuntu" and .target == "/")' "host Trivy package must preserve host target context"
+assert_json "$packages_json" '.items[] | select(.name == "bongsu-host-npm-library" and .asset_type == "host" and .pkg_type == "npm" and .ecosystem == "npm" and .purl == "pkg:npm/bongsu-host-npm-library@4.5.6" and .target == "package-lock.json")' "host Trivy code library must preserve npm ecosystem and purl"
 assert_json_arg2 "$packages_json" container_id "$PRIMARY_CONTAINER_ID" image_name "fixture.registry/bongsu-agent-fixture:${HOST_ID_PRIMARY}" '.items[] | select(.name == "bongsu-container-fixture-package" and .asset_type == "container" and .container_id == $container_id and .image_name == $image_name)' "container Trivy package must preserve container/image context"
+assert_json_arg2 "$packages_json" container_id "$PRIMARY_CONTAINER_ID" image_name "fixture.registry/bongsu-agent-fixture:${HOST_ID_PRIMARY}" '.items[] | select(.name == "bongsu-container-python-library" and .asset_type == "container" and .container_id == $container_id and .image_name == $image_name and .pkg_type == "python-pkg" and .ecosystem == "PyPI" and .purl == "pkg:pypi/bongsu-container-python-library@1.2.3" and .target == "app/requirements.txt")' "container Trivy code library must preserve PyPI ecosystem, purl, and container/image context"
 assert_json "$packages_json" '.items[] | select(.name == "bongsu-osquery-fixture-package" and .source == "osquery" and .asset_type == "host")' "osquery package must be ingested as host package"
 containers_json="$(api_json GET "/api/containers?host_id=${HOST_ID_PRIMARY}&limit=20")"
 assert_json_arg2 "$containers_json" container_id "$PRIMARY_CONTAINER_ID" image_name "fixture.registry/bongsu-agent-fixture:${HOST_ID_PRIMARY}" '.items[] | select(.container_id == $container_id and .image_name == $image_name and .state == "running")' "container asset must be persisted"
@@ -247,7 +249,9 @@ assert_json_arg2 "$containers_json" container_id "$PRIMARY_CONTAINER_ID" image_n
 echo "[4/7] Verifying secondary host inventory is separately queryable"
 secondary_packages_json="$(api_json GET "/api/packages?host_id=${HOST_ID_SECONDARY}&limit=200")"
 assert_json "$secondary_packages_json" '.items[] | select(.name == "bongsu-host-fixture-package" and .asset_type == "host")' "secondary host package must be queryable by secondary host id"
+assert_json "$secondary_packages_json" '.items[] | select(.name == "bongsu-host-npm-library" and .asset_type == "host" and .ecosystem == "npm")' "secondary host code-library package must be queryable by secondary host id"
 assert_json_arg2 "$secondary_packages_json" container_id "$SECONDARY_CONTAINER_ID" image_name "fixture.registry/bongsu-agent-fixture:${HOST_ID_SECONDARY}" '.items[] | select(.name == "bongsu-container-fixture-package" and .asset_type == "container" and .container_id == $container_id and .image_name == $image_name)' "secondary container package must preserve secondary container/image context"
+assert_json_arg2 "$secondary_packages_json" container_id "$SECONDARY_CONTAINER_ID" image_name "fixture.registry/bongsu-agent-fixture:${HOST_ID_SECONDARY}" '.items[] | select(.name == "bongsu-container-python-library" and .asset_type == "container" and .container_id == $container_id and .image_name == $image_name and .ecosystem == "PyPI")' "secondary container code-library package must preserve secondary container/image context"
 assert_json_arg "$secondary_packages_json" host "$HOST_ID_PRIMARY" 'all(.items[]; .host_id != $host)' "secondary host package query must not leak primary host packages"
 
 echo "[5/7] Creating host-specific scan request"
@@ -272,9 +276,9 @@ SCAN_REQUEST_ID=""
 
 echo "[7/7] Verifying scans are tied to the correct host identities"
 scans_json="$(api_json GET "/api/scans?host_id=${HOST_ID_PRIMARY}&limit=20")"
-assert_json "$scans_json" '.items[] | select((.status == "completed" or .status == "degraded") and .package_count >= 3 and .container_count >= 1)' "agent binary scan must persist package and container counts"
+assert_json "$scans_json" '.items[] | select((.status == "completed" or .status == "degraded") and .package_count >= 5 and .container_count >= 1)' "agent binary scan must persist OS package, code-library, and container counts"
 assert_json_arg "$scans_json" host "$HOST_ID_SECONDARY" 'all(.items[]; .host_id != $host)' "primary scan query must not include secondary host scans"
 secondary_scans_json="$(api_json GET "/api/scans?host_id=${HOST_ID_SECONDARY}&limit=20")"
-assert_json "$secondary_scans_json" '.items[] | select((.status == "completed" or .status == "degraded") and .package_count >= 3 and .container_count >= 1)' "secondary agent scan must persist package and container counts"
+assert_json "$secondary_scans_json" '.items[] | select((.status == "completed" or .status == "degraded") and .package_count >= 5 and .container_count >= 1)' "secondary agent scan must persist OS package, code-library, and container counts"
 
 echo "Agent binary workflow verification passed"

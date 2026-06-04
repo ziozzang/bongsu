@@ -3186,6 +3186,30 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 	}
 }
 
+func TestAgentBinaryWorkflowVerifiesCodeLibrarySBOMContext(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-agent-binary-workflow.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"bongsu-host-npm-library",
+		"bongsu-container-python-library",
+		`"Type":"npm"`,
+		`"Type":"python-pkg"`,
+		`pkg:npm/bongsu-host-npm-library@4.5.6`,
+		`pkg:pypi/bongsu-container-python-library@1.2.3`,
+		"host Trivy code library must preserve npm ecosystem and purl",
+		"container Trivy code library must preserve PyPI ecosystem, purl, and container/image context",
+		"latest package, code-library, and container inventory",
+		"OS package, code-library, and container counts",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("agent binary workflow verifier missing code-library assertion %q", want)
+		}
+	}
+}
+
 func TestDownloadCisaKevScriptIsFailClosedAndAtomic(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/download-cisa-kev.sh")
 	if err != nil {
