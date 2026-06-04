@@ -26,6 +26,9 @@ func newRuleNotifier(s *Server) *ruleNotifier {
 	if timeout < time.Second {
 		timeout = 15 * time.Second
 	}
+	if timeout > 5*time.Minute {
+		timeout = 5 * time.Minute
+	}
 	return &ruleNotifier{
 		server: s,
 		client: &http.Client{Timeout: timeout},
@@ -120,20 +123,45 @@ func (n *ruleNotifier) dispatch(ctx context.Context, rule *db.NotificationRule, 
 	case "webhook":
 		cfg := map[string]string{}
 		json.Unmarshal(rule.ChannelConfig, &cfg)
-		url := cfg["url"]
-		if url == "" {
+		if strings.TrimSpace(cfg["url"]) == "" {
 			log.Printf("notification rule %s: no url in channel_config", rule.ID)
 			return
 		}
-		body, err := json.Marshal(payload)
-		if err != nil {
-			log.Printf("notification rule %s marshal: %v", rule.ID, err)
-			return
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		status, errMsg, attempts := n.sendWebhook(ctx, rule, event, payload)
+		logEntry.Status = status
+		logEntry.ErrorMessage = errMsg
+		logEntry.Attempts = attempts
+	case "log":
+		log.Printf("[NOTIFICATION] rule=%s event=%s data=%s", rule.Name, event, string(payloadJSON))
+		logEntry.Status = "sent"
+		logEntry.Attempts = 1
+	}
+	if err := n.server.db.RecordNotificationLog(ctx, logEntry); err != nil {
+		log.Printf("notification log record: %v", err)
+	}
+	n.server.db.TouchNotificationRuleTrigger(ctx, rule.ID)
+}
+
+func (n *ruleNotifier) sendWebhook(ctx context.Context, rule *db.NotificationRule, event string, payload map[string]any) (string, string, int) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("notification rule %s marshal: %v", rule.ID, err)
+		return "failed", err.Error(), 1
+	}
+	cfg := map[string]string{}
+	json.Unmarshal(rule.ChannelConfig, &cfg)
+	attempts := notificationRetryAttemptsFromEnv()
+	delay := notificationRetryDelayFromEnv()
+	client := n.client
+	if client == nil {
+		client = http.DefaultClient
+	}
+	var lastErr string
+	for attempt := 1; attempt <= attempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimSpace(cfg["url"]), bytes.NewReader(body))
 		if err != nil {
 			log.Printf("notification rule %s request: %v", rule.ID, err)
-			return
+			return "failed", err.Error(), attempt
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "bongsu-notification/0.1.0")
@@ -144,27 +172,28 @@ func (n *ruleNotifier) dispatch(ctx context.Context, rule *db.NotificationRule, 
 			mac.Write(body)
 			req.Header.Set("X-Bongsu-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 		}
-		resp, err := n.client.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
-			logEntry.Status = "failed"
-			logEntry.ErrorMessage = err.Error()
-		} else {
-			resp.Body.Close()
-			if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-				logEntry.Status = "sent"
-			} else {
-				logEntry.Status = "failed"
-				logEntry.ErrorMessage = fmt.Sprintf("HTTP %d", resp.StatusCode)
+			lastErr = err.Error()
+			log.Printf("notification rule %s webhook attempt %d/%d: %v", rule.ID, attempt, attempts, err)
+			if attempt < attempts {
+				sleepWithContext(ctx, delay)
+				continue
 			}
+			return "failed", lastErr, attempt
 		}
-	case "log":
-		log.Printf("[NOTIFICATION] rule=%s event=%s data=%s", rule.Name, event, string(payloadJSON))
-		logEntry.Status = "sent"
+		resp.Body.Close()
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return "sent", "", attempt
+		}
+		lastErr = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		log.Printf("notification rule %s webhook attempt %d/%d returned HTTP %d", rule.ID, attempt, attempts, resp.StatusCode)
+		if !retryWebhookStatus(resp.StatusCode) || attempt == attempts {
+			return "failed", lastErr, attempt
+		}
+		sleepWithContext(ctx, delay)
 	}
-	if err := n.server.db.RecordNotificationLog(ctx, logEntry); err != nil {
-		log.Printf("notification log record: %v", err)
-	}
-	n.server.db.TouchNotificationRuleTrigger(ctx, rule.ID)
+	return "failed", lastErr, attempts
 }
 
 func (n *ruleNotifier) dispatchTest(ctx context.Context, rule *db.NotificationRule) error {
@@ -180,38 +209,54 @@ func (n *ruleNotifier) dispatchTest(ctx context.Context, rule *db.NotificationRu
 	json.Unmarshal(rule.ChannelConfig, &cfg)
 	switch rule.ChannelType {
 	case "webhook":
-		url := cfg["url"]
-		if url == "" {
+		if strings.TrimSpace(cfg["url"]) == "" {
 			return fmt.Errorf("no url configured")
 		}
-		body, err := json.Marshal(payload)
-		if err != nil {
-			return err
-		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", "bongsu-notification/0.1.0")
-		req.Header.Set("X-Bongsu-Event", "test")
-		if secret := cfg["secret"]; secret != "" {
-			mac := hmac.New(sha256.New, []byte(secret))
-			mac.Write(body)
-			req.Header.Set("X-Bongsu-Signature-256", "sha256="+hex.EncodeToString(mac.Sum(nil)))
-		}
-		resp, err := n.client.Do(req)
-		if err != nil {
-			return err
-		}
-		resp.Body.Close()
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		status, errMsg, _ := n.sendWebhook(ctx, rule, "test", payload)
+		if status == "sent" {
 			return nil
 		}
-		return fmt.Errorf("HTTP %d", resp.StatusCode)
+		if errMsg == "" {
+			errMsg = "webhook failed"
+		}
+		return fmt.Errorf("%s", errMsg)
 	case "log":
 		log.Printf("[NOTIFICATION TEST] rule=%s", rule.Name)
 		return nil
 	}
 	return fmt.Errorf("unknown channel type: %s", rule.ChannelType)
+}
+
+func notificationRetryAttemptsFromEnv() int {
+	attempts := envInt("BONGSU_NOTIFICATION_RETRY_ATTEMPTS", 3)
+	if attempts < 1 {
+		return 1
+	}
+	if attempts > 10 {
+		return 10
+	}
+	return attempts
+}
+
+func notificationRetryDelayFromEnv() time.Duration {
+	ms := envInt("BONGSU_NOTIFICATION_RETRY_DELAY_MS", 1000)
+	if ms <= 0 {
+		return time.Second
+	}
+	if ms > 60000 {
+		return time.Minute
+	}
+	return time.Duration(ms) * time.Millisecond
+}
+
+func sleepWithContext(ctx context.Context, delay time.Duration) {
+	if delay <= 0 {
+		return
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-timer.C:
+	}
 }

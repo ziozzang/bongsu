@@ -114,6 +114,7 @@ for keyword in \
     'live browser' \
     'Scan History' \
     'Notifications' \
+    'signed notification rule webhook retry' \
     'BONGSU_HOST_ID' \
     'host-token binding' \
     'two logical host' \

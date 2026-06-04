@@ -22,10 +22,15 @@ SCHEDULE_ID=""
 ASSET_GROUP_ID=""
 NOTIFICATION_RULE_ID=""
 SCAN_REQUEST_ID=""
+WEBHOOK_PID=""
 TMP_DIR="$(mktemp -d)"
 
 cleanup() {
     set +e
+    if [ -n "$WEBHOOK_PID" ]; then
+        kill "$WEBHOOK_PID" >/dev/null 2>&1
+        wait "$WEBHOOK_PID" >/dev/null 2>&1
+    fi
     if [ -n "$NOTIFICATION_RULE_ID" ]; then
         curl -fsS --max-time "$CURL_MAX_TIME" -X DELETE -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/admin/notification-rules/${NOTIFICATION_RULE_ID}" >/dev/null 2>&1
     fi
@@ -193,6 +198,7 @@ scan_report_json() {
 
 require_tool curl
 require_tool jq
+require_tool python3
 require_tool tar
 
 echo "=== Bongsu Live Operator Workflow Verification ==="
@@ -357,13 +363,87 @@ assert_json "$retention_audit_json" '.items[] | select(.action == "retention.pru
 echo "[9/11] Checking notification rule contract"
 rules_json="$(api_json GET /api/admin/notification-rules)"
 assert_json "$rules_json" '.items | type == "array"' "notification rules list must return an items array"
-rule_body="$(jq -nc --arg name "$RUN_ID notification" '{name:$name, trigger_event:"security_db.updated", min_severity:"HIGH", channel_type:"log", enabled:true}')"
+cat > "$TMP_DIR/webhook_receiver.py" <<'PY'
+import hashlib
+import hmac
+import http.server
+import json
+import os
+import socketserver
+import sys
+
+secret, port_file, log_file = sys.argv[1:]
+state = {"count": 0}
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        return
+
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+        state["count"] += 1
+        expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        entry = {
+            "attempt": state["count"],
+            "path": self.path,
+            "event": self.headers.get("X-Bongsu-Event", ""),
+            "rule_id": self.headers.get("X-Bongsu-Rule-ID", ""),
+            "signature_ok": self.headers.get("X-Bongsu-Signature-256", "") == expected,
+            "payload": json.loads(body.decode("utf-8")),
+        }
+        with open(log_file, "a", encoding="utf-8") as out:
+            out.write(json.dumps(entry, separators=(",", ":")) + "\n")
+        if state["count"] == 1:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(b"retry me")
+            return
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"ok")
+
+with socketserver.TCPServer(("127.0.0.1", 0), Handler) as httpd:
+    with open(port_file, "w", encoding="utf-8") as out:
+        out.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+WEBHOOK_SECRET="secret-${RUN_ID}"
+python3 "$TMP_DIR/webhook_receiver.py" "$WEBHOOK_SECRET" "$TMP_DIR/webhook.port" "$TMP_DIR/webhook.log" &
+WEBHOOK_PID="$!"
+for _ in $(seq 1 50); do
+    if [ -s "$TMP_DIR/webhook.port" ]; then
+        break
+    fi
+    sleep 0.1
+done
+if [ ! -s "$TMP_DIR/webhook.port" ]; then
+    echo "ERROR: local webhook receiver did not start" >&2
+    exit 1
+fi
+WEBHOOK_PORT="$(cat "$TMP_DIR/webhook.port")"
+rule_body="$(jq -nc --arg name "$RUN_ID notification" --arg url "http://127.0.0.1:${WEBHOOK_PORT}/notify" --arg secret "$WEBHOOK_SECRET" '{name:$name, trigger_event:"security_db.updated", min_severity:"HIGH", channel_type:"webhook", channel_config:{url:$url,secret:$secret}, enabled:true}')"
 rule_json="$(api_json POST /api/admin/notification-rules "$rule_body")"
 NOTIFICATION_RULE_ID="$(jq -r '.id' <<<"$rule_json")"
-assert_json "$rule_json" '.trigger_event == "security_db.updated" and .channel_type == "log" and .enabled == true' "notification rule must preserve trigger/channel/enabled"
+assert_json "$rule_json" '.trigger_event == "security_db.updated" and .channel_type == "webhook" and .enabled == true and .channel_config.url' "notification rule must preserve trigger/channel/config/enabled"
 test_json="$(api_json POST "/api/admin/notification-rules/${NOTIFICATION_RULE_ID}/test" '{}')"
-assert_json "$test_json" '.status == "sent"' "log notification test must return sent"
-log_json="$(api_json GET '/api/admin/notification-log?limit=20')"
+assert_json "$test_json" '.status == "sent"' "webhook notification test must retry transient failures and return sent"
+python3 - "$TMP_DIR/webhook.log" "$NOTIFICATION_RULE_ID" <<'PY'
+import json
+import sys
+
+path, rule_id = sys.argv[1:]
+with open(path, "r", encoding="utf-8") as fh:
+    rows = [json.loads(line) for line in fh if line.strip()]
+if len(rows) != 2:
+    raise SystemExit(f"expected exactly two webhook attempts, got {len(rows)}")
+if not all(row.get("signature_ok") for row in rows):
+    raise SystemExit("webhook signature verification failed")
+if rows[-1].get("event") != "test" or rows[-1].get("rule_id") != rule_id:
+    raise SystemExit(f"unexpected final webhook headers: {rows[-1]}")
+if rows[-1].get("payload", {}).get("rule_id") != rule_id:
+    raise SystemExit(f"unexpected final webhook payload: {rows[-1]}")
+PY
+log_json="$(api_json GET "/api/admin/notification-log?rule_id=${NOTIFICATION_RULE_ID}&limit=20")"
 assert_json "$log_json" '.items | type == "array"' "notification log must return an items array"
 
 echo "[10/11] Checking agent claim, report, and scan-request completion"

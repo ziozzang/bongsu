@@ -3459,6 +3459,29 @@ func TestOperatorWorkflowVerifiesRetentionDryRun(t *testing.T) {
 	}
 }
 
+func TestOperatorWorkflowVerifiesNotificationWebhookRetry(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-operator-workflow.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		"webhook_receiver.py",
+		"signature_ok",
+		"X-Bongsu-Signature-256",
+		"expected exactly two webhook attempts",
+		"webhook notification test must retry transient failures and return sent",
+		`channel_type:"webhook"`,
+		`channel_config:{url:$url,secret:$secret}`,
+		`api_json POST "/api/admin/notification-rules/${NOTIFICATION_RULE_ID}/test"`,
+		`notification log must return an items array`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("operator workflow must verify notification webhook retry, missing %q", want)
+		}
+	}
+}
+
 func TestAgentBinaryWorkflowVerifiesCodeLibrarySBOMContext(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-agent-binary-workflow.sh")
 	if err != nil {

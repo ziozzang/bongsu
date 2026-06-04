@@ -384,7 +384,11 @@ BONGSU_WEBHOOK_SECRET=<strong-shared-secret>
 BONGSU_WEBHOOK_MIN_SEVERITY=HIGH
 BONGSU_WEBHOOK_MIN_RISK_LEVEL=high
 BONGSU_WEBHOOK_INVENTORY_STATUSES=empty,degraded
+BONGSU_NOTIFICATION_RETRY_ATTEMPTS=3
+BONGSU_NOTIFICATION_RETRY_DELAY_MS=1000
 ```
+
+For notification rules created in the Notifications UI, use the `webhook` channel with a per-rule `url` and `secret`. Bongsu signs each rule webhook with `X-Bongsu-Signature-256`, retries network failures, HTTP 429, and HTTP 5xx responses, does not retry HTTP 4xx receiver errors, and records the final delivery status plus attempt count in Notification Log. `./scripts/verify-operator-workflow.sh` runs a local webhook receiver during live verification and proves this signed retry path before release promotion.
 
 ## Incident Response
 

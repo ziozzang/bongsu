@@ -69,6 +69,9 @@ for pattern in \
     'BONGSU_DB_DSN="\$BONGSU_DB_DSN"' \
     'BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS' \
     'BONGSU_VERIFY_CURL_MAX_TIME_SECONDS' \
+    'BONGSU_NOTIFICATION_RETRY_ATTEMPTS' \
+    'BONGSU_NOTIFICATION_RETRY_DELAY_MS' \
+    'signed retry path' \
     'security_db_freshness\.latest_source' \
     'latest_last_update' \
     'TEMP-\*' \
