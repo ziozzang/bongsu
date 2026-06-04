@@ -1700,6 +1700,8 @@ func TestSecurityDBUpdateQueuesRescanAfterRecalculation(t *testing.T) {
 		`s.auditSystem("security_db.recalculation"`,
 		"GetSecurityDBRevision(ctx)",
 		`meta["security_db_revision"]`,
+		"SyncEPSSPriorityColumns(ctx)",
+		`"epss_merged"`,
 		"RemoveStaleRematchedVulnerabilities",
 		`"stale_rematch_removed"`,
 		`"stale_rematch_scanned"`,
@@ -2763,11 +2765,17 @@ func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`local replace="${3:-true}"`,
-		`-F "file=@${file}" -F "source=${source}" -F "replace=${replace}"`,
-		`import_cve_file "${OSV_ECO_FILE}" "osv" "false"`,
+		`local finalize="${4:-true}"`,
+		`-F "file=@${file}" -F "source=${source}" -F "replace=${replace}" -F "finalize=${finalize}"`,
+		`import_cve_file "${OSV_ECO_FILE}" "osv" "false" "false"`,
+		`if [ "${OSV_TOTAL}" -gt 0 ]; then`,
+		`finalize_deferred_cve_imports "osv chunk import"`,
+		`"${AFFECTED_INDEX_REBUILD_URL}"`,
+		`"${REFERENCE_INDEX_REBUILD_URL}"`,
+		`"${RECALCULATE_URL}"`,
 	} {
 		if !strings.Contains(body, want) {
-			t.Fatalf("sync-all-cvedb must append OSV ecosystem chunks without deleting prior chunks, missing %q", want)
+			t.Fatalf("sync-all-cvedb must append OSV ecosystem chunks and finalize once, missing %q", want)
 		}
 	}
 }
@@ -4095,6 +4103,7 @@ func TestCveJSONLImportUsesSingleTransaction(t *testing.T) {
 		"replace && source != \"\"",
 		"s.db.DeleteCveEntriesBySourceTx",
 		"s.importCveJSONLTx",
+		"if finalize {",
 		"s.db.SyncEPSSPriorityColumnsTx",
 		"s.db.RefreshCveAffectedPackagesForSourceTx",
 		"s.db.RefreshCveReferenceKeysForSourceTx",
@@ -4284,6 +4293,9 @@ func TestCveDbImportAndExportAuditSecurityDBRevision(t *testing.T) {
 	for _, want := range []string{
 		"revisionMeta := s.securityDBRevisionMeta(ctx)",
 		`"security_db_revision": revisionMeta["security_db_revision"]`,
+		`"finalized":            finalize`,
+		"if finalize {",
+		`s.SecurityDatabaseUpdated("cve-db import")`,
 		"for k, v := range revisionMeta",
 	} {
 		if !strings.Contains(fn, want) {

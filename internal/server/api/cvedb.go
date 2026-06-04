@@ -652,6 +652,13 @@ func (s *Server) runSecurityRecalculation(reason string) {
 		failures = append(failures, "security_db_revision: "+err.Error())
 	}
 	s.auditSystem("security_db.recalculation", "security_db", "aggregate", "started", meta)
+	if n, err := s.db.SyncEPSSPriorityColumns(ctx); err != nil {
+		log.Printf("security recalculation EPSS merge failed: %v", err)
+		failures = append(failures, "epss_merge: "+err.Error())
+	} else {
+		log.Printf("security recalculation merged EPSS columns for %d CVE records", n)
+		meta["epss_merged"] = n
+	}
 	if n, err := s.db.CalcCvssScores(ctx); err != nil {
 		log.Printf("security recalculation cvss failed: %v", err)
 		failures = append(failures, "cvss: "+err.Error())
@@ -824,7 +831,8 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	replace := !strings.EqualFold(strings.TrimSpace(r.FormValue("replace")), "false")
-	count, err := s.importCveJSONL(ctx, file, source, replace)
+	finalize := !strings.EqualFold(strings.TrimSpace(r.FormValue("finalize")), "false")
+	count, err := s.importCveJSONL(ctx, file, source, replace, finalize)
 	if err != nil {
 		log.Printf("cve-db import: %v", err)
 		if errors.Is(err, errNoValidCveEntries) {
@@ -859,20 +867,25 @@ func (s *Server) handleCveDbImport(w http.ResponseWriter, r *http.Request) {
 		"status":               "ok",
 		"imported":             count,
 		"total":                count,
+		"finalized":            finalize,
 		"security_db_revision": revisionMeta["security_db_revision"],
 	})
 	auditMeta := map[string]any{
 		"imported": count,
 		"source":   source,
+		"replace":  replace,
+		"finalize": finalize,
 	}
 	for k, v := range revisionMeta {
 		auditMeta[k] = v
 	}
 	s.audit(r, "cve_db.import", "cve_db", source, "ok", auditMeta)
-	s.SecurityDatabaseUpdated("cve-db import")
+	if finalize {
+		s.SecurityDatabaseUpdated("cve-db import")
+	}
 }
 
-func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string, replace bool) (int, error) {
+func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string, replace, finalize bool) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -895,14 +908,16 @@ func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source st
 	if count == 0 {
 		return 0, errNoValidCveEntries
 	}
-	if _, err := s.db.SyncEPSSPriorityColumnsTx(ctx, tx); err != nil {
-		return 0, err
-	}
-	if _, err := s.db.RefreshCveAffectedPackagesForSourceTx(ctx, tx, source); err != nil {
-		return 0, err
-	}
-	if _, err := s.db.RefreshCveReferenceKeysForSourceTx(ctx, tx, source); err != nil {
-		return 0, err
+	if finalize {
+		if _, err := s.db.SyncEPSSPriorityColumnsTx(ctx, tx); err != nil {
+			return 0, err
+		}
+		if _, err := s.db.RefreshCveAffectedPackagesForSourceTx(ctx, tx, source); err != nil {
+			return 0, err
+		}
+		if _, err := s.db.RefreshCveReferenceKeysForSourceTx(ctx, tx, source); err != nil {
+			return 0, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err

@@ -3235,6 +3235,7 @@ func TestCveDatabaseStoresEPSSPriorityColumns(t *testing.T) {
 		"&e.EPSSPercentile",
 		"epss_score=EXCLUDED.epss_score",
 		"epss_percentile=EXCLUDED.epss_percentile",
+		"func (db *DB) SyncEPSSPriorityColumns(ctx context.Context)",
 		"func (db *DB) SyncEPSSPriorityColumnsTx",
 		"func (db *DB) GetCveEPSSMergeStats",
 		"type CveEPSSMergeStats struct",

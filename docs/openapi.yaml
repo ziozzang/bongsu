@@ -1953,6 +1953,14 @@ paths:
                 source:
                   type: string
                   default: custom
+                replace:
+                  type: boolean
+                  default: true
+                  description: Replace existing rows for the source before importing.
+                finalize:
+                  type: boolean
+                  default: true
+                  description: Refresh derived CVE indexes and queue security recalculation after import. Set false for deferred bulk chunks and finalize once after all chunks.
       responses:
         "200":
           description: Import result

@@ -452,6 +452,19 @@ func (db *DB) DeleteAllCveEntriesTx(ctx context.Context, tx *sql.Tx) (int, error
 	return int(n), nil
 }
 
+func (db *DB) SyncEPSSPriorityColumns(ctx context.Context) (int, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	count, err := db.SyncEPSSPriorityColumnsTx(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+	return count, tx.Commit()
+}
+
 func (db *DB) SyncEPSSPriorityColumnsTx(ctx context.Context, tx *sql.Tx) (int, error) {
 	clearRes, err := tx.ExecContext(ctx, `
 		UPDATE cve_database c

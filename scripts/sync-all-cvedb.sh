@@ -19,6 +19,9 @@ if [ -z "${API_KEY}" ]; then
 fi
 
 IMPORT_URL="${SERVER_URL}/api/admin/cve-db/import"
+RECALCULATE_URL="${SERVER_URL}/api/admin/security-db/recalculate"
+AFFECTED_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/affected-index/rebuild"
+REFERENCE_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/reference-index/rebuild"
 
 TOTAL_IMPORTED=0
 FAILED_SOURCES=()
@@ -50,10 +53,11 @@ import_cve_file() {
     local file="$1"
     local source="$2"
     local replace="${3:-true}"
+    local finalize="${4:-true}"
     local result
 
     if ! result=$(curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
-        -F "file=@${file}" -F "source=${source}" -F "replace=${replace}" "${IMPORT_URL}"); then
+        -F "file=@${file}" -F "source=${source}" -F "replace=${replace}" -F "finalize=${finalize}" "${IMPORT_URL}"); then
         echo "ERROR: ${source} import request failed" >&2
         return 1
     fi
@@ -70,6 +74,18 @@ if data.get("status") != "ok":
     sys.exit(3)
 print(int(data.get("imported", 0)))
 '
+}
+
+finalize_deferred_cve_imports() {
+    local reason="$1"
+    echo "  Rebuilding affected package index after deferred imports..."
+    curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${AFFECTED_INDEX_REBUILD_URL}" >/dev/null
+    echo "  Rebuilding reference key index after deferred imports..."
+    curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${REFERENCE_INDEX_REBUILD_URL}" >/dev/null
+    echo "  Queuing security recalculation after deferred imports..."
+    curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
+        -H "Content-Type: application/json" \
+        -d "{\"reason\":\"${reason}\"}" "${RECALCULATE_URL}" >/dev/null
 }
 
 echo "=========================================="
@@ -133,7 +149,7 @@ for eco in "${ECO_ARRAY[@]}"; do
         ECO_LINES=$(wc -l < "${OSV_ECO_FILE}")
         ECO_SIZE=$(du -h "${OSV_ECO_FILE}" | cut -f1)
         echo "    Importing ${eco} (${ECO_LINES} entries, ${ECO_SIZE})..."
-        IMPORTED=$(import_cve_file "${OSV_ECO_FILE}" "osv" "false")
+        IMPORTED=$(import_cve_file "${OSV_ECO_FILE}" "osv" "false" "false")
         echo "    Imported/updated: ${IMPORTED}"
         OSV_TOTAL=$((OSV_TOTAL + IMPORTED))
         rm -f "${OSV_ECO_FILE}"
@@ -143,6 +159,12 @@ for eco in "${ECO_ARRAY[@]}"; do
 done
 
 TOTAL_IMPORTED=$((TOTAL_IMPORTED + OSV_TOTAL))
+if [ "${OSV_TOTAL}" -gt 0 ]; then
+    if ! finalize_deferred_cve_imports "osv chunk import"; then
+        echo "  ERROR: OSV deferred import finalization failed"
+        FAILED_SOURCES+=("osv:finalize")
+    fi
+fi
 if [ "${OSV_FAILED}" -ne 0 ]; then
     echo "  ERROR: incomplete OSV download"
     FAILED_SOURCES+=("osv:partial")

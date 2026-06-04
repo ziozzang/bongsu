@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-04 13:49:33 KST
+Updated: 2026-06-04 13:54:52 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Fix OSV chunk imports and admin sessions
+master / origin/main latest commit: Defer OSV chunk import finalization
 ```
 
 Important recent commits:
 
 ```text
-<latest> Fix OSV chunk imports and admin sessions
+<latest> Defer OSV chunk import finalization
+4cbd557 Fix OSV chunk imports and admin sessions
 32652bf Reject non-regular backup archive entries
 8d312c4 Verify OpenAPI operation security
 190ff69 Harden generated installer systemd path
@@ -163,7 +164,7 @@ POST http://127.0.0.1:5678/api/auth/login admin/password -> 200
 OSV sync bug fixed in this handoff:
 
 - Root cause: `scripts/sync-all-cvedb.sh` imported each OSV ecosystem chunk with the same `source=osv`, while `/api/admin/cve-db/import` replaced all rows for that source on every import. The final ecosystem chunk overwrote the earlier chunks, leaving live OSV effectively at the last imported ecosystem only.
-- Fix: the import API now accepts `replace=false`, OSV ecosystem chunks use append/upsert mode, and affected/reference indexes are refreshed source-wide after each bulk import instead of row-by-row.
+- Fix: the import API accepts `replace=false`, OSV ecosystem chunks use append/upsert mode, and OSV chunks use `finalize=false` so affected/reference indexes plus security recalculation run once after all OSV chunks finish instead of once per ecosystem.
 - Live recovery import was run through PyPI, npm, Hex, Pub, Alpine, Debian, SUSE, and AlmaLinux. Chainguard was already present from the previous snapshot.
 
 Latest OSV live snapshot:
