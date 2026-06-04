@@ -1890,8 +1890,11 @@ func TestCveSourceFreshnessStatsAvoidHeavyQualityScan(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		"SELECT source, count(*) AS count, MAX(updated_at) AS last_update",
+		"WITH cve_sources AS",
+		"MAX(updated_at) AS raw_last_update",
+		"COALESCE(s.last_sync_finished_at, c.raw_last_update) AS last_update",
 		"FROM cve_database",
+		"LEFT JOIN security_sources s ON s.id = c.source",
 		"GROUP BY source",
 		"type CveSourceFreshnessStats struct",
 	} {

@@ -2089,11 +2089,16 @@ LIMIT $1`, limit)
 
 func (db *DB) GetCveSourceFreshnessStats(ctx context.Context) ([]CveSourceFreshnessStats, error) {
 	rows, err := db.QueryContext(ctx, `
-SELECT source, count(*) AS count, MAX(updated_at) AS last_update
-FROM cve_database
-WHERE source != ''
-GROUP BY source
-ORDER BY source`)
+WITH cve_sources AS (
+	SELECT source, count(*) AS count, MAX(updated_at) AS raw_last_update
+	FROM cve_database
+	WHERE source != ''
+	GROUP BY source
+)
+SELECT c.source, c.count, COALESCE(s.last_sync_finished_at, c.raw_last_update) AS last_update
+FROM cve_sources c
+LEFT JOIN security_sources s ON s.id = c.source
+ORDER BY c.source`)
 	if err != nil {
 		return nil, err
 	}
