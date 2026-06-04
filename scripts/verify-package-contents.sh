@@ -72,6 +72,7 @@ for script in \
     'verify-live-agent-token-binding.sh' \
     'verify-live-cvedb-concurrency.sh' \
     'verify-live-cvedb-quality.sh' \
+    'verify-live-cve-rematch-workflow.sh' \
     'verify-live-install-script.sh' \
     'verify-live-installer-payload.sh' \
     'verify-live-rbac-scope.sh' \
@@ -103,6 +104,7 @@ for pattern in \
     'docker compose -f docker-compose\.airgap\.yml up -d' \
     'import-security-db-bundle\.sh http://localhost:5677' \
     'verify-live-agent-token-binding\.sh' \
+    'verify-live-cve-rematch-workflow\.sh' \
     'verify-live-install-script\.sh' \
     'verify-live-installer-payload\.sh' \
     'verify-live-security-db-schedule\.sh' \

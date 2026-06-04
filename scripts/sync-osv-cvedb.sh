@@ -22,8 +22,13 @@ IMPORT_URL="${SERVER_URL}/api/admin/cve-db/import"
 RECALCULATE_URL="${SERVER_URL}/api/admin/security-db/recalculate"
 AFFECTED_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/affected-index/rebuild"
 REFERENCE_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/reference-index/rebuild"
-OSV_ECOSYSTEMS="${BONGSU_OSV_ECOSYSTEMS:-PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,SwiftURL,Hackage,CRAN,opam,VSCode,GitHub Actions,Alpine,Debian,Ubuntu,SUSE,openSUSE,AlmaLinux,Red Hat,Rocky Linux,Azure Linux,Wolfi,Chainguard,openEuler,Mageia,Android}"
+DEFAULT_OSV_ECOSYSTEMS="PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,SwiftURL,Hackage,CRAN,opam,VSCode,GitHub Actions,Alpine,Debian,Ubuntu,SUSE,openSUSE,AlmaLinux,Red Hat,Rocky Linux,Azure Linux,Wolfi,Chainguard,openEuler,Mageia,Android"
+OSV_ECOSYSTEMS="${BONGSU_OSV_ECOSYSTEMS:-${DEFAULT_OSV_ECOSYSTEMS}}"
 OSV_PRUNE_BEFORE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+OSV_PRUNE_FULL_SOURCE="true"
+if [ -n "${BONGSU_OSV_ECOSYSTEMS:-}" ] && [ "$(echo "${BONGSU_OSV_ECOSYSTEMS}" | tr -d '[:space:]')" != "$(echo "${DEFAULT_OSV_ECOSYSTEMS}" | tr -d '[:space:]')" ]; then
+    OSV_PRUNE_FULL_SOURCE="false"
+fi
 OSV_TOTAL=0
 OSV_FAILED=0
 FAILED_ECOSYSTEMS=()
@@ -53,9 +58,14 @@ print(int(data.get("imported", 0)))
 }
 
 finalize_osv_imports() {
-    echo "  Pruning stale OSV rows older than ${OSV_PRUNE_BEFORE}..."
-    curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
-        "${SERVER_URL}/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}" >/dev/null
+    if [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then
+        echo "  Pruning stale OSV rows older than ${OSV_PRUNE_BEFORE}..."
+        curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
+            "${SERVER_URL}/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}" >/dev/null
+    else
+        echo "  Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override."
+        echo "  Run a full OSV sync with the default ecosystem list to prune upstream removals safely."
+    fi
     echo "  Rebuilding affected package index after OSV imports..."
     curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${AFFECTED_INDEX_REBUILD_URL}" >/dev/null
     echo "  Rebuilding reference key index after OSV imports..."

@@ -107,6 +107,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-live-agent-token-binding.sh" \
     "$ROOT_DIR/scripts/verify-live-cvedb-concurrency.sh" \
     "$ROOT_DIR/scripts/verify-live-cvedb-quality.sh" \
+    "$ROOT_DIR/scripts/verify-live-cve-rematch-workflow.sh" \
     "$ROOT_DIR/scripts/verify-live-install-script.sh" \
     "$ROOT_DIR/scripts/verify-live-installer-payload.sh" \
     "$ROOT_DIR/scripts/verify-live-rbac-scope.sh" \

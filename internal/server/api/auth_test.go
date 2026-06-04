@@ -3349,13 +3349,39 @@ func TestSecurityDBSyncScriptPrunesStaleOSVAfterSuccessfulChunks(t *testing.T) {
 	}
 	body := string(out)
 	for _, want := range []string{
+		`DEFAULT_OSV_ECOSYSTEMS=`,
+		`OSV_PRUNE_FULL_SOURCE="true"`,
+		`OSV_PRUNE_FULL_SOURCE="false"`,
 		`OSV_PRUNE_BEFORE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"`,
-		`if [ "${OSV_FAILED}" -eq 0 ]; then`,
+		`if [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then`,
 		`/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}`,
+		`Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override.`,
 		`finalize_deferred_cve_imports "osv chunk import"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-all-cvedb must prune stale OSV rows only after successful chunks, missing %q", want)
+		}
+	}
+}
+
+func TestTargetedOSVSyncScriptSkipsSourceWidePruneForPartialEcosystems(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/sync-osv-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`DEFAULT_OSV_ECOSYSTEMS=`,
+		`OSV_ECOSYSTEMS="${BONGSU_OSV_ECOSYSTEMS:-${DEFAULT_OSV_ECOSYSTEMS}}"`,
+		`OSV_PRUNE_FULL_SOURCE="true"`,
+		`OSV_PRUNE_FULL_SOURCE="false"`,
+		`if [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then`,
+		`/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}`,
+		`Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override.`,
+		`Run a full OSV sync with the default ecosystem list to prune upstream removals safely.`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-osv-cvedb must protect non-selected ecosystems during partial OSV sync, missing %q", want)
 		}
 	}
 }
@@ -3793,6 +3819,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-installer-payload.sh`,
 		`./scripts/verify-live-install-script.sh`,
 		`./scripts/verify-live-scan-request-recovery.sh`,
+		`./scripts/verify-live-cve-rematch-workflow.sh`,
 		`./scripts/verify-live-session-auth.sh`,
 		`BONGSU_DB_DSN is required for live release readiness`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh`,
@@ -3916,6 +3943,34 @@ func TestLiveSessionAuthVerifierExercisesApiAndWebProxy(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("live session auth verifier missing %q", want)
+		}
+	}
+}
+
+func TestLiveCveRematchWorkflowVerifierUsesPackagistFixture(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-cve-rematch-workflow.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`phenx/php-svg-lib`,
+		`0.5.0`,
+		`Packagist`,
+		`pkg:composer/phenx/php-svg-lib@0.5.0`,
+		`BONGSU-REMATCH-DUMMY-NO-PACKAGE`,
+		`skipping only the dummy vulnerability`,
+		`/api/admin/cve-db/rematch`,
+		`scan_id:$scan_id`,
+		`sources:["osv"]`,
+		`fixture report must automatically create cve-db rematch findings`,
+		`explicit scan-scoped rematch must be idempotent after automatic rematch`,
+		`finding_source=cve-db`,
+		`advisory_sources`,
+		`Live CVE rematch workflow verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live CVE rematch workflow verifier missing %q", want)
 		}
 	}
 }
