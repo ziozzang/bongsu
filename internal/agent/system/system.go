@@ -2,6 +2,7 @@ package system
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
+
+const defaultCommandTimeout = 30 * time.Second
 
 func CollectHostInfo() (*models.Host, error) {
 	hostname, _ := os.Hostname()
@@ -90,7 +93,7 @@ func getOSInfo() (string, string) {
 }
 
 func getKernel() string {
-	out, err := exec.Command("uname", "-r").Output()
+	out, err := commandOutput("uname", "-r")
 	if err != nil {
 		return ""
 	}
@@ -138,7 +141,7 @@ func getMemoryMB() int64 {
 }
 
 func getIPAddress() string {
-	out, err := exec.Command("hostname", "-I").Output()
+	out, err := commandOutput("hostname", "-I")
 	if err != nil {
 		return ""
 	}
@@ -150,7 +153,7 @@ func getIPAddress() string {
 }
 
 func CollectUsers() ([]models.UserAccount, error) {
-	out, err := exec.Command("awk", "-F:", "{print $1,$3,$4,$6,$7}", "/etc/passwd").Output()
+	out, err := commandOutput("awk", "-F:", "{print $1,$3,$4,$6,$7}", "/etc/passwd")
 	if err != nil {
 		return nil, err
 	}
@@ -175,7 +178,7 @@ func CollectUsers() ([]models.UserAccount, error) {
 }
 
 func CollectProcesses() ([]models.ProcessSnapshot, error) {
-	out, err := exec.Command("ps", "aux", "--sort=-pcpu").Output()
+	out, err := commandOutput("ps", "aux", "--sort=-pcpu")
 	if err != nil {
 		return nil, err
 	}
@@ -206,7 +209,7 @@ func CollectProcesses() ([]models.ProcessSnapshot, error) {
 }
 
 func GetRunningContainers() ([]models.ContainerAsset, error) {
-	out, err := exec.Command("docker", "ps", "--format", "{{.ID}}").Output()
+	out, err := commandOutput("docker", "ps", "--format", "{{.ID}}")
 	if err != nil {
 		return nil, fmt.Errorf("docker ps: %w", err)
 	}
@@ -231,7 +234,7 @@ func GetRunningContainers() ([]models.ContainerAsset, error) {
 }
 
 func inspectDockerContainer(id string) (models.ContainerAsset, error) {
-	out, err := exec.Command("docker", "inspect", id).Output()
+	out, err := commandOutput("docker", "inspect", id)
 	if err != nil {
 		return models.ContainerAsset{}, err
 	}
@@ -270,4 +273,30 @@ func inspectDockerContainer(id string) (models.ContainerAsset, error) {
 		Labels:      string(labels),
 		StartedAt:   startedAt,
 	}, nil
+}
+
+func commandOutput(name string, args ...string) ([]byte, error) {
+	timeout := commandTimeout()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, name, args...).Output()
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("%s timed out after %s", name, timeout)
+	}
+	return out, err
+}
+
+func commandTimeout() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS"))
+	if raw == "" {
+		return defaultCommandTimeout
+	}
+	seconds, err := strconv.Atoi(raw)
+	if err != nil || seconds <= 0 {
+		return defaultCommandTimeout
+	}
+	if seconds > 300 {
+		seconds = 300
+	}
+	return time.Duration(seconds) * time.Second
 }

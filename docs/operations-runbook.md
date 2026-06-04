@@ -243,11 +243,12 @@ For large hosts or dense container nodes, bound agent scans so one scheduled run
 curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/install.sh" | \
   sudo BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS=1800 \
        BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS=600 \
+       BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS=30 \
        BONGSU_AGENT_MAX_CONTAINERS=20 \
        bash
 ```
 
-Set `BONGSU_AGENT_SKIP_CONTAINERS=true` for constrained hosts where container inventory should be deferred; bongsu records that as a degraded inventory signal instead of silently pretending container coverage is complete.
+Set `BONGSU_AGENT_SKIP_CONTAINERS=true` for constrained hosts where container inventory should be deferred; bongsu records that as a degraded inventory signal instead of silently pretending container coverage is complete. `BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS` bounds Docker inspection, osquery, process, hostname, and kernel helper commands so an unhealthy runtime cannot hang the whole scan before Trivy timeouts apply.
 
 Live RBAC scope verification:
 

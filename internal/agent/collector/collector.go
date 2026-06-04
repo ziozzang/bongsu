@@ -19,14 +19,15 @@ import (
 const defaultDBRepository = "ghcr.io/aquasecurity/trivy-db"
 
 type Collector struct {
-	workDir      string
-	trivy        string
-	osquery      string
-	dbRepository string
-	PackagesOnly bool
-	HostScanRoot string
-	HostTimeout  time.Duration
-	ImageTimeout time.Duration
+	workDir        string
+	trivy          string
+	osquery        string
+	dbRepository   string
+	PackagesOnly   bool
+	HostScanRoot   string
+	HostTimeout    time.Duration
+	ImageTimeout   time.Duration
+	CommandTimeout time.Duration
 }
 
 func New(workDir string) *Collector {
@@ -38,11 +39,12 @@ func New(workDir string) *Collector {
 	cacheDir := filepath.Join(workDir, "trivy-cache")
 	os.RemoveAll(filepath.Join(cacheDir, "fanal"))
 	return &Collector{
-		workDir:      workDir,
-		trivy:        filepath.Join(binDir, "trivy"),
-		osquery:      filepath.Join(binDir, "osqueryi"),
-		dbRepository: dbRepo,
-		HostScanRoot: "/",
+		workDir:        workDir,
+		trivy:          filepath.Join(binDir, "trivy"),
+		osquery:        filepath.Join(binDir, "osqueryi"),
+		dbRepository:   dbRepo,
+		HostScanRoot:   "/",
+		CommandTimeout: 30 * time.Second,
 	}
 }
 
@@ -155,7 +157,7 @@ func (c *Collector) CollectContainerPackages(containerName string) ([]models.Pac
 }
 
 func (c *Collector) getContainerImage(containerName string) (string, error) {
-	out, err := exec.Command("docker", "inspect", "--format", "{{.Config.Image}}", containerName).Output()
+	out, err := c.commandOutput("docker", "inspect", "--format", "{{.Config.Image}}", containerName)
 	if err != nil {
 		return "", err
 	}
@@ -174,7 +176,7 @@ func (c *Collector) CollectOSQueryPackages() ([]models.Package, error) {
 
 	var allPkgs []models.Package
 	for _, q := range queries {
-		out, err := exec.Command(c.osquery, "--json", q).Output()
+		out, err := c.commandOutput(c.osquery, "--json", q)
 		if err != nil {
 			continue
 		}
@@ -201,8 +203,8 @@ func (c *Collector) CollectOSQueryListeningPorts() ([]models.PortInfo, error) {
 	if err := c.ensureOSQuery(); err != nil {
 		return nil, err
 	}
-	out, err := exec.Command(c.osquery, "--json",
-		"SELECT DISTINCT name, port, protocol, address, pid FROM listening_ports l LEFT JOIN processes p ON l.pid = p.pid WHERE port > 0 ORDER BY port").Output()
+	out, err := c.commandOutput(c.osquery, "--json",
+		"SELECT DISTINCT name, port, protocol, address, pid FROM listening_ports l LEFT JOIN processes p ON l.pid = p.pid WHERE port > 0 ORDER BY port")
 	if err != nil {
 		return nil, fmt.Errorf("osquery listening_ports: %w", err)
 	}
@@ -221,6 +223,20 @@ func (c *Collector) CollectOSQueryListeningPorts() ([]models.PortInfo, error) {
 		})
 	}
 	return ports, nil
+}
+
+func (c *Collector) commandOutput(name string, args ...string) ([]byte, error) {
+	ctx := context.Background()
+	cancel := func() {}
+	if c.CommandTimeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, c.CommandTimeout)
+	}
+	defer cancel()
+	out, err := exec.CommandContext(ctx, name, args...).Output()
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("%s timed out after %s", name, c.CommandTimeout)
+	}
+	return out, err
 }
 
 func strVal(m map[string]any, key string) string {

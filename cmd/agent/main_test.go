@@ -165,21 +165,26 @@ func TestAgentScanControlsAreConfigurable(t *testing.T) {
 		`flag.String("scan-root"`,
 		`flag.Duration("trivy-timeout"`,
 		`flag.Duration("container-timeout"`,
+		`flag.Duration("command-timeout"`,
 		`flag.Bool("skip-containers"`,
 		`flag.Int("max-containers"`,
 		`BONGSU_AGENT_SCAN_ROOT`,
 		`BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS`,
 		`BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS`,
+		`BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS`,
 		`BONGSU_AGENT_SKIP_CONTAINERS`,
 		`BONGSU_AGENT_MAX_CONTAINERS`,
 		`cfg.ScanRoot`,
 		`cfg.TrivyTimeoutSeconds`,
 		`cfg.ContainerTimeoutSeconds`,
+		`cfg.CommandTimeoutSeconds`,
 		`cfg.SkipContainers`,
 		`cfg.MaxContainers`,
+		`applyAgentCommandTimeout(scanOpts.CommandTimeout)`,
 		`coll.HostScanRoot = scanOpts.ScanRoot`,
 		`coll.HostTimeout = scanOpts.TrivyTimeout`,
 		`coll.ImageTimeout = scanOpts.ContainerTimeout`,
+		`coll.CommandTimeout = scanOpts.CommandTimeout`,
 		`if scanOpts.SkipContainers`,
 		`len(containers) > scanOpts.MaxContainers`,
 	} {
@@ -196,14 +201,18 @@ func TestCollectorUsesTrivyTimeoutsAndScanRoot(t *testing.T) {
 	}
 	body := string(data)
 	for _, want := range []string{
-		`HostScanRoot string`,
-		`HostTimeout  time.Duration`,
-		`ImageTimeout time.Duration`,
+		`HostScanRoot`,
+		`HostTimeout`,
+		`ImageTimeout`,
+		`CommandTimeout time.Duration`,
 		`exec.CommandContext(ctx, c.trivy`,
+		`exec.CommandContext(ctx, name, args...)`,
 		`context.WithTimeout(ctx, c.HostTimeout)`,
 		`context.WithTimeout(ctx, c.ImageTimeout)`,
+		`context.WithTimeout(ctx, c.CommandTimeout)`,
 		`trivy fs timed out after`,
 		`trivy image %s timed out after`,
+		`timed out after`,
 		`scanRoot`,
 	} {
 		if !strings.Contains(body, want) {
@@ -212,6 +221,36 @@ func TestCollectorUsesTrivyTimeoutsAndScanRoot(t *testing.T) {
 	}
 	if strings.Contains(body, `exec.Command(c.trivy, allArgs...)`) {
 		t.Fatal("collector Trivy execution must use CommandContext")
+	}
+	for _, forbidden := range []string{
+		`exec.Command("docker"`,
+		`exec.Command(c.osquery`,
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("collector helper execution must use CommandContext, found %q", forbidden)
+		}
+	}
+}
+
+func TestSystemCollectorHelperCommandsAreBounded(t *testing.T) {
+	data, err := os.ReadFile("../../internal/agent/system/system.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(data)
+	for _, want := range []string{
+		`BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS`,
+		`defaultCommandTimeout`,
+		`context.WithTimeout(context.Background(), timeout)`,
+		`exec.CommandContext(ctx, name, args...)`,
+		`timed out after`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("system helper timeout wiring missing %q", want)
+		}
+	}
+	if strings.Contains(body, `exec.Command(`) {
+		t.Fatal("system helper execution must use CommandContext")
 	}
 }
 
@@ -239,7 +278,7 @@ func TestScanRequestCompletionFromReportPreservesDegradedScans(t *testing.T) {
 
 func TestLoadConfigReadsAgentTokenAndHostID(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(path, []byte("server_url: http://server\napi_key: key\nagent_token: token-123\nwork_dir: /tmp/bongsu\nhost_id: host-override-1\nscan_root: /var/lib\ntrivy_timeout_seconds: 120\ncontainer_timeout_seconds: 30\nskip_containers: true\nmax_containers: 4\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("server_url: http://server\napi_key: key\nagent_token: token-123\nwork_dir: /tmp/bongsu\nhost_id: host-override-1\nscan_root: /var/lib\ntrivy_timeout_seconds: 120\ncontainer_timeout_seconds: 30\ncommand_timeout_seconds: 15\nskip_containers: true\nmax_containers: 4\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := loadConfig(path)
@@ -252,7 +291,7 @@ func TestLoadConfigReadsAgentTokenAndHostID(t *testing.T) {
 	if cfg.HostID != "host-override-1" {
 		t.Fatalf("host id = %q", cfg.HostID)
 	}
-	if cfg.ScanRoot != "/var/lib" || cfg.TrivyTimeoutSeconds != 120 || cfg.ContainerTimeoutSeconds != 30 || cfg.SkipContainers == nil || !*cfg.SkipContainers || cfg.MaxContainers != 4 {
+	if cfg.ScanRoot != "/var/lib" || cfg.TrivyTimeoutSeconds != 120 || cfg.ContainerTimeoutSeconds != 30 || cfg.CommandTimeoutSeconds != 15 || cfg.SkipContainers == nil || !*cfg.SkipContainers || cfg.MaxContainers != 4 {
 		t.Fatalf("scan controls not parsed: %#v", cfg)
 	}
 }

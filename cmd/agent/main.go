@@ -34,6 +34,7 @@ func main() {
 	defaultScanRoot := envString("BONGSU_AGENT_SCAN_ROOT", "/")
 	defaultTrivyTimeout := envDurationSeconds("BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS", 30*time.Minute)
 	defaultContainerTimeout := envDurationSeconds("BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS", 10*time.Minute)
+	defaultCommandTimeout := envDurationSeconds("BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS", 30*time.Second)
 	serverURL := flag.String("server", "", "Bongsu API URL (e.g. http://bongsu:5677)")
 	apiKey := flag.String("api-key", "", "API key for authentication")
 	workDir := flag.String("work-dir", "/opt/bongsu", "Working directory")
@@ -45,6 +46,7 @@ func main() {
 	scanRoot := flag.String("scan-root", defaultScanRoot, "Host filesystem root/path for Trivy fs scans")
 	trivyTimeout := flag.Duration("trivy-timeout", defaultTrivyTimeout, "Timeout for host Trivy filesystem scans")
 	containerTimeout := flag.Duration("container-timeout", defaultContainerTimeout, "Timeout for each container image Trivy scan")
+	commandTimeout := flag.Duration("command-timeout", defaultCommandTimeout, "Timeout for agent helper commands such as docker inspect, osquery, ps, and uname")
 	skipContainers := flag.Bool("skip-containers", envBool("BONGSU_AGENT_SKIP_CONTAINERS", false), "Skip container detection and image scans")
 	maxContainers := flag.Int("max-containers", envInt("BONGSU_AGENT_MAX_CONTAINERS", 0), "Maximum running containers to scan per run; 0 means unlimited")
 	configFile := flag.String("config", "", "Config file path (YAML)")
@@ -85,6 +87,9 @@ func main() {
 		}
 		if !visitedFlags["container-timeout"] && cfg.ContainerTimeoutSeconds > 0 {
 			*containerTimeout = time.Duration(cfg.ContainerTimeoutSeconds) * time.Second
+		}
+		if !visitedFlags["command-timeout"] && cfg.CommandTimeoutSeconds > 0 {
+			*commandTimeout = time.Duration(cfg.CommandTimeoutSeconds) * time.Second
 		}
 		if !visitedFlags["skip-containers"] && cfg.SkipContainers != nil {
 			*skipContainers = *cfg.SkipContainers
@@ -128,9 +133,11 @@ func main() {
 		ScanRoot:         *scanRoot,
 		TrivyTimeout:     *trivyTimeout,
 		ContainerTimeout: *containerTimeout,
+		CommandTimeout:   *commandTimeout,
 		SkipContainers:   *skipContainers,
 		MaxContainers:    *maxContainers,
 	}
+	applyAgentCommandTimeout(scanOpts.CommandTimeout)
 	if *daemon {
 		if err := runDaemon(*serverURL, *apiKey, agentToken, *workDir, *hostID, *pollInterval, scanOpts); err != nil {
 			log.Fatalf("daemon failed: %v", err)
@@ -148,6 +155,7 @@ type agentScanOptions struct {
 	ScanRoot         string
 	TrivyTimeout     time.Duration
 	ContainerTimeout time.Duration
+	CommandTimeout   time.Duration
 	SkipContainers   bool
 	MaxContainers    int
 }
@@ -161,6 +169,7 @@ type config struct {
 	ScanRoot                string `yaml:"scan_root"`
 	TrivyTimeoutSeconds     int    `yaml:"trivy_timeout_seconds"`
 	ContainerTimeoutSeconds int    `yaml:"container_timeout_seconds"`
+	CommandTimeoutSeconds   int    `yaml:"command_timeout_seconds"`
 	SkipContainers          *bool  `yaml:"skip_containers"`
 	MaxContainers           int    `yaml:"max_containers"`
 }
@@ -194,6 +203,8 @@ func loadConfig(path string) (*config, error) {
 			cfg.TrivyTimeoutSeconds = parsePositiveInt(v)
 		case "container_timeout_seconds":
 			cfg.ContainerTimeoutSeconds = parsePositiveInt(v)
+		case "command_timeout_seconds":
+			cfg.CommandTimeoutSeconds = parsePositiveInt(v)
 		case "skip_containers":
 			if b, ok := parseBool(v); ok {
 				cfg.SkipContainers = &b
@@ -257,6 +268,7 @@ func applyHostIDOverride(host *models.Host, override string) {
 
 func runDaemon(serverURL, apiKey, agentToken, workDir, hostIDOverride string, pollInterval time.Duration, scanOpts agentScanOptions) error {
 	log.Println("=== Bongsu Agent Daemon Starting ===")
+	applyAgentCommandTimeout(scanOpts.CommandTimeout)
 	host, err := system.CollectHostInfo()
 	if err != nil {
 		return fmt.Errorf("system info: %w", err)
@@ -294,6 +306,7 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 	log.Println("=== Bongsu Agent Starting ===")
 	log.Printf("Server: %s", serverURL)
 	log.Printf("Work dir: %s", workDir)
+	applyAgentCommandTimeout(scanOpts.CommandTimeout)
 
 	os.MkdirAll(filepath.Join(workDir, "bin"), 0755)
 
@@ -335,6 +348,7 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 	coll.HostScanRoot = scanOpts.ScanRoot
 	coll.HostTimeout = scanOpts.TrivyTimeout
 	coll.ImageTimeout = scanOpts.ContainerTimeout
+	coll.CommandTimeout = scanOpts.CommandTimeout
 	if scanOpts.PackagesOnly {
 		log.Println("Packages-only mode: server will handle CVE matching")
 	}
@@ -460,6 +474,12 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 		log.Println("=== Scan complete ===")
 	}
 	return result, nil
+}
+
+func applyAgentCommandTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		os.Setenv("BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS", strconv.Itoa(int(timeout.Seconds())))
+	}
 }
 
 func agentVersionString() string {

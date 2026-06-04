@@ -18,6 +18,7 @@ HOST_ID="${BONGSU_HOST_ID:-${BONGSU_AGENT_HOST_ID:-}}"
 AGENT_SCAN_ROOT="${BONGSU_AGENT_SCAN_ROOT:-}"
 AGENT_TRIVY_TIMEOUT_SECONDS="${BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS:-}"
 AGENT_CONTAINER_TIMEOUT_SECONDS="${BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS:-}"
+AGENT_COMMAND_TIMEOUT_SECONDS="${BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS:-}"
 AGENT_SKIP_CONTAINERS="${BONGSU_AGENT_SKIP_CONTAINERS:-}"
 AGENT_MAX_CONTAINERS="${BONGSU_AGENT_MAX_CONTAINERS:-}"
 SYSTEMD_DIR="${BONGSU_SYSTEMD_DIR:-/etc/systemd/system}"
@@ -124,6 +125,7 @@ if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "  BONGSU_AGENT_SCAN_ROOT  Optional Trivy fs scan root/path"
     echo "  BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS  Optional host Trivy scan timeout"
     echo "  BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS  Optional per-container Trivy timeout"
+    echo "  BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS  Optional docker/osquery/system helper command timeout"
     echo "  BONGSU_AGENT_SKIP_CONTAINERS  true to skip container scans"
     echo "  BONGSU_AGENT_MAX_CONTAINERS  Maximum running containers to scan"
     echo "  BONGSU_SYSTEMD_DIR    Systemd unit directory (default: /etc/systemd/system)"
@@ -225,6 +227,9 @@ if [ -n "$AGENT_TRIVY_TIMEOUT_SECONDS" ]; then
 fi
 if [ -n "$AGENT_CONTAINER_TIMEOUT_SECONDS" ]; then
     printf 'container_timeout_seconds: %s\n' "$AGENT_CONTAINER_TIMEOUT_SECONDS" >> "$WORK_DIR/config.yaml"
+fi
+if [ -n "$AGENT_COMMAND_TIMEOUT_SECONDS" ]; then
+    printf 'command_timeout_seconds: %s\n' "$AGENT_COMMAND_TIMEOUT_SECONDS" >> "$WORK_DIR/config.yaml"
 fi
 if [ -n "$AGENT_SKIP_CONTAINERS" ]; then
     printf 'skip_containers: %s\n' "$AGENT_SKIP_CONTAINERS" >> "$WORK_DIR/config.yaml"
