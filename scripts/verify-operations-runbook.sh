@@ -77,7 +77,9 @@ for pattern in \
     'bongsu_security_db_rescan_open' \
     'bongsu_\*_metrics_error' \
     'bongsu_agent_fleet_degraded' \
-    'bongsu_agent_outdated_percent'
+    'bongsu_agent_outdated_percent' \
+    '/api/admin/retention/prune' \
+    'audited dry-runs'
 do
     require_text "$RUNBOOK" "$pattern" "operations runbook missing operational invariant $pattern"
 done

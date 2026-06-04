@@ -120,7 +120,8 @@ for keyword in \
     'systemd' \
     'Docker Compose' \
     'release readiness' \
-    'JSON evidence report'
+    'JSON evidence report' \
+    'audited retention dry-run'
 do
     require_text "$AUDIT" "$keyword" "requirements audit missing keyword $keyword"
 done

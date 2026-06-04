@@ -198,11 +198,11 @@ require_tool tar
 echo "=== Bongsu Live Operator Workflow Verification ==="
 echo "API: ${API_BASE}"
 
-echo "[1/10] Checking liveness and readiness"
+echo "[1/11] Checking liveness and readiness"
 curl -fsS --max-time "$CURL_MAX_TIME" "${API_BASE}/api/live" | jq -e '.status == "alive"' >/dev/null
 curl -fsS --max-time "$CURL_MAX_TIME" "${API_BASE}/api/ready" | jq -e '.status == "ready"' >/dev/null
 
-echo "[2/10] Checking OpenAPI documentation endpoint"
+echo "[2/11] Checking OpenAPI documentation endpoint"
 curl -fsS --max-time "$CURL_MAX_TIME" "${API_BASE}/api/docs/openapi.yaml" -o "$TMP_DIR/openapi.yaml"
 grep -Eq '^openapi: "?3\.' "$TMP_DIR/openapi.yaml"
 grep -q '/api/admin/schedules:' "$TMP_DIR/openapi.yaml"
@@ -211,11 +211,12 @@ grep -q '/api/admin/notification-rules:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/admin/security-db/status:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/admin/agent-fleet/status:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/admin/rbac/status:' "$TMP_DIR/openapi.yaml"
+grep -q '/api/admin/retention/prune:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/hosts/{id}/users:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/hosts/{id}/processes:' "$TMP_DIR/openapi.yaml"
 grep -q '/api/hosts/{id}/ports:' "$TMP_DIR/openapi.yaml"
 
-echo "[3/10] Checking health and admin metrics observability"
+echo "[3/11] Checking health and admin metrics observability"
 health_json="$(api_json GET /api/health)"
 assert_json "$health_json" '.status and ((.security_db_revision // "") != "" or (.security_db_revision_error // "") != "") and (.security_recalculation.running | type == "boolean") and (.security_recalculation.pending | type == "boolean")' "health must expose security DB revision or revision error plus recalculation state"
 assert_json "$health_json" '.cve_affected_package_index and ((.cve_affected_package_index.count // 0) > 0) and (.cve_affected_package_index.orphans == 0) and ((.cve_affected_package_index.summary_mode == "indexed-only") or (.cve_affected_package_index.stale == false))' "health must expose usable affected-package index state"
@@ -288,7 +289,7 @@ if ! grep -Eq '^bongsu_security_db_rescan_open |^bongsu_security_db_rescan_metri
 fi
 
 if [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASSWORD" ]; then
-    echo "[4/10] Checking local session login"
+    echo "[4/11] Checking local session login"
     login_json="$(curl -sS --max-time "$CURL_MAX_TIME" -X POST -H "Content-Type: application/json" \
         --data "$(jq -nc --arg u "$ADMIN_USERNAME" --arg p "$ADMIN_PASSWORD" '{username:$u,password:$p}')" \
         "${API_BASE}/api/auth/login")"
@@ -300,10 +301,10 @@ if [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASSWORD" ]; then
     fi
     curl -fsS --max-time "$CURL_MAX_TIME" -H "Authorization: Bearer ${token}" "${API_BASE}/api/auth/me" | jq -e '.user.role == "admin"' >/dev/null
 else
-    echo "[4/10] Skipping local session login; set BONGSU_ADMIN_USERNAME and BONGSU_ADMIN_PASSWORD to verify it"
+    echo "[4/11] Skipping local session login; set BONGSU_ADMIN_USERNAME and BONGSU_ADMIN_PASSWORD to verify it"
 fi
 
-echo "[5/10] Checking scheduled scan CRUD contract"
+echo "[5/11] Checking scheduled scan CRUD contract"
 schedules_json="$(api_json GET /api/admin/schedules)"
 assert_json "$schedules_json" '.items | type == "array"' "schedule list must return an items array"
 schedule_body="$(jq -nc --arg name "$RUN_ID schedule" '{name:$name, cron_expr:"0 */6 * * *", scan_type:"manual", packages_only:true, enabled:false}')"
@@ -313,7 +314,7 @@ assert_json "$schedule_json" '.scan_type == "manual" and .packages_only == true 
 schedule_get="$(api_json GET "/api/admin/schedules/${SCHEDULE_ID}")"
 assert_json "$schedule_get" '.id and .packages_only == true' "schedule get must return created packages-only schedule"
 
-echo "[6/10] Checking dynamic asset group contract and scan trigger"
+echo "[6/11] Checking dynamic asset group contract and scan trigger"
 groups_json="$(api_json GET /api/asset-groups)"
 assert_json "$groups_json" '.items | type == "array"' "asset group list must return an items array"
 subjects_json="$(api_json GET /api/admin/rbac/subjects)"
@@ -329,7 +330,7 @@ assert_json "$group_json" '.rule_type == "dynamic" and .rule_expr == "team=platf
 group_scan="$(api_json POST "/api/asset-groups/${ASSET_GROUP_ID}/scan" '{}')"
 assert_json "$group_scan" '.status == "ok" and (.queued | type == "number") and (.total | type == "number")' "asset group scan trigger must report queued and total counts"
 
-echo "[7/10] Checking report surfaces"
+echo "[7/11] Checking report surfaces"
 executive_json="$(api_json GET /api/reports/executive-summary)"
 assert_json "$executive_json" '.generated_at and (.total_hosts | type == "number")' "executive summary must expose generated_at and numeric host count"
 risk_json="$(api_json GET '/api/reports/risk-breakdown?group_by=owner')"
@@ -344,7 +345,16 @@ api_json GET '/api/reports/export?format=json&type=sla' | jq -e '.generated_at a
 risk_export_json="$(api_json GET '/api/reports/export?format=json&type=risk&group_by=owner')"
 assert_json "$risk_export_json" '.group_by == "owner" and (.items | type == "array")' "risk report export must preserve group_by and stable items array"
 
-echo "[8/10] Checking notification rule contract"
+echo "[8/11] Checking retention dry-run contract"
+retention_body="$(jq -nc '{dry_run:true, scan_days:9999, request_days:9999, audit_days:9999}')"
+retention_json="$(api_json POST /api/admin/retention/prune "$retention_body")"
+assert_json "$retention_json" '.dry_run == true and .scan_days == 9999 and .request_days == 9999 and .audit_days == 9999' "retention dry-run must preserve requested retention windows"
+assert_json "$retention_json" '(.scan_cutoff | type == "string") and (.request_cutoff | type == "string") and (.audit_cutoff | type == "string")' "retention dry-run must expose reproducible cutoff timestamps"
+assert_json "$retention_json" '(.scans | type == "number") and (.packages | type == "number") and (.vulnerabilities | type == "number") and (.containers | type == "number") and (.users | type == "number") and (.processes | type == "number") and (.ports | type == "number") and (.scan_requests | type == "number") and (.audit_logs | type == "number")' "retention dry-run must expose numeric blast-radius counters"
+retention_audit_json="$(api_json GET '/api/admin/audit-logs?action=retention.prune&status=dry_run&limit=10')"
+assert_json "$retention_audit_json" '.items[] | select(.action == "retention.prune" and .status == "dry_run")' "retention dry-run must be audited"
+
+echo "[9/11] Checking notification rule contract"
 rules_json="$(api_json GET /api/admin/notification-rules)"
 assert_json "$rules_json" '.items | type == "array"' "notification rules list must return an items array"
 rule_body="$(jq -nc --arg name "$RUN_ID notification" '{name:$name, trigger_event:"security_db.updated", min_severity:"HIGH", channel_type:"log", enabled:true}')"
@@ -356,7 +366,7 @@ assert_json "$test_json" '.status == "sent"' "log notification test must return 
 log_json="$(api_json GET '/api/admin/notification-log?limit=20')"
 assert_json "$log_json" '.items | type == "array"' "notification log must return an items array"
 
-echo "[9/10] Checking agent claim, report, and scan-request completion"
+echo "[10/11] Checking agent claim, report, and scan-request completion"
 initial_scan_id="$(new_uuid)"
 initial_report="$(agent_json POST /api/report "$(scan_report_json "$initial_scan_id")")"
 assert_json "$initial_report" '.status == "ok" and .scan_status == "completed"' "initial agent report must enroll the verifier host"
@@ -388,7 +398,7 @@ scans_done="$(api_json GET "/api/scans?host_id=${VERIFY_HOST_ID}&limit=5")"
 assert_json_arg "$scans_done" request_id "$SCAN_REQUEST_ID" '.items[] | select(.scan_request_id == $request_id and .status == "completed" and .package_count >= 1)' "scan list must show a completed inventory scan tied to the request"
 SCAN_REQUEST_ID=""
 
-echo "[10/10] Checking backup and restore dry-run surfaces"
+echo "[11/11] Checking backup and restore dry-run surfaces"
 BONGSU_DB_PASSWORD="${BONGSU_DB_PASSWORD:-}" "$ROOT/scripts/backup.sh" --dry-run "$TMP_DIR/backup.tar.gz" | grep -q 'Dry-run complete'
 mkdir -p "$TMP_DIR/restore-src"
 printf 'fixture\n' > "$TMP_DIR/restore-src/database.dump"

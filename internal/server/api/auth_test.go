@@ -3431,6 +3431,34 @@ func TestOperatorWorkflowVerifiesHostRuntimeInventoryEndpoints(t *testing.T) {
 	}
 }
 
+func TestOperatorWorkflowVerifiesRetentionDryRun(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-operator-workflow.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`/api/admin/retention/prune:`,
+		"Checking retention dry-run contract",
+		`{dry_run:true, scan_days:9999, request_days:9999, audit_days:9999}`,
+		`api_json POST /api/admin/retention/prune "$retention_body"`,
+		`.dry_run == true`,
+		`.scan_days == 9999`,
+		`.request_days == 9999`,
+		`.audit_days == 9999`,
+		`.scan_cutoff`,
+		`.request_cutoff`,
+		`.audit_cutoff`,
+		`.scan_requests`,
+		`/api/admin/audit-logs?action=retention.prune&status=dry_run&limit=10`,
+		"retention dry-run must be audited",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("operator workflow must verify retention dry-run, missing %q", want)
+		}
+	}
+}
+
 func TestAgentBinaryWorkflowVerifiesCodeLibrarySBOMContext(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-agent-binary-workflow.sh")
 	if err != nil {
