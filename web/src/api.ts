@@ -545,6 +545,10 @@ export interface HealthStatus {
     persisted_status?: string;
     persisted_missing_sources?: string[];
     persisted_stale_sources?: string[];
+    effective_status?: string;
+    effective_last_sync?: string;
+    effective_source?: string;
+    effective_age_seconds?: number;
   };
 }
 

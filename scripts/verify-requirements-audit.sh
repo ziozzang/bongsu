@@ -112,6 +112,7 @@ for keyword in \
     'live CVE DB' \
     'direct DB invariant' \
     'security DB schedule' \
+    'effective_status' \
     'multi-source canonical CVE' \
     'vendor/advisory key' \
     'live browser' \

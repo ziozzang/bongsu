@@ -482,7 +482,7 @@ Retired host or interrupted verifier fixture:
 
 ## Routine Maintenance
 
-- Review CVE DB source freshness and matchability daily. `/api/health` and the dashboard show the latest persisted CVE source update through `security_db_freshness.latest_source` / `latest_last_update`, and separately identify the oldest or stale source. If `security_db.status` is `never` immediately after a server restart but `latest_source` is recent, the persisted CVE DB is loaded and the next scheduled sync has not run yet in the new process.
+- Review CVE DB source freshness and matchability daily. `/api/health` and the dashboard show the latest persisted CVE source update through `security_db_freshness.latest_source` / `latest_last_update`, and separately identify the oldest or stale source. `security_db.status` is the sync manager process state, while `security_db.effective_status`, `effective_source`, and `effective_last_sync` describe the CVE DB currently usable for matching. If `security_db.status` is `never` immediately after a server restart but `effective_status` is `ok`, the persisted CVE DB is loaded and the next scheduled sync has not run yet in the new process.
 - Review failed/degraded scan requests daily.
 - Run retention dry-run before pruning:
 

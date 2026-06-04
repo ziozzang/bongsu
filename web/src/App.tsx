@@ -665,24 +665,25 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     ? health.security_db_freshness.oldest_age_seconds / 86400
     : 0;
   const securityDbFreshnessStatus = health?.security_db_freshness?.status || '';
+  const effectiveSecurityDbStatus = health?.security_db?.effective_status || securityDbFreshnessStatus;
   const securitySourcesReady = !!health?.security_db?.configured && (
     health?.security_db?.status === 'ok' ||
-    securityDbFreshnessStatus === 'ok'
+    effectiveSecurityDbStatus === 'ok'
   );
   const securitySourcesLabel = !health?.security_db?.configured
     ? 'not configured'
     : securitySourcesReady
       ? 'ok'
-      : health?.security_db?.status || securityDbFreshnessStatus || 'unknown';
+      : effectiveSecurityDbStatus || health?.security_db?.status || 'unknown';
   const cveDbStatus = !securityDbConfigured
     ? 'not configured'
     : health?.security_db?.running
       ? 'syncing'
       : health?.security_db_freshness?.stale
         ? 'stale'
-        : securityDbFreshnessStatus === 'ok'
+        : effectiveSecurityDbStatus === 'ok'
           ? 'ok'
-          : securityDbFreshnessStatus || health?.security_db?.status || 'unknown';
+          : effectiveSecurityDbStatus || health?.security_db?.status || 'unknown';
   const cveDbStatusColor = !securityDbConfigured || cveDbStatus === 'stale'
     ? 'var(--critical)'
     : cveDbStatus === 'syncing' || cveDbStatus === 'unknown'
@@ -701,6 +702,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       : health?.security_db?.status || '-';
   const securitySyncDetail = securitySyncLast
     ? `last sync ${securitySyncLast}`
+    : health?.security_db?.effective_last_sync
+      ? `effective ${effectiveSecurityDbStatus || 'unknown'} from ${(health.security_db.effective_source || 'source').toUpperCase()} ${new Date(health.security_db.effective_last_sync).toLocaleString()}`
     : latestSecurityDbSource?.last_update
       ? `latest source ${latestSecurityDbSource.source.toUpperCase()} ${new Date(latestSecurityDbSource.last_update).toLocaleString()}`
       : securitySyncNext
@@ -1249,7 +1252,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         </span>
         {health?.security_db && (
           <span className={`status-dot ${securitySourcesReady ? 'ready' : 'not-ready'}`} title={health.security_db.status_detail || ''}>
-            Sources: {securitySourcesLabel}
+            Sources: {securitySourcesLabel}{health.security_db.status === 'never' && health.security_db.effective_status === 'ok' ? ' (persisted)' : ''}
           </span>
         )}
         {health?.security_recalculation && (

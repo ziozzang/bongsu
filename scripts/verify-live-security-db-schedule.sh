@@ -116,14 +116,23 @@ freshness_status = str(freshness.get("status", "")).strip().lower()
 if freshness_status != "ok":
     fail(f"security DB freshness is not ok: {freshness_status or '(missing)'}")
 
+effective_status = str(security_db.get("effective_status", "")).strip().lower()
+if effective_status != freshness_status:
+    fail(f"security_db.effective_status must mirror persisted freshness status: {effective_status or '(missing)'} != {freshness_status}")
+
 persisted = parse_time(
     security_db.get("persisted_latest_update") or freshness.get("latest_last_update"),
     "persisted_latest_update",
 )
+effective_last_sync = parse_time(security_db.get("effective_last_sync"), "effective_last_sync")
 last_sync = parse_time(security_db.get("last_sync"), "last_sync")
 next_sync = parse_time(security_db.get("next_sync"), "next_sync")
 if persisted is None:
     fail("persisted latest CVE DB update timestamp is missing")
+if effective_last_sync is None:
+    fail("effective security DB sync timestamp is missing")
+if effective_last_sync != persisted:
+    fail(f"effective security DB sync timestamp does not match persisted freshness: effective={effective_last_sync.isoformat()}, persisted={persisted.isoformat()}")
 if next_sync is None:
     fail("next security DB sync timestamp is missing")
 

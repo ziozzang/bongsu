@@ -333,9 +333,27 @@ func enrichSecurityDBManagerStatus(status any, freshness map[string]any) {
 			m[pair.to] = v
 		}
 	}
+	if v, ok := freshness["status"]; ok {
+		m["effective_status"] = v
+	} else if v, ok := m["status"]; ok {
+		m["effective_status"] = v
+	}
+	if v, ok := freshness["latest_last_update"]; ok {
+		m["effective_last_sync"] = v
+	}
+	if v, ok := freshness["latest_source"]; ok {
+		m["effective_source"] = v
+	}
+	if v, ok := freshness["latest_age_seconds"]; ok {
+		m["effective_age_seconds"] = v
+	}
 	if status, _ := m["status"].(string); status == "never" {
 		if latest, ok := freshness["latest_last_update"]; ok {
-			m["status_detail"] = "process has not run a sync since startup; using persisted CVE DB freshness"
+			if freshnessStatus, _ := freshness["status"].(string); freshnessStatus == "ok" {
+				m["status_detail"] = "process has not run a sync since startup; effective security DB status is ok from persisted CVE DB freshness"
+			} else {
+				m["status_detail"] = "process has not run a sync since startup; using persisted CVE DB freshness"
+			}
 			m["last_sync_persisted"] = latest
 		}
 	}

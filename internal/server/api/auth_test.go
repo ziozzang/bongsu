@@ -2051,6 +2051,7 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		"securityDbStatusQuality",
 		"enrichSecurityDBManagerStatus(out[\"security_db\"], freshness)",
 		"securityDBOperationalGuidance",
+		"effective_status",
 		`out["warnings"]`,
 		`out["recommended_actions"]`,
 		`out["cve_db_quality"]`,
@@ -2468,6 +2469,15 @@ func TestEnrichSecurityDBManagerStatusAddsPersistedFreshness(t *testing.T) {
 	}
 	if status["last_sync_persisted"] != "2026-06-04T05:31:32Z" {
 		t.Fatalf("persisted last sync = %#v", status["last_sync_persisted"])
+	}
+	if status["effective_status"] != "ok" {
+		t.Fatalf("effective status = %#v", status["effective_status"])
+	}
+	if status["effective_source"] != "osv" {
+		t.Fatalf("effective source = %#v", status["effective_source"])
+	}
+	if status["effective_last_sync"] != "2026-06-04T05:31:32Z" {
+		t.Fatalf("effective last sync = %#v", status["effective_last_sync"])
 	}
 	if _, ok := status["status_detail"].(string); !ok {
 		t.Fatalf("status detail missing: %#v", status)

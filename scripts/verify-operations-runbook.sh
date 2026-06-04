@@ -78,6 +78,8 @@ for pattern in \
     'signed retry path' \
     'security_db_freshness\.latest_source' \
     'latest_last_update' \
+    'security_db\.effective_status' \
+    'effective_last_sync' \
     'TEMP-\*' \
     'CVD-\*' \
     'bongsu_security_db_source_stale' \
