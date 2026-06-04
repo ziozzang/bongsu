@@ -10,10 +10,10 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_BASE="${BONGSU_API_BASE:-http://127.0.0.1:5677}"
-API_KEY="${BONGSU_API_KEY:-test-admin}"
-AGENT_API_KEY="${BONGSU_AGENT_API_KEY:-test-agent-key}"
-VIEWER_API_KEY="${BONGSU_VIEWER_API_KEY:-}"
-VIEWER_SUBJECT="${BONGSU_VIEWER_SUBJECT:-}"
+API_KEY="${BONGSU_API_KEY:-test-admin-key-0123456789}"
+AGENT_API_KEY="${BONGSU_AGENT_API_KEY:-test-agent-key-0123456789}"
+VIEWER_API_KEY="${BONGSU_VIEWER_API_KEY:-viewer-test-key}"
+VIEWER_SUBJECT="${BONGSU_VIEWER_SUBJECT:-rbac-live-viewer}"
 CURL_MAX_TIME="${BONGSU_VERIFY_CURL_MAX_TIME_SECONDS:-20}"
 RUN_ID="rbac-live-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 ALLOWED_HOST_ID="host-${RUN_ID}-allowed"
@@ -246,12 +246,6 @@ scan_report_json() {
 
 require_tool curl
 require_tool jq
-
-if [ -z "$VIEWER_API_KEY" ] || [ -z "$VIEWER_SUBJECT" ]; then
-    echo "ERROR: set BONGSU_VIEWER_API_KEY and BONGSU_VIEWER_SUBJECT for live RBAC verification" >&2
-    echo "Example server env: BONGSU_VIEWER_API_KEYS=\"viewer-test-key:${VIEWER_SUBJECT:-rbac-live-viewer}\"" >&2
-    exit 1
-fi
 
 echo "=== Bongsu Live RBAC Scope Verification ==="
 echo "API:     ${API_BASE}"

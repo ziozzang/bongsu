@@ -98,6 +98,7 @@ for script in \
     verify-operator-workflow.sh \
     verify-agent-binary-workflow.sh \
     verify-live-agent-token-binding.sh \
+    verify-live-installer-payload.sh \
     verify-live-rbac-scope.sh \
     verify-live-cvedb-quality.sh \
     sync-osv-cvedb.sh \

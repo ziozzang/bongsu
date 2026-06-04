@@ -234,6 +234,29 @@ func TestAdminMetricsRequiresAdminAndReportsRuntimeState(t *testing.T) {
 	}
 }
 
+func TestAdminMetricsUsesBoundedDatabaseContext(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	start := strings.Index(body, "func (s *Server) handleAdminMetrics")
+	if start < 0 {
+		t.Fatal("handleAdminMetrics not found")
+	}
+	end := strings.Index(body[start:], "func (s *Server) adminMetrics")
+	if end < 0 {
+		t.Fatal("adminMetrics not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		`envInt("BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS", 10)`,
+		"context.WithTimeout(r.Context(), time.Duration(metricsTimeout)*time.Second)",
+		"s.adminMetrics(ctx)",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("admin metrics handler must bound DB work, missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestAdminMetricsExposeActiveRiskLevelBacklog(t *testing.T) {
 	out := readAllPackageGoFiles(t)
 	body := out
@@ -1392,6 +1415,55 @@ func TestLiveVerifiersCleanUpFixtureHosts(t *testing.T) {
 		}
 		if !strings.Contains(string(out), "-X DELETE") || !strings.Contains(string(out), "/api/hosts/") {
 			t.Fatalf("%s must delete fixture hosts during cleanup", path)
+		}
+	}
+}
+
+func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
+	for _, path := range []string{
+		"../../../scripts/verify-operator-workflow.sh",
+		"../../../scripts/verify-live-rbac-scope.sh",
+		"../../../scripts/verify-live-agent-token-binding.sh",
+		"../../../scripts/verify-agent-binary-workflow.sh",
+	} {
+		out, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		body := string(out)
+		for _, want := range []string{
+			`BONGSU_API_KEY:-test-admin-key-0123456789`,
+			`BONGSU_AGENT_API_KEY:-test-agent-key-0123456789`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s must default to local live verifier keys, missing %q", path, want)
+			}
+		}
+	}
+	for _, path := range []string{
+		"../../../scripts/verify-live-cvedb-quality.sh",
+		"../../../scripts/verify-live-installer-payload.sh",
+		"../../../scripts/verify-live-web-smoke.sh",
+	} {
+		out, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if !strings.Contains(string(out), `BONGSU_API_KEY:-test-admin-key-0123456789`) {
+			t.Fatalf("%s must default to the local live admin verifier key", path)
+		}
+	}
+	rbacVerifier, err := os.ReadFile("../../../scripts/verify-live-rbac-scope.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rbacBody := string(rbacVerifier)
+	for _, want := range []string{
+		`BONGSU_VIEWER_API_KEY:-viewer-test-key`,
+		`BONGSU_VIEWER_SUBJECT:-rbac-live-viewer`,
+	} {
+		if !strings.Contains(rbacBody, want) {
+			t.Fatalf("live RBAC verifier must default viewer fixture identity, missing %q", want)
 		}
 	}
 }
@@ -3263,17 +3335,23 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 		"Checking health and admin metrics observability",
 		"health_json=\"$(api_json GET /api/health)\"",
 		".security_db_revision",
+		".security_db_revision_error",
 		".security_recalculation.running",
 		`.cve_affected_package_index.summary_mode == "indexed-only"`,
 		".cve_reference_key_index.stale == false",
 		"/api/admin/metrics",
 		"bongsu_security_db_revision_info",
+		"bongsu_security_db_revision_metrics_error",
 		"bongsu_security_recalculation_running",
 		"bongsu_security_recalculation_pending",
 		"bongsu_cve_affected_package_index_coverage_percent",
+		"bongsu_cve_affected_package_index_metrics_error",
 		"bongsu_cve_reference_key_index_coverage_percent",
+		"bongsu_cve_reference_key_index_metrics_error",
 		"bongsu_cve_epss_enriched_records",
+		"bongsu_cve_epss_merge_metrics_error",
 		"bongsu_security_db_rescan_open",
+		"bongsu_security_db_rescan_metrics_error",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("operator workflow must verify health/metrics observability, missing %q", want)
@@ -3531,10 +3609,36 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		`BONGSU_RELEASE_READINESS_LIVE=true`,
+		`./scripts/verify-live-installer-payload.sh`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true ./scripts/verify-live-cvedb-quality.sh`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("release readiness live gate must require fresh CVE sources, missing %q", want)
+		}
+	}
+}
+
+func TestLiveInstallerPayloadVerifierChecksSourceAlignedAgentPayload(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-installer-payload.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`/api/admin/installer/status`,
+		`EXPECTED_AGENT_COMMIT="${BONGSU_VERIFY_INSTALLER_AGENT_COMMIT:-}"`,
+		`git log -1 --format=%H --`,
+		`internal/server/api/installer.go`,
+		`deploy/Dockerfile.agent`,
+		`.install_token_configured == true`,
+		`.agent.ready == true`,
+		`.trivy.ready == true`,
+		`test("^[0-9a-f]{64}$")`,
+		`"+${EXPECTED_AGENT_COMMIT}+"`,
+		`Live installer payload verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live installer payload verifier missing %q", want)
 		}
 	}
 }

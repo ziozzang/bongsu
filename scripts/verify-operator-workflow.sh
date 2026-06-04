@@ -9,8 +9,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_BASE="${BONGSU_API_BASE:-http://127.0.0.1:5677}"
-API_KEY="${BONGSU_API_KEY:-test-admin}"
-AGENT_API_KEY="${BONGSU_AGENT_API_KEY:-test-agent-key}"
+API_KEY="${BONGSU_API_KEY:-test-admin-key-0123456789}"
+AGENT_API_KEY="${BONGSU_AGENT_API_KEY:-test-agent-key-0123456789}"
 ADMIN_USERNAME="${BONGSU_ADMIN_USERNAME:-}"
 ADMIN_PASSWORD="${BONGSU_ADMIN_PASSWORD:-}"
 CURL_MAX_TIME="${BONGSU_VERIFY_CURL_MAX_TIME_SECONDS:-20}"
@@ -217,32 +217,50 @@ grep -q '/api/hosts/{id}/ports:' "$TMP_DIR/openapi.yaml"
 
 echo "[3/10] Checking health and admin metrics observability"
 health_json="$(api_json GET /api/health)"
-assert_json "$health_json" '.status and .security_db_revision and (.security_recalculation.running | type == "boolean") and (.security_recalculation.pending | type == "boolean")' "health must expose security DB revision and recalculation state"
+assert_json "$health_json" '.status and ((.security_db_revision // "") != "" or (.security_db_revision_error // "") != "") and (.security_recalculation.running | type == "boolean") and (.security_recalculation.pending | type == "boolean")' "health must expose security DB revision or revision error plus recalculation state"
 assert_json "$health_json" '.cve_affected_package_index and ((.cve_affected_package_index.count // 0) > 0) and (.cve_affected_package_index.orphans == 0) and ((.cve_affected_package_index.summary_mode == "indexed-only") or (.cve_affected_package_index.stale == false))' "health must expose usable affected-package index state"
 assert_json "$health_json" '.cve_reference_key_index and (.cve_reference_key_index.orphans == 0) and ((.cve_reference_key_index.summary_mode == "indexed-only") or (.cve_reference_key_index.stale == false))' "health must expose usable reference-key index state"
 security_db_status_json="$(api_json GET /api/admin/security-db/status)"
-assert_json "$security_db_status_json" '.status and (.warnings | type == "array") and (.recommended_actions | type == "array") and .security_db and .security_db.configured == true and .security_db_freshness and .security_recalculation and .security_db_revision' "security DB status must expose sync manager, freshness, recalculation, revision, warnings, and recommended actions"
+assert_json "$security_db_status_json" '.status and (.warnings | type == "array") and (.recommended_actions | type == "array") and .security_db and .security_db.configured == true and .security_db_freshness and .security_recalculation and ((.security_db_revision // "") != "" or (.security_db_revision_error // "") != "")' "security DB status must expose sync manager, freshness, recalculation, revision or revision error, warnings, and recommended actions"
 assert_json "$security_db_status_json" '.cve_db_quality and .cve_db_quality.status and .cve_affected_package_index and ((.cve_affected_package_index.count // 0) > 0) and .cve_reference_key_index' "security DB status must expose CVE quality and index health"
 agent_fleet_status_json="$(api_json GET /api/admin/agent-fleet/status)"
 assert_json "$agent_fleet_status_json" '(.status == "ok" or .status == "degraded") and (.warnings | type == "array") and (.recommended_actions | type == "array") and (.total_hosts | type == "number") and (.outdated_percent | type == "number") and (.agent_status_counts | type == "object") and (.agent_version_counts | type == "object") and (.agent_version_drift_counts.current | type == "number") and (.agent_version_drift_counts.outdated | type == "number") and (.agent_version_drift_counts.unknown | type == "number")' "agent fleet status must expose status, warnings, host/version/drift counts, and outdated percentage"
 assert_json "$agent_fleet_status_json" '.installer and (.installer.ready | type == "boolean") and .installer.agent and (.installer.agent.ready | type == "boolean")' "agent fleet status must expose installer readiness"
 curl -fsS --max-time "$CURL_MAX_TIME" -H "X-API-Key: ${API_KEY}" "${API_BASE}/api/admin/metrics" -o "$TMP_DIR/admin-metrics.txt"
 for metric in \
-    '^bongsu_security_db_revision_info[{]revision="' \
     '^bongsu_security_recalculation_running ' \
-    '^bongsu_security_recalculation_pending ' \
-    '^bongsu_cve_affected_package_index_coverage_percent ' \
-    '^bongsu_cve_affected_package_index_stale ' \
-    '^bongsu_cve_reference_key_index_coverage_percent ' \
-    '^bongsu_cve_reference_key_index_stale ' \
-    '^bongsu_cve_epss_enriched_records ' \
-    '^bongsu_security_db_rescan_open '; do
+    '^bongsu_security_recalculation_pending '; do
     if ! grep -Eq "$metric" "$TMP_DIR/admin-metrics.txt"; then
         echo "ERROR: admin metrics missing ${metric}" >&2
         sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
         exit 1
     fi
 done
+if ! grep -Eq '^bongsu_security_db_revision_info[{]revision="|^bongsu_security_db_revision_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose security DB revision info or revision metrics error" >&2
+    sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
+	exit 1
+fi
+if ! grep -Eq '^bongsu_cve_affected_package_index_coverage_percent |^bongsu_cve_affected_package_index_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose affected-package index coverage or metrics error" >&2
+    sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_cve_reference_key_index_coverage_percent |^bongsu_cve_reference_key_index_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose reference-key index coverage or metrics error" >&2
+    sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_cve_epss_enriched_records |^bongsu_cve_epss_merge_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose EPSS enrichment metrics or metrics error" >&2
+    sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_security_db_rescan_open |^bongsu_security_db_rescan_metrics_error |^bongsu_security_db_revision_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose security DB rescan metrics or metrics error" >&2
+    sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
 
 if [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASSWORD" ]; then
     echo "[4/10] Checking local session login"

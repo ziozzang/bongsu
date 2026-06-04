@@ -22,8 +22,17 @@ func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	metricsTimeout := envInt("BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS", 10)
+	if metricsTimeout < 1 {
+		metricsTimeout = 1
+	}
+	if metricsTimeout > 60 {
+		metricsTimeout = 60
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(metricsTimeout)*time.Second)
+	defer cancel()
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	io.WriteString(w, s.adminMetrics(r.Context()))
+	io.WriteString(w, s.adminMetrics(ctx))
 }
 
 func (s *Server) adminMetrics(ctx context.Context) string {

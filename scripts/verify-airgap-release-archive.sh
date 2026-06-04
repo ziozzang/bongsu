@@ -106,6 +106,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-airgap-package-smoke.sh" \
     "$ROOT_DIR/scripts/verify-live-agent-token-binding.sh" \
     "$ROOT_DIR/scripts/verify-live-cvedb-quality.sh" \
+    "$ROOT_DIR/scripts/verify-live-installer-payload.sh" \
     "$ROOT_DIR/scripts/verify-live-rbac-scope.sh" \
     "$ROOT_DIR/scripts/verify-live-web-smoke.sh" \
     "$ROOT_DIR/deploy/docker-compose.yml" \

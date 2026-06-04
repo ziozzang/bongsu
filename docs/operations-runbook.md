@@ -29,6 +29,7 @@ BONGSU_RELEASE_READINESS_LIVE=true ./scripts/verify-release-readiness.sh
 ```
 
 Live release readiness enables strict CVE source freshness automatically; stale or missing required sources must be fixed before promotion.
+It also verifies the live one-line installer payload: `/api/admin/installer/status` must report ready agent and Trivy binaries, valid SHA256 metadata, an install token, and an agent version containing the latest agent/installer source commit.
 
 Individual gates remain useful while debugging:
 
@@ -42,6 +43,7 @@ go test ./...
 ./scripts/verify-openapi.sh
 ./scripts/verify-backup-restore-archive.sh
 ./scripts/verify-installer-smoke.sh
+./scripts/verify-live-installer-payload.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
 npm --prefix web run test:e2e
@@ -57,7 +59,7 @@ BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
 ./scripts/verify-operator-workflow.sh
 ```
 
-The operator workflow also validates the live observability and inventory surfaces that should back production monitoring: `/api/health` must expose security DB revision, security recalculation state, and usable affected/reference index status; `/api/admin/security-db/status` must expose source-sync manager state, persisted source freshness, recalculation state, CVE DB quality, affected/reference index health, warnings, and recommended actions for stale or missing security sources; `/api/admin/agent-fleet/status` must expose installer readiness, host status counts, agent version counts, current/outdated/unknown version drift, outdated percentage, warnings, and recommended actions for missing installer payloads or stale/outdated agents; `/api/admin/rbac/status` must expose RBAC subject, policy, orphan, wildcard, resource, and permission counters; `/api/admin/metrics` must expose Prometheus gauges for security DB revision, recalculation, affected/reference indexes, EPSS enrichment, and security DB rescan progress; host runtime inventory endpoints must return the latest reported user accounts, process snapshot, and listening ports after report ingest.
+The operator workflow also validates the live observability and inventory surfaces that should back production monitoring: `/api/health` must expose security DB revision or revision-error state, security recalculation state, and usable affected/reference index status; `/api/admin/security-db/status` must expose source-sync manager state, persisted source freshness, recalculation state, CVE DB quality, affected/reference index health, warnings, and recommended actions for stale or missing security sources; `/api/admin/agent-fleet/status` must expose installer readiness, host status counts, agent version counts, current/outdated/unknown version drift, outdated percentage, warnings, and recommended actions for missing installer payloads or stale/outdated agents; `/api/admin/rbac/status` must expose RBAC subject, policy, orphan, wildcard, resource, and permission counters; `/api/admin/metrics` must expose Prometheus gauges for security DB revision or revision-error state, recalculation, affected/reference indexes, EPSS enrichment, and security DB rescan progress; host runtime inventory endpoints must return the latest reported user accounts, process snapshot, and listening ports after report ingest.
 
 - Verify the real agent binary collection path with fixture Trivy/osquery/docker tools:
 
@@ -80,6 +82,16 @@ BONGSU_AGENT_API_KEY="$BONGSU_AGENT_API_KEY" \
 ```
 
 This verifier requires `BONGSU_AGENT_HOST_BINDING=true` on the API. It binds a host to one agent token, then proves a different token cannot report inventory, claim scan requests, or complete requests for that host.
+
+- Verify the live installer payload before asking operators to redeploy agents:
+
+```bash
+BONGSU_API_BASE=http://localhost:5677 \
+BONGSU_API_KEY="$BONGSU_API_KEY" \
+./scripts/verify-live-installer-payload.sh
+```
+
+This verifier checks `/api/admin/installer/status` for ready agent and Trivy payloads, valid SHA256 and byte metadata, install-token configuration, and an agent version that includes the latest commit touching agent or installer source paths. Set `BONGSU_VERIFY_INSTALLER_AGENT_COMMIT=<12-char-commit>` for packaged or externally built releases where the source checkout is not available.
 
 Live verifier scripts create short-lived hosts and delete them during cleanup through `DELETE /api/hosts/{id}`. If an interrupted verifier leaves synthetic hosts behind, remove only hosts whose IDs match the verifier prefixes, such as `host-operator-verify-*`, `host-rbac-live-*`, `host-agent-binding-*`, or `host-agent-binary-*`; the host delete API cascades collected inventory and host-scoped operational rows while preserving audit logs. Do not delete real enrolled hosts just to clear an agent-fleet warning; an actual `dev` or outdated agent version should be fixed by redeploying the one-line installer or restarting the updated service.
 

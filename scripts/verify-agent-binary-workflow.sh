@@ -6,8 +6,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 API_BASE="${BONGSU_API_BASE:-http://127.0.0.1:5677}"
-API_KEY="${BONGSU_API_KEY:-test-admin}"
-AGENT_API_KEY="${BONGSU_AGENT_API_KEY:-test-agent-key}"
+API_KEY="${BONGSU_API_KEY:-test-admin-key-0123456789}"
+AGENT_API_KEY="${BONGSU_AGENT_API_KEY:-test-agent-key-0123456789}"
 CURL_MAX_TIME="${BONGSU_VERIFY_CURL_MAX_TIME_SECONDS:-20}"
 WORK_DIR="${BONGSU_VERIFY_AGENT_WORK_DIR:-/tmp/bongsu-agent-binary-verifier}"
 TMP_DIR="$(mktemp -d)"

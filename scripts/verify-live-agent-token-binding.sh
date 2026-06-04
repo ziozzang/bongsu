@@ -8,8 +8,8 @@ set -euo pipefail
 # different token cannot report, claim, or complete work for that host.
 
 API_BASE="${BONGSU_API_BASE:-http://127.0.0.1:5677}"
-API_KEY="${BONGSU_API_KEY:-test-admin-key}"
-AGENT_API_KEY="${BONGSU_AGENT_API_KEY:-test-agent-key}"
+API_KEY="${BONGSU_API_KEY:-test-admin-key-0123456789}"
+AGENT_API_KEY="${BONGSU_AGENT_API_KEY:-test-agent-key-0123456789}"
 CURL_MAX_TIME="${BONGSU_VERIFY_CURL_MAX_TIME_SECONDS:-20}"
 RUN_ID="agent-binding-$(date -u +%Y%m%dT%H%M%SZ)-$$"
 HOST_ID="host-${RUN_ID}"

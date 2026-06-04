@@ -81,6 +81,7 @@ if [ -n "$ARCHIVE" ]; then
 fi
 
 if [ "$LIVE" = "true" ]; then
+    run ./scripts/verify-live-installer-payload.sh
     run ./scripts/verify-operator-workflow.sh
     run ./scripts/verify-agent-binary-workflow.sh
     run ./scripts/verify-live-agent-token-binding.sh

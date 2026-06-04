@@ -106,6 +106,7 @@ for script in \
     verify-airgap-package-smoke.sh \
     verify-live-agent-token-binding.sh \
     verify-live-cvedb-quality.sh \
+    verify-live-installer-payload.sh \
     verify-live-rbac-scope.sh \
     verify-live-web-smoke.sh \
     verify-operator-workflow.sh \
