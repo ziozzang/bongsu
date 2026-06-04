@@ -24,6 +24,7 @@ MAX_SEARCH_WALL_SECONDS="${BONGSU_VERIFY_CVEDB_MAX_SEARCH_WALL_SECONDS:-10}"
 BONGSU_DB_DSN="${BONGSU_DB_DSN:-}"
 BONGSU_DB_PSQL_CONTAINER="${BONGSU_DB_PSQL_CONTAINER:-bongsu-postgres}"
 BONGSU_VERIFY_CVEDB_REQUIRE_DB="${BONGSU_VERIFY_CVEDB_REQUIRE_DB:-false}"
+BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES="${BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES:-false}"
 PSQL_MODE=""
 TMP_DIR="$(mktemp -d)"
 
@@ -190,6 +191,16 @@ assert_jq "$stats_json" '.cve_db_quality.status == "ok"' "CVE DB quality status 
 assert_jq "$stats_json" '(.cve_db_quality.warning_count // 0) == 0' "CVE DB quality warnings must be zero"
 assert_jq "$stats_json" '(.cve_db_quality.temporary_placeholders // 0) == 0' "TEMP/CVD placeholder rows must be absent"
 assert_jq "$stats_json" '(.cve_db_quality.empty_vulnerability_ids // 0) == 0' "empty vulnerability IDs must be absent"
+
+if [ "$BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES" = "true" ]; then
+    freshness_json="$TMP_DIR/security-db-status.json"
+    freshness_time="$TMP_DIR/security-db-status.time"
+    api_get_json "/api/admin/security-db/status" "$freshness_json" "$freshness_time"
+    assert_elapsed_at_most "$freshness_time" "$MAX_STATS_WALL_SECONDS" "security DB freshness status"
+    assert_jq "$freshness_json" '.security_db_freshness.status == "ok"' "security DB required sources must be fresh"
+    assert_jq "$freshness_json" '((.security_db_freshness.missing_sources // []) | length) == 0' "security DB required sources must not be missing"
+    assert_jq "$freshness_json" '((.security_db_freshness.stale_sources // []) | length) == 0' "security DB required sources must not be stale"
+fi
 
 echo "[2/7] Checking affected-package and reference-key indexes"
 assert_jq_numarg "$stats_json" min "$MIN_AFFECTED_INDEX_COVERAGE" '(.affected_package_index.coverage_percent // 0) >= $min' "affected-package index coverage is below threshold"

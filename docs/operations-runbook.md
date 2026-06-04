@@ -176,6 +176,14 @@ BONGSU_DB_DSN="$BONGSU_DB_DSN" \
 ./scripts/verify-live-cvedb-quality.sh
 ```
 
+For release-candidate or production health gates, require source freshness as well as match quality:
+
+```bash
+BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true \
+BONGSU_DB_DSN="$BONGSU_DB_DSN" \
+./scripts/verify-live-cvedb-quality.sh
+```
+
 For connected security DB syncs, keep OSV ecosystem chunks in append/upsert mode and defer finalization until the OSV loop finishes. `scripts/sync-all-cvedb.sh` sends `replace=false` and `finalize=false` for each OSV chunk because all chunks share `source=osv`; importing each chunk with source replacement enabled leaves only the last ecosystem in the live CVE DB, and finalizing every chunk repeats expensive affected/reference index rebuilds and recalculation. OSV rows can also share the same CVE alias across different ecosystems, so the CVE upsert path merges existing and incoming `affected_products`/`refs` arrays instead of overwriting the previous row. This keeps examples such as `phenx/php-svg-lib` / `Packagist` / fixed `0.5.2` matchable even when a later distro chunk references the same CVE. After all OSV chunks succeed, the script prunes `source=osv` rows older than the sync start timestamp so upstream deletions are reflected, then rebuilds affected-package and reference-key indexes once and queues security recalculation once. Non-OSV sources still use source replacement and immediate finalization by default.
 
 When `BONGSU_DB_DSN` is set, this verifier also queries PostgreSQL directly for `TEMP-*`/`CVD-*` placeholders across `cve_database`, `cve_affected_packages`, and `cve_reference_keys`, affected-package rows missing package/ecosystem/fixed evidence, index orphans, EPSS columns on non-EPSS CVE rows, canonical CVE reference keys that merge multiple non-priority sources, and vendor/advisory keys materialized beside canonical CVE keys. It uses local `psql` when available, or `docker exec` against `BONGSU_DB_PSQL_CONTAINER` which defaults to `bongsu-postgres`.

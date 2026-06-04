@@ -3418,6 +3418,11 @@ func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t
 	}
 	body := string(out)
 	for _, want := range []string{
+		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES="${BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES:-false}"`,
+		`if [ "$BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES" = "true" ]; then`,
+		`/api/admin/security-db/status`,
+		`.security_db_freshness.status == "ok"`,
+		"security DB required sources must not be stale",
 		`/api/cve-db/search?q=phenx%2Fphp-svg-lib&limit=10&matchable=true`,
 		`WHERE fixed_version ~* '^[0-9a-f]{40}$'`,
 		"affected package index rows must not keep hash-like fixed versions",
