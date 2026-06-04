@@ -61,6 +61,7 @@ for script in \
     'verify-airgap-package-smoke.sh' \
     'verify-live-cvedb-quality.sh' \
     'verify-live-rbac-scope.sh' \
+    'verify-live-web-smoke.sh' \
     'verify-operator-workflow.sh' \
     'verify-static-binaries.sh'
 do
@@ -89,6 +90,7 @@ for pattern in \
     'sha256sum -c bongsu-0\.1\.0\.tar\.gz\.sha256' \
     'sha256sum -c SHA256SUMS' \
     'verify-airgap-offline-rehearsal\.sh' \
+    'verify-live-web-smoke\.sh' \
     'load-images\.sh' \
     'docker-compose\.airgap\.yml' \
     'import-security-db-bundle\.sh' \

@@ -93,6 +93,7 @@ for script in \
     verify-airgap-package-smoke.sh \
     verify-live-cvedb-quality.sh \
     verify-live-rbac-scope.sh \
+    verify-live-web-smoke.sh \
     verify-operator-workflow.sh \
     verify-static-binaries.sh
 do

@@ -48,6 +48,14 @@ BONGSU_AGENT_API_KEY="$BONGSU_AGENT_API_KEY" \
 ./scripts/verify-agent-binary-workflow.sh
 ```
 
+- Verify the deployed web UI on port `5678` with a live browser smoke test:
+
+```bash
+BONGSU_WEB_BASE=http://localhost:5678 \
+BONGSU_API_KEY="$BONGSU_API_KEY" \
+./scripts/verify-live-web-smoke.sh
+```
+
 ## Install
 
 Connected deployment:
@@ -99,6 +107,14 @@ Live CVE DB quality and performance verification:
 
 ```bash
 ./scripts/verify-live-cvedb-quality.sh
+```
+
+Live web UI route and API response verification:
+
+```bash
+BONGSU_WEB_BASE=http://localhost:5678 \
+BONGSU_API_KEY="$BONGSU_API_KEY" \
+./scripts/verify-live-web-smoke.sh
 ```
 
 Use systemd mode when immediate force-scan polling is required:

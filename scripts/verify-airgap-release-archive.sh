@@ -98,6 +98,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-airgap-package-smoke.sh" \
     "$ROOT_DIR/scripts/verify-live-cvedb-quality.sh" \
     "$ROOT_DIR/scripts/verify-live-rbac-scope.sh" \
+    "$ROOT_DIR/scripts/verify-live-web-smoke.sh" \
     "$ROOT_DIR/deploy/docker-compose.yml" \
     "$ROOT_DIR/deploy/docker-compose.airgap.yml" \
     "$ROOT_DIR/deploy/.env.example" \

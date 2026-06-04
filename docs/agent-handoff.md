@@ -174,7 +174,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in both `cve_data
 - Go tests now assert RBAC access scope expansion for host, container, image, and asset-group policies and verify inventory/scan list endpoints apply those scopes.
 - CI runs `scripts/verify-package-contents.sh` and `scripts/verify-airgap-package-smoke.sh` to keep air-gapped release archives from silently losing required files or breaking package generation.
 - Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
-- Live Playwright smoke passed against `http://10.2.2.10:5678/` for the dashboard, CVE Search, and Hosts. The live `/api/packages?limit=1` and `/api/vuln-summary?group_by=owner` endpoints returned 200 after the mismatch-filter SQL fix.
+- Live Playwright smoke is now scripted by `./scripts/verify-live-web-smoke.sh` and passed against `http://127.0.0.1:5678` using `BONGSU_API_KEY=test-admin-key`. It covers dashboard CVE DB status, CVE Search, Hosts, Vulnerabilities, and RBAC routes, while asserting that live `/api/` responses do not return 5xx.
 - Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state, the newest browser suite now covers the added schedule/asset-group/report/notification views with mocked API contract assertions, and the live operator verifier passed against `127.0.0.1:5677` using the running API and agent credentials, including agent claim/report/complete.
 
 ## Verification Commands
@@ -239,8 +239,8 @@ where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
 
 1. Confirm this handoff commit is pushed to `origin/main`.
 2. Re-run full verification after the next session starts; do not assume long-running local processes survived.
-3. Re-open the web UI at `http://10.2.2.10:5678/` after any UI change and visually verify dashboard, CVE Search, vulnerability list, RBAC/admin pages, and force scan controls.
-4. Keep extending browser coverage beyond the current dashboard/CVE Search/Hosts/RBAC smoke paths.
+3. Re-run `BONGSU_WEB_BASE=http://127.0.0.1:5678 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-web-smoke.sh` after any UI change, then visually verify dashboard, CVE Search, vulnerability list, RBAC/admin pages, and force scan controls on `http://10.2.2.10:5678/`.
+4. Keep extending browser coverage beyond the current dashboard/CVE Search/Hosts/Vulnerabilities/RBAC smoke paths.
 5. Continue requirement audit against the original product list. The system is not yet declared complete.
 6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
 7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.

@@ -63,6 +63,7 @@ for command in \
     '\./scripts/verify-agent-binary-workflow\.sh' \
     '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
+    '\./scripts/verify-live-web-smoke\.sh' \
     '\./scripts/verify-package-contents\.sh' \
     '\./scripts/verify-airgap-package-smoke\.sh' \
     '\./scripts/verify-airgap-offline-rehearsal\.sh <generated-bongsu-archive\.tar\.gz>' \
@@ -88,6 +89,7 @@ for keyword in \
     'RBAC' \
     'live RBAC' \
     'live CVE DB' \
+    'live browser' \
     'force scan' \
     'one-line installer' \
     'systemd' \
@@ -136,7 +138,8 @@ for keyword in \
     'CVD-\*' \
     'EPSS' \
     'requeue-stale' \
-    'agent-token/reset'
+    'agent-token/reset' \
+    'verify-live-web-smoke\.sh'
 do
     require_text "$RUNBOOK" "$keyword" "operations runbook missing keyword $keyword"
 done
