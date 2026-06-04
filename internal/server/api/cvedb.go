@@ -512,11 +512,18 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 		log.Printf("security-db bundle copy: %v", err)
 		return
 	}
+	exportedAt := time.Now().UTC()
+	exportCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := s.db.MarkSecuritySourcesExported(exportCtx, "", exportedAt); err != nil {
+		log.Printf("security-db bundle export source registry update: %v", err)
+	}
+	cancel()
 	s.audit(r, "security_db.export", "security_db", "bundle", "ok", map[string]any{
 		"cve_records":          cveCount,
 		"trivy_db_included":    trivyIncluded,
 		"bytes":                bundleSize,
 		"security_db_revision": revision,
+		"exported_at":          exportedAt.Format(time.RFC3339),
 	})
 }
 

@@ -637,6 +637,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     if (!latest?.last_sync_finished_at) return source;
     return new Date(source.last_sync_finished_at).getTime() > new Date(latest.last_sync_finished_at).getTime() ? source : latest;
   }, null);
+  const latestSecuritySourceExport = securitySourceRegistry.reduce<typeof securitySourceRegistry[number] | null>((latest, source) => {
+    if (!source.last_exported_at) return latest;
+    if (!latest?.last_exported_at) return source;
+    return new Date(source.last_exported_at).getTime() > new Date(latest.last_exported_at).getTime() ? source : latest;
+  }, null);
   const securitySourceRegistryBroken = !!securityDbStatus?.security_sources_error || securitySourceRegistry.some(s => s.enabled && (s.last_status !== 'ok' || (s.record_count || 0) === 0 || s.last_error));
   const securitySourceRegistryColor = securitySourceRegistryBroken
     ? 'var(--critical)'
@@ -1428,6 +1433,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           {latestSecuritySourceRegistry?.last_sync_finished_at && (
             <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
               latest {latestSecuritySourceRegistry.id} {new Date(latestSecuritySourceRegistry.last_sync_finished_at).toLocaleString()}
+            </div>
+          )}
+          {latestSecuritySourceExport?.last_exported_at && (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              export {latestSecuritySourceExport.id} {new Date(latestSecuritySourceExport.last_exported_at).toLocaleString()}
             </div>
           )}
         </div>

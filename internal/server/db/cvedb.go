@@ -544,6 +544,41 @@ func (db *DB) RefreshSecuritySourceStatus(ctx context.Context, source string) er
 	return tx.Commit()
 }
 
+func (db *DB) MarkSecuritySourcesExportedTx(ctx context.Context, tx *sql.Tx, source string, exportedAt time.Time) error {
+	source = strings.TrimSpace(source)
+	if exportedAt.IsZero() {
+		exportedAt = time.Now()
+	}
+	exportedAt = exportedAt.UTC()
+	if err := db.RefreshSecuritySourceStatusTx(ctx, tx, source); err != nil {
+		return err
+	}
+	if source == "" {
+		_, err := tx.ExecContext(ctx, `
+UPDATE security_sources
+SET last_exported_at=$1, updated_at=now()
+WHERE id IN (SELECT DISTINCT source FROM cve_database WHERE source != '')`, exportedAt)
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `
+UPDATE security_sources
+SET last_exported_at=$2, updated_at=now()
+WHERE id=$1`, source, exportedAt)
+	return err
+}
+
+func (db *DB) MarkSecuritySourcesExported(ctx context.Context, source string, exportedAt time.Time) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := db.MarkSecuritySourcesExportedTx(ctx, tx, source, exportedAt); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 type SecuritySourceStatus struct {
 	ID                 string     `json:"id"`
 	Name               string     `json:"name"`

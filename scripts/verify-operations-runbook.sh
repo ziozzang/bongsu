@@ -95,6 +95,7 @@ for pattern in \
     'bongsu_security_source_registry_ok_sources' \
     'bongsu_security_source_registry_enabled_sources' \
     'bongsu_security_source_registry_records' \
+    'bongsu_security_source_registry_last_export_timestamp_seconds' \
     'bongsu_cve_placeholder_records' \
     'bongsu_security_db_rescan_open' \
     'bongsu_\*_metrics_error' \

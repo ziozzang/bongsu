@@ -1074,6 +1074,8 @@ func TestSecurityDBBundleManifestCarriesRevision(t *testing.T) {
 		"GetSecurityDBRevision",
 		"SecurityDBRevision: revision",
 		`"security_db_revision": revision`,
+		"MarkSecuritySourcesExported",
+		`"exported_at"`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("bundle export revision handling missing %q: %s", want, fn)
@@ -2868,6 +2870,8 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"Security Sync",
 		"Source Registry",
 		"securitySourceRegistry",
+		"latestSecuritySourceExport",
+		"last_exported_at",
 		"security_sources_error",
 		"Security source registry:",
 		"Source registry attention:",
@@ -3003,6 +3007,8 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_security_source_registry_error",
 		"bongsu_security_source_registry_last_sync_timestamp_seconds",
 		"bongsu_security_source_registry_age_seconds",
+		"bongsu_security_source_registry_last_export_timestamp_seconds",
+		"bongsu_security_source_registry_export_age_seconds",
 		"bongsu_security_source_registry_sources",
 		"bongsu_security_source_registry_enabled_sources",
 		"bongsu_security_source_registry_ok_sources",
@@ -5854,7 +5860,9 @@ func TestSecurityDBBundleExportStagesCompleteArchiveBeforeResponse(t *testing.T)
 		"os.Open(bundleFile)",
 		`w.Header().Set("Content-Length"`,
 		"io.Copy(w, f)",
+		"MarkSecuritySourcesExported",
 		`"bytes":`,
+		`"exported_at":`,
 		"gzip.NewWriter(tmp)",
 		"tar.NewWriter(gz)",
 		"tw.Close()",

@@ -279,6 +279,10 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 					writePromGauge(&b, "bongsu_security_source_registry_last_sync_timestamp_seconds", labels, float64(source.LastSyncFinishedAt.Unix()))
 					writePromGauge(&b, "bongsu_security_source_registry_age_seconds", labels, time.Since(*source.LastSyncFinishedAt).Seconds())
 				}
+				if source.LastExportedAt != nil {
+					writePromGauge(&b, "bongsu_security_source_registry_last_export_timestamp_seconds", labels, float64(source.LastExportedAt.Unix()))
+					writePromGauge(&b, "bongsu_security_source_registry_export_age_seconds", labels, time.Since(*source.LastExportedAt).Seconds())
+				}
 			}
 			writePromGauge(&b, "bongsu_security_source_registry_sources", nil, float64(len(registrySources)))
 			writePromGauge(&b, "bongsu_security_source_registry_enabled_sources", nil, float64(enabledCount))
