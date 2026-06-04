@@ -3332,6 +3332,27 @@ func TestOsvDownloaderFailsClosedAndWritesAtomically(t *testing.T) {
 	}
 }
 
+func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-cvedb-quality.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`/api/cve-db/search?q=phenx%2Fphp-svg-lib&limit=10&matchable=true`,
+		`WHERE fixed_version ~* '^[0-9a-f]{40}$'`,
+		"affected package index rows must not keep hash-like fixed versions",
+		"OSV Packagist sentinel must preserve phenx/php-svg-lib package/ecosystem/fixed evidence",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live CVE DB quality verifier missing %q", want)
+		}
+	}
+	if strings.Contains(body, "matchable_only=true") {
+		t.Fatal("live CVE DB quality verifier must use the API's matchable=true parameter")
+	}
+}
+
 func TestSecurityDBSyncScriptFailsOnMissingRequiredTrivySource(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
 	if err != nil {

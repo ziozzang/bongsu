@@ -282,6 +282,10 @@ WHERE trim(package_name) = ''
    OR trim(fixed_version) = ''" "affected package index rows must all have package/ecosystem/fixed evidence"
     assert_db_zero "
 SELECT count(*)
+FROM cve_affected_packages
+WHERE fixed_version ~* '^[0-9a-f]{40}$'" "affected package index rows must not keep hash-like fixed versions"
+    assert_db_zero "
+SELECT count(*)
 FROM cve_affected_packages cap
 WHERE NOT EXISTS (SELECT 1 FROM cve_database c WHERE c.id = cap.cve_id)" "affected package index must not contain orphan rows"
     assert_db_zero "
@@ -350,7 +354,7 @@ WHERE source = 'osv'
   AND fixed_version IN ('0.5.1', '0.5.2')" "$MIN_OSV_PACKAGIST_SENTINEL_MATCHES" "OSV Packagist sentinel must preserve phenx/php-svg-lib package/ecosystem/fixed evidence"
         packagist_json="$TMP_DIR/osv-packagist-sentinel.json"
         packagist_time="$TMP_DIR/osv-packagist-sentinel.time"
-        api_get_json "/api/cve-db/search?q=phenx%2Fphp-svg-lib&limit=10&matchable_only=true" "$packagist_json" "$packagist_time"
+        api_get_json "/api/cve-db/search?q=phenx%2Fphp-svg-lib&limit=10&matchable=true" "$packagist_json" "$packagist_time"
         assert_elapsed_at_most "$packagist_time" "$MAX_SEARCH_WALL_SECONDS" "OSV Packagist sentinel search"
         assert_jq_numarg "$packagist_json" min "$MIN_OSV_PACKAGIST_SENTINEL_MATCHES" '(.total // 0) >= $min and ([.items[]? | select((.source // "") == "osv" and ((.ecosystem // "") | ascii_downcase) == "packagist" and (.matchable_affected_count // 0) > 0)] | length) >= $min' "CVE Search must return matchable phenx/php-svg-lib Packagist OSV evidence"
     fi
