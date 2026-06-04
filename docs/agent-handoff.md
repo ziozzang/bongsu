@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Verify dashboard product identity
+master / origin/main latest commit: Verify security DB rescan queue
 ```
 
 Important recent commits:
 
 ```text
-<latest> Verify dashboard product identity
+<latest> Verify security DB rescan queue
+699020d Verify dashboard product identity
 c2298c9 Verify dynamic asset-group RBAC scope
 5bb05ac Harden CVE matching invariants
 0229dd2 Verify CVE reference grouping quality
@@ -189,6 +190,7 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 - The dashboard API client now reads `X-Bongsu-Cache` for CVE DB stats and the dashboard card exposes cache state, generated timestamp, and stats duration.
 - `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
 - `./scripts/verify-live-rbac-scope.sh` now validates dynamic `asset_group` policy expansion instead of relying only on a direct host policy.
+- `internal/server/db/scan_rescan_test.go` now executes `QueueSecurityDBRescans` through a fake `database/sql` driver, verifying host eligibility filtering, transaction commit, pending dedupe accounting, requested_by/reason propagation, and `security_db_revision` stamping without requiring a live PostgreSQL instance.
 - Playwright coverage now verifies dashboard CVE DB status, CVE Search fixed-version evidence, Hosts force-scan POST bodies, RBAC subject/policy POST bodies, scheduled scan creation payloads, dynamic asset-group creation and scan trigger payloads, report export query parameters, notification rule creation/test payloads, and notification-log rendering.
 - Dashboard E2E and live web smoke now verify first-screen `bongsu` branding plus the `봉수대` meaning/product intro text.
 - `docs/operations-runbook.md` is available and `scripts/package.sh` includes documentation in release archives.
