@@ -102,6 +102,21 @@ func main() {
 	secInterval := time.Duration(envInt("BONGSU_SECURITY_DB_INTERVAL_HOURS", 6)) * time.Hour
 	secMgr := secdb.NewManager(secSyncCmd, secInterval)
 	secMgr.SetSyncOnStart(envBool("BONGSU_SECURITY_DB_SYNC_ON_START", true))
+	secFreshCtx, secFreshCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if stats, err := database.GetCveSourceFreshnessStats(secFreshCtx); err == nil {
+		var latest time.Time
+		for _, stat := range stats {
+			if stat.LastUpdate != nil && stat.LastUpdate.After(latest) {
+				latest = *stat.LastUpdate
+			}
+		}
+		if !latest.IsZero() {
+			secMgr.SetLastSyncHint(latest)
+		}
+	} else {
+		log.Printf("security-db persisted freshness seed skipped: %v", err)
+	}
+	secFreshCancel()
 
 	server := api.New(database, matcher, dbMgr, secMgr, api.BuildInfo{
 		Version:   version,

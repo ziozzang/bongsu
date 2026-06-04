@@ -13,19 +13,20 @@ import (
 )
 
 type Manager struct {
-	command     string
-	interval    time.Duration
-	mu          sync.RWMutex
-	running     bool
-	lastSync    time.Time
-	lastAttempt time.Time
-	nextSync    time.Time
-	lastStatus  string
-	lastError   string
-	lastOutput  string
-	updateHook  func(string)
-	failureHook func(string, error)
-	syncOnStart bool
+	command      string
+	interval     time.Duration
+	mu           sync.RWMutex
+	running      bool
+	lastSync     time.Time
+	lastAttempt  time.Time
+	nextSync     time.Time
+	lastStatus   string
+	lastError    string
+	lastOutput   string
+	updateHook   func(string)
+	failureHook  func(string, error)
+	syncOnStart  bool
+	lastSyncHint time.Time
 }
 
 func NewManager(command string, interval time.Duration) *Manager {
@@ -48,26 +49,60 @@ func (m *Manager) Start(ctx context.Context) {
 		return
 	}
 	log.Printf("security-db periodic sync enabled (interval: %s)", m.interval)
-	ticker := time.NewTicker(m.interval)
-	defer ticker.Stop()
-	m.setNextSync(time.Now().Add(m.interval))
+	timer := time.NewTimer(time.Hour)
+	defer timer.Stop()
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	m.scheduleNextPeriodicSync(time.Now())
 	for {
+		next := m.nextSyncTime()
+		wait := time.Until(next)
+		if wait < 0 {
+			wait = 0
+		}
+		timer.Reset(wait)
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			if err := m.UpdateNowWithReason(ctx, "security-db periodic sync"); err != nil {
 				log.Printf("security-db sync failed: %v", err)
 			}
-			m.setNextSync(time.Now().Add(m.interval))
+			m.scheduleNextPeriodicSync(time.Now())
 		}
 	}
 }
 
-func (m *Manager) setNextSync(next time.Time) {
+func (m *Manager) scheduleNextPeriodicSync(now time.Time) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	base := now
+	if !m.lastSync.IsZero() {
+		base = m.lastSync
+	} else if !m.lastSyncHint.IsZero() {
+		base = m.lastSyncHint
+	}
+	next := base.Add(m.interval)
+	if next.Before(now) {
+		next = now
+	}
 	m.nextSync = next
+}
+
+func (m *Manager) nextSyncTime() time.Time {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.nextSync
+}
+
+func (m *Manager) SetLastSyncHint(lastSync time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastSyncHint = lastSync
 }
 
 func (m *Manager) SetUpdateHook(hook func(string)) {

@@ -185,6 +185,66 @@ func TestStartExposesNextPeriodicSync(t *testing.T) {
 	}
 }
 
+func TestStartUsesPersistedLastSyncHintForInitialPeriodicSchedule(t *testing.T) {
+	m := NewManager("printf periodic-ok", time.Hour)
+	m.SetLastSyncHint(time.Now().Add(-2 * time.Hour))
+	called := make(chan string, 1)
+	m.SetUpdateHook(func(reason string) {
+		called <- reason
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		m.Start(ctx)
+		close(done)
+	}()
+
+	select {
+	case got := <-called:
+		if got != "security-db periodic sync" {
+			t.Fatalf("periodic hook reason = %q", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected immediate periodic sync for expired persisted freshness")
+	}
+	cancel()
+	<-done
+}
+
+func TestStartKeepsFuturePersistedLastSyncSchedule(t *testing.T) {
+	m := NewManager("printf periodic-ok", time.Hour)
+	hint := time.Now().Add(-30 * time.Minute)
+	m.SetLastSyncHint(hint)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		m.Start(ctx)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		status := m.Status()
+		if next, ok := status["next_sync"].(time.Time); ok && !next.IsZero() {
+			cancel()
+			<-done
+			if next.Before(hint.Add(time.Hour).Add(-100*time.Millisecond)) || next.After(hint.Add(time.Hour).Add(100*time.Millisecond)) {
+				t.Fatalf("next sync = %v, want near %v", next, hint.Add(time.Hour))
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			cancel()
+			<-done
+			t.Fatalf("next periodic sync was not recorded: %#v", status)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 func TestSyncOutputIsTailTruncated(t *testing.T) {
 	t.Setenv("BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES", "6")
 	if got := trimCommandOutput("0123456789", maxSyncOutputBytes()); got != "456789" {
