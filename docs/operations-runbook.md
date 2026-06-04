@@ -358,6 +358,8 @@ curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/metri
 ./scripts/verify-live-security-db-schedule.sh
 ```
 
+On large CVE DB snapshots, avoid launching several forced `refresh=true` stats checks in parallel with admin status or metrics. `/api/cve-db/stats` shares one in-flight build per API process and limits its own heavy subqueries with `BONGSU_CVE_STATS_QUERY_CONCURRENCY` (default `2`, range `1..7`), but each additional endpoint can still consume PostgreSQL work memory. If PostgreSQL returns shared-memory resize errors while operators are auditing the CVE DB, lower `BONGSU_CVE_STATS_QUERY_CONCURRENCY`, retry the verifier serially, and check `/api/admin/security-db/status` before treating the source DB as unhealthy.
+
 The CVE DB is operationally degraded if required sources are missing, `TEMP-*` or `CVD-*` placeholders appear in API results or direct DB invariants, affected/reference indexes are stale, affected-package index rows lack package/ecosystem/fixed evidence, or EPSS enrichment coverage unexpectedly drops.
 
 ## Monitoring And Alerting

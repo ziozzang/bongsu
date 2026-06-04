@@ -2087,8 +2087,11 @@ func (s *Server) buildCveDbStatsBody(ctx context.Context) cveStatsBuildResult {
 
 	var sourceStatsMS, affectedIndexMS, referenceIndexMS, epssMS, placeholderMS, osvEcosystemMS, securityRevisionMS int64
 	var wg sync.WaitGroup
+	querySlots := make(chan struct{}, cveStatsQueryConcurrency())
 	measure := func(dst *int64, fn func()) {
 		defer wg.Done()
+		querySlots <- struct{}{}
+		defer func() { <-querySlots }()
 		stepStarted := time.Now()
 		fn()
 		*dst = time.Since(stepStarted).Milliseconds()
@@ -2203,6 +2206,17 @@ func (s *Server) buildCveDbStatsBody(ctx context.Context) cveStatsBuildResult {
 		return cveStatsBuildResult{status: http.StatusInternalServerError, msg: "json error"}
 	}
 	return cveStatsBuildResult{body: body, status: http.StatusOK}
+}
+
+func cveStatsQueryConcurrency() int {
+	n := envInt("BONGSU_CVE_STATS_QUERY_CONCURRENCY", 2)
+	if n < 1 {
+		return 1
+	}
+	if n > 7 {
+		return 7
+	}
+	return n
 }
 
 func (s *Server) startCveStatsBackgroundBuild(cacheGen int64) {

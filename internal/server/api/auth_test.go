@@ -3002,6 +3002,8 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		`X-Bongsu-Cache", "stale"`,
 		`BONGSU_CVE_STATS_STALE_SECONDS`,
 		`BONGSU_CVE_STATS_BACKGROUND_TIMEOUT_SECONDS`,
+		`BONGSU_CVE_STATS_QUERY_CONCURRENCY`,
+		"querySlots := make(chan struct{}, cveStatsQueryConcurrency())",
 		"var wg sync.WaitGroup",
 		"go measure(&sourceStatsMS",
 		"go measure(&affectedIndexMS",
@@ -3058,6 +3060,21 @@ func TestCveDbStatsExposeRematchPolicy(t *testing.T) {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("CVE DB stats rematch policy missing %q: %s", want, fn)
 		}
+	}
+}
+
+func TestCveDbStatsQueryConcurrencyClamp(t *testing.T) {
+	t.Setenv("BONGSU_CVE_STATS_QUERY_CONCURRENCY", "0")
+	if got := cveStatsQueryConcurrency(); got != 1 {
+		t.Fatalf("concurrency for zero = %d, want 1", got)
+	}
+	t.Setenv("BONGSU_CVE_STATS_QUERY_CONCURRENCY", "4")
+	if got := cveStatsQueryConcurrency(); got != 4 {
+		t.Fatalf("concurrency = %d, want 4", got)
+	}
+	t.Setenv("BONGSU_CVE_STATS_QUERY_CONCURRENCY", "99")
+	if got := cveStatsQueryConcurrency(); got != 7 {
+		t.Fatalf("concurrency high clamp = %d, want 7", got)
 	}
 }
 
