@@ -256,6 +256,11 @@ if ! grep -Eq '^bongsu_cve_epss_enriched_records |^bongsu_cve_epss_merge_metrics
     sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
     exit 1
 fi
+if ! grep -Eq '^bongsu_cve_osv_ecosystem_indexed_rows[{]ecosystem="|^bongsu_cve_osv_ecosystem_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose OSV ecosystem freshness metrics or metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
 if ! grep -Eq '^bongsu_security_db_rescan_open |^bongsu_security_db_rescan_metrics_error |^bongsu_security_db_revision_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
     echo "ERROR: admin metrics must expose security DB rescan metrics or metrics error" >&2
     sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2

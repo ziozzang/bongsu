@@ -62,7 +62,7 @@ BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
 ./scripts/verify-operator-workflow.sh
 ```
 
-The operator workflow also validates the live observability and inventory surfaces that should back production monitoring: `/api/health` must expose security DB revision or revision-error state, security recalculation state, and usable affected/reference index status; `/api/admin/security-db/status` must expose source-sync manager state, persisted source freshness, recalculation state, CVE DB quality, affected/reference index health, warnings, and recommended actions for stale or missing security sources; `/api/admin/agent-fleet/status` must expose installer readiness, host status counts, agent version counts, current/outdated/unknown version drift, outdated percentage, warnings, and recommended actions for missing installer payloads or stale/outdated agents; `/api/admin/rbac/status` must expose RBAC subject, policy, orphan, wildcard, resource, and permission counters; `/api/admin/metrics` must expose Prometheus gauges for security DB revision or revision-error state, recalculation, affected/reference indexes, EPSS enrichment, and security DB rescan progress; host runtime inventory endpoints must return the latest reported user accounts, process snapshot, and listening ports after report ingest.
+The operator workflow also validates the live observability and inventory surfaces that should back production monitoring: `/api/health` must expose security DB revision or revision-error state, security recalculation state, and usable affected/reference index status; `/api/admin/security-db/status` must expose source-sync manager state, persisted source freshness, recalculation state, CVE DB quality, affected/reference index health, warnings, and recommended actions for stale or missing security sources; `/api/admin/agent-fleet/status` must expose installer readiness, host status counts, agent version counts, current/outdated/unknown version drift, outdated percentage, warnings, and recommended actions for missing installer payloads or stale/outdated agents; `/api/admin/rbac/status` must expose RBAC subject, policy, orphan, wildcard, resource, and permission counters; `/api/admin/metrics` must expose Prometheus gauges for security DB revision or revision-error state, recalculation, affected/reference indexes, OSV ecosystem affected-index freshness, EPSS enrichment, and security DB rescan progress; host runtime inventory endpoints must return the latest reported user accounts, process snapshot, and listening ports after report ingest.
 
 - Verify the real agent binary collection path with fixture Trivy/osquery/docker tools:
 
@@ -360,6 +360,7 @@ Scrape `/api/admin/metrics` with the admin API key and alert on:
 - `bongsu_security_db_source_stale` or missing required sources.
 - `bongsu_cve_placeholder_records` greater than zero.
 - `bongsu_cve_affected_index_stale` or low affected-index coverage.
+- `bongsu_cve_osv_ecosystem_metrics_error` greater than zero or stale `bongsu_cve_osv_ecosystem_last_update_timestamp_seconds` for sentinel ecosystems.
 - `bongsu_cve_epss_loaded_without_enrichment` greater than zero.
 - `bongsu_security_db_rescan_open` remaining high after a DB update.
 - `bongsu_scan_request_stale` for pending or claimed requests.

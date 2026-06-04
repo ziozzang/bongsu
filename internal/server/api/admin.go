@@ -252,6 +252,18 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		} else {
 			writePromGauge(&b, "bongsu_security_db_source_quality_metrics_error", nil, 1)
 		}
+		if osvEcosystems, err := s.db.GetCveOsvEcosystemStats(ctx, 100); err == nil {
+			for _, stat := range osvEcosystems {
+				labels := map[string]string{"ecosystem": stat.Ecosystem}
+				writePromGauge(&b, "bongsu_cve_osv_ecosystem_indexed_rows", labels, float64(stat.IndexedRows))
+				writePromGauge(&b, "bongsu_cve_osv_ecosystem_matchable_cves", labels, float64(stat.MatchableCVEs))
+				if stat.LastUpdate != nil {
+					writePromGauge(&b, "bongsu_cve_osv_ecosystem_last_update_timestamp_seconds", labels, float64(stat.LastUpdate.Unix()))
+				}
+			}
+		} else {
+			writePromGauge(&b, "bongsu_cve_osv_ecosystem_metrics_error", nil, 1)
+		}
 		if indexStats, err := s.db.GetCveAffectedPackageIndexStats(ctx); err == nil {
 			writePromGauge(&b, "bongsu_cve_affected_package_index_records", nil, float64(indexStats.Count))
 			writePromGauge(&b, "bongsu_cve_affected_package_index_sources", nil, float64(indexStats.SourceCount))
