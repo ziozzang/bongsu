@@ -61,6 +61,7 @@ for pattern in \
     '\./scripts/verify-live-agent-token-binding\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
     '\./scripts/verify-live-cvedb-quality\.sh' \
+    '\./scripts/verify-live-security-db-schedule\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
     '\./scripts/verify-backup-restore-archive\.sh' \
     '\./scripts/verify-airgap-release-archive\.sh' \
@@ -110,6 +111,7 @@ for script in \
     verify-live-installer-payload.sh \
     verify-live-rbac-scope.sh \
     verify-live-server-build.sh \
+    verify-live-security-db-schedule.sh \
     verify-live-cvedb-quality.sh \
     sync-osv-cvedb.sh \
     sync-trivy-cvedb.sh \
@@ -126,6 +128,7 @@ require_text "$RELEASE" 'BONGSU_RELEASE_READINESS_REQUIRE_DB' "live release read
 require_text "$RELEASE" 'BONGSU_RELEASE_READINESS_REPORT' "release readiness must support JSON evidence reports"
 require_text "$RELEASE" '"failed_gate_count"' "release readiness report must include failed gate count"
 require_text "$RELEASE" 'BONGSU_VERIFY_CVEDB_REQUIRE_DB=\$\{REQUIRE_DB\}' "live release readiness must require direct CVE DB invariants by default"
+require_text "$RELEASE" 'verify-live-security-db-schedule\.sh' "live release readiness must verify security DB sync scheduling"
 require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "live release readiness must fail closed when direct DB checks are required but unavailable"
 require_text "$AUDIT" 'verify-operations-runbook\.sh' "requirements audit must list the operations runbook verifier"
 require_text "$ARCH" 'security_db_freshness\.latest_source' "architecture must document persisted freshness health fields"

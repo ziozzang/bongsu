@@ -34,6 +34,7 @@ Live release readiness enables strict CVE source freshness automatically; stale 
 In connected live environments it also compares selected OSV upstream `all.zip` `Last-Modified` headers with the local OSV source timestamp, so an OSV feed that is behind upstream beyond the configured grace window fails promotion. With `BONGSU_DB_DSN`, the same gate checks each sentinel ecosystem's affected-package index timestamp so one fresh OSV chunk cannot hide another stale ecosystem.
 It verifies the live API server build first: `/api/health` must expose a non-empty version, build date, and a commit matching the latest server/runtime source commit.
 It also verifies the live one-line installer payload: `/api/admin/installer/status` must report ready agent and Trivy binaries, valid SHA256 metadata, an install token, and an agent version containing the latest agent/installer source commit.
+It verifies the live security DB schedule with `./scripts/verify-live-security-db-schedule.sh`: `/api/health` must show configured source sync, healthy persisted freshness, and a `next_sync` timestamp no later than the latest persisted CVE source update plus `security_db.interval` and a small grace window. This catches API restarts that would otherwise delay the required 6-hour OSV/NVD/Trivy refresh cadence.
 
 Individual gates remain useful while debugging:
 
@@ -48,6 +49,7 @@ go test ./...
 ./scripts/verify-backup-restore-archive.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-live-installer-payload.sh
+./scripts/verify-live-security-db-schedule.sh
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
@@ -353,6 +355,7 @@ After any import or update, check:
 ```bash
 curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/stats?refresh=true"
 curl -fsS -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/metrics"
+./scripts/verify-live-security-db-schedule.sh
 ```
 
 The CVE DB is operationally degraded if required sources are missing, `TEMP-*` or `CVD-*` placeholders appear in API results or direct DB invariants, affected/reference indexes are stale, affected-package index rows lack package/ecosystem/fixed evidence, or EPSS enrichment coverage unexpectedly drops.

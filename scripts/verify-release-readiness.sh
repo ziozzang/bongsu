@@ -265,6 +265,7 @@ if [ "$LIVE" = "true" ]; then
     fi
     run ./scripts/verify-live-server-build.sh
     run ./scripts/verify-live-installer-payload.sh
+    run ./scripts/verify-live-security-db-schedule.sh
     run ./scripts/verify-operator-workflow.sh
     run ./scripts/verify-agent-binary-workflow.sh
     run ./scripts/verify-live-agent-token-binding.sh

@@ -70,6 +70,7 @@ for command in \
     '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-installer-payload\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
+    '\./scripts/verify-live-security-db-schedule\.sh' \
     '\./scripts/verify-live-server-build\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
     '\./scripts/verify-package-contents\.sh' \
@@ -107,6 +108,7 @@ for keyword in \
     'dynamic asset-group' \
     'live CVE DB' \
     'direct DB invariant' \
+    'security DB schedule' \
     'multi-source canonical CVE' \
     'vendor/advisory key' \
     'live browser' \
@@ -144,6 +146,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-cve-matching-invariants\.sh' "airgap pack
 require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap package must include backup/restore archive verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap package must include live agent token binding verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-installer-payload\.sh' "airgap package must include live installer payload verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-schedule\.sh' "airgap package must include live security DB schedule verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-server-build\.sh' "airgap package must include live server build verifier"
 
 for section in \
@@ -185,6 +188,7 @@ for keyword in \
     'agent-token/reset' \
     'verify-live-agent-token-binding\.sh' \
     'verify-live-installer-payload\.sh' \
+    'verify-live-security-db-schedule\.sh' \
     'verify-live-server-build\.sh' \
     'verify-release-readiness\.sh' \
     'verify-live-web-smoke\.sh' \
