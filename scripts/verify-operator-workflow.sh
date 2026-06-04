@@ -273,6 +273,8 @@ for sev in CRITICAL HIGH MEDIUM LOW; do
 done
 api_json GET '/api/reports/export?format=json&type=executive' | jq -e '.generated_at' >/dev/null
 api_json GET '/api/reports/export?format=json&type=sla' | jq -e '.generated_at and .by_severity' >/dev/null
+risk_export_json="$(api_json GET '/api/reports/export?format=json&type=risk&group_by=owner')"
+assert_json "$risk_export_json" '.group_by == "owner" and (.items | type == "array")' "risk report export must preserve group_by and stable items array"
 
 echo "[8/10] Checking notification rule contract"
 rules_json="$(api_json GET /api/admin/notification-rules)"

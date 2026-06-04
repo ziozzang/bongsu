@@ -106,6 +106,9 @@ func (s *Server) handleExportReport(w http.ResponseWriter, r *http.Request) {
 		if len(rows) > limit {
 			rows = rows[:limit]
 		}
+		if rows == nil {
+			rows = []db.RiskBreakdownRow{}
+		}
 		if format == "csv" {
 			w.Header().Set("Content-Type", "text/csv")
 			w.Header().Set("Content-Disposition", "attachment; filename=risk-breakdown.csv")

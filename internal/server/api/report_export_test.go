@@ -72,6 +72,23 @@ func TestReportExportRequiresExportAuth(t *testing.T) {
 	}
 }
 
+func TestReportExportUsesStableArrayFields(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	idx := strings.Index(out, "func (s *Server) handleExportReport")
+	if idx < 0 {
+		t.Fatal("handleExportReport not found")
+	}
+	body := extractFuncBody(out, idx)
+	for _, want := range []string{
+		"rows = []db.RiskBreakdownRow{}",
+		`json.Marshal(map[string]any{"items": rows, "group_by": groupBy})`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("report export must preserve stable JSON array field %q: %s", want, body)
+		}
+	}
+}
+
 func TestReportGeneratesAudit(t *testing.T) {
 	out := readAllPackageGoFiles(t)
 	idx := strings.Index(out, "func (s *Server) handleGetExecutiveSummary")
