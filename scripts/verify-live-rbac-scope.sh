@@ -1,8 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-# verify-live-rbac-scope.sh - Exercise live viewer RBAC scoping across host,
-# package, container, scan, and scan-request endpoints.
+# verify-live-rbac-scope.sh - Exercise live viewer RBAC scoping across dynamic
+# asset-group host policies plus host, package, container, scan, and
+# scan-request endpoints.
 #
 # The running API must be started with BONGSU_VIEWER_API_KEYS containing the
 # supplied BONGSU_VIEWER_API_KEY mapped to BONGSU_VIEWER_SUBJECT.
@@ -114,6 +115,14 @@ viewer_status() {
     local out="$TMP_DIR/viewer-status-response.json"
     curl -sS --max-time "$CURL_MAX_TIME" -o "$out" -w "%{http_code}" -X "$method" \
         -H "X-API-Key: ${VIEWER_API_KEY}" \
+        "${API_BASE}${path}"
+}
+
+anonymous_status() {
+    local method="$1"
+    local path="$2"
+    local out="$TMP_DIR/anonymous-status-response.json"
+    curl -sS --max-time "$CURL_MAX_TIME" -o "$out" -w "%{http_code}" -X "$method" \
         "${API_BASE}${path}"
 }
 
@@ -248,6 +257,12 @@ echo "Subject: ${VIEWER_SUBJECT}"
 
 echo "[1/6] Checking API readiness and viewer key authentication"
 curl -fsS --max-time "$CURL_MAX_TIME" "${API_BASE}/api/ready" | jq -e '.status == "ready"' >/dev/null
+anonymous_status_code="$(anonymous_status GET /api/hosts)"
+if [ "$anonymous_status_code" != "401" ]; then
+    echo "ERROR: unauthenticated /api/hosts returned HTTP ${anonymous_status_code}, expected 401; restart API with BONGSU_WEB_AUTH=true for RBAC verification" >&2
+    cat "$TMP_DIR/anonymous-status-response.json" >&2 || true
+    exit 1
+fi
 viewer_status_code="$(viewer_status GET /api/hosts)"
 if [ "$viewer_status_code" = "401" ]; then
     echo "ERROR: viewer key was rejected; restart API with BONGSU_VIEWER_API_KEYS mapping this key to ${VIEWER_SUBJECT}" >&2
@@ -264,8 +279,12 @@ allowed_report="$(scan_report_json "$ALLOWED_HOST_ID" "$ALLOWED_CONTAINER_ID" "$
 denied_report="$(scan_report_json "$DENIED_HOST_ID" "$DENIED_CONTAINER_ID" "$(new_uuid)" "denied")"
 agent_json_for_host "$ALLOWED_HOST_ID" POST /api/report "$allowed_report" | jq -e '.status == "ok"' >/dev/null
 agent_json_for_host "$DENIED_HOST_ID" POST /api/report "$denied_report" | jq -e '.status == "ok"' >/dev/null
+allowed_metadata="$(jq -nc '{owner:"security", team:"rbac-allowed", environment:"test", criticality:"medium", tags:"{}"}')"
+denied_metadata="$(jq -nc '{owner:"security", team:"rbac-denied", environment:"test", criticality:"medium", tags:"{}"}')"
+api_json POST "/api/hosts/${ALLOWED_HOST_ID}/metadata" "$allowed_metadata" | jq -e '.team == "rbac-allowed"' >/dev/null
+api_json POST "/api/hosts/${DENIED_HOST_ID}/metadata" "$denied_metadata" | jq -e '.team == "rbac-denied"' >/dev/null
 
-echo "[3/6] Creating viewer subject and host-scoped read policy"
+echo "[3/6] Creating viewer subject and dynamic asset-group read policy"
 subject_type_value="$(subject_type)"
 subject_external_id_value="$(subject_external_id)"
 subjects_json="$(api_json GET /api/admin/rbac/subjects)"
@@ -279,14 +298,22 @@ if ! jq -e --arg t "$subject_type_value" --arg e "$subject_external_id_value" '.
     api_json POST /api/admin/rbac/subjects "$subject_body" | jq -e '.status == "ok"' >/dev/null
     SUBJECT_CREATED=1
 fi
+viewer_subject_query="$(jq -rn --arg v "$VIEWER_SUBJECT" '$v|@uri')"
+stale_policy_ids="$(api_json GET "/api/admin/rbac/policies?subject_external_id=${viewer_subject_query}" | jq -r '.items[]? | select((.id // "") | startswith("policy-rbac-live-")) | .id')"
+while IFS= read -r stale_policy_id; do
+    if [ -n "$stale_policy_id" ]; then
+        api_json DELETE "/api/admin/rbac/policies/${stale_policy_id}" >/dev/null
+    fi
+done <<<"$stale_policy_ids"
 policy_body="$(jq -nc \
     --arg id "$POLICY_ID" \
     --arg subject "$VIEWER_SUBJECT" \
-    --arg host_id "$ALLOWED_HOST_ID" \
-    '{id:$id, subject_external_id:$subject, resource_type:"host", resource_id:$host_id, permission:"read"}')"
+    '{id:$id, subject_external_id:$subject, resource_type:"asset_group", resource_id:"team:rbac-allowed", permission:"read"}')"
 api_json POST /api/admin/rbac/policies "$policy_body" | jq -e '.status == "ok"' >/dev/null
+policies_json="$(api_json GET "/api/admin/rbac/policies?subject_external_id=${viewer_subject_query}")"
+assert_json_arg "$policies_json" id "$POLICY_ID" '.items[] | select(.id == $id and .resource_type == "asset_group" and .resource_id == "team:rbac-allowed")' "admin policy list must include the dynamic asset-group policy"
 
-echo "[4/6] Verifying viewer list endpoints are constrained to the allowed host"
+echo "[4/6] Verifying asset-group policy constrains viewer list endpoints to the allowed host"
 hosts_json="$(viewer_json GET /api/hosts)"
 assert_json_arg "$hosts_json" host "$ALLOWED_HOST_ID" '.[] | select(.id == $host)' "viewer must see the allowed host"
 assert_json_arg "$hosts_json" host "$DENIED_HOST_ID" 'all(.[]; .id != $host)' "viewer must not see the denied host"

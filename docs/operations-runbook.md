@@ -138,7 +138,7 @@ BONGSU_VIEWER_SUBJECT=rbac-live-viewer \
 ./scripts/verify-live-rbac-scope.sh
 ```
 
-This verifier ingests a two-host/two-container fixture and proves that the viewer can see the allowed host, its host and container packages, its container, scans, and scan requests while the denied host and denied container stay hidden or return `403` on explicit denied-host filters.
+This verifier ingests a two-host/two-container fixture, grants the viewer through a dynamic `asset_group` policy such as `team:rbac-allowed`, and proves that the viewer can see the allowed host, its host and container packages, its container, scans, and scan requests while the denied host and denied container stay hidden or return `403` on explicit denied-host filters.
 
 Live CVE DB quality and performance verification:
 

@@ -95,6 +95,7 @@ for keyword in \
     'RBAC' \
     'live RBAC' \
     'two-host/two-container' \
+    'dynamic asset-group' \
     'live CVE DB' \
     'direct DB invariant' \
     'multi-source canonical CVE' \
@@ -170,7 +171,8 @@ for keyword in \
     'verify-live-agent-token-binding\.sh' \
     'verify-release-readiness\.sh' \
     'verify-live-web-smoke\.sh' \
-    'two-host/two-container'
+    'two-host/two-container' \
+    'dynamic `asset_group` policy'
 do
     require_text "$RUNBOOK" "$keyword" "operations runbook missing keyword $keyword"
 done
