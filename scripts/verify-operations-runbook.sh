@@ -66,6 +66,7 @@ for pattern in \
     '\./scripts/verify-airgap-offline-rehearsal\.sh' \
     'BONGSU_DB_DSN="\$BONGSU_DB_DSN"' \
     'BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS' \
+    'BONGSU_VERIFY_CURL_MAX_TIME_SECONDS' \
     'security_db_freshness\.latest_source' \
     'latest_last_update' \
     'TEMP-\*' \

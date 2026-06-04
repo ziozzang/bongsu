@@ -3359,6 +3359,7 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"Checking health and admin metrics observability",
+		`CURL_MAX_TIME="${BONGSU_VERIFY_CURL_MAX_TIME_SECONDS:-45}"`,
 		"health_json=\"$(api_json GET /api/health)\"",
 		".security_db_revision",
 		".security_db_revision_error",
