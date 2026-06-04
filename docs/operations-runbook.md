@@ -357,6 +357,7 @@ The CVE DB is operationally degraded if required sources are missing, `TEMP-*` o
 
 Scrape `/api/admin/metrics` with the admin API key and alert on:
 
+- Any `bongsu_*_metrics_error` gauge greater than zero; increase `BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS` or investigate the failing DB query before trusting the affected metric family.
 - `bongsu_security_db_source_stale` or missing required sources.
 - `bongsu_cve_placeholder_records` greater than zero.
 - `bongsu_cve_affected_index_stale` or low affected-index coverage.

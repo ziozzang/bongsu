@@ -22,7 +22,7 @@ func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	metricsTimeout := envInt("BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS", 10)
+	metricsTimeout := envInt("BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS", 30)
 	if metricsTimeout < 1 {
 		metricsTimeout = 1
 	}

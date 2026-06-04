@@ -247,7 +247,7 @@ func TestAdminMetricsUsesBoundedDatabaseContext(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		`envInt("BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS", 10)`,
+		`envInt("BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS", 30)`,
 		"context.WithTimeout(r.Context(), time.Duration(metricsTimeout)*time.Second)",
 		"s.adminMetrics(ctx)",
 	} {

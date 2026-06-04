@@ -65,6 +65,7 @@ for pattern in \
     '\./scripts/verify-airgap-release-archive\.sh' \
     '\./scripts/verify-airgap-offline-rehearsal\.sh' \
     'BONGSU_DB_DSN="\$BONGSU_DB_DSN"' \
+    'BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS' \
     'security_db_freshness\.latest_source' \
     'latest_last_update' \
     'TEMP-\*' \
@@ -72,6 +73,7 @@ for pattern in \
     'bongsu_security_db_source_stale' \
     'bongsu_cve_placeholder_records' \
     'bongsu_security_db_rescan_open' \
+    'bongsu_\*_metrics_error' \
     'bongsu_agent_fleet_degraded' \
     'bongsu_agent_outdated_percent'
 do
