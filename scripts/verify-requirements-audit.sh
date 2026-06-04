@@ -65,6 +65,7 @@ for command in \
     '\./scripts/verify-live-rbac-scope\.sh' \
     '\./scripts/verify-package-contents\.sh' \
     '\./scripts/verify-airgap-package-smoke\.sh' \
+    '\./scripts/verify-airgap-offline-rehearsal\.sh <generated-bongsu-archive\.tar\.gz>' \
     '\./scripts/verify-installer-smoke\.sh' \
     '\./scripts/verify-static-binaries\.sh' \
     'npm --prefix web run build' \

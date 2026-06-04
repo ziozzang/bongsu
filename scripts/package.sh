@@ -89,6 +89,7 @@ for script in \
     import-security-db-bundle.sh \
     verify-agent-binary-workflow.sh \
     verify-airgap-release-archive.sh \
+    verify-airgap-offline-rehearsal.sh \
     verify-airgap-package-smoke.sh \
     verify-live-cvedb-quality.sh \
     verify-live-rbac-scope.sh \

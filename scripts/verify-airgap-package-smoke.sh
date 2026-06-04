@@ -159,5 +159,6 @@ echo "Version: $VERSION"
 )
 
 "$ROOT/scripts/verify-airgap-release-archive.sh" "$PACKAGE"
+"$ROOT/scripts/verify-airgap-offline-rehearsal.sh" "$PACKAGE"
 
 echo "Airgap package smoke verification passed"

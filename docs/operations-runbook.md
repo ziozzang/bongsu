@@ -67,6 +67,7 @@ Air-gapped deployment:
 ./scripts/package.sh 0.1.0
 sha256sum -c bongsu-0.1.0.tar.gz.sha256
 ./scripts/verify-airgap-release-archive.sh bongsu-0.1.0.tar.gz
+./scripts/verify-airgap-offline-rehearsal.sh bongsu-0.1.0.tar.gz
 # Transfer bongsu-0.1.0.tar.gz and a security DB bundle into the offline network.
 tar xzf bongsu-0.1.0.tar.gz
 cd bongsu-0.1.0

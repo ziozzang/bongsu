@@ -75,6 +75,7 @@ This handoff commit should include:
 - Live CVE DB quality verifier checks production-scale source count, matchability, EPSS enrichment, affected/reference index health, placeholder rejection, affected package evidence, reference grouping, and endpoint responsiveness.
 - Live RBAC scope verifier ingests allowed and denied host/container fixtures, creates a viewer subject and host-scoped policy, then verifies viewer-key access filters hosts, packages, containers, scans, and scan requests.
 - Airgap package smoke verifier runs `scripts/package.sh` end-to-end with lightweight `go`/`npm`/`docker` stubs, then validates the generated `bongsu-*.tar.gz`.
+- Airgap offline rehearsal verifier extracts a generated package, checks checksums, rehearses `load-images.sh` with a Docker-load stub, renders packaged airgap compose with real `docker compose config`, and checks import/export script targets.
 - Airgap release archive verifier unpacks a generated `bongsu-*.tar.gz`, checks outer and inner SHA256 manifests, required files, executable/static binaries, Docker image tarballs, loader script, runbook/audit references, and airgap compose invariants.
 - Frontend API contract fixes for schedules (`{items}` response plus `packages_only`) and asset groups (`rule_type` instead of stale `group_type`).
 - Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
@@ -194,6 +195,7 @@ go test ./...
 ./scripts/verify-package-contents.sh
 ./scripts/verify-airgap-package-smoke.sh
 ./scripts/verify-airgap-release-archive.sh <generated-bongsu-archive.tar.gz>
+./scripts/verify-airgap-offline-rehearsal.sh <generated-bongsu-archive.tar.gz>
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
