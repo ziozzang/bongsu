@@ -1279,6 +1279,11 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 		"agent_version_drift_counts?: Record<string, number>",
 		"latest_agent_version?: string",
 		"installerStatus: () => request<InstallerStatus>('/admin/installer/status')",
+		"SecurityDbOperationalStatus",
+		"AgentFleetStatus",
+		"recommended_actions?: string[]",
+		"securityDbStatus: () => request<SecurityDbOperationalStatus>('/admin/security-db/status')",
+		"agentFleetStatus: () => request<AgentFleetStatus>('/admin/agent-fleet/status')",
 	} {
 		if !strings.Contains(string(webAPI), want) {
 			t.Fatalf("web installer status API missing %q", want)
@@ -1292,7 +1297,11 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 		"installerStatus.trivy.ready",
 		"Agent Version",
 		"Agent Version Drift",
-		"stats?.agent_version_drift_counts?.outdated",
+		"agentVersionDriftCounts.outdated",
+		"agentFleetStatus?.agent_version_drift_counts",
+		"Agent fleet:",
+		"securityDbStatus?.warnings",
+		"Security DB:",
 		"outdatedAgentCount",
 		"unknownAgentVersionCount",
 		"dashboardHosts.filter",

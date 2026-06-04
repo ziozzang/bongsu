@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -363,11 +363,13 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [cveSources, setCveSources] = useState<CveSourceStat[]>([]);
   const [cveRematchPolicy, setCveRematchPolicy] = useState<CveRematchPolicy | null>(null);
   const [cveAffectedIndex, setCveAffectedIndex] = useState<HealthStatus['cve_affected_package_index'] | null>(null);
-  const [cveReferenceIndex, setCveReferenceIndex] = useState<CveDbStatsResponse['reference_key_index'] | null>(null);
+  const [cveReferenceIndex, setCveReferenceIndex] = useState<HealthStatus['cve_reference_key_index'] | CveDbStatsResponse['reference_key_index'] | null>(null);
   const [cveEpssMerge, setCveEpssMerge] = useState<CveEpssMergeStats | null>(null);
   const [cveDbQuality, setCveDbQuality] = useState<CveDbQuality | null>(null);
   const [cveStatsMeta, setCveStatsMeta] = useState<Pick<CveDbStatsResponse, 'cache_status' | 'generated_at' | 'durations_ms'> | null>(null);
   const [installerStatus, setInstallerStatus] = useState<InstallerStatus | null>(null);
+  const [securityDbStatus, setSecurityDbStatus] = useState<SecurityDbOperationalStatus | null>(null);
+  const [agentFleetStatus, setAgentFleetStatus] = useState<AgentFleetStatus | null>(null);
   const [dashboardHosts, setDashboardHosts] = useState<Host[]>([]);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
   const [inventoryCounts, setInventoryCounts] = useState<Record<string, number>>({});
@@ -400,6 +402,16 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setCveDbQuality(r.cve_db_quality || null);
     setCveStatsMeta({ cache_status: r.cache_status, generated_at: r.generated_at, durations_ms: r.durations_ms });
   }, []);
+  const applySecurityDbStatus = useCallback((r: SecurityDbOperationalStatus) => {
+    setSecurityDbStatus(r);
+    setSecurityDbConfigured(!!r.security_db?.configured);
+    if (r.cve_affected_package_index) setCveAffectedIndex(r.cve_affected_package_index);
+    if (r.cve_reference_key_index) setCveReferenceIndex(r.cve_reference_key_index);
+    if (r.cve_db_quality) setCveDbQuality(r.cve_db_quality);
+  }, []);
+  const refreshSecurityDbStatus = useCallback(() => {
+    api.securityDbStatus().then(applySecurityDbStatus).catch(() => {});
+  }, [applySecurityDbStatus]);
 
   useEffect(() => { api.stats().then(setStats).catch(() => {}); }, []);
   useEffect(() => {
@@ -409,7 +421,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       setCveAffectedIndex(h.cve_affected_package_index || null);
       setCveDbQuality(h.cve_db_quality || null);
     }).catch(() => {});
-  }, [updating]);
+    refreshSecurityDbStatus();
+  }, [updating, refreshSecurityDbStatus]);
   useEffect(() => {
     if (!health?.cve_reference_index_rebuild?.running && !health?.cve_affected_index_rebuild?.running) return;
     const timer = window.setInterval(() => {
@@ -420,12 +433,18 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         setCveDbQuality(h.cve_db_quality || null);
       }).catch(() => {});
       api.cveDbStats().then(applyCveStats).catch(() => {});
+      refreshSecurityDbStatus();
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [health?.cve_reference_index_rebuild?.running, health?.cve_affected_index_rebuild?.running, applyCveStats]);
+  }, [health?.cve_reference_index_rebuild?.running, health?.cve_affected_index_rebuild?.running, applyCveStats, refreshSecurityDbStatus]);
   useEffect(() => {
     api.cveDbStats().then(applyCveStats).catch(() => {});
     api.installerStatus().then(setInstallerStatus).catch(() => {});
+    api.securityDbStatus().then(applySecurityDbStatus).catch(() => {});
+    api.agentFleetStatus().then(r => {
+      setAgentFleetStatus(r);
+      if (r.installer) setInstallerStatus(r.installer);
+    }).catch(() => {});
     api.packages({ limit: '1' }).then(r => setTotalPkgs(r.total)).catch(() => {});
     api.hosts().then(items => {
       setDashboardHosts(items || []);
@@ -473,6 +492,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       await api.updateSecurityDB();
       setUpdateMsg('Security sources sync started/completed');
       api.cveDbStats().then(applyCveStats).catch(() => {});
+      refreshSecurityDbStatus();
     } catch {
       setUpdateMsg('Security source sync failed or is not configured');
     }
@@ -498,6 +518,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       }
       api.rawHealth().then(setHealth).catch(() => {});
       api.cveDbStats().then(applyCveStats).catch(() => {});
+      refreshSecurityDbStatus();
     } catch {
       setUpdateMsg('Affected package index rebuild failed');
     }
@@ -522,6 +543,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       }
       api.rawHealth().then(setHealth).catch(() => {});
       api.cveDbStats().then(applyCveStats).catch(() => {});
+      refreshSecurityDbStatus();
     } catch {
       setUpdateMsg('Reference key index rebuild failed');
     }
@@ -604,6 +626,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       ? 'var(--medium)'
       : 'var(--low)';
   const cveQualityWarnings = cveDbQuality?.warnings || [];
+  const securityDbWarnings = securityDbStatus?.warnings || [];
+  const securityDbActions = securityDbStatus?.recommended_actions || [];
   const cveStatsCacheStatus = cveStatsMeta?.cache_status || 'unknown';
   const cveStatsGeneratedAt = cveStatsMeta?.generated_at ? new Date(cveStatsMeta.generated_at).toLocaleString() : 'not loaded';
   const cveStatsDuration = cveStatsMeta?.durations_ms?.total;
@@ -718,10 +742,14 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const effectiveInventoryCounts = stats?.inventory_status_counts || inventoryCounts;
   const inventoryCoveragePercent = stats?.inventory_coverage_percent ?? 0;
   const inventoryFreshPercent = stats?.inventory_fresh_percent ?? 0;
-  const latestAgentVersion = stats?.latest_agent_version || installerStatus?.agent?.version || '';
-  const currentAgentCount = stats?.agent_version_drift_counts?.current ?? (latestAgentVersion ? dashboardHosts.filter(h => h.agent_version === latestAgentVersion).length : 0);
-  const outdatedAgentCount = stats?.agent_version_drift_counts?.outdated ?? (latestAgentVersion ? dashboardHosts.filter(h => h.agent_version && h.agent_version !== latestAgentVersion).length : 0);
-  const unknownAgentVersionCount = stats?.agent_version_drift_counts?.unknown ?? dashboardHosts.filter(h => !h.agent_version).length;
+  const agentFleetWarnings = agentFleetStatus?.warnings || [];
+  const agentFleetActions = agentFleetStatus?.recommended_actions || [];
+  const agentVersionDriftCounts = agentFleetStatus?.agent_version_drift_counts || stats?.agent_version_drift_counts || {};
+  const latestAgentVersion = agentFleetStatus?.latest_agent_version || stats?.latest_agent_version || installerStatus?.agent?.version || '';
+  const currentAgentCount = agentVersionDriftCounts.current ?? (latestAgentVersion ? dashboardHosts.filter(h => h.agent_version === latestAgentVersion).length : 0);
+  const outdatedAgentCount = agentVersionDriftCounts.outdated ?? (latestAgentVersion ? dashboardHosts.filter(h => h.agent_version && h.agent_version !== latestAgentVersion).length : 0);
+  const unknownAgentVersionCount = agentVersionDriftCounts.unknown ?? dashboardHosts.filter(h => !h.agent_version).length;
+  const agentFleetOutdatedPercent = agentFleetStatus?.outdated_percent ?? (dashboardHosts.length ? (outdatedAgentCount / dashboardHosts.length) * 100 : 0);
   const inventoryCoverageColor = inventoryCoveragePercent < 70
     ? 'var(--critical)'
     : inventoryCoveragePercent < 90
@@ -736,6 +764,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       const revisionMsg = r.security_db_revision ? `, DB rev ${r.security_db_revision}` : r.security_db_revision_error ? ', DB revision unavailable' : '';
       setCvssRecalcMsg(`Recalculated ${r.updated.toLocaleString()} CVSS records${revisionMsg}`);
       api.cveDbStats().then(applyCveStats).catch(() => {});
+      refreshSecurityDbStatus();
     } catch {
       setCvssRecalcMsg('CVSS recalculation failed or requires admin API key');
     }
@@ -750,6 +779,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       const revisionMsg = r.security_db_revision ? `, DB rev ${r.security_db_revision}` : r.security_db_revision_error ? ', DB revision unavailable' : '';
       setSecurityRecalcMsg(`Security recalculation ${r.status}${revisionMsg}`);
       api.rawHealth().then(setHealth).catch(() => {});
+      refreshSecurityDbStatus();
     } catch {
       setSecurityRecalcMsg('Security recalculation queue failed or requires admin API key');
     }
@@ -804,6 +834,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       }).catch(() => {});
       api.cveDbStats().then(applyCveStats).catch(() => {});
       api.stats().then(setStats).catch(() => {});
+      refreshSecurityDbStatus();
     } catch {
       setSecurityBundleMsg('Security DB bundle import failed or requires admin API key');
     }
@@ -837,6 +868,16 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
               <span className="badge" style={{ color: installerStatus.trivy.ready ? 'var(--low)' : 'var(--medium)' }}>
                 trivy {installerStatus.trivy.ready ? `${Math.round((installerStatus.trivy.bytes || 0) / 1024 / 1024)}MB` : installerStatus.trivy.error || 'optional'}
               </span>
+            </div>
+          )}
+          {agentFleetWarnings.length > 0 && (
+            <div style={{ marginTop: '0.5rem', color: 'var(--medium)', fontSize: '0.8125rem' }}>
+              Agent fleet: {agentFleetWarnings.slice(0, 2).join('; ')}{agentFleetWarnings.length > 2 ? `; +${agentFleetWarnings.length - 2} more` : ''}
+            </div>
+          )}
+          {agentFleetActions.length > 0 && (
+            <div style={{ marginTop: '0.25rem', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+              Action: {agentFleetActions[0]}
             </div>
           )}
         </div>
@@ -995,7 +1036,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             {outdatedAgentCount}
           </button>
           <div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-            current {currentAgentCount} / unknown {unknownAgentVersionCount}
+            current {currentAgentCount} / unknown {unknownAgentVersionCount}{agentFleetStatus ? ` / ${agentFleetOutdatedPercent.toFixed(1)}% outdated` : ''}
           </div>
         </div>
         <div className="stat-card">
@@ -1460,6 +1501,8 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
       {health?.security_db?.last_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security sources: {health.security_db.last_error}</div>}
       {health?.security_db_revision_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB revision: {health.security_db_revision_error}</div>}
       {health?.security_db_freshness?.error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--critical)' }}>Security DB freshness: {health.security_db_freshness.error}</div>}
+      {securityDbWarnings.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: securityDbStatus?.status === 'degraded' ? 'var(--critical)' : 'var(--medium)' }}>Security DB: {securityDbWarnings.slice(0, 3).join('; ')}{securityDbWarnings.length > 3 ? `; +${securityDbWarnings.length - 3} more` : ''}</div>}
+      {securityDbActions.length > 0 && <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Action: {securityDbActions.slice(0, 2).join('; ')}</div>}
       {cveQualityWarnings.length > 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: cveQualityStatus === 'degraded' ? 'var(--critical)' : 'var(--medium)' }}>CVE DB quality: {cveQualityWarnings.slice(0, 3).join(', ')}{cveQualityWarnings.length > 3 ? `, +${cveQualityWarnings.length - 3} more` : ''}</div>}
       {cveAffectedIndex?.detail_error && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--medium)' }}>Affected index detailed stats delayed; showing indexed-only health snapshot.</div>}
       {cveEpssMerge && cveEpssMerge.epss_cves > 0 && cveEpssMerge.enriched_records === 0 && <div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--high)' }}>EPSS source is loaded but no non-EPSS CVE rows are enriched.</div>}

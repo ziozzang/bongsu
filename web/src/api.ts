@@ -781,6 +781,33 @@ export interface InstallerStatus {
   trivy: InstallerBinaryStatus;
 }
 
+export interface SecurityDbOperationalStatus {
+  status: string;
+  warnings?: string[];
+  recommended_actions?: string[];
+  security_db?: HealthStatus['security_db'];
+  security_db_freshness?: HealthStatus['security_db_freshness'];
+  security_db_revision?: string;
+  security_db_revision_error?: string;
+  security_recalculation?: HealthStatus['security_recalculation'];
+  cve_db_quality?: CveDbQuality;
+  cve_affected_package_index?: HealthStatus['cve_affected_package_index'];
+  cve_reference_key_index?: HealthStatus['cve_reference_key_index'];
+}
+
+export interface AgentFleetStatus {
+  status: string;
+  total_hosts?: number;
+  outdated_percent?: number;
+  warnings?: string[];
+  recommended_actions?: string[];
+  agent_status_counts?: Record<string, number>;
+  agent_version_counts?: Record<string, number>;
+  agent_version_drift_counts?: Record<string, number>;
+  latest_agent_version?: string;
+  installer?: InstallerStatus;
+}
+
 // Phase 3: Fleet Management
 
 export interface ScheduledScan {
@@ -997,6 +1024,8 @@ export const api = {
   stats: () => request<Stats>('/stats'),
   rawHealth: () => request<HealthStatus>('/health'),
   installerStatus: () => request<InstallerStatus>('/admin/installer/status'),
+  securityDbStatus: () => request<SecurityDbOperationalStatus>('/admin/security-db/status'),
+  agentFleetStatus: () => request<AgentFleetStatus>('/admin/agent-fleet/status'),
   deleteScan: (id: string, force = false) => request<{status: string}>(`/scans/${id}`, force ? { force: 'true' } : undefined, 'DELETE'),
   auditLogs: (params: { actor_type?: string; actor_id?: string; action?: string; resource_type?: string; resource_id?: string; status?: string; created_from?: string; created_to?: string; limit?: string; offset?: string }) =>
     request<{ items: AuditLog[]; total: number }>('/admin/audit-logs', params),
