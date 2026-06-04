@@ -136,8 +136,21 @@ for i in $(seq 1 "$STATS_REQUESTS"); do
 done
 assert_request_ok "status"
 assert_json_ok "status"
-if ! jq -e '(.status // "") == "ok" and (.cve_db_quality.status // "") == "ok"' "$TMP_DIR/status.body" >/dev/null; then
-    echo "ERROR: security DB status is not ok after concurrent CVE DB observability requests" >&2
+if ! jq -e '
+  (.status // "") == "ok"
+  and ((.cve_db_quality.status // "") == "ok" or (.cve_db_quality.status // "") == "warning")
+  and (
+    (.cve_db_quality.status // "") == "ok"
+    or (
+      ((.cve_db_quality.warnings // []) | length) > 0
+      and (
+        (.cve_db_quality.affected_index_summary_mode // "") == "indexed-only"
+        or (.cve_db_quality.reference_index_summary_mode // "") == "indexed-only"
+      )
+    )
+  )
+' "$TMP_DIR/status.body" >/dev/null; then
+    echo "ERROR: security DB status is not usable after concurrent CVE DB observability requests" >&2
     jq . "$TMP_DIR/status.body" >&2 || cat "$TMP_DIR/status.body" >&2
     exit 1
 fi

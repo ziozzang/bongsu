@@ -3219,12 +3219,16 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 		"staleSource?.age_seconds",
 		"missing last update",
 		">stale</span>",
+		"cveDbQuality?.affected_index_detail_error",
+		"cveDbQuality?.reference_index_detail_error",
+		"Affected index quality:",
+		"Reference index quality:",
 	} {
 		if !strings.Contains(appBody, want) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
@@ -3886,6 +3890,35 @@ func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t
 	}
 }
 
+func TestOpenAPIDocumentsCveDbQualityPartialIndexFields(t *testing.T) {
+	for _, path := range []string{
+		"../../../internal/server/api/openapi.yaml",
+		"../../../docs/openapi.yaml",
+	} {
+		t.Run(path, func(t *testing.T) {
+			out, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := string(out)
+			for _, want := range []string{
+				"CveDbQuality:",
+				"enum: [ok, warning, degraded]",
+				"Partial index snapshots use status=warning",
+				"affected_index_summary_mode:",
+				"affected_index_detail_error:",
+				"reference_index_summary_mode:",
+				"reference_index_detail_error:",
+				"epss_non_epss_coverage_percent:",
+			} {
+				if !strings.Contains(body, want) {
+					t.Fatalf("OpenAPI CVE DB quality schema missing %q in %s", want, path)
+				}
+			}
+		})
+	}
+}
+
 func TestLiveCveDbConcurrencyVerifierChecksConcurrentObservability(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-live-cvedb-concurrency.sh")
 	if err != nil {
@@ -3898,7 +3931,9 @@ func TestLiveCveDbConcurrencyVerifierChecksConcurrentObservability(t *testing.T)
 		`/api/admin/security-db/status`,
 		`/api/admin/metrics`,
 		`assert_json_ok "stats${i}"`,
-		`(.status // "") == "ok" and (.cve_db_quality.status // "") == "ok"`,
+		`(.cve_db_quality.status // "") == "ok" or (.cve_db_quality.status // "") == "warning"`,
+		`(.cve_db_quality.affected_index_summary_mode // "") == "indexed-only"`,
+		`(.cve_db_quality.reference_index_summary_mode // "") == "indexed-only"`,
 		`assert_metrics_ok`,
 		`assert_no_new_shared_memory_errors`,
 		`shared memory|could not resize|No space left on device|pq: .*53100`,

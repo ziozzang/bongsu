@@ -610,9 +610,17 @@ export interface CveDbQuality {
   affected_index_coverage_percent?: number;
   affected_index_orphans?: number;
   affected_index_stale?: boolean;
+  affected_index_summary_mode?: string;
+  affected_index_indexed_cves?: number;
+  affected_index_records?: number;
+  affected_index_detail_error?: string;
   reference_index_coverage_percent?: number;
   reference_index_orphans?: number;
   reference_index_stale?: boolean;
+  reference_index_summary_mode?: string;
+  reference_index_indexed_cves?: number;
+  reference_index_records?: number;
+  reference_index_detail_error?: string;
   epss_merge_coverage_percent?: number;
   epss_non_epss_coverage_percent?: number;
   placeholder_stats_error?: string;

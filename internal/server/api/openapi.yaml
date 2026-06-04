@@ -3654,6 +3654,76 @@ components:
           type: string
           example: ok
 
+    CveDbQuality:
+      type: object
+      description: CVE database quality summary. Partial index snapshots use status=warning and expose summary_mode/detail_error fields instead of unknown coverage/stale values.
+      properties:
+        status:
+          type: string
+          enum: [ok, warning, degraded]
+        warnings:
+          type: array
+          items:
+            type: string
+        warning_count:
+          type: integer
+        total_records:
+          type: integer
+        total_matchable:
+          type: integer
+        eligible_sources:
+          type: integer
+        excluded_sources:
+          type: integer
+        temporary_placeholders:
+          type: integer
+        empty_vulnerability_ids:
+          type: integer
+        empty_sources:
+          type: integer
+        affected_index_coverage_percent:
+          type: number
+        affected_index_orphans:
+          type: integer
+        affected_index_stale:
+          type: boolean
+        affected_index_summary_mode:
+          type: string
+          enum: [indexed-only]
+        affected_index_indexed_cves:
+          type: integer
+        affected_index_records:
+          type: integer
+        affected_index_detail_error:
+          type: string
+        reference_index_coverage_percent:
+          type: number
+        reference_index_orphans:
+          type: integer
+        reference_index_stale:
+          type: boolean
+        reference_index_summary_mode:
+          type: string
+          enum: [indexed-only]
+        reference_index_indexed_cves:
+          type: integer
+        reference_index_records:
+          type: integer
+        reference_index_detail_error:
+          type: string
+        epss_merge_coverage_percent:
+          type: number
+        epss_non_epss_coverage_percent:
+          type: number
+        placeholder_stats_error:
+          type: string
+        affected_index_error:
+          type: string
+        reference_index_error:
+          type: string
+        epss_merge_error:
+          type: string
+
     # ── Health ────────────────────────────────────────────────────────
 
     HealthResponse:
