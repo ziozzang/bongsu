@@ -1412,6 +1412,7 @@ func TestLiveVerifiersCleanUpFixtureHosts(t *testing.T) {
 		"../../../scripts/verify-operator-workflow.sh",
 		"../../../scripts/verify-live-rbac-scope.sh",
 		"../../../scripts/verify-live-agent-token-binding.sh",
+		"../../../scripts/verify-live-scan-request-recovery.sh",
 		"../../../scripts/verify-agent-binary-workflow.sh",
 	} {
 		out, err := os.ReadFile(path)
@@ -1450,6 +1451,7 @@ func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
 		"../../../scripts/verify-live-cvedb-concurrency.sh",
 		"../../../scripts/verify-live-installer-payload.sh",
 		"../../../scripts/verify-live-server-build.sh",
+		"../../../scripts/verify-live-scan-request-recovery.sh",
 		"../../../scripts/verify-live-web-smoke.sh",
 	} {
 		out, err := os.ReadFile(path)
@@ -3696,6 +3698,28 @@ func TestRestoreScriptVerifiesBackupSidecarChecksum(t *testing.T) {
 	}
 }
 
+func TestLiveScanRequestRecoveryVerifierChecksStaleRequeue(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-scan-request-recovery.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_DB_DSN is required for stale scan-request recovery verification`,
+		`/api/scan-requests/requeue-stale`,
+		`claimed_at = now() - interval '2 hours'`,
+		`status=claimed&stale=true`,
+		`.claim_stale == true`,
+		`"requeued after claim timeout"`,
+		`/api/admin/audit-logs?action=scan_request.requeue_stale`,
+		`Live scan request recovery verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live scan request recovery verifier missing %q", want)
+		}
+	}
+}
+
 func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-live-cvedb-quality.sh")
 	if err != nil {
@@ -3764,6 +3788,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`env -u BONGSU_DB_PASSWORD -u BONGSU_API_KEY -u BONGSU_AGENT_API_KEY -u BONGSU_INSTALL_TOKEN ./scripts/verify-deploy-config.sh`,
 		`./scripts/verify-live-server-build.sh`,
 		`./scripts/verify-live-installer-payload.sh`,
+		`./scripts/verify-live-scan-request-recovery.sh`,
 		`BONGSU_DB_DSN is required for live release readiness`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh`,
 		`./scripts/verify-live-cvedb-concurrency.sh`,

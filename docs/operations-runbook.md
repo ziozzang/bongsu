@@ -36,6 +36,7 @@ It verifies the live API server build first: `/api/health` must expose a non-emp
 It also verifies the live one-line installer payload: `/api/admin/installer/status` must report ready agent and Trivy binaries, valid SHA256 metadata, an install token, and an agent version containing the latest agent/installer source commit.
 It verifies the live security DB schedule with `./scripts/verify-live-security-db-schedule.sh`: `/api/health` must show configured source sync, healthy persisted freshness, and a `next_sync` timestamp no later than the latest persisted CVE source update plus `security_db.interval` and a small grace window. This catches API restarts that would otherwise delay the required 6-hour OSV/NVD/Trivy refresh cadence.
 It verifies CVE DB observability under concurrent operator load with `./scripts/verify-live-cvedb-concurrency.sh`: multiple forced stats refreshes, admin security DB status, and admin metrics must complete with `2xx` responses, valid JSON or Prometheus bodies, healthy CVE DB quality, and no new PostgreSQL shared-memory errors in the API log.
+It verifies stale scan-request recovery with `./scripts/verify-live-scan-request-recovery.sh`: a fixture host-specific request is claimed, aged in PostgreSQL, surfaced by the stale request filter, requeued through `/api/scan-requests/requeue-stale`, audited, and proven claimable again.
 
 Individual gates remain useful while debugging:
 
@@ -53,6 +54,7 @@ go test ./...
 ./scripts/verify-live-security-db-schedule.sh
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-live-cvedb-concurrency.sh
+./scripts/verify-live-scan-request-recovery.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
 npm --prefix web run test:e2e
@@ -433,7 +435,7 @@ curl -fsS -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/
   -d '{"timeout_minutes":60}' http://localhost:5677/api/scan-requests/requeue-stale
 ```
 
-3. Verify agent daemon service status on affected hosts.
+3. Verify agent daemon service status on affected hosts. `./scripts/verify-live-scan-request-recovery.sh` exercises this stale-claim path against a fixture request when `BONGSU_DB_DSN` is available.
 
 Compromised or reinstalled host agent:
 

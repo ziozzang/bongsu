@@ -109,6 +109,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-live-cvedb-quality.sh" \
     "$ROOT_DIR/scripts/verify-live-installer-payload.sh" \
     "$ROOT_DIR/scripts/verify-live-rbac-scope.sh" \
+    "$ROOT_DIR/scripts/verify-live-scan-request-recovery.sh" \
     "$ROOT_DIR/scripts/verify-live-security-db-schedule.sh" \
     "$ROOT_DIR/scripts/verify-live-server-build.sh" \
     "$ROOT_DIR/scripts/verify-live-web-smoke.sh" \
