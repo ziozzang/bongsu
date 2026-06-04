@@ -3726,10 +3726,17 @@ func TestRestoreScriptVerifiesBackupSidecarChecksum(t *testing.T) {
 	}
 	verifierBody := string(verifier)
 	for _, want := range []string{
+		"backup.sh produces a restorable archive and sidecar checksum",
+		`PATH="$backup_bin_dir:$PATH"`,
+		`"$ROOT/scripts/backup.sh" "$backup_archive"`,
+		`grep -q '"database": "bongsu_fixture"'`,
+		`grep -q '"trivy_cache_included": true'`,
+		`expect_restore_ok "$backup_archive"`,
 		"Archive sidecar checksum mismatch is rejected",
 		`sha256sum "$valid_archive" > "${valid_archive}.sha256"`,
 		"0000000000000000000000000000000000000000000000000000000000000000",
 		`expect_restore_fail "$sidecar_archive" "archive checksum"`,
+		"Symlink archive members are rejected",
 	} {
 		if !strings.Contains(verifierBody, want) {
 			t.Fatalf("backup/restore verifier must cover sidecar checksums, missing %q", want)
