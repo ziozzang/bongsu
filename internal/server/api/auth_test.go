@@ -1898,6 +1898,9 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		"securityDBRevisionMeta(dbCtx)",
 		"securityDbStatusQuality",
 		"enrichSecurityDBManagerStatus(out[\"security_db\"], freshness)",
+		"securityDBOperationalGuidance",
+		`out["warnings"]`,
+		`out["recommended_actions"]`,
 		`out["cve_db_quality"]`,
 		`out["cve_affected_package_index"]`,
 		`out["cve_reference_key_index"]`,
@@ -1909,6 +1912,52 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("security DB status endpoint missing %q", want)
 		}
+	}
+}
+
+func TestSecurityDBOperationalGuidanceSurfacesActionableProblems(t *testing.T) {
+	warnings, actions := securityDBOperationalGuidance(
+		map[string]any{
+			"configured":          true,
+			"status":              "never",
+			"last_sync_persisted": "2026-06-04T05:31:32Z",
+			"last_error":          "curl failed",
+		},
+		map[string]any{
+			"status":          "stale",
+			"missing_sources": []string{"trivy"},
+			"stale_sources": []map[string]any{
+				{"source": "trivy"},
+			},
+		},
+		map[string]any{"status": "warning"},
+		true,
+	)
+	for _, want := range []string{
+		"security DB freshness check timed out",
+		"last security DB sync attempt failed",
+		"sync manager has not completed since this process started",
+		"one or more security DB sources are stale",
+		"missing security DB sources: trivy",
+		"stale security DB sources: trivy",
+		"CVE DB quality status is warning",
+	} {
+		if !containsString(warnings, want) {
+			t.Fatalf("warnings missing %q: %#v", want, warnings)
+		}
+	}
+	if len(actions) != len(warnings) {
+		t.Fatalf("actions should track warnings, warnings=%#v actions=%#v", warnings, actions)
+	}
+
+	warnings, actions = securityDBOperationalGuidance(
+		map[string]any{"configured": true, "status": "ok"},
+		map[string]any{"status": "ok", "missing_sources": []string{}, "stale_sources": []map[string]any{}},
+		map[string]any{"status": "ok"},
+		false,
+	)
+	if len(warnings) != 0 || len(actions) != 0 {
+		t.Fatalf("healthy guidance warnings=%#v actions=%#v", warnings, actions)
 	}
 }
 

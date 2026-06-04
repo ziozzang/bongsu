@@ -229,6 +229,9 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 			out["status"] = "degraded"
 		}
 	}
+	warnings, actions := securityDBOperationalGuidance(out["security_db"], freshness, cveQuality, freshnessTimedOut)
+	out["warnings"] = warnings
+	out["recommended_actions"] = actions
 
 	writeJSON(w, http.StatusOK, out)
 }
@@ -335,6 +338,89 @@ func enrichSecurityDBManagerStatus(status any, freshness map[string]any) {
 			m["status_detail"] = "process has not run a sync since startup; using persisted CVE DB freshness"
 			m["last_sync_persisted"] = latest
 		}
+	}
+}
+
+func securityDBOperationalGuidance(manager any, freshness, quality map[string]any, freshnessTimedOut bool) ([]string, []string) {
+	warnings := []string{}
+	actions := []string{}
+	add := func(warning, action string) {
+		if warning != "" {
+			warnings = append(warnings, warning)
+		}
+		if action != "" {
+			actions = append(actions, action)
+		}
+	}
+	if freshnessTimedOut {
+		add("security DB freshness check timed out", "increase BONGSU_HEALTH_DB_TIMEOUT_SECONDS or inspect database load")
+	}
+	if m, ok := manager.(map[string]any); ok {
+		if configured, ok := m["configured"].(bool); ok && !configured {
+			add("security DB sync command is not configured", "set BONGSU_SECURITY_DB_SYNC_CMD for connected environments or use import/export in air-gapped environments")
+		}
+		if rawErr, ok := m["last_error"]; ok {
+			if errText := strings.TrimSpace(fmt.Sprint(rawErr)); errText != "" {
+				add("last security DB sync attempt failed", "inspect security_db.last_error and rerun /api/admin/security-db/update after fixing the source")
+			}
+		}
+		if status, _ := m["status"].(string); status == "never" {
+			if _, ok := m["last_sync_persisted"]; ok {
+				add("sync manager has not completed since this process started", "use persisted freshness for current DB state or trigger /api/admin/security-db/update to refresh now")
+			}
+		}
+	}
+	if freshness != nil {
+		switch status, _ := freshness["status"].(string); status {
+		case "missing_sources":
+			add("one or more required security DB sources are missing", "run the connected sync or import an air-gapped bundle containing all required sources")
+		case "stale":
+			add("one or more security DB sources are stale", "refresh stale sources or import a newer security DB bundle")
+		case "empty":
+			add("security DB has no source records", "run the connected sync or import a security DB bundle before relying on matching")
+		case "error":
+			add("security DB freshness check failed", "inspect security_db_freshness.error and database connectivity")
+		case "unavailable":
+			add("security DB database handle is unavailable", "check server database configuration")
+		}
+		if missing, ok := freshness["missing_sources"].([]string); ok && len(missing) > 0 {
+			add("missing security DB sources: "+strings.Join(missing, ", "), "include these sources in the next connected sync or air-gap import")
+		}
+		staleNames := staleSecurityDBSourceNames(freshness["stale_sources"])
+		if len(staleNames) > 0 {
+			add("stale security DB sources: "+strings.Join(staleNames, ", "), "refresh these sources before running fleet-wide rematch decisions")
+		}
+	}
+	if quality != nil {
+		if status, _ := quality["status"].(string); status == "degraded" || status == "warning" {
+			add("CVE DB quality status is "+status, "inspect cve_db_quality warnings and rebuild affected/reference indexes if needed")
+		}
+	}
+	return warnings, actions
+}
+
+func staleSecurityDBSourceNames(v any) []string {
+	switch items := v.(type) {
+	case []map[string]any:
+		out := make([]string, 0, len(items))
+		for _, item := range items {
+			if source := strings.TrimSpace(fmt.Sprint(item["source"])); source != "" {
+				out = append(out, source)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(items))
+		for _, raw := range items {
+			if item, ok := raw.(map[string]any); ok {
+				if source := strings.TrimSpace(fmt.Sprint(item["source"])); source != "" {
+					out = append(out, source)
+				}
+			}
+		}
+		return out
+	default:
+		return []string{}
 	}
 }
 

@@ -2437,6 +2437,14 @@ paths:
                   status:
                     type: string
                     example: ok
+                  warnings:
+                    type: array
+                    items:
+                      type: string
+                  recommended_actions:
+                    type: array
+                    items:
+                      type: string
                   timeout_seconds:
                     type: integer
                   security_db:
