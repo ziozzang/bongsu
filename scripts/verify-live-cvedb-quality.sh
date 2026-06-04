@@ -175,6 +175,18 @@ assert_db_at_least() {
     fi
 }
 
+assert_db_equals() {
+    local sql="$1"
+    local want="$2"
+    local message="$3"
+    local value
+    value="$(db_scalar "$sql")"
+    if [ "$value" != "$want" ]; then
+        echo "ERROR: ${message}; got ${value}, want ${want}" >&2
+        exit 1
+    fi
+}
+
 http_last_modified_epoch() {
     local url="$1"
     local header_file="$2"
@@ -397,6 +409,56 @@ assert_jq "$placeholder_json" 'all(.items[]?; ((.vulnerability_id // "") | start
 echo "[7/7] Checking direct CVE DB invariants"
 if prepare_db_checks; then
     echo "Using ${PSQL_MODE} psql for direct DB checks"
+    health_json="$TMP_DIR/health.json"
+    health_time="$TMP_DIR/health.time"
+    api_get_json "/api/health" "$health_json" "$health_time"
+    health_latest_source="$(jq -r '.security_db_freshness.latest_source // ""' "$health_json")"
+    health_latest_epoch="$(jq -r '(.security_db_freshness.latest_last_update // empty) | if . == "" then "" else fromdateiso8601 | tostring end' "$health_json")"
+    db_latest_source="$(db_scalar "
+SELECT id
+FROM security_sources
+WHERE id IN (SELECT DISTINCT source FROM cve_database WHERE source != '')
+  AND last_sync_finished_at IS NOT NULL
+ORDER BY last_sync_finished_at DESC, id
+LIMIT 1")"
+    db_latest_epoch="$(db_scalar "
+SELECT floor(extract(epoch FROM last_sync_finished_at))::bigint
+FROM security_sources
+WHERE id IN (SELECT DISTINCT source FROM cve_database WHERE source != '')
+  AND last_sync_finished_at IS NOT NULL
+ORDER BY last_sync_finished_at DESC, id
+LIMIT 1")"
+    if [ "$health_latest_source" != "$db_latest_source" ] || [ "$health_latest_epoch" != "$db_latest_epoch" ]; then
+        echo "ERROR: health security DB freshness must be backed by security_sources registry" >&2
+        echo "health_latest_source=${health_latest_source} health_latest_epoch=${health_latest_epoch}" >&2
+        echo "db_latest_source=${db_latest_source} db_latest_epoch=${db_latest_epoch}" >&2
+        exit 1
+    fi
+    assert_db_equals "
+WITH latest_deferred_osv AS (
+    SELECT max(created_at) AS at
+    FROM audit_logs
+    WHERE action='cve_db.import'
+      AND status='ok'
+      AND resource_id='osv'
+      AND metadata->>'finalize' = 'false'
+),
+latest_final_osv AS (
+    SELECT max(created_at) AS at
+    FROM audit_logs
+    WHERE resource_id='osv'
+      AND status='ok'
+      AND (
+        action='cve_db.prune_stale_source'
+        OR (action='cve_db.import' AND COALESCE(metadata->>'finalize', 'true') != 'false')
+      )
+)
+SELECT count(*)
+FROM security_sources s, latest_deferred_osv d, latest_final_osv f
+WHERE s.id='osv'
+  AND d.at IS NOT NULL
+  AND s.last_sync_finished_at >= d.at
+  AND (f.at IS NULL OR d.at > f.at)" "0" "OSV source registry freshness must not be promoted by deferred chunk imports"
     assert_db_zero "
 WITH bad AS (
     SELECT vulnerability_id AS value FROM cve_database
