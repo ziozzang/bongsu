@@ -2098,6 +2098,7 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		`out["recommended_actions"]`,
 		`out["security_sources"]`,
 		`out["security_sources_error"]`,
+		`out["security_db_export"]`,
 		`out["cve_db_quality"]`,
 		`out["cve_affected_package_index"]`,
 		`out["cve_reference_key_index"]`,
@@ -2129,6 +2130,7 @@ func TestSecurityDBOperationalGuidanceSurfacesActionableProblems(t *testing.T) {
 			},
 		},
 		map[string]any{"status": "warning"},
+		map[string]any{"status": "stale"},
 		true,
 	)
 	for _, want := range []string{
@@ -2139,6 +2141,7 @@ func TestSecurityDBOperationalGuidanceSurfacesActionableProblems(t *testing.T) {
 		"missing security DB sources: trivy",
 		"stale security DB sources: trivy",
 		"CVE DB quality status is warning",
+		"security DB changed after the latest airgap bundle export",
 	} {
 		if !containsString(warnings, want) {
 			t.Fatalf("warnings missing %q: %#v", want, warnings)
@@ -2151,6 +2154,7 @@ func TestSecurityDBOperationalGuidanceSurfacesActionableProblems(t *testing.T) {
 	warnings, actions = securityDBOperationalGuidance(
 		map[string]any{"configured": true, "status": "ok"},
 		map[string]any{"status": "ok", "missing_sources": []string{}, "stale_sources": []map[string]any{}},
+		map[string]any{"status": "ok"},
 		map[string]any{"status": "ok"},
 		false,
 	)
@@ -2165,6 +2169,7 @@ func TestSecurityDBOperationalGuidanceSurfacesActionableProblems(t *testing.T) {
 			"last_sync_persisted": "2026-06-04T08:43:52Z",
 		},
 		map[string]any{"status": "ok", "missing_sources": []string{}, "stale_sources": []map[string]any{}},
+		map[string]any{"status": "ok"},
 		map[string]any{"status": "ok"},
 		false,
 	)
@@ -2921,6 +2926,8 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"securitySourceRegistry",
 		"latestSecuritySourceExport",
 		"last_exported_at",
+		"securityDbExportStatus",
+		"securityDbExportStale",
 		"security_sources_error",
 		"Security source registry:",
 		"Source registry attention:",
@@ -3058,6 +3065,8 @@ func TestAdminMetricsExposeCveSourceQuality(t *testing.T) {
 		"bongsu_security_source_registry_age_seconds",
 		"bongsu_security_source_registry_last_export_timestamp_seconds",
 		"bongsu_security_source_registry_export_age_seconds",
+		"bongsu_security_source_registry_export_stale",
+		"bongsu_security_source_registry_export_stale_sources",
 		"bongsu_security_source_registry_sources",
 		"bongsu_security_source_registry_enabled_sources",
 		"bongsu_security_source_registry_ok_sources",
@@ -3309,7 +3318,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "security_db_bundle_import?:", "bundle_created_at?: string", "bundle_source_count?: number", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "security_db_export?:", "outdated_sources?: Array", "lag_seconds?: number", "security_db_bundle_import?:", "bundle_created_at?: string", "bundle_source_count?: number", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent?: number", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
@@ -3606,6 +3615,7 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 		".security_db.effective_status == .security_db_freshness.status",
 		".security_db.effective_source == .security_db_freshness.latest_source",
 		".security_db.effective_last_sync == .security_db_freshness.latest_last_update",
+		".security_db_export.status",
 		".security_db_bundle_import.last_result.status",
 		".security_recalculation.running",
 		`.cve_affected_package_index.summary_mode == "indexed-only"`,
@@ -3621,6 +3631,7 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 		"bongsu_security_db_effective_age_seconds",
 		"bongsu_security_source_registry_ok_sources",
 		"bongsu_security_source_registry_records",
+		"bongsu_security_source_registry_export_stale_sources",
 		"bongsu_security_recalculation_running",
 		"bongsu_security_recalculation_pending",
 		"bongsu_cve_affected_package_index_coverage_percent",
@@ -4049,6 +4060,7 @@ func TestOpenAPIDocumentsSecuritySourceRegistryStatus(t *testing.T) {
 				"SecuritySourceStatus:",
 				"security_sources:",
 				"security_sources_error:",
+				"security_db_export:",
 				"security_db_bundle_import:",
 				"last_sync_finished_at:",
 				"last_status:",

@@ -257,6 +257,7 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		if registrySources, err := s.db.ListSecuritySourceStatuses(ctx); err == nil {
 			enabledCount := 0
 			okCount := 0
+			exportStaleCount := 0
 			totalRegistryRecords := int64(0)
 			for _, source := range registrySources {
 				labels := map[string]string{
@@ -283,11 +284,17 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 					writePromGauge(&b, "bongsu_security_source_registry_last_export_timestamp_seconds", labels, float64(source.LastExportedAt.Unix()))
 					writePromGauge(&b, "bongsu_security_source_registry_export_age_seconds", labels, time.Since(*source.LastExportedAt).Seconds())
 				}
+				exportStale := source.Enabled && source.LastSyncFinishedAt != nil && (source.LastExportedAt == nil || source.LastExportedAt.Before(*source.LastSyncFinishedAt))
+				if exportStale {
+					exportStaleCount++
+				}
+				writePromGauge(&b, "bongsu_security_source_registry_export_stale", labels, boolMetric(exportStale))
 			}
 			writePromGauge(&b, "bongsu_security_source_registry_sources", nil, float64(len(registrySources)))
 			writePromGauge(&b, "bongsu_security_source_registry_enabled_sources", nil, float64(enabledCount))
 			writePromGauge(&b, "bongsu_security_source_registry_ok_sources", nil, float64(okCount))
 			writePromGauge(&b, "bongsu_security_source_registry_records_total", nil, float64(totalRegistryRecords))
+			writePromGauge(&b, "bongsu_security_source_registry_export_stale_sources", nil, float64(exportStaleCount))
 		} else {
 			writePromGauge(&b, "bongsu_security_source_registry_metrics_error", nil, 1)
 		}

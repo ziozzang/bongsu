@@ -2617,6 +2617,9 @@ paths:
                     type: object
                   security_db_freshness:
                     type: object
+                  security_db_export:
+                    type: object
+                    description: Security DB bundle export freshness summary, including sources changed since the latest export.
                   security_db_revision:
                     type: string
                   security_recalculation:

@@ -643,8 +643,12 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     return new Date(source.last_exported_at).getTime() > new Date(latest.last_exported_at).getTime() ? source : latest;
   }, null);
   const securitySourceRegistryBroken = !!securityDbStatus?.security_sources_error || securitySourceRegistry.some(s => s.enabled && (s.last_status !== 'ok' || (s.record_count || 0) === 0 || s.last_error));
+  const securityDbExportStatus = securityDbStatus?.security_db_export;
+  const securityDbExportStale = securityDbExportStatus?.status === 'stale' || securityDbExportStatus?.status === 'never';
   const securitySourceRegistryColor = securitySourceRegistryBroken
     ? 'var(--critical)'
+    : securityDbExportStale
+      ? 'var(--medium)'
     : securitySourceRegistry.length > 0
       ? 'var(--low)'
       : 'var(--medium)';
@@ -1452,6 +1456,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           {latestSecuritySourceExport?.last_exported_at && (
             <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
               export {latestSecuritySourceExport.id} {new Date(latestSecuritySourceExport.last_exported_at).toLocaleString()}
+            </div>
+          )}
+          {securityDbExportStale && (
+            <div style={{ color: 'var(--medium)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
+              export {securityDbExportStatus?.status}{securityDbExportStatus?.outdated_source_count ? `, ${securityDbExportStatus.outdated_source_count} changed` : ''}
             </div>
           )}
         </div>

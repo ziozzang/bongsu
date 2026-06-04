@@ -225,6 +225,7 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 	dbCtx, cancel = withTimeout()
 	if sources, err := s.db.ListSecuritySourceStatuses(dbCtx); err == nil {
 		out["security_sources"] = sources
+		out["security_db_export"] = securityDBExportStatus(sources)
 	} else {
 		out["security_sources_error"] = err.Error()
 	}
@@ -243,11 +244,69 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 			out["status"] = "degraded"
 		}
 	}
-	warnings, actions := securityDBOperationalGuidance(out["security_db"], freshness, cveQuality, freshnessTimedOut)
+	warnings, actions := securityDBOperationalGuidance(out["security_db"], freshness, cveQuality, out["security_db_export"], freshnessTimedOut)
 	out["warnings"] = warnings
 	out["recommended_actions"] = actions
 
 	writeJSON(w, http.StatusOK, out)
+}
+
+func securityDBExportStatus(sources []db.SecuritySourceStatus) map[string]any {
+	out := map[string]any{
+		"status":                "unknown",
+		"source_count":          len(sources),
+		"outdated_source_count": 0,
+		"outdated_sources":      []map[string]any{},
+	}
+	var latestExport *time.Time
+	var latestUpdate *time.Time
+	outdated := []map[string]any{}
+	for _, source := range sources {
+		if !source.Enabled {
+			continue
+		}
+		if source.LastExportedAt != nil && (latestExport == nil || source.LastExportedAt.After(*latestExport)) {
+			t := source.LastExportedAt.UTC()
+			latestExport = &t
+		}
+		if source.LastSyncFinishedAt != nil && (latestUpdate == nil || source.LastSyncFinishedAt.After(*latestUpdate)) {
+			t := source.LastSyncFinishedAt.UTC()
+			latestUpdate = &t
+		}
+		if source.LastSyncFinishedAt == nil {
+			continue
+		}
+		if source.LastExportedAt == nil || source.LastExportedAt.Before(*source.LastSyncFinishedAt) {
+			item := map[string]any{
+				"source":                source.ID,
+				"last_sync_finished_at": source.LastSyncFinishedAt.UTC().Format(time.RFC3339),
+			}
+			if source.LastExportedAt != nil {
+				item["last_exported_at"] = source.LastExportedAt.UTC().Format(time.RFC3339)
+				item["lag_seconds"] = source.LastSyncFinishedAt.Sub(*source.LastExportedAt).Seconds()
+			}
+			outdated = append(outdated, item)
+		}
+	}
+	if latestExport != nil {
+		out["latest_exported_at"] = latestExport.Format(time.RFC3339)
+	}
+	if latestUpdate != nil {
+		out["latest_source_update_at"] = latestUpdate.Format(time.RFC3339)
+	}
+	out["outdated_sources"] = outdated
+	out["outdated_source_count"] = len(outdated)
+	switch {
+	case len(sources) == 0:
+		out["status"] = "unknown"
+	case latestExport == nil:
+		out["status"] = "never"
+	case len(outdated) > 0:
+		out["status"] = "stale"
+	default:
+		out["status"] = "ok"
+	}
+	return out
 }
 
 func (s *Server) securityDbStatusQuality(parent context.Context, timeoutSeconds int) (map[string]any, any, any) {
@@ -373,7 +432,7 @@ func enrichSecurityDBManagerStatus(status any, freshness map[string]any) {
 	}
 }
 
-func securityDBOperationalGuidance(manager any, freshness, quality map[string]any, freshnessTimedOut bool) ([]string, []string) {
+func securityDBOperationalGuidance(manager any, freshness, quality map[string]any, exportStatus any, freshnessTimedOut bool) ([]string, []string) {
 	warnings := []string{}
 	actions := []string{}
 	add := func(warning, action string) {
@@ -427,6 +486,14 @@ func securityDBOperationalGuidance(manager any, freshness, quality map[string]an
 	if quality != nil {
 		if status, _ := quality["status"].(string); status == "degraded" || status == "warning" {
 			add("CVE DB quality status is "+status, "inspect cve_db_quality warnings and rebuild affected/reference indexes if needed")
+		}
+	}
+	if export, ok := exportStatus.(map[string]any); ok {
+		switch status, _ := export["status"].(string); status {
+		case "never":
+			add("security DB has not been exported as an airgap bundle", "export a security DB bundle before airgap promotion")
+		case "stale":
+			add("security DB changed after the latest airgap bundle export", "export a new security DB bundle before airgap promotion")
 		}
 	}
 	return warnings, actions

@@ -238,6 +238,8 @@ assert_json "$security_db_status_json" '
   and ((.security_db.effective_source // "") != "")
   and ((.security_db.effective_last_sync // "") != "")
   and .security_db_freshness
+  and .security_db_export
+  and (.security_db_export.status | type == "string")
   and (.security_db.effective_status == .security_db_freshness.status)
   and (.security_db.effective_source == .security_db_freshness.latest_source)
   and (.security_db.effective_last_sync == .security_db_freshness.latest_last_update)
@@ -302,6 +304,11 @@ if ! grep -Eq '^bongsu_security_source_registry_ok_sources |^bongsu_security_sou
 fi
 if ! grep -Eq '^bongsu_security_source_registry_records[{]category="[^"]+",source="osv",status="ok"} |^bongsu_security_source_registry_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
     echo "ERROR: admin metrics must expose OSV source registry record counts or registry metrics error" >&2
+    sed -n '1,240p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
+if ! grep -Eq '^bongsu_security_source_registry_export_stale_sources |^bongsu_security_source_registry_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose stale security DB export source counts or registry metrics error" >&2
     sed -n '1,240p' "$TMP_DIR/admin-metrics.txt" >&2
     exit 1
 fi

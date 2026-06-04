@@ -868,6 +868,19 @@ export interface SecurityDbOperationalStatus {
   security_sources_error?: string;
   security_db?: HealthStatus['security_db'];
   security_db_freshness?: HealthStatus['security_db_freshness'];
+  security_db_export?: {
+    status: string;
+    source_count?: number;
+    latest_exported_at?: string;
+    latest_source_update_at?: string;
+    outdated_source_count?: number;
+    outdated_sources?: Array<{
+      source: string;
+      last_sync_finished_at?: string;
+      last_exported_at?: string;
+      lag_seconds?: number;
+    }>;
+  };
   security_db_revision?: string;
   security_db_revision_error?: string;
   security_recalculation?: HealthStatus['security_recalculation'];

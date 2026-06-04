@@ -421,7 +421,7 @@ Scrape `/api/admin/metrics` with the admin API key and alert on:
 
 - Any `bongsu_*_metrics_error` gauge greater than zero; increase `BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS` or investigate the failing DB query before trusting the affected metric family.
 - `bongsu_security_db_effective_status{status="ok"} != 1`, missing `bongsu_security_db_effective_source_info`, or a stale `bongsu_security_db_effective_last_sync_timestamp_seconds`; these describe the persisted CVE DB currently used for matching, not only the in-process sync manager.
-- `bongsu_security_source_registry_ok_sources` lower than `bongsu_security_source_registry_enabled_sources`, nonzero `bongsu_security_source_registry_error`, missing `bongsu_security_source_registry_records{source="osv",...}`, or stale `bongsu_security_source_registry_last_export_timestamp_seconds`; these expose the persisted source registry that backs the dashboard Source Registry card and airgap export traceability.
+- `bongsu_security_source_registry_ok_sources` lower than `bongsu_security_source_registry_enabled_sources`, nonzero `bongsu_security_source_registry_error`, missing `bongsu_security_source_registry_records{source="osv",...}`, stale `bongsu_security_source_registry_last_export_timestamp_seconds`, or nonzero `bongsu_security_source_registry_export_stale_sources`; these expose the persisted source registry that backs the dashboard Source Registry card and airgap export traceability.
 - `bongsu_security_db_source_stale` or missing required sources.
 - `bongsu_cve_placeholder_records` greater than zero.
 - `bongsu_cve_affected_index_stale` or low affected-index coverage.
