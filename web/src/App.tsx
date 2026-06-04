@@ -652,13 +652,16 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const oldestCveAgeDays = health?.security_db_freshness?.oldest_age_seconds
     ? health.security_db_freshness.oldest_age_seconds / 86400
     : 0;
+  const securityDbFreshnessStatus = health?.security_db_freshness?.status || '';
   const cveDbStatus = !securityDbConfigured
     ? 'not configured'
     : health?.security_db?.running
       ? 'syncing'
       : health?.security_db_freshness?.stale
         ? 'stale'
-        : health?.security_db?.status || 'unknown';
+        : securityDbFreshnessStatus === 'ok'
+          ? 'ok'
+          : securityDbFreshnessStatus || health?.security_db?.status || 'unknown';
   const cveDbStatusColor = !securityDbConfigured || cveDbStatus === 'stale'
     ? 'var(--critical)'
     : cveDbStatus === 'syncing' || cveDbStatus === 'unknown'
