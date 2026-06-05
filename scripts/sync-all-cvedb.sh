@@ -24,6 +24,7 @@ IMPORT_URL="${SERVER_URL}/api/admin/cve-db/import"
 RECALCULATE_URL="${SERVER_URL}/api/admin/security-db/recalculate"
 AFFECTED_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/affected-index/rebuild"
 REFERENCE_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/reference-index/rebuild"
+REFRESH_SOURCE_STATUS_URL="${SERVER_URL}/api/admin/cve-db/source"
 INDEX_REBUILD_WAIT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS:-900}"
 INDEX_REBUILD_POLL_SECONDS="${BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS:-5}"
 INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS:-600}"
@@ -185,10 +186,16 @@ print("|".join([
 
 finalize_deferred_cve_imports() {
     local reason="$1"
+    local source="${2:-}"
     echo "  Rebuilding affected package index after deferred imports..."
     queue_index_rebuild "Affected package index" "${AFFECTED_INDEX_REBUILD_URL}" "cve_affected_index_rebuild"
     echo "  Rebuilding reference key index after deferred imports..."
     queue_index_rebuild "Reference key index" "${REFERENCE_INDEX_REBUILD_URL}" "cve_reference_index_rebuild"
+    if [ -n "${source}" ]; then
+        echo "  Refreshing ${source} source registry status after deferred imports..."
+        curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
+            "${REFRESH_SOURCE_STATUS_URL}/${source}/refresh-status" >/dev/null
+    fi
     echo "  Queuing security recalculation after deferred imports..."
     curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
         -H "Content-Type: application/json" \
@@ -283,7 +290,11 @@ if [ "${OSV_TOTAL}" -gt 0 ]; then
         echo "  Run a full OSV sync with the default ecosystem list to prune upstream removals safely."
         echo "  Keeping aggregate OSV source freshness unchanged after partial sync."
     fi
-    if ! finalize_deferred_cve_imports "osv chunk import"; then
+    OSV_REFRESH_SOURCE=""
+    if [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then
+        OSV_REFRESH_SOURCE="osv"
+    fi
+    if ! finalize_deferred_cve_imports "osv chunk import" "${OSV_REFRESH_SOURCE}"; then
         echo "  ERROR: OSV deferred import finalization failed"
         FAILED_SOURCES+=("osv:finalize")
     fi

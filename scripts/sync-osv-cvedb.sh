@@ -22,6 +22,7 @@ IMPORT_URL="${SERVER_URL}/api/admin/cve-db/import"
 RECALCULATE_URL="${SERVER_URL}/api/admin/security-db/recalculate"
 AFFECTED_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/affected-index/rebuild"
 REFERENCE_INDEX_REBUILD_URL="${SERVER_URL}/api/admin/cve-db/reference-index/rebuild"
+REFRESH_OSV_STATUS_URL="${SERVER_URL}/api/admin/cve-db/source/osv/refresh-status"
 INDEX_REBUILD_WAIT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS:-900}"
 INDEX_REBUILD_POLL_SECONDS="${BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS:-5}"
 INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS:-600}"
@@ -176,6 +177,10 @@ finalize_osv_imports() {
     queue_index_rebuild "Affected package index" "${AFFECTED_INDEX_REBUILD_URL}" "cve_affected_index_rebuild"
     echo "  Rebuilding reference key index after OSV imports..."
     queue_index_rebuild "Reference key index" "${REFERENCE_INDEX_REBUILD_URL}" "cve_reference_index_rebuild"
+    if [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then
+        echo "  Refreshing OSV source registry status after deferred imports..."
+        curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${REFRESH_OSV_STATUS_URL}" >/dev/null
+    fi
     echo "  Queuing security recalculation after OSV imports..."
     curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
         -H "Content-Type: application/json" \

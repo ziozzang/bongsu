@@ -3656,10 +3656,14 @@ func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
 	for _, want := range []string{
 		`local replace="${3:-true}"`,
 		`local finalize="${4:-true}"`,
+		`REFRESH_SOURCE_STATUS_URL="${SERVER_URL}/api/admin/cve-db/source"`,
 		`-F "file=@${file}" -F "source=${source}" -F "replace=${replace}" -F "finalize=${finalize}"`,
 		`import_cve_file "${OSV_ECO_FILE}" "osv" "false" "false"`,
 		`if [ "${OSV_TOTAL}" -gt 0 ]; then`,
-		`finalize_deferred_cve_imports "osv chunk import"`,
+		`OSV_REFRESH_SOURCE=""`,
+		`OSV_REFRESH_SOURCE="osv"`,
+		`finalize_deferred_cve_imports "osv chunk import" "${OSV_REFRESH_SOURCE}"`,
+		`"${REFRESH_SOURCE_STATUS_URL}/${source}/refresh-status"`,
 		`"${AFFECTED_INDEX_REBUILD_URL}"`,
 		`"${REFERENCE_INDEX_REBUILD_URL}"`,
 		`"${RECALCULATE_URL}"`,
@@ -3802,13 +3806,14 @@ func TestSecurityDBSyncScriptPrunesStaleOSVAfterSuccessfulChunks(t *testing.T) {
 		`/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}`,
 		`Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override.`,
 		`Keeping aggregate OSV source freshness unchanged after partial sync.`,
-		`finalize_deferred_cve_imports "osv chunk import"`,
+		`if [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then`,
+		`OSV_REFRESH_SOURCE="osv"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-all-cvedb must prune stale OSV rows only after successful chunks, missing %q", want)
 		}
 	}
-	if strings.Contains(body, `OSV_SOURCE_STATUS_REFRESH_URL`) || strings.Contains(body, `Refreshing OSV source status after partial sync`) {
+	if strings.Contains(body, `Refreshing OSV source status after partial sync`) {
 		t.Fatal("sync-all-cvedb partial OSV sync must not promote aggregate source freshness")
 	}
 }
@@ -3829,12 +3834,14 @@ func TestTargetedOSVSyncScriptSkipsSourceWidePruneForPartialEcosystems(t *testin
 		`Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override.`,
 		`Run a full OSV sync with the default ecosystem list to prune upstream removals safely.`,
 		`Keeping aggregate OSV source freshness unchanged after partial sync.`,
+		`REFRESH_OSV_STATUS_URL="${SERVER_URL}/api/admin/cve-db/source/osv/refresh-status"`,
+		`curl -fsS -X POST -H "X-API-Key: ${API_KEY}" "${REFRESH_OSV_STATUS_URL}"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-osv-cvedb must protect non-selected ecosystems during partial OSV sync, missing %q", want)
 		}
 	}
-	if strings.Contains(body, `SOURCE_STATUS_REFRESH_URL`) || strings.Contains(body, `Refreshing OSV source status after partial sync`) {
+	if strings.Contains(body, `Refreshing OSV source status after partial sync`) {
 		t.Fatal("sync-osv-cvedb partial OSV sync must not promote aggregate source freshness")
 	}
 }
