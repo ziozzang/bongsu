@@ -3626,6 +3626,30 @@ func TestCurrentActionableVulnSQLUsesRemediationFilters(t *testing.T) {
 	}
 }
 
+func TestCurrentActionableVulnSQLForPackageReusesJoinedPackage(t *testing.T) {
+	got := currentActionableVulnSQLForPackage("v", "pkg")
+	for _, want := range []string{
+		"COALESCE(vt.status, 'open') IN ('open', 'in_progress')",
+		"v.fixed_version",
+		"v.vulnerability_id NOT LIKE 'CGA-%'",
+		"pkg.pkg_type",
+		"package_name = lower(COALESCE(NULLIF(pkg.name, ''), NULLIF(v.pkg_name, '')))",
+		"cap_match.ecosystem",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("package-aware actionable SQL missing %q: %s", want, got)
+		}
+	}
+	for _, avoid := range []string{
+		"SELECT 1 FROM packages p WHERE p.id = v.package_id",
+		"FROM packages mismatch_pkg",
+	} {
+		if strings.Contains(got, avoid) {
+			t.Fatalf("package-aware actionable SQL must reuse joined package, found %q: %s", avoid, got)
+		}
+	}
+}
+
 func TestVulnerabilitySearchUsesSafeFixedEvidenceForNoFixFilter(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {
@@ -3841,11 +3865,41 @@ func TestSearchPackagesUsesPageScopedVulnerabilityCounts(t *testing.T) {
 		"JOIN page p ON p.id = v.package_id",
 		"LEFT JOIN vuln_counts vx ON vx.package_id = p.id",
 		"packageSortNeedsVulnAggregate(f.SortBy)",
-		`strings.Replace(baseQ, "FROM packages p", "FROM packages p"+pkgVulnJoin, 1)`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("SearchPackages page-scoped vulnerability aggregation missing %q: %s", want, fn)
 		}
+	}
+}
+
+func TestSearchPackagesVulnSortUsesVisiblePackageScopedCounts(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "if packageSortNeedsVulnAggregate(f.SortBy)")
+	if start < 0 {
+		t.Fatal("vulnerability sort branch not found")
+	}
+	end := strings.Index(body[start:], "} else {")
+	if end < 0 {
+		t.Fatal("vulnerability sort branch end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"WITH visible AS NOT MATERIALIZED",
+		"JOIN visible p ON p.id = v.package_id",
+		`currentActionableVulnSQLForPackage("v", "p")`,
+		"FROM visible p",
+		"LIMIT $%d OFFSET $%d",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("SearchPackages vulnerability sort aggregation missing %q: %s", want, fn)
+		}
+	}
+	if strings.Contains(fn, "pkgVulnJoin") {
+		t.Fatalf("vulnerability sort must not aggregate all historical package vulnerabilities before latest-scan filtering: %s", fn)
 	}
 }
 
@@ -3866,7 +3920,8 @@ func TestPackageVulnJoinUsesActiveFindingFilter(t *testing.T) {
 	src := body[start : start+end]
 	for _, want := range []string{
 		"vulnTriageJoin",
-		"currentActionableVulnSQL()",
+		"JOIN packages vp ON vp.id = v.package_id",
+		`currentActionableVulnSQLForPackage("v", "vp")`,
 		"MAX(v.cvss_score)",
 		"COUNT(*)",
 	} {

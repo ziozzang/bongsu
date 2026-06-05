@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
@@ -12,8 +11,10 @@ const pkgCols = `p.id, p.scan_id, p.host_id, p.asset_type, p.asset_id, p.source,
 
 var pkgVulnJoin = ` LEFT JOIN (
 	SELECT v.package_id, MAX(v.cvss_score) as max_cvss, COUNT(*) as vuln_count
-	FROM vulnerabilities v` + vulnTriageJoin + `
-	WHERE ` + currentActionableVulnSQL() + `
+	FROM vulnerabilities v
+	JOIN packages vp ON vp.id = v.package_id
+	` + vulnTriageJoin + `
+	WHERE ` + currentActionableVulnSQLForPackage("v", "vp") + `
 	GROUP BY v.package_id
 ) vx ON vx.package_id = p.id`
 
@@ -171,8 +172,27 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 
 	dataQ := ""
 	if packageSortNeedsVulnAggregate(f.SortBy) {
-		aggregateBaseQ := strings.Replace(baseQ, "FROM packages p", "FROM packages p"+pkgVulnJoin, 1)
-		dataQ = fmt.Sprintf(`SELECT %s%s `, pkgCols, pkgVulnSelect) + aggregateBaseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", pkgSortExpr(f.SortBy, f.SortDesc), n, n+1)
+		dataQ = fmt.Sprintf(`
+WITH visible AS NOT MATERIALIZED (
+	SELECT %s
+	%s
+),
+vuln_counts AS (
+	SELECT v.package_id, MAX(v.cvss_score) AS max_cvss, COUNT(*) AS vuln_count
+	FROM vulnerabilities v
+	JOIN visible p ON p.id = v.package_id
+	%s
+	WHERE %s
+	GROUP BY v.package_id
+)
+SELECT %s%s
+FROM visible p
+LEFT JOIN vuln_counts vx ON vx.package_id = p.id
+ORDER BY %s
+LIMIT $%d OFFSET $%d`,
+			pkgCols, baseQ,
+			vulnTriageJoin, currentActionableVulnSQLForPackage("v", "p"),
+			pkgCols, pkgVulnSelect, pkgSortExpr(f.SortBy, f.SortDesc), n, n+1)
 	} else {
 		dataQ = fmt.Sprintf(`
 WITH page AS (
@@ -194,7 +214,7 @@ FROM page p
 LEFT JOIN vuln_counts vx ON vx.package_id = p.id
 ORDER BY %s`,
 			pkgCols, baseQ, pkgSortExpr(f.SortBy, f.SortDesc), n, n+1,
-			vulnTriageJoin, currentActionableVulnSQL(),
+			vulnTriageJoin, currentActionableVulnSQLForPackage("v", "p"),
 			pkgCols, pkgVulnSelect, pkgSortExpr(f.SortBy, f.SortDesc))
 	}
 	args = append(args, f.Limit, f.Offset)
