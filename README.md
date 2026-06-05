@@ -76,6 +76,8 @@ BONGSU_API_TARGET=http://localhost:5677 npm --prefix web run dev -- --host 0.0.0
 ./scripts/import-security-db-bundle.sh http://airgap-server:5677 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz
 ```
 
+The export helper writes a `.sha256` sidecar and verifies `/api/admin/security-db/status` reports a fresh bundle before the file is promoted into an air-gapped environment.
+
 ## CVE DB 유효성 기준
 
 CVE DB에서 실제 매칭/리스캔에 사용하는 advisory는 affected package evidence가 있어야 합니다. 즉 패키지 이름, ecosystem/package type, package fixed version 또는 package fixed event가 있는 affected range가 확인되는 row만 matchable로 봅니다. `TEMP-*` 같은 임시 placeholder ID, git commit hash 같은 hash-only fixed evidence, CISA KEV/EPSS처럼 우선순위 보강만 하는 feed는 이름 기반 매칭 후보로 쓰지 않습니다. EPSS는 별도 advisory가 아니라 같은 CVE row의 `epss_score`, `epss_percentile` 컬럼으로 병합됩니다.
