@@ -205,7 +205,9 @@ echo "  3. cd ${PACKAGE_NAME} && sha256sum -c SHA256SUMS"
 echo "  4. ./load-images.sh"
 echo "  5. cp deploy/.env.example deploy/.env && edit .env"
 echo "  6. cd deploy && docker compose -f docker-compose.airgap.yml up -d"
-echo "  7. Import security DB bundle:"
+echo "  7. Verify security DB bundle:"
+echo "     ./scripts/verify-security-db-bundle-file.sh bongsu-security-db-bundle.tar.gz"
+echo "  8. Import security DB bundle:"
 echo "     ./scripts/import-security-db-bundle.sh http://localhost:5677 <api-key> bongsu-security-db-bundle.tar.gz"
 
 # Cleanup

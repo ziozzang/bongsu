@@ -122,6 +122,8 @@ for pattern in \
     'sha256sum "\$\{PACKAGE_NAME\}\.tar\.gz"' \
     'sha256sum -c SHA256SUMS' \
     'docker compose -f docker-compose\.airgap\.yml up -d' \
+    'Verify security DB bundle' \
+    'verify-security-db-bundle-file\.sh bongsu-security-db-bundle\.tar\.gz' \
     'import-security-db-bundle\.sh http://localhost:5677' \
     'verify-live-agent-token-binding\.sh' \
     'verify-live-cve-rematch-workflow\.sh' \
