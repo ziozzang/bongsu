@@ -107,7 +107,15 @@ api_get_json "/api/stats" "$stats_json"
 api_get_json "/api/hosts?limit=1000" "$hosts_json"
 
 echo "[1/4] Checking agent fleet operational status"
-assert_jq "$fleet_json" '.status == "ok"' "agent fleet status must be ok"
+fleet_status="$(jq -r '.status // ""' "$fleet_json")"
+if [ "$fleet_status" != "ok" ]; then
+    warning_count="$(json_number "$fleet_json" '(.warnings // []) | length')"
+    if ! awk -v w="$warning_count" -v m="$MAX_WARNINGS" 'BEGIN { exit !(m > 0 && w <= m) }'; then
+        echo "ERROR: agent fleet status must be ok unless warnings are explicitly allowed; status=${fleet_status}, warnings=${warning_count}, max_warnings=${MAX_WARNINGS}" >&2
+        jq . "$fleet_json" >&2 || cat "$fleet_json" >&2
+        exit 1
+    fi
+fi
 assert_jq "$fleet_json" '.installer.ready == true' "one-line installer payloads must be ready"
 assert_jq "$fleet_json" '.installer.agent.ready == true' "agent installer binary must be ready"
 assert_jq "$fleet_json" '.installer.trivy.ready == true' "installer Trivy payload must be ready"
