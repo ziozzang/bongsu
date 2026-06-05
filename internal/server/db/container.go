@@ -98,14 +98,37 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 		return nil, 0, err
 	}
 
-	q := `SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text, c.started_at,
-		(SELECT count(*) FROM packages p WHERE p.scan_id=c.scan_id AND (p.container_id=c.container_id OR p.container=c.name))::int AS package_count,
-		(SELECT count(*) FROM vulnerabilities v ` + vulnTriageJoin + ` WHERE v.scan_id=c.scan_id AND v.container=c.name AND ` + currentActionableVulnSQL() + `)::int AS vulnerability_count,
-		(SELECT count(*) FROM vulnerabilities v ` + vulnTriageJoin + ` WHERE v.scan_id=c.scan_id AND v.container=c.name AND v.severity='CRITICAL' AND ` + currentActionableVulnSQL() + `)::int AS critical_count,
-		(SELECT count(*) FROM vulnerabilities v ` + vulnTriageJoin + ` WHERE v.scan_id=c.scan_id AND v.container=c.name AND v.severity='HIGH' AND ` + currentActionableVulnSQL() + `)::int AS high_count,
-		COALESCE((SELECT max(v.cvss_score) FROM vulnerabilities v ` + vulnTriageJoin + ` WHERE v.scan_id=c.scan_id AND v.container=c.name AND ` + currentActionableVulnSQL() + `), 0)::float AS max_cvss,
-		c.created_at ` +
-		baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", containerSortExpr(f.SortBy, f.SortDesc), n, n+1)
+	q := `WITH filtered AS (
+		SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text AS labels, c.started_at, c.created_at ` + baseQ + `
+	),
+	package_counts AS (
+		SELECT f.id, count(p.id)::int AS package_count
+		FROM filtered f
+		LEFT JOIN packages p ON p.scan_id=f.scan_id AND (p.container_id=f.container_id OR p.container=f.name)
+		GROUP BY f.id
+	),
+	vuln_counts AS (
+		SELECT f.id,
+			count(v.id) FILTER (WHERE ` + currentActionableVulnSQL() + `)::int AS vulnerability_count,
+			count(v.id) FILTER (WHERE v.severity='CRITICAL' AND ` + currentActionableVulnSQL() + `)::int AS critical_count,
+			count(v.id) FILTER (WHERE v.severity='HIGH' AND ` + currentActionableVulnSQL() + `)::int AS high_count,
+			COALESCE(max(v.cvss_score) FILTER (WHERE ` + currentActionableVulnSQL() + `), 0)::float AS max_cvss
+		FROM filtered f
+		LEFT JOIN vulnerabilities v ON v.scan_id=f.scan_id AND v.container=f.name
+		` + vulnTriageJoin + `
+		GROUP BY f.id
+	)
+	SELECT f.id, f.scan_id, f.host_id, f.runtime, f.container_id, f.name, f.image_name, f.image_id, f.image_digest, f.state, f.labels, f.started_at,
+		COALESCE(pc.package_count, 0)::int AS package_count,
+		COALESCE(vc.vulnerability_count, 0)::int AS vulnerability_count,
+		COALESCE(vc.critical_count, 0)::int AS critical_count,
+		COALESCE(vc.high_count, 0)::int AS high_count,
+		COALESCE(vc.max_cvss, 0)::float AS max_cvss,
+		f.created_at
+	FROM filtered f
+	LEFT JOIN package_counts pc ON pc.id=f.id
+	LEFT JOIN vuln_counts vc ON vc.id=f.id` +
+		fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", containerSortExpr(f.SortBy, f.SortDesc), n, n+1)
 	args = append(args, f.Limit, f.Offset)
 
 	rows, err := db.QueryContext(ctx, q, args...)
@@ -156,22 +179,22 @@ func containerLabelCount(labels string) int {
 
 func containerSortExpr(col string, desc bool) string {
 	allowed := map[string]string{
-		"name":                "c.name",
-		"image_name":          "c.image_name",
-		"state":               "c.state",
-		"runtime":             "c.runtime",
-		"started_at":          "c.started_at",
-		"created_at":          "c.created_at",
-		"container_id":        "c.container_id",
-		"package_count":       "(SELECT count(*) FROM packages p WHERE p.scan_id=c.scan_id AND (p.container_id=c.container_id OR p.container=c.name))",
-		"vulnerability_count": "(SELECT count(*) FROM vulnerabilities v " + vulnTriageJoin + " WHERE v.scan_id=c.scan_id AND v.container=c.name AND " + currentActionableVulnSQL() + ")",
-		"critical_count":      "(SELECT count(*) FROM vulnerabilities v " + vulnTriageJoin + " WHERE v.scan_id=c.scan_id AND v.container=c.name AND v.severity='CRITICAL' AND " + currentActionableVulnSQL() + ")",
-		"high_count":          "(SELECT count(*) FROM vulnerabilities v " + vulnTriageJoin + " WHERE v.scan_id=c.scan_id AND v.container=c.name AND v.severity='HIGH' AND " + currentActionableVulnSQL() + ")",
-		"max_cvss":            "COALESCE((SELECT max(v.cvss_score) FROM vulnerabilities v " + vulnTriageJoin + " WHERE v.scan_id=c.scan_id AND v.container=c.name AND " + currentActionableVulnSQL() + "), 0)",
+		"name":                "f.name",
+		"image_name":          "f.image_name",
+		"state":               "f.state",
+		"runtime":             "f.runtime",
+		"started_at":          "f.started_at",
+		"created_at":          "f.created_at",
+		"container_id":        "f.container_id",
+		"package_count":       "package_count",
+		"vulnerability_count": "vulnerability_count",
+		"critical_count":      "critical_count",
+		"high_count":          "high_count",
+		"max_cvss":            "max_cvss",
 	}
 	expr, ok := allowed[col]
 	if !ok {
-		expr = "c.created_at"
+		expr = "f.created_at"
 	}
 	dir := "ASC"
 	if desc {

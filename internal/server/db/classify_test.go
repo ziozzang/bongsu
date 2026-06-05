@@ -512,16 +512,16 @@ func TestSLAComplianceReportInitializesStableJSONFields(t *testing.T) {
 }
 
 func TestContainerSortExprAllowlist(t *testing.T) {
-	if got := containerSortExpr("image_name", true); got != "c.image_name DESC NULLS LAST" {
+	if got := containerSortExpr("image_name", true); got != "f.image_name DESC NULLS LAST" {
 		t.Fatalf("sort expr = %q", got)
 	}
-	if got := containerSortExpr("critical_count", true); !strings.Contains(got, "v.severity='CRITICAL'") || !strings.Contains(got, "COALESCE(vt.status, 'open')") {
+	if got := containerSortExpr("critical_count", true); got != "critical_count DESC NULLS LAST" {
 		t.Fatalf("critical count sort expr = %q", got)
 	}
-	if got := containerSortExpr("max_cvss", true); !strings.Contains(got, "max(v.cvss_score)") || !strings.Contains(got, "COALESCE(vt.status, 'open')") {
+	if got := containerSortExpr("max_cvss", true); got != "max_cvss DESC NULLS LAST" {
 		t.Fatalf("max cvss sort expr = %q", got)
 	}
-	if got := containerSortExpr("c.name; DROP TABLE container_assets", false); got != "c.created_at ASC NULLS LAST" {
+	if got := containerSortExpr("c.name; DROP TABLE container_assets", false); got != "f.created_at ASC NULLS LAST" {
 		t.Fatalf("unsafe sort expr should fall back, got %q", got)
 	}
 }
@@ -542,6 +542,9 @@ func TestContainerSearchIncludesRiskSummary(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
+		"WITH filtered AS",
+		"package_counts AS",
+		"vuln_counts AS",
 		"package_count",
 		"vulnerability_count",
 		"critical_count",
