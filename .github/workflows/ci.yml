@@ -58,13 +58,14 @@ jobs:
         run: ./scripts/verify-static-binaries.sh
 
       - name: Verify consolidated release readiness gate
+        id: release-readiness
         env:
           BONGSU_RELEASE_READINESS_SKIP_HEAVY: "true"
           BONGSU_RELEASE_READINESS_REPORT: /tmp/bongsu-ci-release-readiness.json
         run: ./scripts/verify-release-readiness.sh
 
       - name: Upload release readiness evidence
-        if: always()
+        if: always() && steps.release-readiness.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: bongsu-ci-release-readiness
