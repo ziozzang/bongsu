@@ -132,6 +132,16 @@ report = {
         "head": git_head,
         "branch": git_branch,
     },
+    "ci": {
+        "github_actions": os.environ.get("GITHUB_ACTIONS", "") == "true",
+        "workflow": os.environ.get("GITHUB_WORKFLOW", ""),
+        "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+        "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        "server_url": os.environ.get("GITHUB_SERVER_URL", ""),
+        "repository": os.environ.get("GITHUB_REPOSITORY", ""),
+        "ref": os.environ.get("GITHUB_REF", ""),
+        "sha": os.environ.get("GITHUB_SHA", ""),
+    },
     "options": {
         "live": live == "true",
         "skip_heavy": skip_heavy == "true",

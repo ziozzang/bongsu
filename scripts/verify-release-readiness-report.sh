@@ -143,12 +143,21 @@ run_success_case() {
         BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
         BONGSU_RELEASE_READINESS_LIVE=false \
         BONGSU_RELEASE_READINESS_REQUIRE_DB=true \
+        GITHUB_ACTIONS=true \
+        GITHUB_WORKFLOW=CI \
+        GITHUB_RUN_ID=123456789 \
+        GITHUB_RUN_ATTEMPT=2 \
+        GITHUB_SERVER_URL=https://github.com \
+        GITHUB_REPOSITORY=ziozzang/bongsu \
+        GITHUB_REF=refs/heads/main \
+        GITHUB_SHA=abcdef1234567890 \
         "$root_dir/scripts/verify-release-readiness.sh" >"$case_dir/stdout.log"
 
     assert_report "$report" '.format_version == 1' "report must include format version"
     assert_report "$report" '.tool == "verify-release-readiness.sh"' "report must identify the release tool"
     assert_report "$report" '.status == "passed" and .exit_code == 0' "successful run must be recorded as passed"
     assert_report "$report" '.git.head == "abcdef123456" and .git.branch == "main"' "report must include git identity"
+    assert_report "$report" '.ci.github_actions == true and .ci.workflow == "CI" and .ci.run_id == "123456789" and .ci.run_attempt == "2" and .ci.server_url == "https://github.com" and .ci.repository == "ziozzang/bongsu" and .ci.ref == "refs/heads/main" and .ci.sha == "abcdef1234567890"' "report must include GitHub Actions provenance when available"
     assert_report "$report" '.options.skip_heavy == true and .options.live == false and .options.require_db == true and (.options.archive | endswith("bongsu-release.tar.gz"))' "report must include selected options"
     assert_report "$report" '.artifacts.release_archive.path == .options.archive and (.artifacts.release_archive.sha256 | test("^[0-9a-f]{64}$")) and .artifacts.release_archive.sidecar_sha256 == .artifacts.release_archive.sha256 and .artifacts.release_archive.sidecar_matches == true' "report must include verified release archive hashes"
     assert_report "$report" '.gate_count == (.gates | length) and .gate_count >= 12' "report gate count must match recorded gates"
