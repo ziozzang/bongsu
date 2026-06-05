@@ -68,6 +68,7 @@ for pattern in \
     '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-security-db-schedule\.sh' \
     '\./scripts/verify-live-security-db-export-freshness\.sh' \
+    '\./scripts/verify-live-fixture-cleanup\.sh' \
     '\./scripts/verify-security-db-export-helper-fixtures\.sh' \
     '\./scripts/verify-security-db-export-freshness-fixtures\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
@@ -156,6 +157,7 @@ for script in \
     verify-live-security-db-auto-rescan.sh \
     verify-live-security-db-schedule.sh \
     verify-live-security-db-export-freshness.sh \
+    verify-live-fixture-cleanup.sh \
     verify-security-db-export-helper-fixtures.sh \
     verify-security-db-export-freshness-fixtures.sh \
     verify-live-session-auth.sh \
@@ -193,6 +195,7 @@ require_text "$RELEASE" 'verify-live-scan-request-recovery\.sh' "live release re
 require_text "$RELEASE" 'verify-live-security-db-auto-rescan\.sh' "live release readiness must verify security DB auto-rescan queueing"
 require_text "$RELEASE" 'verify-live-security-db-schedule\.sh' "live release readiness must verify security DB sync scheduling"
 require_text "$RELEASE" 'verify-live-security-db-export-freshness\.sh' "live release readiness must verify security DB export freshness"
+require_text "$RELEASE" 'verify-live-fixture-cleanup\.sh' "release readiness must verify live fixture cleanup hygiene"
 require_text "$RELEASE" 'verify-live-session-auth\.sh' "live release readiness must verify local session login"
 require_text "$RELEASE" 'verify-live-oidc-rbac\.sh' "live release readiness must verify OIDC bearer RBAC login"
 require_text "$RELEASE" 'verify-live-trusted-identity-rbac\.sh' "live release readiness must verify trusted identity RBAC login"

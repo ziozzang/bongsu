@@ -65,6 +65,7 @@ for script in \
     'import-security-db-bundle.sh' \
     'verify-release-readiness.sh' \
     'verify-release-readiness-report.sh' \
+    'verify-live-fixture-cleanup.sh' \
     'verify-security-db-export-helper-fixtures.sh' \
     'verify-security-db-export-freshness-fixtures.sh' \
     'verify-operations-runbook.sh' \
@@ -125,6 +126,7 @@ for pattern in \
     'verify-live-security-db-auto-rescan\.sh' \
     'verify-live-security-db-schedule\.sh' \
     'verify-live-security-db-export-freshness\.sh' \
+    'verify-live-fixture-cleanup\.sh' \
     'verify-security-db-export-helper-fixtures\.sh' \
     'verify-live-report-export-rbac\.sh' \
     'verify-live-sbom-export-rbac\.sh' \

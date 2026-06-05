@@ -110,6 +110,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-live-cvedb-concurrency.sh" \
     "$ROOT_DIR/scripts/verify-live-cvedb-quality.sh" \
     "$ROOT_DIR/scripts/verify-live-cve-rematch-workflow.sh" \
+    "$ROOT_DIR/scripts/verify-live-fixture-cleanup.sh" \
     "$ROOT_DIR/scripts/verify-security-db-export-helper-fixtures.sh" \
     "$ROOT_DIR/scripts/verify-security-db-export-freshness-fixtures.sh" \
     "$ROOT_DIR/scripts/verify-live-install-script.sh" \
