@@ -119,6 +119,8 @@ for keyword in \
     'RBAC' \
     'live RBAC' \
     'RBAC subject/policy removal' \
+    'scan-request cancellation/removal' \
+    'abandoned scan requests' \
     'two-host/two-container' \
     'dynamic asset-group' \
     'live CVE DB' \

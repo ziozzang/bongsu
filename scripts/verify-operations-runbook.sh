@@ -70,6 +70,8 @@ for pattern in \
     '\./scripts/verify-live-security-db-export-freshness\.sh' \
     '\./scripts/verify-live-fixture-cleanup\.sh' \
     'RBAC subjects or policies must visibly delete those RBAC fixtures' \
+    'scan-request fixtures must visibly cancel or remove those queue entries' \
+    'abandoned pending/claimed scan requests' \
     '\./scripts/verify-security-db-export-helper-fixtures\.sh' \
     '\./scripts/verify-security-db-export-freshness-fixtures\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \

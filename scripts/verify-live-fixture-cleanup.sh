@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # verify-live-fixture-cleanup.sh - Static guard for live verifiers that create
-# synthetic hosts. They must register cleanup traps and remove fixture hosts so
-# interrupted or failed verifier runs do not pollute agent-fleet health.
+# synthetic live data. They must register cleanup traps and remove or cancel
+# fixture resources so interrupted verifier runs do not pollute operational
+# health, authorization, or scan-request queues.
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -37,8 +38,22 @@ require_rbac_cleanup() {
     fi
 }
 
+require_scan_request_cleanup() {
+    local script="$1"
+    local label="${script#$ROOT/}"
+    if ! grep -Eq 'trap[[:space:]]+cleanup[[:space:]]+EXIT' "$script"; then
+        echo "ERROR: $label creates scan-request fixtures but does not install 'trap cleanup EXIT'" >&2
+        exit 1
+    fi
+    if ! grep -Eq '/api/scan-requests/\$\{?SCAN_REQUEST_ID\}?/cancel|UPDATE[[:space:]]+scan_requests[[:space:]]+SET[[:space:]]+status|DELETE[[:space:]]+FROM[[:space:]]+scan_requests' "$script"; then
+        echo "ERROR: $label creates scan-request fixtures but does not visibly cancel or remove them in cleanup" >&2
+        exit 1
+    fi
+}
+
 checked=0
 rbac_checked=0
+scan_request_checked=0
 while IFS= read -r script; do
     if [ "$script" = "$ROOT/scripts/verify-live-fixture-cleanup.sh" ]; then
         continue
@@ -50,6 +65,10 @@ while IFS= read -r script; do
     if grep -Eq '(^|[^A-Za-z0-9_])(SUBJECT_ID|POLICY_ID)="(subject|policy)-\$\{|(POST|api_json[[:space:]]+POST)[^\\n]+/api/admin/rbac/(subjects|policies)' "$script"; then
         require_rbac_cleanup "$script"
         rbac_checked=$((rbac_checked + 1))
+    fi
+    if grep -Eq '(^|[^A-Za-z0-9_])SCAN_REQUEST_ID=|api_json[[:space:]]+POST[[:space:]]+/api/scan-requests|curl[^\\n]+/api/scan-requests' "$script"; then
+        require_scan_request_cleanup "$script"
+        scan_request_checked=$((scan_request_checked + 1))
     fi
 done < <(
     find "$ROOT/scripts" -maxdepth 1 -type f \( -name 'verify-live-*.sh' -o -name 'verify-agent-binary-workflow.sh' -o -name 'verify-operator-workflow.sh' \) | sort
@@ -63,5 +82,9 @@ if [ "$rbac_checked" -eq 0 ]; then
     echo "ERROR: no live RBAC fixture verifiers were checked" >&2
     exit 1
 fi
+if [ "$scan_request_checked" -eq 0 ]; then
+    echo "ERROR: no live scan-request fixture verifiers were checked" >&2
+    exit 1
+fi
 
-echo "Live fixture cleanup verification passed (${checked} host scripts, ${rbac_checked} RBAC scripts checked)"
+echo "Live fixture cleanup verification passed (${checked} host scripts, ${rbac_checked} RBAC scripts, ${scan_request_checked} scan-request scripts checked)"
