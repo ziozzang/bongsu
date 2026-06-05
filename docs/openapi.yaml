@@ -4719,6 +4719,10 @@ components:
           type: object
           additionalProperties:
             type: integer
+        security_db_rescan_stale_counts:
+          type: object
+          additionalProperties:
+            type: integer
         security_db_rescan_progress:
           type: object
         security_db_scan_coverage:

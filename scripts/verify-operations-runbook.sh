@@ -125,6 +125,7 @@ for pattern in \
     'bongsu_security_source_registry_export_stale_sources' \
     'bongsu_cve_placeholder_records' \
     'bongsu_security_db_rescan_open' \
+    'bongsu_security_db_rescan_stale' \
     'bongsu_\*_metrics_error' \
     'bongsu_agent_fleet_degraded' \
     'bongsu_agent_outdated_percent' \

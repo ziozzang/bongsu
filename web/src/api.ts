@@ -344,6 +344,7 @@ export interface Stats {
   scan_request_stale_counts?: Record<string, number>;
   security_db_revision?: string;
   security_db_rescan_request_counts?: Record<string, number>;
+  security_db_rescan_stale_counts?: Record<string, number>;
   security_db_rescan_progress?: {
     revision?: string;
     total?: number;

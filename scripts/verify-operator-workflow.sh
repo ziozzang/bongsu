@@ -353,6 +353,11 @@ if ! grep -Eq '^bongsu_security_db_rescan_open |^bongsu_security_db_rescan_metri
     sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
     exit 1
 fi
+if ! grep -Eq '^bongsu_security_db_rescan_stale[{]state="pending"} |^bongsu_security_db_rescan_stale_metrics_error |^bongsu_security_db_rescan_metrics_error |^bongsu_security_db_revision_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose stale security DB rescan metrics or metrics error" >&2
+    sed -n '1,160p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
 
 if [ -n "$ADMIN_USERNAME" ] && [ -n "$ADMIN_PASSWORD" ]; then
     echo "[4/11] Checking local session login"

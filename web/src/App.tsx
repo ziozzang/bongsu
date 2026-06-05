@@ -844,10 +844,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setSecurityRecalcBusy(false);
   };
 
-  const openCurrentDBRescans = (status: string) => {
+  const openCurrentDBRescans = (status: string, stale?: boolean) => {
     const revision = stats?.security_db_revision || health?.security_db_revision || '';
     if (!revision) return;
-    onOpenScanRequests({ status, scan_type: 'security-db-update', security_db_revision: revision });
+    onOpenScanRequests({ status, scan_type: 'security-db-update', security_db_revision: revision, ...(stale ? { stale: 'true' } : {}) });
   };
 
   const handleRetentionPrune = async (dryRun: boolean) => {
@@ -1232,6 +1232,34 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             title="Open claimed security DB rescans for the current revision"
           >
             {stats.security_db_rescan_request_counts?.claimed || 0}
+          </button>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+          <div className="label">Current DB Stale Pending</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => openCurrentDBRescans('pending', true)}
+            disabled={!(stats?.security_db_revision || health?.security_db_revision)}
+            style={{ color: 'var(--medium)', background: 'transparent', border: 0, padding: 0, cursor: stats?.security_db_revision || health?.security_db_revision ? 'pointer' : 'default' }}
+            title="Open stale pending security DB rescans for the current revision"
+          >
+            {stats.security_db_rescan_stale_counts?.pending || 0}
+          </button>
+        </div>
+        <div className="stat-card">
+          <div className="accent-bar" style={{ background: 'var(--critical)' }} />
+          <div className="label">Current DB Stale Claimed</div>
+          <button
+            type="button"
+            className="value"
+            onClick={() => openCurrentDBRescans('claimed', true)}
+            disabled={!(stats?.security_db_revision || health?.security_db_revision)}
+            style={{ color: 'var(--critical)', background: 'transparent', border: 0, padding: 0, cursor: stats?.security_db_revision || health?.security_db_revision ? 'pointer' : 'default' }}
+            title="Open stale claimed security DB rescans for the current revision"
+          >
+            {stats.security_db_rescan_stale_counts?.claimed || 0}
           </button>
         </div>
         <div className="stat-card">

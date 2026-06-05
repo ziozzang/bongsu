@@ -2955,6 +2955,8 @@ func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
 		"bongsu_security_db_rescan_terminal",
 		"bongsu_security_db_rescan_complete_percent",
 		"bongsu_security_db_rescan_healthy_percent",
+		"bongsu_security_db_rescan_stale",
+		"bongsu_security_db_rescan_stale_metrics_error",
 		"bongsu_security_db_scan_coverage_hosts_total",
 		"bongsu_security_db_scan_coverage_current_hosts",
 		"bongsu_security_db_scan_coverage_stale_hosts",
@@ -3480,7 +3482,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "AccessControlStatus", "trusted_identity_configured", "trusted_proxy_cidr_count", "trusted_identity_admin_configured", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "security_db_export?:", "security_db_export_data_error?: string", "data_source_count?: number", "outdated_sources?: Array", "last_source_update_at?: string", "last_data_update_at?: string", "lag_seconds?: number", "security_db_bundle_import?:", "bundle_created_at?: string", "bundle_source_count?: number", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "AccessControlStatus", "trusted_identity_configured", "trusted_proxy_cidr_count", "trusted_identity_admin_configured", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "security_db_export?:", "security_db_export_data_error?: string", "data_source_count?: number", "outdated_sources?: Array", "last_source_update_at?: string", "last_data_update_at?: string", "lag_seconds?: number", "security_db_bundle_import?:", "bundle_created_at?: string", "bundle_source_count?: number", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "security_db_rescan_stale_counts?: Record<string, number>", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}
@@ -3989,6 +3991,7 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 		"bongsu_agent_fleet_warnings",
 		"bongsu_agent_outdated_percent",
 		"bongsu_security_db_rescan_open",
+		"bongsu_security_db_rescan_stale",
 		"bongsu_security_db_rescan_metrics_error",
 	} {
 		if !strings.Contains(body, want) {
@@ -5860,11 +5863,13 @@ func TestStatsExposeActiveFindingCounts(t *testing.T) {
 		"inventory_latest_containers",
 		"GetSecurityDBRevision(ctx)",
 		"CountSecurityDBRescanRequestsByStatus",
+		"CountStaleSecurityDBRescanRequestsByState",
 		"securityDBRescanProgressSummary",
 		"GetSecurityDBScanCoverage",
 		"CountStaleScanRequestsByState",
 		"security_db_revision",
 		"security_db_rescan_request_counts",
+		"security_db_rescan_stale_counts",
 		"security_db_rescan_progress",
 		"security_db_scan_coverage",
 		"scan_request_stale_counts",
@@ -5902,6 +5907,8 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"stats.security_db_rescan_request_counts?.claimed",
 		"stats.security_db_rescan_request_counts?.degraded",
 		"stats.security_db_rescan_request_counts?.failed",
+		"stats.security_db_rescan_stale_counts?.pending",
+		"stats.security_db_rescan_stale_counts?.claimed",
 		"stats?.security_db_rescan_progress",
 		"rescanProgress.complete_percent",
 		"Current DB Rescan Done",
@@ -5938,6 +5945,8 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"inventory_status: 'none'",
 		"params.stale = stale",
 		`stale: 'true'`,
+		"openCurrentDBRescans('pending', true)",
+		"openCurrentDBRescans('claimed', true)",
 		"req.request_age_seconds",
 		"req.claim_age_seconds",
 		"req.request_stale",
@@ -5955,6 +5964,8 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 		"Requeue</button>",
 		"Current DB Rescan Pending",
 		"Current DB Rescan Claimed",
+		"Current DB Stale Pending",
+		"Current DB Stale Claimed",
 		"Current DB Rescan Degraded",
 		"Current DB Rescan Failed",
 		"Current DB Rescan Done",

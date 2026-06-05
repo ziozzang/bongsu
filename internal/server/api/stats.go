@@ -133,6 +133,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	securityDBRevision := ""
 	securityDBRescanCounts := map[string]int{}
+	securityDBRescanStaleCounts := map[string]int{}
 	securityDBRescanProgress := map[string]any{}
 	var securityDBScanCoverage *db.SecurityDBScanCoverage
 	if revision, err := s.db.GetSecurityDBRevision(ctx); err != nil {
@@ -144,6 +145,11 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		} else {
 			securityDBRescanCounts = counts
 			securityDBRescanProgress = securityDBRescanProgressSummary(revision, counts)
+		}
+		if counts, err := s.db.CountStaleSecurityDBRescanRequestsByState(ctx, visibleHostIDs, scope.All, revision, scanRequestClaimTimeoutSeconds()); err != nil {
+			log.Printf("stale security db rescan counts: %v", err)
+		} else {
+			securityDBRescanStaleCounts = counts
 		}
 		if coverage, err := s.db.GetSecurityDBScanCoverage(ctx, visibleHostIDs, scope.All, revision); err != nil {
 			log.Printf("security db scan coverage: %v", err)
@@ -176,6 +182,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		"scan_request_stale_counts":         staleScanRequestCounts,
 		"security_db_revision":              securityDBRevision,
 		"security_db_rescan_request_counts": securityDBRescanCounts,
+		"security_db_rescan_stale_counts":   securityDBRescanStaleCounts,
 		"security_db_rescan_progress":       securityDBRescanProgress,
 		"security_db_scan_coverage":         securityDBScanCoverage,
 	}

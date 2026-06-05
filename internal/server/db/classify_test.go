@@ -1162,6 +1162,39 @@ func TestStaleScanRequestCountsAreScopedByTimeoutAndHost(t *testing.T) {
 	}
 }
 
+func TestStaleSecurityDBRescanCountsAreScopedByRevisionTimeoutAndHost(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) CountStaleSecurityDBRescanRequestsByState")
+	if start < 0 {
+		t.Fatal("CountStaleSecurityDBRescanRequestsByState not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) CountSecurityDBRescanRequestsByStatus")
+	if end < 0 {
+		t.Fatal("CountStaleSecurityDBRescanRequestsByState end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"revision string",
+		"timeoutSeconds int64",
+		"scan_type='security-db-update'",
+		"security_db_revision=$1",
+		"status='pending' AND created_at < now()",
+		"status='claimed' AND claimed_at IS NOT NULL AND claimed_at < now()",
+		"status IN ('pending','claimed')",
+		"host_id='' OR host_id = ANY($3)",
+		"host_id = ANY($3)",
+		"GROUP BY stale_state",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("stale security DB rescan count query missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestScanRequestSecurityDBRevisionMigration(t *testing.T) {
 	migration, err := os.ReadFile("../../../migrations/017_scan_request_security_db_revision.sql")
 	if err != nil {

@@ -527,8 +527,8 @@ func (db *DB) CountScanRequestsByStatus(ctx context.Context, hostIDs []string, i
 
 func (db *DB) CountStaleScanRequestsByState(ctx context.Context, hostIDs []string, includeGlobal bool, timeoutSeconds int64) (map[string]int, error) {
 	q := `SELECT stale_state, count(*) FROM (
-	SELECT CASE
-		WHEN status='pending' AND created_at < now() - ($1::bigint * interval '1 second') THEN 'pending'
+		SELECT CASE
+			WHEN status='pending' AND created_at < now() - ($1::bigint * interval '1 second') THEN 'pending'
 		WHEN status='claimed' AND claimed_at IS NOT NULL AND claimed_at < now() - ($1::bigint * interval '1 second') THEN 'claimed'
 		ELSE ''
 	END AS stale_state
@@ -540,6 +540,47 @@ func (db *DB) CountStaleScanRequestsByState(ctx context.Context, hostIDs []strin
 			q += ` AND (host_id='' OR host_id = ANY($2))`
 		} else {
 			q += ` AND host_id = ANY($2)`
+		}
+		args = append(args, pqStringArray(hostIDs))
+	} else if !includeGlobal {
+		q += ` AND false`
+	}
+	q += `) stale_requests WHERE stale_state <> '' GROUP BY stale_state`
+
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return nil, err
+		}
+		out[state] = count
+	}
+	return out, rows.Err()
+}
+
+func (db *DB) CountStaleSecurityDBRescanRequestsByState(ctx context.Context, hostIDs []string, includeGlobal bool, revision string, timeoutSeconds int64) (map[string]int, error) {
+	q := `SELECT stale_state, count(*) FROM (
+		SELECT CASE
+			WHEN status='pending' AND created_at < now() - ($2::bigint * interval '1 second') THEN 'pending'
+			WHEN status='claimed' AND claimed_at IS NOT NULL AND claimed_at < now() - ($2::bigint * interval '1 second') THEN 'claimed'
+			ELSE ''
+		END AS stale_state
+		FROM scan_requests
+		WHERE scan_type='security-db-update'
+		  AND security_db_revision=$1
+		  AND status IN ('pending','claimed')`
+	args := []any{revision, timeoutSeconds}
+	if len(hostIDs) > 0 {
+		if includeGlobal {
+			q += ` AND (host_id='' OR host_id = ANY($3))`
+		} else {
+			q += ` AND host_id = ANY($3)`
 		}
 		args = append(args, pqStringArray(hostIDs))
 	} else if !includeGlobal {

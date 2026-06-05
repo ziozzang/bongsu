@@ -425,6 +425,13 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 				for _, status := range []string{"pending", "claimed", "completed", "degraded", "failed", "cancelled"} {
 					writePromGauge(&b, "bongsu_security_db_rescan_requests", map[string]string{"status": status}, float64(counts[status]))
 				}
+				if staleCounts, err := s.db.CountStaleSecurityDBRescanRequestsByState(ctx, nil, true, revision, scanRequestClaimTimeoutSeconds()); err == nil {
+					for _, state := range []string{"pending", "claimed"} {
+						writePromGauge(&b, "bongsu_security_db_rescan_stale", map[string]string{"state": state}, float64(staleCounts[state]))
+					}
+				} else {
+					writePromGauge(&b, "bongsu_security_db_rescan_stale_metrics_error", nil, 1)
+				}
 				progress := securityDBRescanProgressSummary(revision, counts)
 				writePromGauge(&b, "bongsu_security_db_rescan_total", nil, metricNumber(progress["total"]))
 				writePromGauge(&b, "bongsu_security_db_rescan_open", nil, metricNumber(progress["open"]))

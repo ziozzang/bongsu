@@ -492,7 +492,7 @@ Scrape `/api/admin/metrics` with the admin API key and alert on:
 - `bongsu_cve_affected_index_stale` or low affected-index coverage.
 - `bongsu_cve_osv_ecosystem_metrics_error` greater than zero or stale `bongsu_cve_osv_ecosystem_last_update_timestamp_seconds` for sentinel ecosystems.
 - `bongsu_cve_epss_loaded_without_enrichment` greater than zero.
-- `bongsu_security_db_rescan_open` remaining high after a DB update.
+- `bongsu_security_db_rescan_open` or `bongsu_security_db_rescan_stale` remaining high after a DB update.
 - `bongsu_scan_request_stale` for pending or claimed requests.
 - `bongsu_agent_fleet_degraded` greater than zero, nonzero `bongsu_agent_fleet_warnings`, or unexpectedly high `bongsu_agent_outdated_percent`.
 - `bongsu_installer_ready` equal to zero.
