@@ -1507,6 +1507,7 @@ func TestLiveVerifiersCleanUpFixtureHosts(t *testing.T) {
 		"../../../scripts/verify-live-rbac-scope.sh",
 		"../../../scripts/verify-live-agent-token-binding.sh",
 		"../../../scripts/verify-live-scan-request-recovery.sh",
+		"../../../scripts/verify-live-security-db-auto-rescan.sh",
 		"../../../scripts/verify-agent-binary-workflow.sh",
 	} {
 		out, err := os.ReadFile(path)
@@ -1547,6 +1548,7 @@ func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
 		"../../../scripts/verify-live-installer-payload.sh",
 		"../../../scripts/verify-live-server-build.sh",
 		"../../../scripts/verify-live-scan-request-recovery.sh",
+		"../../../scripts/verify-live-security-db-auto-rescan.sh",
 		"../../../scripts/verify-live-security-db-export-freshness.sh",
 		"../../../scripts/verify-live-web-smoke.sh",
 	} {
@@ -4269,6 +4271,32 @@ func TestLiveScanRequestRecoveryVerifierChecksStaleRequeue(t *testing.T) {
 	}
 }
 
+func TestLiveSecurityDBAutoRescanVerifierChecksUpdateQueueing(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-security-db-auto-rescan.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_DB_DSN is required for security DB auto-rescan verification`,
+		`/api/admin/cve-db/import`,
+		`finalize=true`,
+		`security_db_revision`,
+		`/api/scan-requests?host_id=${HOST_ID}&status=pending`,
+		`scan_type == "security-db-update"`,
+		`requested_by == "system"`,
+		`/api/admin/audit-logs?action=security_db.auto_rescan`,
+		`/api/agent/scan-requests/claim?host_id=${HOST_ID}`,
+		`DELETE FROM cve_database WHERE source`,
+		`DELETE FROM security_sources WHERE id`,
+		`Live security DB auto-rescan verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live security DB auto-rescan verifier missing %q", want)
+		}
+	}
+}
+
 func TestLiveCveDbQualityVerifierChecksMatchableSentinelAndFixedVersionQuality(t *testing.T) {
 	out, err := os.ReadFile("../../../scripts/verify-live-cvedb-quality.sh")
 	if err != nil {
@@ -4416,6 +4444,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-installer-payload.sh`,
 		`./scripts/verify-live-install-script.sh`,
 		`./scripts/verify-live-scan-request-recovery.sh`,
+		`./scripts/verify-live-security-db-auto-rescan.sh`,
 		`./scripts/verify-live-security-db-export-freshness.sh`,
 		`./scripts/verify-live-cve-rematch-workflow.sh`,
 		`./scripts/verify-live-session-auth.sh`,

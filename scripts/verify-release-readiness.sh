@@ -277,6 +277,7 @@ if [ "$LIVE" = "true" ]; then
     run ./scripts/verify-agent-binary-workflow.sh
     run ./scripts/verify-live-agent-token-binding.sh
     run ./scripts/verify-live-scan-request-recovery.sh
+    run ./scripts/verify-live-security-db-auto-rescan.sh
     run ./scripts/verify-live-cve-rematch-workflow.sh
     run ./scripts/verify-live-sbom-export-workflow.sh
     run ./scripts/verify-live-vulnerability-export-rbac.sh

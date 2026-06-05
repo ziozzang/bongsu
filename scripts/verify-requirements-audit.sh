@@ -74,6 +74,7 @@ for command in \
     '\./scripts/verify-live-install-script\.sh' \
     '\./scripts/verify-live-installer-payload\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
+    '\./scripts/verify-live-security-db-auto-rescan\.sh' \
     '\./scripts/verify-live-security-db-schedule\.sh' \
     '\./scripts/verify-live-security-db-export-freshness\.sh' \
     '\./scripts/verify-live-session-auth\.sh' \
@@ -184,6 +185,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-live-cve-rematch-workflow\.sh' "airgap pa
 require_text "$PACKAGE_SCRIPT" 'verify-live-sbom-export-workflow\.sh' "airgap package must include live SBOM export workflow verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-install-script\.sh' "airgap package must include live install script verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-installer-payload\.sh' "airgap package must include live installer payload verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-auto-rescan\.sh' "airgap package must include live security DB auto-rescan verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-schedule\.sh' "airgap package must include live security DB schedule verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-security-db-export-freshness\.sh' "airgap package must include live security DB export freshness verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-session-auth\.sh' "airgap package must include live session auth verifier"
@@ -236,6 +238,7 @@ for keyword in \
     'server_match' \
     'verify-live-install-script\.sh' \
     'verify-live-installer-payload\.sh' \
+    'verify-live-security-db-auto-rescan\.sh' \
     'verify-live-security-db-schedule\.sh' \
     'verify-live-security-db-export-freshness\.sh' \
     'verify-live-session-auth\.sh' \

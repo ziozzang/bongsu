@@ -145,6 +145,7 @@ for script in \
     verify-live-sbom-export-workflow.sh \
     verify-live-server-build.sh \
     verify-live-scan-request-recovery.sh \
+    verify-live-security-db-auto-rescan.sh \
     verify-live-security-db-schedule.sh \
     verify-live-security-db-export-freshness.sh \
     verify-security-db-export-freshness-fixtures.sh \
@@ -176,6 +177,7 @@ require_text "$RELEASE" 'verify-live-cve-rematch-workflow\.sh' "live release rea
 require_text "$RELEASE" 'verify-live-sbom-export-workflow\.sh' "live release readiness must verify live SBOM export workflow"
 require_text "$RELEASE" 'verify-live-install-script\.sh' "live release readiness must verify one-line install script downloads"
 require_text "$RELEASE" 'verify-live-scan-request-recovery\.sh' "live release readiness must verify stale scan-request recovery"
+require_text "$RELEASE" 'verify-live-security-db-auto-rescan\.sh' "live release readiness must verify security DB auto-rescan queueing"
 require_text "$RELEASE" 'verify-live-security-db-schedule\.sh' "live release readiness must verify security DB sync scheduling"
 require_text "$RELEASE" 'verify-live-security-db-export-freshness\.sh' "live release readiness must verify security DB export freshness"
 require_text "$RELEASE" 'verify-live-session-auth\.sh' "live release readiness must verify local session login"
