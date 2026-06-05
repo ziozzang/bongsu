@@ -149,6 +149,7 @@ for script in \
     verify-live-security-db-export-freshness.sh \
     verify-security-db-export-freshness-fixtures.sh \
     verify-live-session-auth.sh \
+    verify-live-oidc-rbac.sh \
     verify-live-trusted-identity-rbac.sh \
     verify-live-cvedb-quality.sh \
     verify-live-vulnerability-export-rbac.sh \
@@ -178,6 +179,7 @@ require_text "$RELEASE" 'verify-live-scan-request-recovery\.sh' "live release re
 require_text "$RELEASE" 'verify-live-security-db-schedule\.sh' "live release readiness must verify security DB sync scheduling"
 require_text "$RELEASE" 'verify-live-security-db-export-freshness\.sh' "live release readiness must verify security DB export freshness"
 require_text "$RELEASE" 'verify-live-session-auth\.sh' "live release readiness must verify local session login"
+require_text "$RELEASE" 'verify-live-oidc-rbac\.sh' "live release readiness must verify OIDC bearer RBAC login"
 require_text "$RELEASE" 'verify-live-trusted-identity-rbac\.sh' "live release readiness must verify trusted identity RBAC login"
 require_text "$RELEASE" 'verify-live-vulnerability-export-rbac\.sh' "live release readiness must verify vulnerability export RBAC scoping"
 require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "live release readiness must fail closed when direct DB checks are required but unavailable"

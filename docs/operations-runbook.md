@@ -65,6 +65,7 @@ go test ./...
 ./scripts/verify-live-security-db-export-freshness.sh
 ./scripts/verify-security-db-export-freshness-fixtures.sh
 ./scripts/verify-live-session-auth.sh
+./scripts/verify-live-oidc-rbac.sh
 ./scripts/verify-live-trusted-identity-rbac.sh
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-live-cvedb-concurrency.sh
@@ -176,6 +177,14 @@ BONGSU_ADMIN_PASSWORD="$BONGSU_ADMIN_PASSWORD" \
 ```
 
 This verifier logs in on `5677` and, if reachable, `5678`, checks the returned bearer token against `/api/auth/me` and `/api/admin/rbac/status`, logs out, and confirms the same bearer token no longer authenticates.
+
+For direct OIDC bearer-token RBAC, run:
+
+```bash
+./scripts/verify-live-oidc-rbac.sh
+```
+
+This verifier starts an isolated temporary API process on a non-production port with a generated RS256 signing key, JWKS endpoint, admin JWT, viewer JWT, wrong-audience JWT, and expired JWT. It verifies unauthenticated admin access is rejected, invalid OIDC tokens fail closed, a non-admin OIDC identity can authenticate web APIs but not admin APIs, an admin group token can read `/api/admin/rbac/status`, and local API-key admin auth still works while OIDC is enabled.
 
 If `POST http://<web>:5678/api/auth/login` returns HTTP 500, first verify that the API is actually listening on `5677` and that the running binary was built from the current checkout:
 

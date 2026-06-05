@@ -4419,6 +4419,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-security-db-export-freshness.sh`,
 		`./scripts/verify-live-cve-rematch-workflow.sh`,
 		`./scripts/verify-live-session-auth.sh`,
+		`./scripts/verify-live-oidc-rbac.sh`,
 		`./scripts/verify-live-trusted-identity-rbac.sh`,
 		`BONGSU_DB_DSN is required for live release readiness`,
 		`BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS=3600 BONGSU_VERIFY_CVEDB_REQUIRE_DB=${REQUIRE_DB} ./scripts/verify-live-cvedb-quality.sh`,
@@ -4651,6 +4652,40 @@ func TestLiveTrustedIdentityRBACVerifierExercisesHeaderAuth(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("live trusted identity RBAC verifier missing %q", want)
+		}
+	}
+}
+
+func TestLiveOIDCRBACVerifierExercisesBearerJWTAuth(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-oidc-rbac.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_VERIFY_OIDC_API_PORT:-15677`,
+		`BONGSU_OIDC_ISSUER`,
+		`BONGSU_OIDC_JWKS_URL`,
+		`BONGSU_OIDC_CLIENT_ID`,
+		`BONGSU_OIDC_SUBJECT_CLAIM=preferred_username`,
+		`BONGSU_OIDC_GROUPS_CLAIM=groups`,
+		`BONGSU_OIDC_ADMIN_GROUPS`,
+		`rsa.GenerateKey`,
+		`Authorization: Bearer ${admin_token}`,
+		`Authorization: Bearer ${viewer_token}`,
+		`Authorization: Bearer ${wrong_aud_token}`,
+		`Authorization: Bearer ${expired_token}`,
+		`/api/admin/rbac/status`,
+		`/api/hosts`,
+		`wrong-audience`,
+		`expired OIDC token`,
+		`viewer OIDC token admin RBAC status`,
+		`viewer OIDC token web hosts access`,
+		`local API key admin auth still works`,
+		`Live OIDC RBAC verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live OIDC RBAC verifier missing %q", want)
 		}
 	}
 }
