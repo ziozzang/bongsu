@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
@@ -19,7 +20,6 @@ var pkgVulnJoin = ` LEFT JOIN (
 const pkgVulnSelect = `, COALESCE(vx.max_cvss, 0), COALESCE(vx.vuln_count, 0)`
 
 const pkgInsertCols = `id, scan_id, host_id, asset_type, asset_id, source, container, container_id, image_name, image_id, name, version, arch, pkg_type, ecosystem, purl, src_name, file_path, layer_id, target`
-
 
 func scanPkg(scanner interface{ Scan(...interface{}) error }, p *models.Package) error {
 	return scanner.Scan(&p.ID, &p.ScanID, &p.HostID, &p.AssetType, &p.AssetID, &p.Source, &p.Container,
@@ -59,7 +59,6 @@ func (db *DB) InsertPackages(ctx context.Context, pkgs []models.Package) error {
 	}
 	return tx.Commit()
 }
-
 
 func (db *DB) GetLatestPackages(ctx context.Context, hostID string, limit, offset int) ([]models.Package, int, error) {
 	countQ := fmt.Sprintf(`SELECT count(*) FROM packages p JOIN %s ls ON p.scan_id = ls.id WHERE p.host_id=$1`, latestScansSub)
@@ -121,7 +120,7 @@ type PackageFilter struct {
 }
 
 func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Package, int, error) {
-	baseQ := `FROM packages p` + pkgVulnJoin
+	baseQ := `FROM packages p`
 	args := []any{}
 	n := 1
 
@@ -170,7 +169,34 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 		return nil, 0, err
 	}
 
-	dataQ := fmt.Sprintf(`SELECT %s%s `, pkgCols, pkgVulnSelect) + baseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", pkgSortExpr(f.SortBy, f.SortDesc), n, n+1)
+	dataQ := ""
+	if packageSortNeedsVulnAggregate(f.SortBy) {
+		aggregateBaseQ := strings.Replace(baseQ, "FROM packages p", "FROM packages p"+pkgVulnJoin, 1)
+		dataQ = fmt.Sprintf(`SELECT %s%s `, pkgCols, pkgVulnSelect) + aggregateBaseQ + fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", pkgSortExpr(f.SortBy, f.SortDesc), n, n+1)
+	} else {
+		dataQ = fmt.Sprintf(`
+WITH page AS (
+	SELECT %s
+	%s
+	ORDER BY %s
+	LIMIT $%d OFFSET $%d
+),
+vuln_counts AS (
+	SELECT v.package_id, MAX(v.cvss_score) AS max_cvss, COUNT(*) AS vuln_count
+	FROM vulnerabilities v
+	JOIN page p ON p.id = v.package_id
+	%s
+	WHERE %s
+	GROUP BY v.package_id
+)
+SELECT %s%s
+FROM page p
+LEFT JOIN vuln_counts vx ON vx.package_id = p.id
+ORDER BY %s`,
+			pkgCols, baseQ, pkgSortExpr(f.SortBy, f.SortDesc), n, n+1,
+			vulnTriageJoin, currentActionableVulnSQL(),
+			pkgCols, pkgVulnSelect, pkgSortExpr(f.SortBy, f.SortDesc))
+	}
 	args = append(args, f.Limit, f.Offset)
 
 	rows, err := db.QueryContext(ctx, dataQ, args...)
@@ -190,13 +216,20 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 	return pkgs, total, nil
 }
 
+func packageSortNeedsVulnAggregate(sortBy string) bool {
+	switch sortBy {
+	case "max_cvss", "vuln_count":
+		return true
+	default:
+		return false
+	}
+}
 
 func (db *DB) GetPackageHostID(ctx context.Context, packageID string) (string, error) {
 	var hostID string
 	err := db.QueryRowContext(ctx, `SELECT host_id FROM packages WHERE id=$1`, packageID).Scan(&hostID)
 	return hostID, err
 }
-
 
 func pkgSortExpr(col string, desc bool) string {
 	allowed := map[string]string{
@@ -215,4 +248,3 @@ func pkgSortExpr(col string, desc bool) string {
 	}
 	return expr + " " + dir + " NULLS LAST"
 }
-

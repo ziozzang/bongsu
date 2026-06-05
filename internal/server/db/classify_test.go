@@ -3821,6 +3821,34 @@ func TestSearchPackagesAlwaysUsesLatestScan(t *testing.T) {
 	}
 }
 
+func TestSearchPackagesUsesPageScopedVulnerabilityCounts(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) SearchPackages")
+	if start < 0 {
+		t.Fatal("SearchPackages not found")
+	}
+	end := strings.Index(body[start:], "func packageSortNeedsVulnAggregate")
+	if end < 0 {
+		t.Fatal("packageSortNeedsVulnAggregate not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"WITH page AS",
+		"JOIN page p ON p.id = v.package_id",
+		"LEFT JOIN vuln_counts vx ON vx.package_id = p.id",
+		"packageSortNeedsVulnAggregate(f.SortBy)",
+		`strings.Replace(baseQ, "FROM packages p", "FROM packages p"+pkgVulnJoin, 1)`,
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("SearchPackages page-scoped vulnerability aggregation missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestPackageVulnJoinUsesActiveFindingFilter(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {
