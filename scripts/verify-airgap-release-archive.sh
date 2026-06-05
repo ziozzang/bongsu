@@ -121,6 +121,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-live-security-db-export-freshness.sh" \
     "$ROOT_DIR/scripts/verify-live-session-auth.sh" \
     "$ROOT_DIR/scripts/verify-live-oidc-rbac.sh" \
+    "$ROOT_DIR/scripts/verify-live-retention-prune.sh" \
     "$ROOT_DIR/scripts/verify-live-server-build.sh" \
     "$ROOT_DIR/scripts/verify-live-vulnerability-triage.sh" \
     "$ROOT_DIR/scripts/verify-live-vulnerability-export-rbac.sh" \

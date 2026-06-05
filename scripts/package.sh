@@ -121,6 +121,7 @@ for script in \
     verify-live-security-db-export-freshness.sh \
     verify-live-session-auth.sh \
     verify-live-oidc-rbac.sh \
+    verify-live-retention-prune.sh \
     verify-live-server-build.sh \
     verify-live-trusted-identity-rbac.sh \
     verify-live-vulnerability-triage.sh \

@@ -72,6 +72,7 @@ for command in \
     '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-cve-rematch-workflow\.sh' \
     '\./scripts/verify-live-vulnerability-triage\.sh' \
+    '\./scripts/verify-live-retention-prune\.sh' \
     '\./scripts/verify-live-install-script\.sh' \
     '\./scripts/verify-live-installer-payload\.sh' \
     '\./scripts/verify-live-rbac-scope\.sh' \
@@ -142,7 +143,8 @@ for keyword in \
     'Docker Compose' \
     'release readiness' \
     'JSON evidence report' \
-    'audited retention dry-run'
+    'audited retention dry-run' \
+    'destructive retention prune'
 do
     require_text "$AUDIT" "$keyword" "requirements audit missing keyword $keyword"
 done
@@ -184,6 +186,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap packa
 require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap package must include live agent token binding verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-cve-rematch-workflow\.sh' "airgap package must include live CVE rematch workflow verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-vulnerability-triage\.sh' "airgap package must include live vulnerability triage verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-retention-prune\.sh' "airgap package must include live retention prune verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-sbom-export-workflow\.sh' "airgap package must include live SBOM export workflow verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-install-script\.sh' "airgap package must include live install script verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-installer-payload\.sh' "airgap package must include live installer payload verifier"
