@@ -161,6 +161,7 @@ for script in \
     verify-operations-runbook.sh \
     verify-operator-workflow.sh \
     verify-agent-binary-workflow.sh \
+    verify-live-agent-fleet-rollout.sh \
     verify-live-agent-token-binding.sh \
     verify-live-install-script.sh \
     verify-live-installer-payload.sh \

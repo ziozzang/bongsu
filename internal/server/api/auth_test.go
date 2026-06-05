@@ -1527,6 +1527,37 @@ func TestLiveVerifiersCleanUpFixtureHosts(t *testing.T) {
 	}
 }
 
+func TestLiveAgentFleetRolloutVerifierChecksRealFleetReadiness(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-agent-fleet-rollout.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`/api/admin/agent-fleet/status`,
+		`/api/stats`,
+		`/api/hosts?limit=1000`,
+		`BONGSU_VERIFY_AGENT_FLEET_MIN_HOSTS`,
+		`BONGSU_VERIFY_AGENT_FLEET_MIN_SECURITY_DB_SCAN_COVERAGE_PERCENT`,
+		`BONGSU_VERIFY_AGENT_FLEET_MAX_DEGRADED_INVENTORIES`,
+		`BONGSU_VERIFY_AGENT_FLEET_MAX_PENDING_SCAN_REQUESTS`,
+		`BONGSU_VERIFY_AGENT_FLEET_EXCLUDE_HOST_REGEX`,
+		`BONGSU_VERIFY_AGENT_FLEET_ALLOWED_SCAN_STATUSES`,
+		`'.installer.ready == true'`,
+		`.security_db_scan_coverage.coverage_percent`,
+		`.security_db_scan_coverage.stale_hosts`,
+		`.inventory_status_counts.degraded`,
+		`.scan_request_counts.pending`,
+		`def allowed_statuses`,
+		`security DB revision must be present and consistent across fleet and stats surfaces`,
+		`Live agent fleet rollout verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live agent fleet rollout verifier missing %q", want)
+		}
+	}
+}
+
 func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
 	for _, path := range []string{
 		"../../../scripts/verify-operator-workflow.sh",

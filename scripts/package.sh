@@ -113,6 +113,7 @@ for script in \
     verify-airgap-release-archive.sh \
     verify-airgap-offline-rehearsal.sh \
     verify-airgap-package-smoke.sh \
+    verify-live-agent-fleet-rollout.sh \
     verify-live-agent-token-binding.sh \
     verify-live-cvedb-concurrency.sh \
     verify-live-cvedb-quality.sh \
