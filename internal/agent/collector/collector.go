@@ -165,8 +165,9 @@ func (c *Collector) getContainerImage(containerName string) (string, error) {
 }
 
 func (c *Collector) CollectOSQueryPackages() ([]models.Package, error) {
-	if err := c.ensureOSQuery(); err != nil {
-		return nil, err
+	osqueryErr := c.ensureOSQuery()
+	if osqueryErr != nil {
+		return c.CollectNativePackages()
 	}
 
 	queries := []string{
@@ -196,7 +197,104 @@ func (c *Collector) CollectOSQueryPackages() ([]models.Package, error) {
 			})
 		}
 	}
+	if len(allPkgs) == 0 {
+		if pkgs, err := c.CollectNativePackages(); err == nil && len(pkgs) > 0 {
+			return pkgs, nil
+		}
+	}
 	return allPkgs, nil
+}
+
+func (c *Collector) CollectNativePackages() ([]models.Package, error) {
+	if _, err := exec.LookPath("dpkg-query"); err == nil {
+		out, err := c.commandOutput("dpkg-query", "-W", "-f=${binary:Package}\t${Version}\t${Architecture}\t${source:Package}\n")
+		if err == nil {
+			return parseDelimitedPackages(out, "dpkg"), nil
+		}
+	}
+	if _, err := exec.LookPath("rpm"); err == nil {
+		out, err := c.commandOutput("rpm", "-qa", "--qf", "%{NAME}\t%{VERSION}-%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\n")
+		if err == nil {
+			return parseDelimitedPackages(out, "rpm"), nil
+		}
+	}
+	if _, err := exec.LookPath("apk"); err == nil {
+		out, err := c.commandOutput("apk", "info", "-v")
+		if err == nil {
+			return parseApkPackages(out), nil
+		}
+	}
+	return nil, fmt.Errorf("no supported package manager found for native package fallback")
+}
+
+func parseDelimitedPackages(out []byte, source string) []models.Package {
+	var pkgs []models.Package
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, "\t")
+		if len(parts) < 2 {
+			continue
+		}
+		name := strings.TrimSpace(parts[0])
+		version := strings.TrimSpace(parts[1])
+		if name == "" || version == "" {
+			continue
+		}
+		pkg := models.Package{
+			ID:      uuid.New().String(),
+			Name:    name,
+			Version: version,
+			PkgType: "os",
+			Source:  source,
+		}
+		if len(parts) > 2 {
+			pkg.Arch = strings.TrimSpace(parts[2])
+		}
+		if len(parts) > 3 {
+			pkg.SrcName = normalizeSourcePackageName(strings.TrimSpace(parts[3]), source)
+		}
+		pkgs = append(pkgs, pkg)
+	}
+	return pkgs
+}
+
+func parseApkPackages(out []byte) []models.Package {
+	var pkgs []models.Package
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		idx := strings.LastIndex(line, "-")
+		if idx <= 0 || idx == len(line)-1 {
+			continue
+		}
+		pkgs = append(pkgs, models.Package{
+			ID:      uuid.New().String(),
+			Name:    line[:idx],
+			Version: line[idx+1:],
+			PkgType: "os",
+			Source:  "apk",
+		})
+	}
+	return pkgs
+}
+
+func normalizeSourcePackageName(src, source string) string {
+	if source != "rpm" {
+		return src
+	}
+	src = strings.TrimSuffix(src, ".src.rpm")
+	if idx := strings.LastIndex(src, "-"); idx > 0 {
+		src = src[:idx]
+		if idx := strings.LastIndex(src, "-"); idx > 0 {
+			src = src[:idx]
+		}
+	}
+	return src
 }
 
 func (c *Collector) CollectOSQueryListeningPorts() ([]models.PortInfo, error) {
