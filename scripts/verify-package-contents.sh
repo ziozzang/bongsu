@@ -84,6 +84,7 @@ for script in \
     'verify-live-cvedb-concurrency.sh' \
     'verify-live-cvedb-quality.sh' \
     'verify-live-cve-rematch-workflow.sh' \
+    'verify-live-package-performance.sh' \
     'verify-live-install-script.sh' \
     'verify-live-installer-payload.sh' \
     'verify-live-rbac-scope.sh' \
