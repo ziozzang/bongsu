@@ -85,6 +85,12 @@ valid_bundle="$TMP_DIR/valid.tar.gz"
 write_bundle "$valid_dir" "$valid_bundle" 1
 "$VERIFY" "$valid_bundle" >/dev/null
 
+path_sidecar_dir="$TMP_DIR/path-sidecar"
+path_sidecar_bundle="$TMP_DIR/path-sidecar.tar.gz"
+write_bundle "$path_sidecar_dir" "$path_sidecar_bundle" 1
+sha256sum "$path_sidecar_bundle" > "${path_sidecar_bundle}.sha256"
+"$VERIFY" "$path_sidecar_bundle" >/dev/null
+
 missing_sidecar_dir="$TMP_DIR/missing-sidecar"
 missing_sidecar_bundle="$TMP_DIR/missing-sidecar.tar.gz"
 write_bundle "$missing_sidecar_dir" "$missing_sidecar_bundle" 1

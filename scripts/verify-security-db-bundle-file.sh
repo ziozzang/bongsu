@@ -34,7 +34,17 @@ if [ "$REQUIRE_SIDECAR" = "true" ]; then
         echo "ERROR: missing security DB bundle checksum sidecar: ${BUNDLE}.sha256" >&2
         exit 1
     fi
-    (cd "$(dirname "$BUNDLE")" && sha256sum -c "$(basename "${BUNDLE}.sha256")")
+    expected_bundle_sha="$(awk 'NR == 1 {print $1}' "${BUNDLE}.sha256")"
+    if ! printf '%s' "$expected_bundle_sha" | grep -Eq '^[0-9a-f]{64}$'; then
+        echo "ERROR: invalid security DB bundle checksum sidecar: ${BUNDLE}.sha256" >&2
+        exit 1
+    fi
+    actual_bundle_sha="$(sha256sum "$BUNDLE" | awk '{print $1}')"
+    if [ "$actual_bundle_sha" != "$expected_bundle_sha" ]; then
+        echo "ERROR: security DB bundle checksum mismatch" >&2
+        echo "sidecar=$expected_bundle_sha actual=$actual_bundle_sha" >&2
+        exit 1
+    fi
 fi
 
 listing="$(tar -tzf "$BUNDLE")"

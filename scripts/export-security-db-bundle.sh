@@ -60,6 +60,6 @@ fi
 
 mv "$TMP_OUTPUT" "$OUTPUT"
 TMP_OUTPUT=""
-sha256sum "${OUTPUT}" > "${OUTPUT}.sha256"
+(cd "${OUTPUT_DIR}" && sha256sum "${OUTPUT_BASE}") > "${OUTPUT}.sha256"
 echo "Done: $(du -h "${OUTPUT}" | cut -f1)"
 echo "SHA256: $(cut -d' ' -f1 "${OUTPUT}.sha256")"
