@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
@@ -29,6 +30,7 @@ type Reporter struct {
 	client     *http.Client
 	retry      retryConfig
 	rng        *rand.Rand
+	sleep      func(time.Duration)
 }
 
 type ReportResult struct {
@@ -60,24 +62,72 @@ func shouldRetryHTTP(statusCode int) bool {
 	return statusCode == http.StatusTooManyRequests || statusCode >= 500
 }
 
+func retryAfterDelay(header string, now time.Time) (time.Duration, bool) {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return 0, false
+	}
+	if seconds, err := strconv.Atoi(header); err == nil {
+		if seconds < 0 {
+			return 0, false
+		}
+		return time.Duration(seconds) * time.Second, true
+	}
+	when, err := http.ParseTime(header)
+	if err != nil {
+		return 0, false
+	}
+	delay := when.Sub(now)
+	if delay < 0 {
+		delay = 0
+	}
+	return delay, true
+}
+
+func (r *Reporter) boundedBackoff(delay time.Duration) time.Duration {
+	if delay > r.retry.maxBackoff {
+		return r.retry.maxBackoff
+	}
+	return delay
+}
+
+func (r *Reporter) exponentialBackoff(attempt int) time.Duration {
+	if attempt <= 0 {
+		attempt = 1
+	}
+	backoff := time.Duration(1<<uint(attempt-1)) * time.Second
+	backoff = r.boundedBackoff(backoff)
+	if backoff <= 0 {
+		return 0
+	}
+	jitter := time.Duration(r.rng.Int63n(int64(backoff) / 2))
+	return backoff + jitter
+}
+
+func (r *Reporter) retryDelay(attempt int, resp *http.Response) time.Duration {
+	if resp != nil {
+		if delay, ok := retryAfterDelay(resp.Header.Get("Retry-After"), time.Now()); ok {
+			return r.boundedBackoff(delay)
+		}
+	}
+	return r.exponentialBackoff(attempt)
+}
+
 func (r *Reporter) doWithRetry(fn func() (*http.Response, error)) (*http.Response, error) {
 	var lastErr error
+	delay := time.Duration(0)
 	for attempt := 0; attempt < r.retry.maxAttempts; attempt++ {
 		if attempt > 0 {
-			backoff := time.Duration(1<<uint(attempt-1)) * time.Second
-			if backoff > r.retry.maxBackoff {
-				backoff = r.retry.maxBackoff
-			}
-			jitter := time.Duration(r.rng.Int63n(int64(backoff) / 2))
-			backoff += jitter
-			time.Sleep(backoff)
+			r.sleep(delay)
 		}
 		resp, err := fn()
 		if err != nil {
 			lastErr = err
+			delay = r.retryDelay(attempt+1, nil)
 			continue
 		}
 		if shouldRetryHTTP(resp.StatusCode) {
+			delay = r.retryDelay(attempt+1, resp)
 			resp.Body.Close()
 			lastErr = fmt.Errorf("server returned %d", resp.StatusCode)
 			continue
@@ -157,6 +207,7 @@ func New(serverURL, apiKey string, agentToken ...string) *Reporter {
 		client:     &http.Client{Timeout: 5 * time.Minute},
 		retry:      retryConfigFromEnv(),
 		rng:        rand.New(rand.NewSource(time.Now().UnixNano())),
+		sleep:      time.Sleep,
 	}
 }
 

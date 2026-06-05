@@ -96,6 +96,7 @@ func TestReporterRetriesOnServerError(t *testing.T) {
 	defer srv.Close()
 
 	rep := New(srv.URL, "api-key")
+	rep.sleep = func(time.Duration) {}
 	_, err := rep.Send(&models.ScanReport{Host: models.Host{ID: "host-1"}})
 	if err != nil {
 		t.Fatalf("expected retry to succeed: %v", err)
@@ -116,6 +117,7 @@ func TestReporterDoesNotRetryClientError(t *testing.T) {
 	defer srv.Close()
 
 	rep := New(srv.URL, "api-key")
+	rep.sleep = func(time.Duration) {}
 	_, err := rep.Send(&models.ScanReport{Host: models.Host{ID: "host-1"}})
 	if err == nil {
 		t.Fatal("expected error for 400")
@@ -157,6 +159,7 @@ func TestReporterRetryExhausted(t *testing.T) {
 	defer srv.Close()
 
 	rep := New(srv.URL, "api-key")
+	rep.sleep = func(time.Duration) {}
 	_, err := rep.Send(&models.ScanReport{Host: models.Host{ID: "host-1"}})
 	if err == nil {
 		t.Fatal("expected error after retries exhausted")
@@ -166,6 +169,76 @@ func TestReporterRetryExhausted(t *testing.T) {
 	}
 	if attempts != 2 {
 		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestReporterHonorsRetryAfterHeader(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_RETRY_ATTEMPTS", "2")
+	t.Setenv("BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS", "30")
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.Header().Set("Retry-After", "3")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	rep := New(srv.URL, "api-key")
+	sleeps := []time.Duration{}
+	rep.sleep = func(d time.Duration) { sleeps = append(sleeps, d) }
+	_, err := rep.Send(&models.ScanReport{Host: models.Host{ID: "host-1"}})
+	if err != nil {
+		t.Fatalf("expected retry-after retry to succeed: %v", err)
+	}
+	if len(sleeps) != 1 || sleeps[0] != 3*time.Second {
+		t.Fatalf("sleeps = %#v, want [3s]", sleeps)
+	}
+}
+
+func TestReporterCapsRetryAfterHeader(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_RETRY_ATTEMPTS", "2")
+	t.Setenv("BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS", "1")
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.Header().Set("Retry-After", "30")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer srv.Close()
+
+	rep := New(srv.URL, "api-key")
+	sleeps := []time.Duration{}
+	rep.sleep = func(d time.Duration) { sleeps = append(sleeps, d) }
+	_, err := rep.Send(&models.ScanReport{Host: models.Host{ID: "host-1"}})
+	if err != nil {
+		t.Fatalf("expected capped retry-after retry to succeed: %v", err)
+	}
+	if len(sleeps) != 1 || sleeps[0] != time.Second {
+		t.Fatalf("sleeps = %#v, want [1s]", sleeps)
+	}
+}
+
+func TestRetryAfterDelayParsesHTTPDate(t *testing.T) {
+	now := time.Date(2026, 6, 5, 10, 0, 0, 0, time.UTC)
+	header := now.Add(4 * time.Second).Format(http.TimeFormat)
+	delay, ok := retryAfterDelay(header, now)
+	if !ok || delay != 4*time.Second {
+		t.Fatalf("retryAfterDelay = (%v, %v), want 4s true", delay, ok)
+	}
+	delay, ok = retryAfterDelay(now.Add(-time.Second).Format(http.TimeFormat), now)
+	if !ok || delay != 0 {
+		t.Fatalf("past retryAfterDelay = (%v, %v), want 0 true", delay, ok)
+	}
+	if _, ok := retryAfterDelay("-1", now); ok {
+		t.Fatal("negative Retry-After seconds must be ignored")
 	}
 }
 
@@ -182,6 +255,8 @@ func TestReporterSendUsesExponentialBackoff(t *testing.T) {
 		"BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS",
 		"1<<uint(attempt-1)",
 		"r.rng.Int63n",
+		"Retry-After",
+		"retryAfterDelay",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("reporter.go missing %q", want)
