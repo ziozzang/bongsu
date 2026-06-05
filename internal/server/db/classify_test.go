@@ -983,6 +983,9 @@ func TestQueueSecurityDBRescanInsertSQLUsesAtomicDedupe(t *testing.T) {
 		"status='pending'",
 		"DO UPDATE SET",
 		"security_db_revision=EXCLUDED.security_db_revision",
+		"created_at=now()",
+		"claimed_at=NULL",
+		"claimed_by_host_id=''",
 		"RETURNING (xmax = 0) AS inserted",
 	} {
 		if !strings.Contains(got, want) {

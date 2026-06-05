@@ -415,6 +415,9 @@ DO UPDATE SET
 	requested_by=EXCLUDED.requested_by,
 	reason=EXCLUDED.reason,
 	security_db_revision=EXCLUDED.security_db_revision,
+	created_at=now(),
+	claimed_at=NULL,
+	claimed_by_host_id='',
 	error_message=''
 RETURNING (xmax = 0) AS inserted`
 }

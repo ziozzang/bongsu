@@ -191,4 +191,14 @@ func TestQueueSecurityDBRescansExecutesAtomicQueueAndCountsDedupe(t *testing.T) 
 			t.Fatalf("insert args[%d] = %#v", i, args)
 		}
 	}
+	sql := queueSecurityDBRescanInsertSQL()
+	for _, want := range []string{
+		"created_at=now()",
+		"claimed_at=NULL",
+		"claimed_by_host_id=''",
+	} {
+		if !strings.Contains(sql, want) {
+			t.Fatalf("deduped pending security DB rescan must refresh stale queue metadata, missing %q: %s", want, sql)
+		}
+	}
 }
