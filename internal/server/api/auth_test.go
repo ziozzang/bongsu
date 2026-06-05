@@ -236,6 +236,44 @@ func TestAdminMetricsRequiresAdminAndReportsRuntimeState(t *testing.T) {
 	}
 }
 
+func TestAdminMetricsCacheHitAndRefreshBypass(t *testing.T) {
+	t.Setenv("BONGSU_ADMIN_METRICS_CACHE_SECONDS", "15")
+	s := &Server{apiKey: "admin-key"}
+	s.securityRecalcRunning = true
+
+	req := httptest.NewRequest("GET", "/api/admin/metrics", nil)
+	req.Header.Set("X-API-Key", "admin-key")
+	first := httptest.NewRecorder()
+	s.handleAdminMetrics(first, req)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first metrics status = %d, want %d", first.Code, http.StatusOK)
+	}
+	if got := first.Header().Get("X-Bongsu-Cache"); got != "miss" {
+		t.Fatalf("first cache header = %q, want miss", got)
+	}
+
+	s.securityRecalcRunning = false
+	second := httptest.NewRecorder()
+	s.handleAdminMetrics(second, req)
+	if got := second.Header().Get("X-Bongsu-Cache"); got != "hit" {
+		t.Fatalf("second cache header = %q, want hit", got)
+	}
+	if !strings.Contains(second.Body.String(), "bongsu_security_recalculation_running 1") {
+		t.Fatalf("cached metrics body did not preserve first response: %s", second.Body.String())
+	}
+
+	refreshReq := httptest.NewRequest("GET", "/api/admin/metrics?refresh=true", nil)
+	refreshReq.Header.Set("X-API-Key", "admin-key")
+	refresh := httptest.NewRecorder()
+	s.handleAdminMetrics(refresh, refreshReq)
+	if got := refresh.Header().Get("X-Bongsu-Cache"); got != "miss" {
+		t.Fatalf("refresh cache header = %q, want miss", got)
+	}
+	if !strings.Contains(refresh.Body.String(), "bongsu_security_recalculation_running 0") {
+		t.Fatalf("refresh metrics body did not bypass cache: %s", refresh.Body.String())
+	}
+}
+
 func TestPromMetricTypeLineWrittenOncePerMetricFamily(t *testing.T) {
 	var b strings.Builder
 	writePromGauge(&b, "bongsu_test_metric", map[string]string{"status": "ok"}, 1)
@@ -276,11 +314,36 @@ func TestAdminMetricsUsesBoundedDatabaseContext(t *testing.T) {
 	fn := body[start : start+end]
 	for _, want := range []string{
 		`envInt("BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS", 30)`,
+		`r.URL.Query().Get("refresh") != "true"`,
+		"s.getAdminMetricsCache()",
 		"context.WithTimeout(r.Context(), time.Duration(metricsTimeout)*time.Second)",
-		"s.adminMetrics(ctx)",
+		"s.setAdminMetricsCache(body)",
+		`w.Header().Set("X-Bongsu-Cache", "hit")`,
+		`w.Header().Set("X-Bongsu-Cache", "miss")`,
 	} {
 		if !strings.Contains(fn, want) {
 			t.Fatalf("admin metrics handler must bound DB work, missing %q: %s", want, fn)
+		}
+	}
+}
+
+func TestAdminMetricsUsesBoundedTTLCache(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	body := out
+	for _, want := range []string{
+		"adminMetricsCacheMu",
+		"adminMetricsCacheUntil",
+		"adminMetricsCacheBody",
+		"func (s *Server) getAdminMetricsCache",
+		"func (s *Server) setAdminMetricsCache",
+		"func (s *Server) clearAdminMetricsCache",
+		"func adminMetricsCacheTTL() time.Duration",
+		`envInt("BONGSU_ADMIN_METRICS_CACHE_SECONDS", 15)`,
+		"if seconds > 60",
+		"s.clearAdminMetricsCache()",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("admin metrics cache support missing %q", want)
 		}
 	}
 }

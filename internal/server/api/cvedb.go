@@ -2612,6 +2612,7 @@ func (s *Server) clearCveStatsCache() {
 	s.cveStatsCacheUntil = time.Time{}
 	s.cveStatsCacheJSON = nil
 	s.cveStatsCacheGen++
+	s.clearAdminMetricsCache()
 	s.clearSecurityDBRevisionCache()
 }
 

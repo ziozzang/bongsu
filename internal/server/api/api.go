@@ -79,6 +79,11 @@ type Server struct {
 	securityDBRevisionInflight   bool
 	securityDBRevisionWaiters    []chan map[string]any
 
+	adminMetricsCacheMu    sync.Mutex
+	adminMetricsCacheUntil time.Time
+	adminMetricsCacheBody  []byte
+	adminMetricsCacheGen   int64
+
 	generalRateLimiter *ipRateLimiter
 	agentRateLimiter   *ipRateLimiter
 

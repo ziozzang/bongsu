@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"net/http"
@@ -22,6 +21,14 @@ func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	if r.URL.Query().Get("refresh") != "true" {
+		if cached, ok := s.getAdminMetricsCache(); ok {
+			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+			w.Header().Set("X-Bongsu-Cache", "hit")
+			w.Write(cached)
+			return
+		}
+	}
 	metricsTimeout := envInt("BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS", 30)
 	if metricsTimeout < 1 {
 		metricsTimeout = 1
@@ -31,8 +38,58 @@ func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), time.Duration(metricsTimeout)*time.Second)
 	defer cancel()
+	body := []byte(s.adminMetrics(ctx))
+	if ctx.Err() == nil {
+		s.setAdminMetricsCache(body)
+	}
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-	io.WriteString(w, s.adminMetrics(ctx))
+	w.Header().Set("X-Bongsu-Cache", "miss")
+	w.Write(body)
+}
+
+func (s *Server) getAdminMetricsCache() ([]byte, bool) {
+	ttl := adminMetricsCacheTTL()
+	if ttl <= 0 {
+		return nil, false
+	}
+	s.adminMetricsCacheMu.Lock()
+	defer s.adminMetricsCacheMu.Unlock()
+	if time.Now().After(s.adminMetricsCacheUntil) || len(s.adminMetricsCacheBody) == 0 {
+		return nil, false
+	}
+	out := make([]byte, len(s.adminMetricsCacheBody))
+	copy(out, s.adminMetricsCacheBody)
+	return out, true
+}
+
+func (s *Server) setAdminMetricsCache(body []byte) {
+	ttl := adminMetricsCacheTTL()
+	if ttl <= 0 {
+		return
+	}
+	s.adminMetricsCacheMu.Lock()
+	defer s.adminMetricsCacheMu.Unlock()
+	s.adminMetricsCacheUntil = time.Now().Add(ttl)
+	s.adminMetricsCacheBody = append(s.adminMetricsCacheBody[:0], body...)
+}
+
+func (s *Server) clearAdminMetricsCache() {
+	s.adminMetricsCacheMu.Lock()
+	defer s.adminMetricsCacheMu.Unlock()
+	s.adminMetricsCacheUntil = time.Time{}
+	s.adminMetricsCacheBody = nil
+	s.adminMetricsCacheGen++
+}
+
+func adminMetricsCacheTTL() time.Duration {
+	seconds := envInt("BONGSU_ADMIN_METRICS_CACHE_SECONDS", 15)
+	if seconds < 0 {
+		seconds = 0
+	}
+	if seconds > 60 {
+		seconds = 60
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 func (s *Server) adminMetrics(ctx context.Context) string {
