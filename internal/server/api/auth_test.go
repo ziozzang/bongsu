@@ -3902,6 +3902,7 @@ func TestOperatorWorkflowVerifiesHealthAndMetricsObservability(t *testing.T) {
 		`grep -Eq '^bongsu_.*_metrics_error ' "$TMP_DIR/admin-metrics.txt"`,
 		".security_db_revision",
 		".security_db_revision_error",
+		".security_db_updated_at == .security_db_freshness.latest_last_update",
 		".security_db.effective_status",
 		".security_db.effective_source",
 		".security_db.effective_last_sync",

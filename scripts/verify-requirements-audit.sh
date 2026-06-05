@@ -51,6 +51,7 @@ done
 require_text "$AUDIT" 'Requirement Matrix' "requirements audit must contain the matrix"
 require_text "$AUDIT" 'Required Verification Suite' "requirements audit must list verification commands"
 require_text "$AUDIT" 'Remaining Commercial-Readiness Gaps' "requirements audit must keep the goal open"
+require_text "$AUDIT" 'security_db_updated_at' "requirements audit must document top-level security DB update time"
 require_text "$AUDIT" 'not a completion claim' "requirements audit must not imply completion"
 reject_text "$AUDIT" '(^|[^[:alpha:]])Complete([^[:alpha:]]|$)' "requirements audit should not mark the product complete"
 

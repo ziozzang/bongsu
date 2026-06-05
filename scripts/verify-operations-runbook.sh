@@ -98,6 +98,7 @@ for pattern in \
     'BONGSU_NOTIFICATION_RETRY_DELAY_MS' \
     'signed retry path' \
     'security_db_freshness\.latest_source' \
+    'security_db_updated_at' \
     'latest_last_update' \
     'security_db\.effective_status' \
     'effective_source' \
