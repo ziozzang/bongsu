@@ -197,9 +197,9 @@ OSV sync bugs fixed in recent handoffs:
 Latest OSV live snapshot after rejecting literal `0` fixed-version placeholders:
 
 ```text
-osv cve_database rows:       466822
-osv affected index rows:     1604565
-osv indexed/matchable CVEs:  208832
+osv cve_database rows:       466825
+osv affected index rows:     1604566
+osv indexed/matchable CVEs:  208833
 osv fixed_version='0' rows:  0
 phenx/php-svg-lib matches:   Packagist rows with package/ecosystem/fixed evidence
 ```
@@ -219,8 +219,8 @@ Last quality snapshot:
 ```json
 {
   "temporary_placeholders": 0,
-  "total_records": 961416,
-  "total_matchable": 208832,
+  "total_records": 961419,
+  "total_matchable": 208833,
   "osv_fixed_zero_rows": 0,
   "affected_index_coverage": 100,
   "affected_index_orphans": 0,
