@@ -734,8 +734,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     : '';
   const securitySyncStatus = health?.security_db?.running
     ? 'syncing'
+    : effectiveSecurityDbStatus === 'ok'
+      ? 'ok'
     : health?.security_db?.status === 'never' && latestSecurityDbSource?.last_update
-      ? 'scheduled'
+      ? 'waiting'
       : health?.security_db?.status || '-';
   const securitySyncDetail = securitySyncLast
     ? `last sync ${securitySyncLast}`
