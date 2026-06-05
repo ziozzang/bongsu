@@ -289,6 +289,7 @@ export interface Pkg {
 export interface ContainerAsset {
   id: string;
   scan_id: string;
+  latest_scan_id?: string;
   host_id: string;
   runtime: string;
   container_id: string;

@@ -41,7 +41,6 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,now())`
 	return tx.Commit()
 }
 
-
 type ContainerFilter struct {
 	HostID     string
 	HostIDs    []string
@@ -126,6 +125,7 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 		if started.Valid {
 			c.StartedAt = &started.Time
 		}
+		c.LatestScanID = c.ScanID
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -133,7 +133,6 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 	}
 	return out, total, nil
 }
-
 
 func containerSortExpr(col string, desc bool) string {
 	allowed := map[string]string{
@@ -160,4 +159,3 @@ func containerSortExpr(col string, desc bool) string {
 	}
 	return expr + " " + dir + " NULLS LAST"
 }
-

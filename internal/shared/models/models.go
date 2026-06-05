@@ -239,6 +239,7 @@ type PortInfo struct {
 type ContainerAsset struct {
 	ID                 string     `json:"id"`
 	ScanID             string     `json:"scan_id"`
+	LatestScanID       string     `json:"latest_scan_id,omitempty"`
 	HostID             string     `json:"host_id"`
 	Runtime            string     `json:"runtime"`
 	ContainerID        string     `json:"container_id"`

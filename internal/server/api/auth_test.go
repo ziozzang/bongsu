@@ -3624,6 +3624,7 @@ func TestContainersViewShowsImageRiskSummary(t *testing.T) {
 		"high_count",
 		"max_cvss",
 		"package_count",
+		"latest_scan_id",
 	} {
 		if !strings.Contains(appBody, want) {
 			t.Fatalf("containers view risk summary missing %q", want)
@@ -3636,6 +3637,13 @@ func TestContainersViewShowsImageRiskSummary(t *testing.T) {
 		if !strings.Contains(appBody, want) {
 			t.Fatalf("containers view risk label missing %q", want)
 		}
+	}
+	openapiOut, err := os.ReadFile("openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(openapiOut), "latest_scan_id") {
+		t.Fatal("container OpenAPI schema missing latest_scan_id")
 	}
 }
 

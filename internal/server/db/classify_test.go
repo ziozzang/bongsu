@@ -650,6 +650,26 @@ func TestContainerAssetPersistencePreservesRuntimeIdentity(t *testing.T) {
 	}
 }
 
+func TestContainerSearchExposesLatestScanIDAlias(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) SearchContainers")
+	if start < 0 {
+		t.Fatal("SearchContainers not found")
+	}
+	end := strings.Index(body[start:], "func containerSortExpr")
+	if end < 0 {
+		t.Fatal("SearchContainers end not found")
+	}
+	fn := body[start : start+end]
+	if !strings.Contains(fn, "c.LatestScanID = c.ScanID") {
+		t.Fatalf("container search must expose latest_scan_id alias from scan_id: %s", fn)
+	}
+}
+
 func TestAppendUnique(t *testing.T) {
 	items := []string{"host-1"}
 	items = appendUnique(items, "host-1")
