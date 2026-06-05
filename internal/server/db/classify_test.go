@@ -1381,7 +1381,7 @@ func TestCveSourceStatsAvoidsAffectedProductExpansion(t *testing.T) {
 		"count(DISTINCT cve_id) AS matchable",
 		"COALESCE(matchable.matchable, 0) AS matchable",
 		"GREATEST(base.with_fixed, COALESCE(matchable.matchable, 0)) AS with_fixed",
-		"COALESCE(s.last_sync_finished_at, base.last_update) AS last_update",
+		"GREATEST(COALESCE(s.last_sync_finished_at, base.last_update), base.last_update) AS last_update",
 		"LEFT JOIN security_sources s ON s.id = base.source",
 		"count(*) FILTER (WHERE cvss_score > 0",
 	} {
@@ -2145,8 +2145,9 @@ func TestCveAffectedPackageIndexStatsUsesSingleMatchableSourcePass(t *testing.T)
 	for _, want := range []string{
 		"WITH affected_index AS",
 		"indexed_source_freshness AS",
-		"FROM security_sources s",
-		"EXISTS (",
+		"SELECT max(updated_at) AS latest_matchable_update",
+		"FROM cve_affected_packages",
+		"WHERE source != ''",
 		"pq.Array(&stats.MissingMatchableSources)",
 		"COALESCE(ai.indexed_cves, 0)",
 		"ARRAY[]::text[]",
@@ -3142,7 +3143,7 @@ func TestBulkCveAffectedPackageRefreshCanScopeBySource(t *testing.T) {
 		"LatestMatchableUpdate",
 		"stats.Stale",
 		"indexed_source_freshness AS",
-		"max(s.last_sync_finished_at)",
+		"max(updated_at) AS latest_matchable_update",
 	} {
 		if !strings.Contains(statsFn, want) {
 			t.Fatalf("affected package index stats missing %q", want)

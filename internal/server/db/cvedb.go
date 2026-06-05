@@ -1818,15 +1818,9 @@ WITH affected_index AS (
 	FROM cve_affected_packages
 ),
 indexed_source_freshness AS (
-	SELECT max(s.last_sync_finished_at) AS latest_matchable_update
-	FROM security_sources s
-	WHERE s.last_sync_finished_at IS NOT NULL
-	  AND EXISTS (
-		SELECT 1
-		FROM cve_affected_packages cap
-		WHERE cap.source = s.id
-		LIMIT 1
-	  )
+	SELECT max(updated_at) AS latest_matchable_update
+	FROM cve_affected_packages
+	WHERE source != ''
 )
 SELECT
 	COALESCE(ai.count, 0),
@@ -2051,7 +2045,7 @@ SELECT
 	GREATEST(base.with_fixed, COALESCE(matchable.matchable, 0)) AS with_fixed,
 	base.with_ranges,
 	base.with_cvss,
-	COALESCE(s.last_sync_finished_at, base.last_update) AS last_update
+	GREATEST(COALESCE(s.last_sync_finished_at, base.last_update), base.last_update) AS last_update
 FROM base
 LEFT JOIN matchable ON matchable.source = base.source
 LEFT JOIN security_sources s ON s.id = base.source
