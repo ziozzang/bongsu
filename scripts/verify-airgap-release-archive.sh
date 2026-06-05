@@ -108,6 +108,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-security-db-bundle-file-fixtures.sh" \
     "$ROOT_DIR/scripts/verify-security-db-import-helper-fixtures.sh" \
     "$ROOT_DIR/scripts/verify-release-readiness.sh" \
+    "$ROOT_DIR/scripts/verify-release-readiness-report.sh" \
     "$ROOT_DIR/scripts/verify-backup-restore-archive.sh" \
     "$ROOT_DIR/scripts/verify-operator-workflow.sh" \
     "$ROOT_DIR/scripts/verify-agent-binary-workflow.sh" \
