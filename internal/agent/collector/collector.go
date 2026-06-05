@@ -1,12 +1,15 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +20,8 @@ import (
 )
 
 const defaultDBRepository = "ghcr.io/aquasecurity/trivy-db"
+
+var ssProcessRe = regexp.MustCompile(`\("([^"]*)",pid=([0-9]+)`)
 
 type Collector struct {
 	workDir        string
@@ -81,14 +86,25 @@ func (c *Collector) trivyCommandContext(ctx context.Context, args ...string) *ex
 			}
 		}
 		if !hasDBFlag {
-			allArgs = append([]string{"--db-repository", c.dbRepository}, allArgs...)
+			allArgs = insertTrivyCommandFlags(allArgs, "--db-repository", c.dbRepository)
 		}
 	} else {
-		allArgs = append([]string{"--skip-db-update", "--skip-java-db-update"}, allArgs...)
+		allArgs = insertTrivyCommandFlags(allArgs, "--skip-db-update", "--skip-java-db-update", "--skip-version-check", "--offline-scan", "--scanners", "vuln")
 	}
 	cmd := exec.CommandContext(ctx, c.trivy, allArgs...)
 	cmd.Env = append(os.Environ(), "TRIVY_CACHE_DIR="+filepath.Join(c.workDir, "trivy-cache"))
 	return cmd
+}
+
+func insertTrivyCommandFlags(args []string, flags ...string) []string {
+	if len(args) == 0 || len(flags) == 0 {
+		return args
+	}
+	out := make([]string, 0, len(args)+len(flags))
+	out = append(out, args[0])
+	out = append(out, flags...)
+	out = append(out, args[1:]...)
+	return out
 }
 
 func (c *Collector) CollectHostPackages() ([]models.Package, []models.Vulnerability, error) {
@@ -112,7 +128,7 @@ func (c *Collector) CollectHostPackages() ([]models.Package, []models.Vulnerabil
 	} else {
 		cmd = c.trivyCommandContext(ctx, "fs", "--format", "json", "--list-all-pkgs", "--scanners", "vuln", scanRoot)
 	}
-	out, err := cmd.Output()
+	out, err := outputWithStderr(cmd)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, nil, fmt.Errorf("trivy fs timed out after %s scanning %s", c.HostTimeout, scanRoot)
@@ -145,7 +161,7 @@ func (c *Collector) CollectContainerPackages(containerName string) ([]models.Pac
 	} else {
 		cmd = c.trivyCommandContext(ctx, "image", "--format", "json", "--list-all-pkgs", "--scanners", "vuln", imageRef)
 	}
-	out, err := cmd.Output()
+	out, err := outputWithStderr(cmd)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, nil, fmt.Errorf("trivy image %s timed out after %s", imageRef, c.ImageTimeout)
@@ -299,7 +315,7 @@ func normalizeSourcePackageName(src, source string) string {
 
 func (c *Collector) CollectOSQueryListeningPorts() ([]models.PortInfo, error) {
 	if err := c.ensureOSQuery(); err != nil {
-		return nil, err
+		return c.CollectNativeListeningPorts()
 	}
 	out, err := c.commandOutput(c.osquery, "--json",
 		"SELECT DISTINCT name, port, protocol, address, pid FROM listening_ports l LEFT JOIN processes p ON l.pid = p.pid WHERE port > 0 ORDER BY port")
@@ -323,6 +339,129 @@ func (c *Collector) CollectOSQueryListeningPorts() ([]models.PortInfo, error) {
 	return ports, nil
 }
 
+func (c *Collector) CollectNativeListeningPorts() ([]models.PortInfo, error) {
+	if _, err := exec.LookPath("ss"); err == nil {
+		out, err := c.commandOutput("ss", "-H", "-lntuap")
+		if err == nil {
+			ports := parseSSListeningPorts(out)
+			if len(ports) > 0 {
+				return ports, nil
+			}
+		}
+	}
+	if _, err := exec.LookPath("netstat"); err == nil {
+		out, err := c.commandOutput("netstat", "-lntup")
+		if err == nil {
+			ports := parseNetstatListeningPorts(out)
+			if len(ports) > 0 {
+				return ports, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("osqueryi not found and no native listening port collector succeeded")
+}
+
+func parseSSListeningPorts(out []byte) []models.PortInfo {
+	var ports []models.PortInfo
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
+		}
+		proto := normalizePortProtocol(fields[0])
+		address, port := parseAddressPort(fields[4])
+		if proto == "" || port <= 0 {
+			continue
+		}
+		name, pid := parseSSProcess(strings.Join(fields[5:], " "))
+		ports = append(ports, models.PortInfo{
+			Name:     name,
+			Port:     port,
+			Protocol: proto,
+			Address:  address,
+			PID:      pid,
+		})
+	}
+	return ports
+}
+
+func parseNetstatListeningPorts(out []byte) []models.PortInfo {
+	var ports []models.PortInfo
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 4 || strings.HasPrefix(strings.ToLower(fields[0]), "proto") {
+			continue
+		}
+		proto := normalizePortProtocol(fields[0])
+		address, port := parseAddressPort(fields[3])
+		if proto == "" || port <= 0 {
+			continue
+		}
+		name, pid := parseNetstatProcess(fields[len(fields)-1])
+		ports = append(ports, models.PortInfo{
+			Name:     name,
+			Port:     port,
+			Protocol: proto,
+			Address:  address,
+			PID:      pid,
+		})
+	}
+	return ports
+}
+
+func normalizePortProtocol(proto string) string {
+	proto = strings.ToLower(strings.TrimSpace(proto))
+	switch {
+	case strings.HasPrefix(proto, "tcp"):
+		return "tcp"
+	case strings.HasPrefix(proto, "udp"):
+		return "udp"
+	default:
+		return ""
+	}
+}
+
+func parseAddressPort(endpoint string) (string, int) {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" || endpoint == "*" {
+		return "", 0
+	}
+	if strings.HasPrefix(endpoint, "[") {
+		if idx := strings.LastIndex(endpoint, "]:"); idx >= 0 {
+			return strings.Trim(endpoint[1:idx], "[]"), parsePort(endpoint[idx+2:])
+		}
+	}
+	idx := strings.LastIndex(endpoint, ":")
+	if idx < 0 || idx == len(endpoint)-1 {
+		return "", 0
+	}
+	address := endpoint[:idx]
+	address = strings.Trim(address, "[]")
+	return address, parsePort(endpoint[idx+1:])
+}
+
+func parsePort(raw string) int {
+	port, _ := strconv.Atoi(strings.TrimSpace(raw))
+	return port
+}
+
+func parseSSProcess(raw string) (string, int) {
+	match := ssProcessRe.FindStringSubmatch(raw)
+	if len(match) != 3 {
+		return "", 0
+	}
+	return match[1], parsePort(match[2])
+}
+
+func parseNetstatProcess(raw string) (string, int) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "-" || !strings.Contains(raw, "/") {
+		return "", 0
+	}
+	parts := strings.SplitN(raw, "/", 2)
+	return parts[1], parsePort(parts[0])
+}
+
 func (c *Collector) commandOutput(name string, args ...string) ([]byte, error) {
 	ctx := context.Background()
 	cancel := func() {}
@@ -330,11 +469,32 @@ func (c *Collector) commandOutput(name string, args ...string) ([]byte, error) {
 		ctx, cancel = context.WithTimeout(ctx, c.CommandTimeout)
 	}
 	defer cancel()
-	out, err := exec.CommandContext(ctx, name, args...).Output()
+	cmd := exec.CommandContext(ctx, name, args...)
+	out, err := outputWithStderr(cmd)
 	if ctx.Err() != nil {
 		return nil, fmt.Errorf("%s timed out after %s", name, c.CommandTimeout)
 	}
 	return out, err
+}
+
+func outputWithStderr(cmd *exec.Cmd) ([]byte, error) {
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if msg != "" {
+			return out, fmt.Errorf("%w: %s", err, truncateCommandError(msg, 2048))
+		}
+	}
+	return out, err
+}
+
+func truncateCommandError(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "...(truncated)"
 }
 
 func strVal(m map[string]any, key string) string {

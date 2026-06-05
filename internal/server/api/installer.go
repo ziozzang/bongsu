@@ -453,13 +453,21 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	agentStatusCounts := map[string]int{"online": 0, "stale": 0, "offline": 0, "unknown": 0}
 	agentVersionCounts := map[string]int{}
+	inventoryStatusCounts := map[string]int{"healthy": 0, "degraded": 0, "stale": 0, "empty": 0, "none": 0}
 	hosts, err := s.db.ListHosts(r.Context())
 	if err != nil {
 		log.Printf("agent fleet status hosts: %v", err)
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	inventorySummaries, err := s.db.GetHostInventorySummaries(r.Context())
+	if err != nil {
+		log.Printf("agent fleet inventory summaries: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
 	now := time.Now()
+	inventoryStaleAfter := time.Duration(envInt("BONGSU_INVENTORY_STALE_HOURS", 48)) * time.Hour
 	for _, host := range hosts {
 		applyAgentStatus(&host, now)
 		status := host.AgentStatus
@@ -472,6 +480,7 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 			version = "unknown"
 		}
 		agentVersionCounts[version]++
+		inventoryStatusCounts[hostInventoryStatus(inventorySummaries[host.ID], now, inventoryStaleAfter)]++
 	}
 	driftCounts := agentVersionDriftCounts(agentVersionCounts, latestVersion)
 	staleScanRequestCounts := map[string]int{}
@@ -505,7 +514,7 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	securityDBRescanProgress := securityDBRescanProgressSummary(securityDBRevision, securityDBRescanCounts)
-	status, warnings, actions := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, staleScanRequestCounts, securityDBRescanCounts, securityDBRescanStaleCounts, securityDBScanCoverage, s.installToken != "", agent, trivy)
+	status, warnings, actions := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, inventoryStatusCounts, staleScanRequestCounts, securityDBRescanCounts, securityDBRescanStaleCounts, securityDBScanCoverage, s.installToken != "", agent, trivy)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":                            status,
 		"warnings":                          warnings,
@@ -515,6 +524,7 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 		"agent_status_counts":               agentStatusCounts,
 		"agent_version_counts":              agentVersionCounts,
 		"agent_version_drift_counts":        driftCounts,
+		"inventory_status_counts":           inventoryStatusCounts,
 		"outdated_percent":                  percent(driftCounts["outdated"], len(hosts)),
 		"scan_request_stale_counts":         staleScanRequestCounts,
 		"security_db_revision":              securityDBRevision,
@@ -531,7 +541,7 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts, staleScanRequestCounts, securityDBRescanCounts, staleSecurityDBRescanCounts map[string]int, securityDBScanCoverage *db.SecurityDBScanCoverage, installTokenConfigured bool, agent, trivy installerBinaryStatus) (string, []string, []string) {
+func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts, inventoryStatusCounts, staleScanRequestCounts, securityDBRescanCounts, staleSecurityDBRescanCounts map[string]int, securityDBScanCoverage *db.SecurityDBScanCoverage, installTokenConfigured bool, agent, trivy installerBinaryStatus) (string, []string, []string) {
 	warnings := []string{}
 	actions := []string{}
 	add := func(warning, action string) {
@@ -563,6 +573,15 @@ func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts, stal
 		}
 		if driftCounts["unknown"] > 0 {
 			add("one or more agents did not report a version", "upgrade agents so reports include agent_version")
+		}
+		if inventoryStatusCounts["degraded"] > 0 {
+			add("one or more hosts have degraded latest inventory", "inspect latest scan errors and re-run agents after fixing collection failures")
+		}
+		if inventoryStatusCounts["stale"] > 0 {
+			add("one or more hosts have stale latest inventory", "verify agent timers or daemons are running and force scan stale hosts")
+		}
+		if inventoryStatusCounts["empty"] > 0 || inventoryStatusCounts["none"] > 0 {
+			add("one or more hosts have no usable package inventory", "run an agent scan and confirm package collection succeeds")
 		}
 		if staleScanRequestCounts["pending"] > 0 || staleScanRequestCounts["claimed"] > 0 {
 			add("one or more scan requests are stale", "open Scan History with stale=true and verify agent daemon polling, then requeue or cancel abandoned requests")

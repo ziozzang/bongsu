@@ -118,6 +118,12 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 		if hosts, err := s.db.ListHosts(ctx); err == nil {
 			agentStatusCounts := map[string]int{}
 			agentVersionCounts := map[string]int{}
+			inventoryStatusCounts := map[string]int{"healthy": 0, "degraded": 0, "stale": 0, "empty": 0, "none": 0}
+			inventorySummaries := map[string]db.HostInventorySummary{}
+			if summaries, err := s.db.GetHostInventorySummaries(ctx); err == nil {
+				inventorySummaries = summaries
+			}
+			inventoryStaleAfter := time.Duration(envInt("BONGSU_INVENTORY_STALE_HOURS", 48)) * time.Hour
 			now := time.Now()
 			for _, host := range hosts {
 				applyAgentStatus(&host, now)
@@ -131,6 +137,7 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 				}
 				agentStatusCounts[status]++
 				agentVersionCounts[version]++
+				inventoryStatusCounts[hostInventoryStatus(inventorySummaries[host.ID], now, inventoryStaleAfter)]++
 			}
 			for _, status := range []string{"online", "stale", "offline", "unknown"} {
 				writePromGauge(&b, "bongsu_agent_hosts", map[string]string{"status": status}, float64(agentStatusCounts[status]))
@@ -164,7 +171,7 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 					securityDBScanCoverage = coverage
 				}
 			}
-			fleetStatus, warnings, _ := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, staleScanRequestCounts, securityDBRescanCounts, securityDBRescanStaleCounts, securityDBScanCoverage, s.installToken != "", agentInstaller, trivyInstaller)
+			fleetStatus, warnings, _ := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, inventoryStatusCounts, staleScanRequestCounts, securityDBRescanCounts, securityDBRescanStaleCounts, securityDBScanCoverage, s.installToken != "", agentInstaller, trivyInstaller)
 			writePromGauge(&b, "bongsu_agent_fleet_degraded", nil, boolMetric(fleetStatus != "ok"))
 			writePromGauge(&b, "bongsu_agent_fleet_warnings", nil, float64(len(warnings)))
 			writePromGauge(&b, "bongsu_agent_fleet_total_hosts", nil, float64(len(hosts)))
