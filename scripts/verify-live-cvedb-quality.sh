@@ -303,23 +303,46 @@ assert_osv_upstream_freshness() {
         fi
         if [ "$db_ready" = "true" ]; then
             eco_literal="$(sql_literal "$eco")"
-            local_ecosystem_count="$(db_scalar "
+            local_raw_ecosystem_count="$(db_scalar "
+SELECT count(*)
+FROM cve_database c
+WHERE c.source = 'osv'
+  AND (
+      lower(split_part(c.ecosystem, ':', 1)) = lower(${eco_literal})
+      OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
+          WHERE lower(split_part(COALESCE(ap->>'ecosystem', ''), ':', 1)) = lower(${eco_literal})
+      )
+  )")"
+            if ! awk -v v="$local_raw_ecosystem_count" 'BEGIN { exit !(v > 0) }'; then
+                echo "ERROR: local OSV raw source has no rows for upstream sentinel ecosystem ${eco}" >&2
+                exit 1
+            fi
+            local_matchable_ecosystem_count="$(db_scalar "
 SELECT count(*)
 FROM cve_affected_packages
 WHERE source = 'osv'
   AND lower(split_part(ecosystem, ':', 1)) = lower(${eco_literal})")"
-            if ! awk -v v="$local_ecosystem_count" 'BEGIN { exit !(v > 0) }'; then
+            if ! awk -v v="$local_matchable_ecosystem_count" 'BEGIN { exit !(v > 0) }'; then
                 echo "ERROR: local OSV affected-package index has no matchable rows for upstream sentinel ecosystem ${eco}" >&2
                 exit 1
             fi
             local_ecosystem_epoch="$(db_scalar "
 SELECT COALESCE(EXTRACT(EPOCH FROM max(updated_at))::bigint, 0)
-FROM cve_affected_packages
-WHERE source = 'osv'
-  AND lower(split_part(ecosystem, ':', 1)) = lower(${eco_literal})")"
+FROM cve_database c
+WHERE c.source = 'osv'
+  AND (
+      lower(split_part(c.ecosystem, ':', 1)) = lower(${eco_literal})
+      OR EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
+          WHERE lower(split_part(COALESCE(ap->>'ecosystem', ''), ':', 1)) = lower(${eco_literal})
+      )
+  )")"
             if ! awk -v local="$local_ecosystem_epoch" -v upstream="$upstream_epoch" -v grace="$BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS" 'BEGIN { exit !((local + grace) >= upstream) }'; then
                 echo "ERROR: local OSV ecosystem ${eco} is older than upstream beyond grace" >&2
-                echo "local_ecosystem_epoch=${local_ecosystem_epoch} upstream_epoch=${upstream_epoch} grace_seconds=${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS}" >&2
+                echo "local_raw_ecosystem_epoch=${local_ecosystem_epoch} upstream_epoch=${upstream_epoch} grace_seconds=${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS}" >&2
                 exit 1
             fi
         fi

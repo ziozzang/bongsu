@@ -1697,10 +1697,13 @@ type CveSourceStats struct {
 }
 
 type CveOsvEcosystemStats struct {
-	Ecosystem     string     `json:"ecosystem"`
-	IndexedRows   int        `json:"indexed_rows"`
-	MatchableCVEs int        `json:"matchable_cves"`
-	LastUpdate    *time.Time `json:"last_update"`
+	Ecosystem         string     `json:"ecosystem"`
+	IndexedRows       int        `json:"indexed_rows"`
+	MatchableCVEs     int        `json:"matchable_cves"`
+	RawRecords        int        `json:"raw_records"`
+	LastUpdate        *time.Time `json:"last_update"`
+	RawLastUpdate     *time.Time `json:"raw_last_update"`
+	IndexedLastUpdate *time.Time `json:"indexed_last_update"`
 }
 
 type CveSourceFreshnessStats struct {
@@ -2073,16 +2076,55 @@ func (db *DB) GetCveOsvEcosystemStats(ctx context.Context, limit int) ([]CveOsvE
 		limit = 40
 	}
 	rows, err := db.QueryContext(ctx, `
+WITH raw AS (
+	WITH raw_ecosystems AS (
+		SELECT
+			id,
+			lower(split_part(ecosystem, ':', 1)) AS ecosystem,
+			updated_at
+		FROM cve_database
+		WHERE source = 'osv'
+		  AND trim(ecosystem) != ''
+		UNION
+		SELECT
+			c.id,
+			lower(split_part(COALESCE(ap->>'ecosystem', ''), ':', 1)) AS ecosystem,
+			c.updated_at
+		FROM cve_database c
+		CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
+		WHERE c.source = 'osv'
+		  AND trim(COALESCE(ap->>'ecosystem', '')) != ''
+	)
+	SELECT
+		ecosystem,
+		count(DISTINCT id) AS raw_records,
+		max(updated_at) AS raw_last_update
+	FROM raw_ecosystems
+	WHERE trim(ecosystem) != ''
+	GROUP BY ecosystem
+),
+indexed AS (
+	SELECT
+		lower(split_part(ecosystem, ':', 1)) AS ecosystem,
+		count(*) AS indexed_rows,
+		count(DISTINCT vulnerability_id) AS matchable_cves,
+		max(updated_at) AS indexed_last_update
+	FROM cve_affected_packages
+	WHERE source = 'osv'
+	  AND trim(ecosystem) != ''
+	GROUP BY lower(split_part(ecosystem, ':', 1))
+)
 SELECT
-	lower(split_part(ecosystem, ':', 1)) AS ecosystem,
-	count(*) AS indexed_rows,
-	count(DISTINCT vulnerability_id) AS matchable_cves,
-	max(updated_at) AS last_update
-FROM cve_affected_packages
-WHERE source = 'osv'
-  AND trim(ecosystem) != ''
-GROUP BY lower(split_part(ecosystem, ':', 1))
-ORDER BY indexed_rows DESC, ecosystem
+	COALESCE(i.ecosystem, r.ecosystem) AS ecosystem,
+	COALESCE(i.indexed_rows, 0) AS indexed_rows,
+	COALESCE(i.matchable_cves, 0) AS matchable_cves,
+	COALESCE(r.raw_records, 0) AS raw_records,
+	COALESCE(r.raw_last_update, i.indexed_last_update) AS last_update,
+	r.raw_last_update,
+	i.indexed_last_update
+FROM indexed i
+FULL JOIN raw r ON r.ecosystem = i.ecosystem
+ORDER BY indexed_rows DESC, raw_records DESC, ecosystem
 LIMIT $1`, limit)
 	if err != nil {
 		return nil, err
@@ -2091,7 +2133,7 @@ LIMIT $1`, limit)
 	var stats []CveOsvEcosystemStats
 	for rows.Next() {
 		var s CveOsvEcosystemStats
-		if err := rows.Scan(&s.Ecosystem, &s.IndexedRows, &s.MatchableCVEs, &s.LastUpdate); err != nil {
+		if err := rows.Scan(&s.Ecosystem, &s.IndexedRows, &s.MatchableCVEs, &s.RawRecords, &s.LastUpdate, &s.RawLastUpdate, &s.IndexedLastUpdate); err != nil {
 			return nil, err
 		}
 		stats = append(stats, s)

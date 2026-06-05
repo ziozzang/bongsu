@@ -1368,7 +1368,7 @@ func TestCveSourceStatsAvoidsAffectedProductExpansion(t *testing.T) {
 	if start < 0 {
 		t.Fatal("GetCveSourceStats not found")
 	}
-	end := strings.Index(body[start:], "func (db *DB) GetSecurityDBRevision")
+	end := strings.Index(body[start:], "func (db *DB) GetCveOsvEcosystemStats")
 	if end < 0 {
 		t.Fatal("GetCveSourceStats end not found")
 	}
@@ -1391,6 +1391,35 @@ func TestCveSourceStatsAvoidsAffectedProductExpansion(t *testing.T) {
 	}
 	if strings.Contains(fn, "jsonb_array_elements") || strings.Contains(fn, "LEFT JOIN LATERAL") {
 		t.Fatalf("source stats must avoid per-affected-product expansion: %s", fn)
+	}
+}
+
+func TestCveOsvEcosystemStatsUsesRawAffectedProductFreshness(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetCveOsvEcosystemStats")
+	if start < 0 {
+		t.Fatal("GetCveOsvEcosystemStats not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetCveSourceFreshnessStats")
+	if end < 0 {
+		t.Fatal("GetCveOsvEcosystemStats end not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"raw_ecosystems AS",
+		"jsonb_array_elements",
+		"COALESCE(ap->>'ecosystem', '')",
+		"count(DISTINCT id) AS raw_records",
+		"raw_last_update",
+		"indexed_last_update",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("OSV ecosystem stats must use raw affected-product freshness, missing %q: %s", want, fn)
+		}
 	}
 }
 

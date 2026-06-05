@@ -665,9 +665,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const osvEcosystems = cveStatsMeta?.osv_ecosystems || [];
   const osvEcosystemRows = osvEcosystems.reduce((sum, eco) => sum + (eco.indexed_rows || 0), 0);
   const oldestOsvEcosystem = osvEcosystems.reduce<typeof osvEcosystems[number] | null>((oldest, eco) => {
-    if (!eco.last_update) return oldest;
-    if (!oldest?.last_update) return eco;
-    return new Date(eco.last_update).getTime() < new Date(oldest.last_update).getTime() ? eco : oldest;
+    const at = eco.raw_last_update || eco.last_update;
+    const oldestAt = oldest ? (oldest.raw_last_update || oldest.last_update) : null;
+    if (!at) return oldest;
+    if (!oldestAt) return eco;
+    return new Date(at).getTime() < new Date(oldestAt).getTime() ? eco : oldest;
   }, null);
   const osvEcosystemColor = cveStatsMeta?.osv_ecosystems_error
     ? 'var(--high)'
@@ -1523,7 +1525,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             {cveTotalMatchable.toLocaleString()} records with ecosystem/range data
           </div>
         </div>
-        <div className="stat-card" title={oldestOsvEcosystem?.last_update ? `Oldest OSV ecosystem ${oldestOsvEcosystem.ecosystem} updated ${new Date(oldestOsvEcosystem.last_update).toLocaleString()}` : cveStatsMeta?.osv_ecosystems_error || ''}>
+        <div className="stat-card" title={oldestOsvEcosystem?.last_update ? `Oldest OSV raw source ${oldestOsvEcosystem.ecosystem} updated ${new Date(oldestOsvEcosystem.raw_last_update || oldestOsvEcosystem.last_update).toLocaleString()}${oldestOsvEcosystem.indexed_last_update ? `, index rebuilt ${new Date(oldestOsvEcosystem.indexed_last_update).toLocaleString()}` : ''}` : cveStatsMeta?.osv_ecosystems_error || ''}>
           <div className="accent-bar" style={{ background: osvEcosystemColor }} />
           <div className="label">OSV Ecosystems</div>
           <div className="value" style={{ color: osvEcosystemColor }}>{osvEcosystems.length || '-'}</div>
@@ -1531,7 +1533,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             {cveStatsMeta?.osv_ecosystems_error
               ? 'ecosystem stats delayed'
               : oldestOsvEcosystem
-                ? `${osvEcosystemRows.toLocaleString()} rows, ${oldestOsvEcosystem.ecosystem} oldest`
+                ? `${osvEcosystemRows.toLocaleString()} rows, ${oldestOsvEcosystem.ecosystem} raw oldest`
                 : 'waiting for OSV index stats'}
           </div>
         </div>

@@ -410,8 +410,15 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 				labels := map[string]string{"ecosystem": stat.Ecosystem}
 				writePromGauge(&b, "bongsu_cve_osv_ecosystem_indexed_rows", labels, float64(stat.IndexedRows))
 				writePromGauge(&b, "bongsu_cve_osv_ecosystem_matchable_cves", labels, float64(stat.MatchableCVEs))
+				writePromGauge(&b, "bongsu_cve_osv_ecosystem_raw_records", labels, float64(stat.RawRecords))
 				if stat.LastUpdate != nil {
 					writePromGauge(&b, "bongsu_cve_osv_ecosystem_last_update_timestamp_seconds", labels, float64(stat.LastUpdate.Unix()))
+				}
+				if stat.RawLastUpdate != nil {
+					writePromGauge(&b, "bongsu_cve_osv_ecosystem_raw_last_update_timestamp_seconds", labels, float64(stat.RawLastUpdate.Unix()))
+				}
+				if stat.IndexedLastUpdate != nil {
+					writePromGauge(&b, "bongsu_cve_osv_ecosystem_indexed_last_update_timestamp_seconds", labels, float64(stat.IndexedLastUpdate.Unix()))
 				}
 			}
 		} else {

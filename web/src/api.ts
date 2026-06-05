@@ -591,7 +591,10 @@ export interface CveOsvEcosystemStat {
   ecosystem: string;
   indexed_rows: number;
   matchable_cves: number;
+  raw_records?: number;
   last_update: string | null;
+  raw_last_update?: string | null;
+  indexed_last_update?: string | null;
 }
 
 export interface CveRematchPolicy {
