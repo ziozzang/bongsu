@@ -1550,6 +1550,9 @@ func TestLiveAgentFleetRolloutVerifierChecksRealFleetReadiness(t *testing.T) {
 		`/api/admin/agent-fleet/status`,
 		`/api/stats`,
 		`/api/hosts?limit=1000`,
+		`/api/containers?limit=100`,
+		`/api/containers?limit=100&include_labels=true`,
+		`did not complete within`,
 		`BONGSU_VERIFY_AGENT_FLEET_MIN_HOSTS`,
 		`BONGSU_VERIFY_AGENT_FLEET_MIN_SECURITY_DB_SCAN_COVERAGE_PERCENT`,
 		`BONGSU_VERIFY_AGENT_FLEET_MAX_DEGRADED_INVENTORIES`,
@@ -1564,6 +1567,8 @@ func TestLiveAgentFleetRolloutVerifierChecksRealFleetReadiness(t *testing.T) {
 		`.inventory_status_counts.degraded`,
 		`.scan_request_counts.pending`,
 		`def allowed_statuses`,
+		`container list must redact raw labels by default while exposing label_count`,
+		`include_labels=true must return raw labels for rows that advertise redacted labels`,
 		`security DB revision must be present and consistent across fleet and stats surfaces`,
 		`Live agent fleet rollout verification passed`,
 	} {

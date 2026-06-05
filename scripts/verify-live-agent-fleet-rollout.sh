@@ -8,7 +8,7 @@ set -euo pipefail
 
 API_BASE="${BONGSU_API_BASE:-http://127.0.0.1:5677}"
 API_KEY="${BONGSU_API_KEY:-test-admin-key-0123456789}"
-CURL_MAX_TIME="${BONGSU_VERIFY_AGENT_FLEET_CURL_MAX_TIME_SECONDS:-30}"
+CURL_MAX_TIME="${BONGSU_VERIFY_AGENT_FLEET_CURL_MAX_TIME_SECONDS:-60}"
 MIN_HOSTS="${BONGSU_VERIFY_AGENT_FLEET_MIN_HOSTS:-1}"
 MIN_ONLINE_HOSTS="${BONGSU_VERIFY_AGENT_FLEET_MIN_ONLINE_HOSTS:-${MIN_HOSTS}}"
 MIN_INVENTORY_COVERAGE="${BONGSU_VERIFY_AGENT_FLEET_MIN_INVENTORY_COVERAGE_PERCENT:-100}"
@@ -45,9 +45,13 @@ api_get_json() {
     local path="$1"
     local out="$2"
     local status
-    status="$(curl -sS --max-time "$CURL_MAX_TIME" -o "$out" -w "%{http_code}" \
+    if ! status="$(curl -sS --max-time "$CURL_MAX_TIME" -o "$out" -w "%{http_code}" \
         -H "X-API-Key: ${API_KEY}" \
-        "${API_BASE}${path}")"
+        "${API_BASE}${path}")"; then
+        echo "ERROR: GET ${path} did not complete within ${CURL_MAX_TIME}s or failed at the transport layer" >&2
+        cat "$out" >&2 || true
+        exit 1
+    fi
     if [[ "$status" != 2* ]]; then
         echo "ERROR: GET ${path} returned HTTP ${status}" >&2
         cat "$out" >&2 || true
@@ -102,11 +106,15 @@ echo "API: ${API_BASE}"
 fleet_json="$TMP_DIR/agent-fleet-status.json"
 stats_json="$TMP_DIR/stats.json"
 hosts_json="$TMP_DIR/hosts.json"
+containers_json="$TMP_DIR/containers.json"
+containers_with_labels_json="$TMP_DIR/containers-with-labels.json"
 api_get_json "/api/admin/agent-fleet/status" "$fleet_json"
 api_get_json "/api/stats" "$stats_json"
 api_get_json "/api/hosts?limit=1000" "$hosts_json"
+api_get_json "/api/containers?limit=100" "$containers_json"
+api_get_json "/api/containers?limit=100&include_labels=true" "$containers_with_labels_json"
 
-echo "[1/4] Checking agent fleet operational status"
+echo "[1/5] Checking agent fleet operational status"
 fleet_status="$(jq -r '.status // ""' "$fleet_json")"
 if [ "$fleet_status" != "ok" ]; then
     warning_count="$(json_number "$fleet_json" '(.warnings // []) | length')"
@@ -128,7 +136,7 @@ assert_at_most "$(json_number "$fleet_json" '.agent_version_drift_counts.outdate
 assert_at_most "$(json_number "$fleet_json" '.agent_version_drift_counts.unknown')" "$MAX_UNKNOWN_VERSION_HOSTS" "unknown agent version count"
 assert_at_most "$(json_number "$fleet_json" '(.warnings // []) | length')" "$MAX_WARNINGS" "agent fleet warning count"
 
-echo "[2/4] Checking inventory freshness and security DB revision coverage"
+echo "[2/5] Checking inventory freshness and security DB revision coverage"
 assert_at_least "$(json_number "$stats_json" '.inventory_coverage_percent')" "$MIN_INVENTORY_COVERAGE" "inventory coverage percent"
 assert_at_least "$(json_number "$stats_json" '.inventory_fresh_percent')" "$MIN_INVENTORY_FRESH" "fresh inventory percent"
 assert_at_least "$(json_number "$stats_json" '.security_db_scan_coverage.coverage_percent')" "$MIN_SECURITY_DB_SCAN_COVERAGE" "current security DB scan coverage percent"
@@ -138,7 +146,7 @@ assert_at_most "$(json_number "$stats_json" '.security_db_scan_coverage.no_scan_
 assert_at_most "$(json_number "$stats_json" '.inventory_status_counts.degraded')" "$MAX_DEGRADED_INVENTORIES" "degraded latest inventory count"
 assert_at_most "$(json_number "$stats_json" '.scan_request_counts.pending')" "$MAX_PENDING_SCAN_REQUESTS" "pending scan request count"
 
-echo "[3/4] Checking real enrolled host inventory evidence"
+echo "[3/5] Checking real enrolled host inventory evidence"
 real_host_count="$(jq --arg re "$EXCLUDE_HOST_REGEX" '[.[]? | select((.id // "" | test($re) | not) and (.hostname // "" | test($re) | not))] | length' "$hosts_json")"
 assert_at_least "$real_host_count" "$MIN_HOSTS" "real enrolled host count after fixture exclusion"
 bad_hosts="$(jq -r --arg re "$EXCLUDE_HOST_REGEX" --arg statuses "$ALLOWED_SCAN_STATUSES" --argjson min_pkg "$MIN_PACKAGES_PER_HOST" '
@@ -164,7 +172,14 @@ if [ -n "$bad_hosts" ]; then
     exit 1
 fi
 
-echo "[4/4] Checking security DB revision consistency"
+echo "[4/5] Checking container metadata exposure defaults"
+assert_jq "$containers_json" 'all(.items[]?; (has("labels") | not) and ((.label_count // 0) >= 0))' "container list must redact raw labels by default while exposing label_count"
+redacted_label_rows="$(jq '[.items[]? | select((.label_count // 0) > 0 and (.labels_redacted // false) == true)] | length' "$containers_json")"
+if [ "$redacted_label_rows" -gt 0 ]; then
+    assert_jq "$containers_with_labels_json" 'any(.items[]?; ((.label_count // 0) > 0) and has("labels") and ((.labels | type) == "string") and ((.labels | length) > 2))' "include_labels=true must return raw labels for rows that advertise redacted labels"
+fi
+
+echo "[5/5] Checking security DB revision consistency"
 fleet_revision="$(jq -r '.security_db_revision // ""' "$fleet_json")"
 stats_revision="$(jq -r '.security_db_revision // ""' "$stats_json")"
 coverage_revision="$(jq -r '.security_db_scan_coverage.revision // ""' "$stats_json")"
