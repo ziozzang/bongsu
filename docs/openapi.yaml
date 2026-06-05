@@ -2674,7 +2674,9 @@ paths:
                     type: object
                   security_db_export:
                     type: object
-                    description: Security DB bundle export freshness summary, including sources changed since the latest export.
+                    description: Security DB bundle export freshness summary, including source registry updates and raw CVE row updates changed since the latest export.
+                  security_db_export_data_error:
+                    type: string
                   security_db_revision:
                     type: string
                   security_recalculation:

@@ -1921,6 +1921,42 @@ func TestCveSourceFreshnessStatsAvoidHeavyQualityScan(t *testing.T) {
 	}
 }
 
+func TestCveSourceDataUpdateStatsUseRawCveRowsForExportFreshness(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) GetCveSourceDataUpdateStats")
+	if start < 0 {
+		t.Fatal("GetCveSourceDataUpdateStats not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetSecurityDBRevision")
+	if end < 0 {
+		t.Fatal("GetSecurityDBRevision not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"SELECT source, count(*) AS count, MAX(updated_at) AS last_update",
+		"FROM cve_database",
+		"WHERE source != ''",
+		"GROUP BY source",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("source data update stats missing %q", want)
+		}
+	}
+	for _, disallowed := range []string{
+		"security_sources",
+		"COALESCE(s.last_sync_finished_at",
+		"jsonb_array_elements",
+	} {
+		if strings.Contains(fn, disallowed) {
+			t.Fatalf("source data update stats must use raw CVE row timestamps, found %q", disallowed)
+		}
+	}
+}
+
 func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
 	for name, got := range map[string]string{
 		"contextual": cveContextualFixedVersionSQL("c", "v"),

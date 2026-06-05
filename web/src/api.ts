@@ -904,16 +904,20 @@ export interface SecurityDbOperationalStatus {
   security_db_export?: {
     status: string;
     source_count?: number;
+    data_source_count?: number;
     latest_exported_at?: string;
     latest_source_update_at?: string;
     outdated_source_count?: number;
     outdated_sources?: Array<{
       source: string;
+      last_source_update_at?: string;
+      last_data_update_at?: string;
       last_sync_finished_at?: string;
       last_exported_at?: string;
       lag_seconds?: number;
     }>;
   };
+  security_db_export_data_error?: string;
   security_db_revision?: string;
   security_db_revision_error?: string;
   security_recalculation?: HealthStatus['security_recalculation'];

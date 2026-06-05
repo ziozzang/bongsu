@@ -2148,6 +2148,7 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		"securityRecalculationLastResult(dbCtx, true)",
 		"securityDBBundleImportLastResult(dbCtx, true)",
 		"ListSecuritySourceStatuses(dbCtx)",
+		"GetCveSourceDataUpdateStats(dbCtx)",
 		"securityDBRevisionMeta(dbCtx)",
 		"securityDbStatusQuality",
 		"enrichSecurityDBManagerStatus(out[\"security_db\"], freshness)",
@@ -2158,6 +2159,7 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		`out["security_sources"]`,
 		`out["security_sources_error"]`,
 		`out["security_db_export"]`,
+		`out["security_db_export_data_error"]`,
 		`out["cve_db_quality"]`,
 		`out["cve_affected_package_index"]`,
 		`out["cve_reference_key_index"]`,
@@ -2170,6 +2172,38 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("security DB status endpoint missing %q", want)
 		}
+	}
+}
+
+func TestSecurityDBExportStatusUsesRawCveRowUpdates(t *testing.T) {
+	exportedAt := time.Date(2026, 6, 5, 2, 59, 46, 0, time.UTC)
+	registryAt := time.Date(2026, 6, 5, 2, 44, 17, 0, time.UTC)
+	rawDataAt := time.Date(2026, 6, 5, 3, 55, 5, 0, time.UTC)
+	status := securityDBExportStatus([]db.SecuritySourceStatus{
+		{
+			ID:                 "osv",
+			Enabled:            true,
+			LastSyncFinishedAt: &registryAt,
+			LastExportedAt:     &exportedAt,
+		},
+	}, []db.CveSourceFreshnessStats{
+		{Source: "osv", Count: 466825, LastUpdate: &rawDataAt},
+	})
+	if got := status["status"]; got != "stale" {
+		t.Fatalf("export status = %v, want stale: %#v", got, status)
+	}
+	if got := status["latest_source_update_at"]; got != rawDataAt.Format(time.RFC3339) {
+		t.Fatalf("latest_source_update_at = %v, want raw data timestamp", got)
+	}
+	outdated, ok := status["outdated_sources"].([]map[string]any)
+	if !ok || len(outdated) != 1 {
+		t.Fatalf("outdated_sources = %#v, want one source", status["outdated_sources"])
+	}
+	if got := outdated[0]["last_data_update_at"]; got != rawDataAt.Format(time.RFC3339) {
+		t.Fatalf("last_data_update_at = %v, want raw data timestamp", got)
+	}
+	if got := outdated[0]["last_sync_finished_at"]; got != registryAt.Format(time.RFC3339) {
+		t.Fatalf("last_sync_finished_at = %v, want registry timestamp", got)
 	}
 }
 
@@ -3442,7 +3476,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 			t.Fatalf("dashboard source quality gate missing %q", want)
 		}
 	}
-	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "AccessControlStatus", "trusted_identity_configured", "trusted_proxy_cidr_count", "trusted_identity_admin_configured", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "security_db_export?:", "outdated_sources?: Array", "lag_seconds?: number", "security_db_bundle_import?:", "bundle_created_at?: string", "bundle_source_count?: number", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
+	for _, want := range []string{"CveDbStatsResponse", "CveEpssMergeStats", "CveDbQuality", "CveOsvEcosystemStat", "SecuritySourceStatus", "AccessControlStatus", "trusted_identity_configured", "trusted_proxy_cidr_count", "trusted_identity_admin_configured", "security_sources?: SecuritySourceStatus[]", "security_sources_error?: string", "security_db_export?:", "security_db_export_data_error?: string", "data_source_count?: number", "outdated_sources?: Array", "last_source_update_at?: string", "last_data_update_at?: string", "lag_seconds?: number", "security_db_bundle_import?:", "bundle_created_at?: string", "bundle_source_count?: number", "generated_at?: string", "total_matchable_percent?: number", "affected_package_index", "reference_key_index", "latest_matchable_update", "latest_cve_update", "stale?: boolean", "summary_mode?: string", "detail_error?: string", "epss_merge", "cve_db_quality", "temporary_placeholders?: number", "empty_vulnerability_ids?: number", "affected_index_summary_mode?: string", "affected_index_detail_error?: string", "reference_index_summary_mode?: string", "reference_index_detail_error?: string", "non_epss_coverage_percent?: number", "epss_universe_match_percent", "epss_non_epss_coverage_percent?: number", "durations_ms?: Record<string, number>", "merge_coverage_percent", "osv_ecosystems?: CveOsvEcosystemStat[]", "osv_ecosystems_error?: string", "rebuildCveAffectedIndex", "rebuildCveReferenceIndex", "recalculateSecurityDB", "security_db_revision?: string", "matchable_percent", "matchability_reason?: string", "rematch_eligible", "rematch_exclusion", "CveRematchPolicy", "rematch_policy", "last_sync?: string", "last_attempt?: string", "next_sync?: string", "required_sources?: string[]", "missing_sources?: string[]"} {
 		if !strings.Contains(apiBody, want) {
 			t.Fatalf("CVE source stat API type missing %q", want)
 		}

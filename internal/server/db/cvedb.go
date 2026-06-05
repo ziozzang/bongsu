@@ -2132,6 +2132,28 @@ ORDER BY c.source`)
 	return stats, rows.Err()
 }
 
+func (db *DB) GetCveSourceDataUpdateStats(ctx context.Context) ([]CveSourceFreshnessStats, error) {
+	rows, err := db.QueryContext(ctx, `
+SELECT source, count(*) AS count, MAX(updated_at) AS last_update
+FROM cve_database
+WHERE source != ''
+GROUP BY source
+ORDER BY source`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	stats := []CveSourceFreshnessStats{}
+	for rows.Next() {
+		var s CveSourceFreshnessStats
+		if err := rows.Scan(&s.Source, &s.Count, &s.LastUpdate); err != nil {
+			return nil, err
+		}
+		stats = append(stats, s)
+	}
+	return stats, rows.Err()
+}
+
 func (db *DB) GetSecurityDBRevision(ctx context.Context) (string, error) {
 	rows, err := db.QueryContext(ctx, `
 WITH indexed AS (

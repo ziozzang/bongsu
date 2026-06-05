@@ -225,7 +225,14 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 	dbCtx, cancel = withTimeout()
 	if sources, err := s.db.ListSecuritySourceStatuses(dbCtx); err == nil {
 		out["security_sources"] = sources
-		out["security_db_export"] = securityDBExportStatus(sources)
+		cancel()
+		dbCtx, cancel = withTimeout()
+		if dataUpdates, err := s.db.GetCveSourceDataUpdateStats(dbCtx); err == nil {
+			out["security_db_export"] = securityDBExportStatus(sources, dataUpdates)
+		} else {
+			out["security_db_export"] = securityDBExportStatus(sources, nil)
+			out["security_db_export_data_error"] = err.Error()
+		}
 	} else {
 		out["security_sources_error"] = err.Error()
 	}
@@ -251,42 +258,79 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, out)
 }
 
-func securityDBExportStatus(sources []db.SecuritySourceStatus) map[string]any {
+func securityDBExportStatus(sources []db.SecuritySourceStatus, dataUpdates []db.CveSourceFreshnessStats) map[string]any {
 	out := map[string]any{
 		"status":                "unknown",
 		"source_count":          len(sources),
+		"data_source_count":     len(dataUpdates),
 		"outdated_source_count": 0,
 		"outdated_sources":      []map[string]any{},
 	}
 	var latestExport *time.Time
 	var latestUpdate *time.Time
 	outdated := []map[string]any{}
+	dataBySource := map[string]db.CveSourceFreshnessStats{}
+	for _, stat := range dataUpdates {
+		source := strings.ToLower(strings.TrimSpace(stat.Source))
+		if source != "" {
+			dataBySource[source] = stat
+		}
+	}
+	seen := map[string]bool{}
 	for _, source := range sources {
 		if !source.Enabled {
 			continue
 		}
+		sourceID := strings.ToLower(strings.TrimSpace(source.ID))
+		seen[sourceID] = true
 		if source.LastExportedAt != nil && (latestExport == nil || source.LastExportedAt.After(*latestExport)) {
 			t := source.LastExportedAt.UTC()
 			latestExport = &t
 		}
-		if source.LastSyncFinishedAt != nil && (latestUpdate == nil || source.LastSyncFinishedAt.After(*latestUpdate)) {
-			t := source.LastSyncFinishedAt.UTC()
+		effectiveUpdate := source.LastSyncFinishedAt
+		dataUpdate := dataBySource[sourceID].LastUpdate
+		if dataUpdate != nil && (effectiveUpdate == nil || dataUpdate.After(*effectiveUpdate)) {
+			effectiveUpdate = dataUpdate
+		}
+		if effectiveUpdate != nil && (latestUpdate == nil || effectiveUpdate.After(*latestUpdate)) {
+			t := effectiveUpdate.UTC()
 			latestUpdate = &t
 		}
-		if source.LastSyncFinishedAt == nil {
+		if effectiveUpdate == nil {
 			continue
 		}
-		if source.LastExportedAt == nil || source.LastExportedAt.Before(*source.LastSyncFinishedAt) {
+		if source.LastExportedAt == nil || source.LastExportedAt.Before(*effectiveUpdate) {
 			item := map[string]any{
 				"source":                source.ID,
-				"last_sync_finished_at": source.LastSyncFinishedAt.UTC().Format(time.RFC3339),
+				"last_source_update_at": effectiveUpdate.UTC().Format(time.RFC3339),
+			}
+			if source.LastSyncFinishedAt != nil {
+				item["last_sync_finished_at"] = source.LastSyncFinishedAt.UTC().Format(time.RFC3339)
+			}
+			if dataUpdate != nil {
+				item["last_data_update_at"] = dataUpdate.UTC().Format(time.RFC3339)
 			}
 			if source.LastExportedAt != nil {
 				item["last_exported_at"] = source.LastExportedAt.UTC().Format(time.RFC3339)
-				item["lag_seconds"] = source.LastSyncFinishedAt.Sub(*source.LastExportedAt).Seconds()
+				item["lag_seconds"] = effectiveUpdate.Sub(*source.LastExportedAt).Seconds()
 			}
 			outdated = append(outdated, item)
 		}
+	}
+	for _, stat := range dataUpdates {
+		sourceID := strings.ToLower(strings.TrimSpace(stat.Source))
+		if sourceID == "" || seen[sourceID] || stat.LastUpdate == nil {
+			continue
+		}
+		if latestUpdate == nil || stat.LastUpdate.After(*latestUpdate) {
+			t := stat.LastUpdate.UTC()
+			latestUpdate = &t
+		}
+		outdated = append(outdated, map[string]any{
+			"source":                stat.Source,
+			"last_source_update_at": stat.LastUpdate.UTC().Format(time.RFC3339),
+			"last_data_update_at":   stat.LastUpdate.UTC().Format(time.RFC3339),
+		})
 	}
 	if latestExport != nil {
 		out["latest_exported_at"] = latestExport.Format(time.RFC3339)
