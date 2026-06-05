@@ -1173,6 +1173,12 @@ func (s *Server) runSecurityRecalculation(reason string) {
 	} else {
 		meta["severity_normalized"] = n
 	}
+	if n, err := s.db.RebuildLatestPackageVulnerabilitySummaries(ctx); err != nil {
+		log.Printf("security recalculation package vulnerability summary rebuild failed: %v", err)
+		failures = append(failures, "package_vulnerability_summaries: "+err.Error())
+	} else {
+		meta["package_vulnerability_summaries"] = n
+	}
 	log.Printf("security recalculation finished (%s)", reason)
 	status := "ok"
 	if len(failures) > 0 {
@@ -1740,6 +1746,17 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("cve-db rematch: %v", err)
 		writeError(w, http.StatusInternalServerError, "rematch failed")
+		return
+	}
+	if opts.ScanID != "" {
+		if _, err := s.db.RebuildPackageVulnerabilitySummariesForScan(r.Context(), opts.ScanID); err != nil {
+			log.Printf("cve-db rematch package vulnerability summary rebuild: %v", err)
+			writeError(w, http.StatusInternalServerError, "summary rebuild failed")
+			return
+		}
+	} else if _, err := s.db.RebuildLatestPackageVulnerabilitySummaries(r.Context()); err != nil {
+		log.Printf("cve-db rematch package vulnerability summary rebuild: %v", err)
+		writeError(w, http.StatusInternalServerError, "summary rebuild failed")
 		return
 	}
 	if stats, err := s.db.GetCveSourceStats(r.Context()); err == nil {

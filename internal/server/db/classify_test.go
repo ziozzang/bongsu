@@ -3872,7 +3872,7 @@ func TestSearchPackagesUsesPageScopedVulnerabilityCounts(t *testing.T) {
 	}
 }
 
-func TestSearchPackagesVulnSortUsesVisiblePackageScopedCounts(t *testing.T) {
+func TestSearchPackagesVulnSortUsesMaterializedPackageSummaries(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {
 		t.Fatal(err)
@@ -3888,18 +3888,23 @@ func TestSearchPackagesVulnSortUsesVisiblePackageScopedCounts(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		"WITH visible AS NOT MATERIALIZED",
-		"JOIN visible p ON p.id = v.package_id",
-		`currentActionableVulnSQLForPackage("v", "p")`,
-		"FROM visible p",
+		"pkgSummaryJoin",
+		`strings.Replace(baseQ, " WHERE 1=1", pkgSummaryJoin+" WHERE 1=1", 1)`,
+		"pkgSortExpr(f.SortBy, f.SortDesc)",
 		"LIMIT $%d OFFSET $%d",
 	} {
 		if !strings.Contains(fn, want) {
-			t.Fatalf("SearchPackages vulnerability sort aggregation missing %q: %s", want, fn)
+			t.Fatalf("SearchPackages vulnerability sort summary path missing %q: %s", want, fn)
 		}
 	}
-	if strings.Contains(fn, "pkgVulnJoin") {
-		t.Fatalf("vulnerability sort must not aggregate all historical package vulnerabilities before latest-scan filtering: %s", fn)
+	for _, avoid := range []string{
+		"FROM vulnerabilities v",
+		"JOIN visible p",
+		"GROUP BY v.package_id",
+	} {
+		if strings.Contains(fn, avoid) {
+			t.Fatalf("vulnerability sort must use precomputed package summaries, found %q: %s", avoid, fn)
+		}
 	}
 }
 

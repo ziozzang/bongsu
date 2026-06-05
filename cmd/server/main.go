@@ -149,6 +149,14 @@ func main() {
 		log.Printf("Severity normalization: %v", err)
 	}
 	recalcCancel()
+
+	summaryCtx, summaryCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_PACKAGE_SUMMARY_REBUILD_TIMEOUT_SECONDS", 120))*time.Second)
+	if n, err := database.RebuildLatestPackageVulnerabilitySummaries(summaryCtx); err == nil && n > 0 {
+		log.Printf("Rebuilt %d package vulnerability summaries", n)
+	} else if err != nil {
+		log.Printf("Package vulnerability summary rebuild: %v", err)
+	}
+	summaryCancel()
 	key := server.APIKey()
 	if len(key) > 8 {
 		log.Printf("API Key: %s...%s", key[:4], key[len(key)-4:])

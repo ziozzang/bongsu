@@ -225,6 +225,12 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 
 	scanStatus := reportScanStatus(skippedVulns, len(ingestErrors))
 	errorSummary := scanErrorSummary(ingestErrors)
+	if _, err := s.db.RebuildPackageVulnerabilitySummariesForScan(ctx, report.ScanID); err != nil {
+		log.Printf("rebuild package vulnerability summaries: %v", err)
+		ingestErrors = append(ingestErrors, "package_vulnerability_summaries: "+err.Error())
+		scanStatus = reportScanStatus(skippedVulns, len(ingestErrors))
+		errorSummary = scanErrorSummary(ingestErrors)
+	}
 	if err := s.db.CompleteScan(ctx, report.ScanID, scanStatus, errorSummary); err != nil {
 		log.Printf("complete scan: %v", err)
 		ingestErrors = append(ingestErrors, "complete_scan: "+err.Error())

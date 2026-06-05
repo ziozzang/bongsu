@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
@@ -19,6 +20,7 @@ var pkgVulnJoin = ` LEFT JOIN (
 ) vx ON vx.package_id = p.id`
 
 const pkgVulnSelect = `, COALESCE(vx.max_cvss, 0), COALESCE(vx.vuln_count, 0)`
+const pkgSummaryJoin = ` LEFT JOIN package_vulnerability_summaries vx ON vx.package_id = p.id`
 
 const pkgInsertCols = `id, scan_id, host_id, asset_type, asset_id, source, container, container_id, image_name, image_id, name, version, arch, pkg_type, ecosystem, purl, src_name, file_path, layer_id, target`
 
@@ -172,27 +174,9 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 
 	dataQ := ""
 	if packageSortNeedsVulnAggregate(f.SortBy) {
-		dataQ = fmt.Sprintf(`
-WITH visible AS NOT MATERIALIZED (
-	SELECT %s
-	%s
-),
-vuln_counts AS (
-	SELECT v.package_id, MAX(v.cvss_score) AS max_cvss, COUNT(*) AS vuln_count
-	FROM vulnerabilities v
-	JOIN visible p ON p.id = v.package_id
-	%s
-	WHERE %s
-	GROUP BY v.package_id
-)
-SELECT %s%s
-FROM visible p
-LEFT JOIN vuln_counts vx ON vx.package_id = p.id
-ORDER BY %s
-LIMIT $%d OFFSET $%d`,
-			pkgCols, baseQ,
-			vulnTriageJoin, currentActionableVulnSQLForPackage("v", "p"),
-			pkgCols, pkgVulnSelect, pkgSortExpr(f.SortBy, f.SortDesc), n, n+1)
+		summaryBaseQ := strings.Replace(baseQ, " WHERE 1=1", pkgSummaryJoin+" WHERE 1=1", 1)
+		dataQ = fmt.Sprintf(`SELECT %s%s %s%s ORDER BY %s LIMIT $%d OFFSET $%d`,
+			pkgCols, pkgVulnSelect, summaryBaseQ, "", pkgSortExpr(f.SortBy, f.SortDesc), n, n+1)
 	} else {
 		dataQ = fmt.Sprintf(`
 WITH page AS (
@@ -234,6 +218,111 @@ ORDER BY %s`,
 		pkgs = append(pkgs, p)
 	}
 	return pkgs, total, nil
+}
+
+func (db *DB) RebuildPackageVulnerabilitySummariesForScan(ctx context.Context, scanID string) (int, error) {
+	if strings.TrimSpace(scanID) == "" {
+		return 0, nil
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM package_vulnerability_summaries WHERE scan_id=$1`, scanID); err != nil {
+		return 0, err
+	}
+	q := `INSERT INTO package_vulnerability_summaries (package_id, scan_id, max_cvss, vuln_count, updated_at)
+SELECT v.package_id, v.scan_id, MAX(v.cvss_score), COUNT(*)::int, now()
+FROM vulnerabilities v
+JOIN packages p ON p.id = v.package_id
+` + vulnTriageJoin + `
+WHERE p.scan_id=$1
+  AND ` + currentActionableVulnSQLForPackage("v", "p") + `
+GROUP BY v.package_id, v.scan_id`
+	res, err := tx.ExecContext(ctx, q, scanID)
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+func (db *DB) RebuildLatestPackageVulnerabilitySummaries(ctx context.Context) (int, error) {
+	scanIDs, err := db.latestScanIDs(ctx)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, scanID := range scanIDs {
+		n, err := db.RebuildPackageVulnerabilitySummariesForScan(ctx, scanID)
+		if err != nil {
+			return total, err
+		}
+		total += n
+	}
+	return total, nil
+}
+
+func (db *DB) RebuildPackageVulnerabilitySummariesForTriage(ctx context.Context, t models.VulnerabilityTriage) (int, error) {
+	args := []any{t.VulnerabilityID}
+	filter := "v.vulnerability_id=$1"
+	if strings.TrimSpace(t.HostID) != "" {
+		args = append(args, strings.TrimSpace(t.HostID))
+		filter += fmt.Sprintf(" AND v.host_id=$%d", len(args))
+	}
+	if strings.TrimSpace(t.PkgName) != "" {
+		args = append(args, strings.TrimSpace(t.PkgName))
+		filter += fmt.Sprintf(" AND v.pkg_name=$%d", len(args))
+	}
+	rows, err := db.QueryContext(ctx, `SELECT DISTINCT v.scan_id
+FROM vulnerabilities v
+JOIN `+latestScansSub+` ls ON ls.id = v.scan_id
+WHERE `+filter, args...)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var scanIDs []string
+	for rows.Next() {
+		var scanID string
+		if err := rows.Scan(&scanID); err != nil {
+			return 0, err
+		}
+		scanIDs = append(scanIDs, scanID)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, scanID := range scanIDs {
+		n, err := db.RebuildPackageVulnerabilitySummariesForScan(ctx, scanID)
+		if err != nil {
+			return total, err
+		}
+		total += n
+	}
+	return total, nil
+}
+
+func (db *DB) latestScanIDs(ctx context.Context) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id FROM `+latestScansSub+` ls`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var scanIDs []string
+	for rows.Next() {
+		var scanID string
+		if err := rows.Scan(&scanID); err != nil {
+			return nil, err
+		}
+		scanIDs = append(scanIDs, scanID)
+	}
+	return scanIDs, rows.Err()
 }
 
 func packageSortNeedsVulnAggregate(sortBy string) bool {
