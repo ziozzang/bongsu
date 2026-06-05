@@ -123,6 +123,7 @@ for script in \
     verify-live-oidc-rbac.sh \
     verify-live-server-build.sh \
     verify-live-trusted-identity-rbac.sh \
+    verify-live-vulnerability-triage.sh \
     verify-live-vulnerability-export-rbac.sh \
     verify-live-web-smoke.sh \
     verify-operator-workflow.sh \

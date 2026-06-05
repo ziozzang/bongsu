@@ -1508,6 +1508,7 @@ func TestLiveVerifiersCleanUpFixtureHosts(t *testing.T) {
 		"../../../scripts/verify-live-agent-token-binding.sh",
 		"../../../scripts/verify-live-scan-request-recovery.sh",
 		"../../../scripts/verify-live-security-db-auto-rescan.sh",
+		"../../../scripts/verify-live-vulnerability-triage.sh",
 		"../../../scripts/verify-agent-binary-workflow.sh",
 	} {
 		out, err := os.ReadFile(path)
@@ -1550,6 +1551,7 @@ func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
 		"../../../scripts/verify-live-scan-request-recovery.sh",
 		"../../../scripts/verify-live-security-db-auto-rescan.sh",
 		"../../../scripts/verify-live-security-db-export-freshness.sh",
+		"../../../scripts/verify-live-vulnerability-triage.sh",
 		"../../../scripts/verify-live-web-smoke.sh",
 	} {
 		out, err := os.ReadFile(path)
@@ -4447,6 +4449,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-security-db-auto-rescan.sh`,
 		`./scripts/verify-live-security-db-export-freshness.sh`,
 		`./scripts/verify-live-cve-rematch-workflow.sh`,
+		`./scripts/verify-live-vulnerability-triage.sh`,
 		`./scripts/verify-live-session-auth.sh`,
 		`./scripts/verify-live-oidc-rbac.sh`,
 		`./scripts/verify-live-trusted-identity-rbac.sh`,
@@ -4809,6 +4812,39 @@ func TestLiveVulnerabilityExportRBACVerifierScopesExports(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("live vulnerability export RBAC verifier missing %q", want)
+		}
+	}
+}
+
+func TestLiveVulnerabilityTriageVerifierCoversLifecycle(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-vulnerability-triage.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`BONGSU_API_KEY:-test-admin-key-0123456789`,
+		`BONGSU_AGENT_API_KEY:-test-agent-key-0123456789`,
+		`/api/report`,
+		`/api/vulnerabilities?host_id=${HOST_ID}`,
+		`reason is required`,
+		`status:"accepted_risk"`,
+		`triage_status=accepted_risk`,
+		`triage_active_counts.accepted_risk`,
+		`bongsu_vulnerability_triage_decisions`,
+		`/api/vulnerabilities/export?host_id=${HOST_ID}`,
+		`format=csv`,
+		`status:"false_positive"`,
+		`triage_status=false_positive`,
+		`triage_status=open`,
+		`triage_expired_counts.false_positive`,
+		`/api/admin/audit-logs?action=vulnerability.triage`,
+		`-X DELETE`,
+		`/api/hosts/${HOST_ID}`,
+		`Live vulnerability triage verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live vulnerability triage verifier missing %q", want)
 		}
 	}
 }

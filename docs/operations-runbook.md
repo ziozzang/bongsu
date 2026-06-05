@@ -1,6 +1,6 @@
 # Bongsu Operations Runbook
 
-Updated: 2026-06-04 15:24:27 KST
+Updated: 2026-06-05 09:29:11 KST
 
 This runbook is for operators running Bongsu in connected or air-gapped environments. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu.
 
@@ -45,6 +45,7 @@ It verifies CVE DB observability under concurrent operator load with `./scripts/
 It verifies stale scan-request recovery with `./scripts/verify-live-scan-request-recovery.sh`: a fixture host-specific request is claimed, aged in PostgreSQL, surfaced by the stale request filter, requeued through `/api/scan-requests/requeue-stale`, audited, and proven claimable again.
 It verifies security DB auto-rescan queueing with `./scripts/verify-live-security-db-auto-rescan.sh`: a fixture host reports inventory, a finalized temporary CVE source import triggers `security_db.changed`, recalculation, and `security_db.auto_rescan`, and the host receives a claimable `security-db-update` packages-only scan request stamped with the new security DB revision.
 It verifies CVE DB rematch end-to-end with `./scripts/verify-live-cve-rematch-workflow.sh`: a fixture SBOM reports `phenx/php-svg-lib@0.5.0` as a Packagist package, report-triggered automatic rematch must create `cve-db` findings from OSV, explicit scan-scoped rematch must be idempotent, and the findings must preserve package ecosystem, installed version, fixed-version, and OSV advisory evidence.
+It verifies vulnerability triage lifecycle behavior with `./scripts/verify-live-vulnerability-triage.sh`: a fixture vulnerability is uploaded, suppressing statuses without a reason must fail closed, accepted-risk triage must be visible through filters, stats, Prometheus metrics, JSON/CSV exports, and audit logs, and an expired false-positive decision must stop applying so the current finding returns to `open`.
 It verifies SBOM export end-to-end with `./scripts/verify-live-sbom-export-workflow.sh`: a fixture report contains host OS packages, host code libraries, container OS packages, and container code libraries, then both CycloneDX and SPDX exports must preserve host ID, scan ID, package purl, asset type, container ID, image name, image ID, and target evidence. The same gate also fails if mixed host/container OS packages produce a server-side Trivy `server_match` ingest error such as the `deb`/`apk` mixed-SBOM aggregation failure, because package-only scans must isolate matching by asset instead of letting one container package type degrade the whole host report.
 It verifies vulnerability export RBAC with `./scripts/verify-live-vulnerability-export-rbac.sh`: allowed and denied fixture hosts both report vulnerabilities, the viewer receives only an `export` permission for the allowed asset group, JSON and CSV vulnerability exports must exclude denied data, and an explicit denied-host export must fail closed with HTTP 403.
 
@@ -71,6 +72,7 @@ go test ./...
 ./scripts/verify-live-server-build.sh
 ./scripts/verify-live-cvedb-concurrency.sh
 ./scripts/verify-live-cve-rematch-workflow.sh
+./scripts/verify-live-vulnerability-triage.sh
 ./scripts/verify-live-scan-request-recovery.sh
 ./scripts/verify-live-security-db-auto-rescan.sh
 ./scripts/verify-static-binaries.sh
