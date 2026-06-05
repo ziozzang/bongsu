@@ -47,6 +47,7 @@ It verifies security DB auto-rescan queueing with `./scripts/verify-live-securit
 It verifies destructive retention pruning with `./scripts/verify-live-retention-prune.sh`: synthetic 2001-era scan, inventory, scan-request, and audit rows are inserted only after the verifier confirms no non-fixture rows are eligible under the very old cutoff, then dry-run and prune responses must report exact fixture-only blast-radius counts while preserving the latest usable scan, an old running scan, and an old pending scan request.
 It verifies CVE DB rematch end-to-end with `./scripts/verify-live-cve-rematch-workflow.sh`: a fixture SBOM reports `phenx/php-svg-lib@0.5.0` as a Packagist package, report-triggered automatic rematch must create `cve-db` findings from OSV, explicit scan-scoped rematch must be idempotent, and the findings must preserve package ecosystem, installed version, fixed-version, and OSV advisory evidence.
 It verifies vulnerability triage lifecycle behavior with `./scripts/verify-live-vulnerability-triage.sh`: a fixture vulnerability is uploaded, suppressing statuses without a reason must fail closed, accepted-risk triage must be visible through filters, stats, Prometheus metrics, JSON/CSV exports, and audit logs, and an expired false-positive decision must stop applying so the current finding returns to `open`.
+It verifies SBOM export RBAC with `./scripts/verify-live-sbom-export-rbac.sh`: allowed and denied fixture hosts both report package inventories, the viewer receives only an `export` permission for the allowed asset group, CycloneDX and SPDX exports for the allowed host must succeed, and the denied host SBOM export must fail closed with HTTP 403 and a forbidden audit row.
 It verifies SBOM export end-to-end with `./scripts/verify-live-sbom-export-workflow.sh`: a fixture report contains host OS packages, host code libraries, container OS packages, and container code libraries, then both CycloneDX and SPDX exports must preserve host ID, scan ID, package purl, asset type, container ID, image name, image ID, and target evidence. The same gate also fails if mixed host/container OS packages produce a server-side Trivy `server_match` ingest error such as the `deb`/`apk` mixed-SBOM aggregation failure, because package-only scans must isolate matching by asset instead of letting one container package type degrade the whole host report.
 It verifies vulnerability export RBAC with `./scripts/verify-live-vulnerability-export-rbac.sh`: allowed and denied fixture hosts both report vulnerabilities, the viewer receives only an `export` permission for the allowed asset group, JSON and CSV vulnerability exports must exclude denied data, and an explicit denied-host export must fail closed with HTTP 403.
 
@@ -74,6 +75,7 @@ go test ./...
 ./scripts/verify-live-cvedb-concurrency.sh
 ./scripts/verify-live-cve-rematch-workflow.sh
 ./scripts/verify-live-vulnerability-triage.sh
+./scripts/verify-live-sbom-export-rbac.sh
 ./scripts/verify-live-scan-request-recovery.sh
 ./scripts/verify-live-security-db-auto-rescan.sh
 ./scripts/verify-live-retention-prune.sh

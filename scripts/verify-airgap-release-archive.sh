@@ -114,6 +114,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-live-install-script.sh" \
     "$ROOT_DIR/scripts/verify-live-installer-payload.sh" \
     "$ROOT_DIR/scripts/verify-live-rbac-scope.sh" \
+    "$ROOT_DIR/scripts/verify-live-sbom-export-rbac.sh" \
     "$ROOT_DIR/scripts/verify-live-sbom-export-workflow.sh" \
     "$ROOT_DIR/scripts/verify-live-scan-request-recovery.sh" \
     "$ROOT_DIR/scripts/verify-live-security-db-auto-rescan.sh" \
