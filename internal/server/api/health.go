@@ -125,6 +125,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		timedOut := dbCtx.Err() != nil
 		cancel()
 		resp["security_db_freshness"] = freshness
+		if latest, ok := freshness["latest_last_update"]; ok {
+			resp["security_db_updated_at"] = latest
+		}
 		enrichSecurityDBManagerStatus(resp["security_db"], freshness)
 		if timedOut {
 			resp["security_db_freshness_timeout"] = true

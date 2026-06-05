@@ -2601,6 +2601,7 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 		`s.securityDBFreshnessStatus(dbCtx, isAdmin)`,
 		`resp["security_db_freshness_timeout"] = true`,
 		`resp["security_db_freshness"] = freshness`,
+		`resp["security_db_updated_at"] = latest`,
 		`enrichSecurityDBManagerStatus(resp["security_db"], freshness)`,
 	} {
 		if !strings.Contains(fn, want) {
