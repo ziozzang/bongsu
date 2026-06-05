@@ -68,6 +68,10 @@ for pattern in \
     '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-security-db-schedule\.sh' \
     '\./scripts/verify-live-security-db-export-freshness\.sh' \
+    '\./scripts/verify-security-db-bundle-file\.sh' \
+    '\./scripts/verify-security-db-bundle-file-fixtures\.sh' \
+    'CVE JSONL checksum and record count' \
+    'Trivy DB checksum before operators move the bundle across an airgap' \
     '\./scripts/verify-live-fixture-cleanup\.sh' \
     'RBAC subjects or policies must visibly delete those RBAC fixtures' \
     'scan-request fixtures must visibly cancel or remove those queue entries' \

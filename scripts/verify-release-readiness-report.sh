@@ -80,6 +80,7 @@ prepare_release_root() {
         verify-static-binaries.sh \
         verify-release-readiness-report.sh \
         verify-live-fixture-cleanup.sh \
+        verify-security-db-bundle-file-fixtures.sh \
         verify-security-db-export-helper-fixtures.sh \
         verify-security-db-export-freshness-fixtures.sh \
         verify-airgap-release-archive.sh \

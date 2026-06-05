@@ -71,6 +71,7 @@ go test ./...
 ./scripts/verify-live-security-db-schedule.sh
 ./scripts/verify-live-security-db-export-freshness.sh
 ./scripts/verify-live-fixture-cleanup.sh
+./scripts/verify-security-db-bundle-file-fixtures.sh
 ./scripts/verify-security-db-export-helper-fixtures.sh
 ./scripts/verify-security-db-export-freshness-fixtures.sh
 ./scripts/verify-live-session-auth.sh
@@ -235,6 +236,7 @@ sha256sum -c bongsu-0.1.0.tar.gz.sha256
 tar xzf bongsu-0.1.0.tar.gz
 cd bongsu-0.1.0
 sha256sum -c SHA256SUMS
+./scripts/verify-security-db-bundle-file.sh ../bongsu-security-db-bundle.tar.gz
 ./load-images.sh
 cp deploy/.env.example deploy/.env
 # Edit deploy/.env with strong secrets and keep online sync disabled.
@@ -383,10 +385,11 @@ docker compose -f deploy/docker-compose.yml exec -T postgres \
   pg_dump -U "${BONGSU_DB_USER:-bongsu}" "${BONGSU_DB_NAME:-bongsu}" > bongsu-postgres.sql
 
 ./scripts/export-security-db-bundle.sh http://localhost:5677 "$BONGSU_API_KEY" bongsu-security-db-bundle.tar.gz
+./scripts/verify-security-db-bundle-file.sh bongsu-security-db-bundle.tar.gz
 sha256sum bongsu-postgres.sql bongsu-security-db-bundle.tar.gz > bongsu-backup.sha256
 ```
 
-`export-security-db-bundle.sh` downloads to a temporary file, runs the live export freshness verifier by default, retries the verifier briefly while the server records the just-finished export in the source registry, and publishes the final bundle filename plus `.sha256` sidecar only after that verifier passes. Tune the bounded retry with `BONGSU_BUNDLE_VERIFY_FRESHNESS_ATTEMPTS` and `BONGSU_BUNDLE_VERIFY_FRESHNESS_RETRY_SECONDS`; set `BONGSU_BUNDLE_VERIFY_FRESHNESS=false` only for emergency backup capture when the bundle is not being promoted as the current security DB.
+`export-security-db-bundle.sh` downloads to a temporary file, runs the live export freshness verifier by default, retries the verifier briefly while the server records the just-finished export in the source registry, and publishes the final bundle filename plus `.sha256` sidecar only after that verifier passes. `verify-security-db-bundle-file.sh` checks the sidecar checksum, required tar members, manifest schema, source provenance, CVE JSONL checksum and record count, JSONL parseability, and optional Trivy DB checksum before operators move the bundle across an airgap. Tune the bounded retry with `BONGSU_BUNDLE_VERIFY_FRESHNESS_ATTEMPTS` and `BONGSU_BUNDLE_VERIFY_FRESHNESS_RETRY_SECONDS`; set `BONGSU_BUNDLE_VERIFY_FRESHNESS=false` only for emergency backup capture when the bundle is not being promoted as the current security DB.
 
 For large backups, restores, Trivy DB downloads, or connected CVE source syncs on hosts with a small `/tmp`, set `BONGSU_TMPDIR=/path/with/space` before running the packaged scripts. The backup, restore, Trivy DB download, NVD/OSV/Trivy CVE sync, OSV download, and Trivy CVE extraction scripts create managed `bongsu-*` work directories under that path and remove them on exit.
 

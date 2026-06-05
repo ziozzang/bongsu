@@ -63,6 +63,8 @@ for script in \
     'sync-trivy-cvedb.sh' \
     'export-security-db-bundle.sh' \
     'import-security-db-bundle.sh' \
+    'verify-security-db-bundle-file.sh' \
+    'verify-security-db-bundle-file-fixtures.sh' \
     'verify-release-readiness.sh' \
     'verify-release-readiness-report.sh' \
     'verify-live-fixture-cleanup.sh' \
@@ -153,6 +155,16 @@ for pattern in \
     'mv "\$TMP_OUTPUT" "\$OUTPUT"'
 do
     require_text "$ROOT/scripts/export-security-db-bundle.sh" "$pattern" "security DB bundle export helper must verify freshness after export"
+done
+
+for pattern in \
+    'BONGSU_VERIFY_SECURITY_DB_BUNDLE_REQUIRE_SIDECAR' \
+    'cve-database\.jsonl checksum mismatch' \
+    'cve-database\.jsonl record count mismatch' \
+    'trivy-db\.tar\.gz checksum mismatch' \
+    'Security DB bundle file verification passed'
+do
+    require_text "$ROOT/scripts/verify-security-db-bundle-file.sh" "$pattern" "security DB bundle file verifier must validate transfer artifacts"
 done
 
 for pattern in \

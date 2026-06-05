@@ -97,6 +97,8 @@ for script in \
     sync-trivy-cvedb.sh \
     export-security-db-bundle.sh \
     import-security-db-bundle.sh \
+    verify-security-db-bundle-file.sh \
+    verify-security-db-bundle-file-fixtures.sh \
     verify-release-readiness.sh \
     verify-release-readiness-report.sh \
     verify-live-fixture-cleanup.sh \

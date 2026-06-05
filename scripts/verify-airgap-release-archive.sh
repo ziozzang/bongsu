@@ -104,6 +104,8 @@ for path in \
     "$ROOT_DIR/scripts/sync-trivy-cvedb.sh" \
     "$ROOT_DIR/scripts/import-security-db-bundle.sh" \
     "$ROOT_DIR/scripts/export-security-db-bundle.sh" \
+    "$ROOT_DIR/scripts/verify-security-db-bundle-file.sh" \
+    "$ROOT_DIR/scripts/verify-security-db-bundle-file-fixtures.sh" \
     "$ROOT_DIR/scripts/verify-release-readiness.sh" \
     "$ROOT_DIR/scripts/verify-backup-restore-archive.sh" \
     "$ROOT_DIR/scripts/verify-operator-workflow.sh" \
@@ -223,6 +225,9 @@ require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'BONGSU_BUNDLE_VER
 require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'verify-live-security-db-export-freshness\.sh' "packaged security DB export helper must verify bundle freshness after export"
 require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'mktemp "\$\{OUTPUT_DIR%/\}/\.\$\{OUTPUT_BASE\}\.tmp\.XXXXXX"' "packaged security DB export helper must download to a temporary output path"
 require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'mv "\$TMP_OUTPUT" "\$OUTPUT"' "packaged security DB export helper must publish the final output only after verification"
+require_text "$ROOT_DIR/scripts/verify-security-db-bundle-file.sh" 'BONGSU_VERIFY_SECURITY_DB_BUNDLE_REQUIRE_SIDECAR' "packaged security DB bundle file verifier must check checksum sidecars"
+require_text "$ROOT_DIR/scripts/verify-security-db-bundle-file.sh" 'cve-database\.jsonl record count mismatch' "packaged security DB bundle file verifier must check CVE record count"
+require_text "$ROOT_DIR/scripts/verify-security-db-bundle-file.sh" 'trivy-db\.tar\.gz checksum mismatch' "packaged security DB bundle file verifier must check Trivy DB checksum"
 
 echo "[7/7] Checking airgap deployment invariants"
 require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_TRIVY_DB_INTERVAL_HOURS: "(0|\$\{BONGSU_TRIVY_DB_INTERVAL_HOURS:-0\})"' "airgap compose must disable Trivy DB auto refresh by default"
