@@ -2077,31 +2077,14 @@ func (db *DB) GetCveOsvEcosystemStats(ctx context.Context, limit int) ([]CveOsvE
 	}
 	rows, err := db.QueryContext(ctx, `
 WITH raw AS (
-	WITH raw_ecosystems AS (
-		SELECT
-			id,
-			lower(split_part(ecosystem, ':', 1)) AS ecosystem,
-			updated_at
-		FROM cve_database
-		WHERE source = 'osv'
-		  AND trim(ecosystem) != ''
-		UNION
-		SELECT
-			c.id,
-			lower(split_part(COALESCE(ap->>'ecosystem', ''), ':', 1)) AS ecosystem,
-			c.updated_at
-		FROM cve_database c
-		CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
-		WHERE c.source = 'osv'
-		  AND trim(COALESCE(ap->>'ecosystem', '')) != ''
-	)
 	SELECT
-		ecosystem,
-		count(DISTINCT id) AS raw_records,
+		lower(split_part(ecosystem, ':', 1)) AS ecosystem,
+		count(*) AS raw_records,
 		max(updated_at) AS raw_last_update
-	FROM raw_ecosystems
-	WHERE trim(ecosystem) != ''
-	GROUP BY ecosystem
+	FROM cve_database
+	WHERE source = 'osv'
+	  AND trim(ecosystem) != ''
+	GROUP BY lower(split_part(ecosystem, ':', 1))
 ),
 indexed AS (
 	SELECT
@@ -2113,19 +2096,34 @@ indexed AS (
 	WHERE source = 'osv'
 	  AND trim(ecosystem) != ''
 	GROUP BY lower(split_part(ecosystem, ':', 1))
+	ORDER BY indexed_rows DESC, ecosystem
+	LIMIT $1
+),
+fallback_raw AS (
+	SELECT
+		i.ecosystem,
+		count(DISTINCT c.id) AS raw_records,
+		max(c.updated_at) AS raw_last_update
+	FROM indexed i
+	JOIN cve_affected_packages cap ON cap.source = 'osv'
+	  AND lower(split_part(cap.ecosystem, ':', 1)) = i.ecosystem
+	JOIN cve_database c ON c.id = cap.cve_id
+	LEFT JOIN raw r ON r.ecosystem = i.ecosystem
+	WHERE r.ecosystem IS NULL
+	GROUP BY i.ecosystem
 )
 SELECT
-	COALESCE(i.ecosystem, r.ecosystem) AS ecosystem,
+	i.ecosystem,
 	COALESCE(i.indexed_rows, 0) AS indexed_rows,
 	COALESCE(i.matchable_cves, 0) AS matchable_cves,
-	COALESCE(r.raw_records, 0) AS raw_records,
-	COALESCE(r.raw_last_update, i.indexed_last_update) AS last_update,
-	r.raw_last_update,
+	COALESCE(r.raw_records, fr.raw_records, 0) AS raw_records,
+	COALESCE(r.raw_last_update, fr.raw_last_update, i.indexed_last_update) AS last_update,
+	COALESCE(r.raw_last_update, fr.raw_last_update) AS raw_last_update,
 	i.indexed_last_update
 FROM indexed i
-FULL JOIN raw r ON r.ecosystem = i.ecosystem
-ORDER BY indexed_rows DESC, raw_records DESC, ecosystem
-LIMIT $1`, limit)
+LEFT JOIN raw r ON r.ecosystem = i.ecosystem
+LEFT JOIN fallback_raw fr ON fr.ecosystem = i.ecosystem
+ORDER BY i.indexed_rows DESC, raw_records DESC, i.ecosystem`, limit)
 	if err != nil {
 		return nil, err
 	}

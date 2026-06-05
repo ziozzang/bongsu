@@ -1410,16 +1410,19 @@ func TestCveOsvEcosystemStatsUsesRawAffectedProductFreshness(t *testing.T) {
 	}
 	fn := body[start : start+end]
 	for _, want := range []string{
-		"raw_ecosystems AS",
-		"jsonb_array_elements",
-		"COALESCE(ap->>'ecosystem', '')",
-		"count(DISTINCT id) AS raw_records",
+		"fallback_raw AS",
+		"JOIN cve_affected_packages cap ON cap.source = 'osv'",
+		"JOIN cve_database c ON c.id = cap.cve_id",
+		"LEFT JOIN raw r ON r.ecosystem = i.ecosystem",
 		"raw_last_update",
 		"indexed_last_update",
 	} {
 		if !strings.Contains(fn, want) {
-			t.Fatalf("OSV ecosystem stats must use raw affected-product freshness, missing %q: %s", want, fn)
+			t.Fatalf("OSV ecosystem stats must use indexed fallback freshness for affected-product-only ecosystems, missing %q: %s", want, fn)
 		}
+	}
+	if strings.Contains(fn, "jsonb_array_elements") {
+		t.Fatalf("OSV ecosystem stats must not expand every raw affected product for dashboard stats: %s", fn)
 	}
 }
 
