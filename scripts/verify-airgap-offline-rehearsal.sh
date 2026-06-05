@@ -132,7 +132,16 @@ BONGSU_WEB_AUTH=true
 BONGSU_ALLOW_WEAK_SECRETS=false
 BONGSU_AGENT_HOST_BINDING=true
 EOF
-docker compose --env-file "$TMP_DIR/airgap.env" -f "$ROOT_DIR/deploy/docker-compose.airgap.yml" config > "$COMPOSE_CONFIG"
+(
+    set -a
+    # docker compose gives the process environment precedence over --env-file.
+    # Re-export the rehearsal env so live verifier credentials cannot leak into
+    # the packaged airgap config render.
+    # shellcheck disable=SC1091
+    . "$TMP_DIR/airgap.env"
+    set +a
+    docker compose --env-file "$TMP_DIR/airgap.env" -f "$ROOT_DIR/deploy/docker-compose.airgap.yml" config > "$COMPOSE_CONFIG"
+)
 
 echo "[5/6] Checking airgap compose invariants from packaged files"
 require_text "$COMPOSE_CONFIG" 'BONGSU_PORT: "5677"' "packaged API service must listen on 5677"
