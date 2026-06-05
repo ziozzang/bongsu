@@ -1801,6 +1801,12 @@ func TestCveEntryHasMatchableAffectedProduct(t *testing.T) {
 			wantReason:       "missing fixed version",
 		},
 		{
+			name:             "zero fixed is not matchable",
+			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0"],"ranges":[{"events":[{"introduced":"0"},{"fixed":"0"}]}]}]`,
+			want:             false,
+			wantReason:       "missing fixed version",
+		},
+		{
 			name:             "hash fixed is not matchable",
 			affectedProducts: `[{"name":"phenx/php-svg-lib","ecosystem":"Packagist","fixed":["0123456789abcdef0123456789abcdef01234567"]}]`,
 			want:             false,
@@ -1927,6 +1933,7 @@ func TestCveEnrichmentUsesSafeFixedVersionRules(t *testing.T) {
 			"= 1",
 			"ev->>'fixed'",
 			"!~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
+			"<> '0'",
 			"~ '[0-9]'",
 			"!~* '^(?:https?|git|ssh)://'",
 			"!~ '/'",
@@ -2648,6 +2655,28 @@ func TestNonVersionFixedAffectedPackagesMigration(t *testing.T) {
 	}
 	if strings.Contains(body, "DELETE FROM cve_affected_packages") {
 		t.Fatalf("non-version fixed migration must not full-scan affected packages during startup: %s", body)
+	}
+}
+
+func TestZeroFixedAffectedPackagesMigration(t *testing.T) {
+	migration, err := os.ReadFile("../../../migrations/051_reject_zero_fixed_affected_packages.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(migration)
+	for _, want := range []string{
+		"DROP CONSTRAINT IF EXISTS cve_affected_packages_fixed_version_safe_check",
+		"cve_affected_packages_fixed_version_safe_check",
+		"trim(fixed_version) <> '0'",
+		"fixed_version ~ '[0-9]'",
+		"NOT VALID",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("zero fixed affected-package migration missing %q: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "DELETE FROM cve_affected_packages") {
+		t.Fatalf("zero fixed migration must not full-scan affected packages during startup: %s", body)
 	}
 }
 
@@ -3450,6 +3479,7 @@ func TestFixedVersionEvidenceSQLRejectsNonVersionEvidence(t *testing.T) {
 	for _, want := range []string{
 		"v.fixed_version IS NOT NULL",
 		"v.fixed_version != ''",
+		"trim(v.fixed_version) <> '0'",
 		"v.fixed_version ~ '[0-9]'",
 		"v.fixed_version !~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'",
 		"v.fixed_version !~* '^(?:https?|git|ssh)://'",

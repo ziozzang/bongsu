@@ -517,7 +517,8 @@ WHERE trim(package_name) = ''
     assert_db_zero "
 SELECT count(*)
 FROM cve_affected_packages
-WHERE fixed_version !~ '[0-9]'
+WHERE trim(fixed_version) = '0'
+   OR fixed_version !~ '[0-9]'
    OR fixed_version ~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'
    OR fixed_version ~* '^(?:https?|git|ssh)://'
    OR fixed_version ~* '^git\+'

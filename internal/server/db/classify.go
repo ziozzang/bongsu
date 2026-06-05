@@ -239,6 +239,9 @@ func isSafeFixedVersion(version string) bool {
 	if version == "" {
 		return false
 	}
+	if version == "0" {
+		return false
+	}
 	if !versionLikeFixedVersionRe.MatchString(version) {
 		return false
 	}
@@ -527,6 +530,7 @@ func fixedVersionEvidenceSQL(alias string) string {
 	}
 	fixed := prefix + "fixed_version"
 	return fmt.Sprintf(`%s IS NOT NULL AND %s != ''
+			AND trim(%s) <> '0'
 			AND %s ~ '[0-9]'
 			AND %s !~* '^(?:[0-9a-f]{32}|[0-9a-f]{40}|[0-9a-f]{64})$'
 			AND %s !~* '^(?:https?|git|ssh)://'
@@ -534,5 +538,5 @@ func fixedVersionEvidenceSQL(alias string) string {
 			AND %s !~* '^pkg:'
 			AND %s !~ '/'
 			AND %s !~* '^(?:main|master|trunk|head|latest|stable|unstable|develop|development)$'`,
-		fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed)
+		fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed, fixed)
 }
