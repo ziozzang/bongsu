@@ -1,6 +1,6 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-05 04:19:32 KST
+Updated: 2026-06-05 11:20:11 KST
 
 This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
 
@@ -15,7 +15,7 @@ This document is the handoff point for the next agent session. Continue from the
 - Docker Compose deployment must remain available for the management server.
 - Air-gapped deployment is required: update outside, export bundle, import inside.
 - Air-gapped release archives must include static server/agent binaries, source sync scripts, import/export scripts, server/web/agent/postgres Docker images, migrations, web assets, and a package `SHA256SUMS` manifest.
-- CVE matching must use only matchable affected package evidence: package name, ecosystem/target such as `Packagist`, and fixed-version/range data. Name-only or priority-only records must remain searchable but must not create rematch/rescan findings.
+- CVE matching must use only matchable affected package evidence: package name, ecosystem/target such as `Packagist`, and fixed-version/range data. Name-only, priority-only, URL/package URL/git URL/branch/hash-like fixed values, and literal `0` placeholder fixed values must remain searchable or ignored as source data but must not create rematch/rescan findings.
 - `TEMP-*` and `CVD-*` placeholder vulnerabilities are invalid for the CVE DB and should not appear in `cve_database`, `cve_affected_packages`, reference keys, or rematch candidates.
 - EPSS belongs on matching CVE/advisory rows as columns, not only as separate EPSS source records.
 
@@ -24,13 +24,14 @@ This document is the handoff point for the next agent session. Continue from the
 Expected committed head at this handoff:
 
 ```text
-master / origin/main latest commit: Isolate release readiness deploy config env
+master / origin/main latest commit: Document zero fixed-version rejection
 ```
 
 Important recent commits:
 
 ```text
-<latest> Isolate release readiness deploy config env
+<latest> Document zero fixed-version rejection
+579f74b Reject zero fixed versions in CVE matching
 dd07e28 Update live CVE DB verification handoff
 cfde381 Cache security DB revision lookups
 7da00c3 Add fixture coverage for export freshness gate
@@ -193,14 +194,14 @@ OSV sync bugs fixed in recent handoffs:
 - Second root cause: after append mode was fixed, rows sharing the same OSV source and CVE alias still conflicted on `(vulnerability_id, source)`. Later distro chunks could overwrite earlier Packagist/PyPI/npm `affected_products`.
 - Second fix: CVE/source upserts now merge existing and incoming `affected_products`/`refs` arrays. The live verifier includes a Packagist sentinel for `phenx/php-svg-lib` when the DB contains a production-scale OSV Packagist feed.
 
-Latest OSV live snapshot:
+Latest OSV live snapshot after rejecting literal `0` fixed-version placeholders:
 
 ```text
-osv cve_database rows:       330843
-osv Packagist top rows:      6299
-osv affected index rows:     282765
-osv indexed/matchable CVEs:  99597
-phenx/php-svg-lib matches:   3 Packagist rows with fixed 0.5.1/0.5.2
+osv cve_database rows:       466822
+osv affected index rows:     1604565
+osv indexed/matchable CVEs:  208832
+osv fixed_version='0' rows:  0
+phenx/php-svg-lib matches:   Packagist rows with package/ecosystem/fixed evidence
 ```
 
 Last verified operational metrics:
@@ -218,17 +219,18 @@ Last quality snapshot:
 ```json
 {
   "temporary_placeholders": 0,
-  "total_records": 372310,
-  "total_matchable": 39,
+  "total_records": 961416,
+  "total_matchable": 208832,
+  "osv_fixed_zero_rows": 0,
   "affected_index_coverage": 100,
   "affected_index_orphans": 0,
-  "reference_index_coverage": 100,
+  "reference_index_coverage": 99.9,
   "reference_index_orphans": 0,
-  "epss_non_epss_coverage": 95.9
+  "epss_non_epss_coverage": 96.1
 }
 ```
 
-Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`, `cve_affected_packages`, and `cve_reference_keys`; affected-package rows all had package/ecosystem/fixed evidence; canonical CVE reference groups merged multiple non-priority sources; vendor/advisory reference keys were materialized beside canonical CVE keys.
+Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`, `cve_affected_packages`, and `cve_reference_keys`; zero OSV `fixed_version='0'` affected-package rows; affected-package rows all had package/ecosystem/fixed evidence; canonical CVE reference groups merged multiple non-priority sources; vendor/advisory reference keys were materialized beside canonical CVE keys.
 
 ## What Has Been Completed
 
@@ -239,10 +241,10 @@ Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`
 - CVE search is backed by indexes and bounded request timeouts.
 - Affected packages lookup and reference grouping are bounded.
 - Live CVE DB quality verification now checks reference-group API structure, and direct DB mode verifies canonical CVE groups merge multiple non-priority sources while vendor/advisory keys are materialized beside canonical CVE keys.
-- Matchable CVE evidence is materialized into `cve_affected_packages`.
+- Matchable CVE evidence is materialized into `cve_affected_packages`; OSV rows whose only fixed evidence is literal `0` are excluded from this index and from rematch/rescan.
 - Vulnerability evidence/listing now uses matchable affected package rows instead of raw JSON name matches.
 - CVE DB rematch filters require compatible package name, ecosystem, fixed version/range, and affected range semantics.
-- CVE rematch false-positive controls now have `./scripts/verify-cve-matching-invariants.sh`, covering same-name OS/library collisions, fixed/range evidence, inclusive `last_affected`, exclusive `limit`, pre-release ordering, and numeric Debian/RPM-style epoch comparison.
+- CVE rematch false-positive controls now have `./scripts/verify-cve-matching-invariants.sh`, covering same-name OS/library collisions, fixed/range evidence, rejection of literal `0` fixed-version placeholders, inclusive `last_affected`, exclusive `limit`, pre-release ordering, and numeric Debian/RPM-style epoch comparison.
 - EPSS data is merged into matching non-EPSS CVE/advisory rows.
 - TEMP placeholder identifiers are blocked/removed from CVE DB matching paths.
 - CVSS v2/v3.x/v4 recalculation support exists and startup recalculation is timeout-bounded.
