@@ -72,6 +72,7 @@ go test ./...
 ./scripts/verify-live-security-db-export-freshness.sh
 ./scripts/verify-live-fixture-cleanup.sh
 ./scripts/verify-security-db-bundle-file-fixtures.sh
+./scripts/verify-security-db-import-helper-fixtures.sh
 ./scripts/verify-security-db-export-helper-fixtures.sh
 ./scripts/verify-security-db-export-freshness-fixtures.sh
 ./scripts/verify-live-session-auth.sh
@@ -389,7 +390,7 @@ docker compose -f deploy/docker-compose.yml exec -T postgres \
 sha256sum bongsu-postgres.sql bongsu-security-db-bundle.tar.gz > bongsu-backup.sha256
 ```
 
-`export-security-db-bundle.sh` downloads to a temporary file, runs the live export freshness verifier by default, retries the verifier briefly while the server records the just-finished export in the source registry, and publishes the final bundle filename plus `.sha256` sidecar only after that verifier passes. `verify-security-db-bundle-file.sh` checks the sidecar checksum, required tar members, manifest schema, source provenance, CVE JSONL checksum and record count, JSONL parseability, and optional Trivy DB checksum before operators move the bundle across an airgap. Tune the bounded retry with `BONGSU_BUNDLE_VERIFY_FRESHNESS_ATTEMPTS` and `BONGSU_BUNDLE_VERIFY_FRESHNESS_RETRY_SECONDS`; set `BONGSU_BUNDLE_VERIFY_FRESHNESS=false` only for emergency backup capture when the bundle is not being promoted as the current security DB.
+`export-security-db-bundle.sh` downloads to a temporary file, runs the live export freshness verifier by default, retries the verifier briefly while the server records the just-finished export in the source registry, and publishes the final bundle filename plus `.sha256` sidecar only after that verifier passes. `verify-security-db-bundle-file.sh` checks the sidecar checksum, required tar members, manifest schema, source provenance, CVE JSONL checksum and record count, JSONL parseability, and optional Trivy DB checksum before operators move the bundle across an airgap. `import-security-db-bundle.sh` runs the same local bundle verification before upload by default, and `BONGSU_BUNDLE_VERIFY_BEFORE_IMPORT=false` should only be used for emergency diagnostics because it bypasses that pre-upload transfer check. Tune the bounded export retry with `BONGSU_BUNDLE_VERIFY_FRESHNESS_ATTEMPTS` and `BONGSU_BUNDLE_VERIFY_FRESHNESS_RETRY_SECONDS`; set `BONGSU_BUNDLE_VERIFY_FRESHNESS=false` only for emergency backup capture when the bundle is not being promoted as the current security DB.
 
 For large backups, restores, Trivy DB downloads, or connected CVE source syncs on hosts with a small `/tmp`, set `BONGSU_TMPDIR=/path/with/space` before running the packaged scripts. The backup, restore, Trivy DB download, NVD/OSV/Trivy CVE sync, OSV download, and Trivy CVE extraction scripts create managed `bongsu-*` work directories under that path and remove them on exit.
 

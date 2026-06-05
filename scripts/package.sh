@@ -99,6 +99,7 @@ for script in \
     import-security-db-bundle.sh \
     verify-security-db-bundle-file.sh \
     verify-security-db-bundle-file-fixtures.sh \
+    verify-security-db-import-helper-fixtures.sh \
     verify-release-readiness.sh \
     verify-release-readiness-report.sh \
     verify-live-fixture-cleanup.sh \

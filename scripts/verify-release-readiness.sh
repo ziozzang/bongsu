@@ -258,6 +258,7 @@ run ./scripts/verify-operations-runbook.sh
 run ./scripts/verify-release-readiness-report.sh
 run ./scripts/verify-live-fixture-cleanup.sh
 run ./scripts/verify-security-db-bundle-file-fixtures.sh
+run ./scripts/verify-security-db-import-helper-fixtures.sh
 run ./scripts/verify-security-db-export-helper-fixtures.sh
 run ./scripts/verify-security-db-export-freshness-fixtures.sh
 run ./scripts/verify-cve-matching-invariants.sh

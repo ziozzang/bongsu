@@ -70,8 +70,10 @@ for pattern in \
     '\./scripts/verify-live-security-db-export-freshness\.sh' \
     '\./scripts/verify-security-db-bundle-file\.sh' \
     '\./scripts/verify-security-db-bundle-file-fixtures\.sh' \
+    '\./scripts/verify-security-db-import-helper-fixtures\.sh' \
     'CVE JSONL checksum and record count' \
     'Trivy DB checksum before operators move the bundle across an airgap' \
+    'import-security-db-bundle\.sh` runs the same local bundle verification before upload by default' \
     '\./scripts/verify-live-fixture-cleanup\.sh' \
     'RBAC subjects or policies must visibly delete those RBAC fixtures' \
     'scan-request fixtures must visibly cancel or remove those queue entries' \

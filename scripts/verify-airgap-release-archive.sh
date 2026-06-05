@@ -106,6 +106,7 @@ for path in \
     "$ROOT_DIR/scripts/export-security-db-bundle.sh" \
     "$ROOT_DIR/scripts/verify-security-db-bundle-file.sh" \
     "$ROOT_DIR/scripts/verify-security-db-bundle-file-fixtures.sh" \
+    "$ROOT_DIR/scripts/verify-security-db-import-helper-fixtures.sh" \
     "$ROOT_DIR/scripts/verify-release-readiness.sh" \
     "$ROOT_DIR/scripts/verify-backup-restore-archive.sh" \
     "$ROOT_DIR/scripts/verify-operator-workflow.sh" \
@@ -228,6 +229,8 @@ require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'mv "\$TMP_OUTPUT"
 require_text "$ROOT_DIR/scripts/verify-security-db-bundle-file.sh" 'BONGSU_VERIFY_SECURITY_DB_BUNDLE_REQUIRE_SIDECAR' "packaged security DB bundle file verifier must check checksum sidecars"
 require_text "$ROOT_DIR/scripts/verify-security-db-bundle-file.sh" 'cve-database\.jsonl record count mismatch' "packaged security DB bundle file verifier must check CVE record count"
 require_text "$ROOT_DIR/scripts/verify-security-db-bundle-file.sh" 'trivy-db\.tar\.gz checksum mismatch' "packaged security DB bundle file verifier must check Trivy DB checksum"
+require_text "$ROOT_DIR/scripts/import-security-db-bundle.sh" 'BONGSU_BUNDLE_VERIFY_BEFORE_IMPORT' "packaged security DB import helper must allow explicit local verification control"
+require_text "$ROOT_DIR/scripts/import-security-db-bundle.sh" 'verify-security-db-bundle-file\.sh' "packaged security DB import helper must verify local bundle before upload"
 
 echo "[7/7] Checking airgap deployment invariants"
 require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_TRIVY_DB_INTERVAL_HOURS: "(0|\$\{BONGSU_TRIVY_DB_INTERVAL_HOURS:-0\})"' "airgap compose must disable Trivy DB auto refresh by default"

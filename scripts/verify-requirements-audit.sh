@@ -83,6 +83,7 @@ for command in \
     '\./scripts/verify-live-security-db-export-freshness\.sh' \
     '\./scripts/verify-security-db-bundle-file\.sh <bundle>' \
     '\./scripts/verify-security-db-bundle-file-fixtures\.sh' \
+    '\./scripts/verify-security-db-import-helper-fixtures\.sh' \
     '\./scripts/verify-live-session-auth\.sh' \
     '\./scripts/verify-live-oidc-rbac\.sh' \
     '\./scripts/verify-live-server-build\.sh' \
@@ -112,6 +113,7 @@ for keyword in \
     'air-gapped' \
     'security DB bundle file verifier' \
     'CVE JSONL checksum/count/parseability' \
+    'failed local verification prevents upload' \
     '봉수대' \
     'product intro' \
     'TEMP-\*' \
@@ -197,6 +199,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-live-fixture-cleanup\.sh' "airgap package
 require_text "$PACKAGE_SCRIPT" 'verify-security-db-export-helper-fixtures\.sh' "airgap package must include security DB export helper fixture verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-security-db-export-freshness-fixtures\.sh' "airgap package must include security DB export freshness fixture verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-security-db-bundle-file-fixtures\.sh' "airgap package must include security DB bundle file fixture verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-security-db-import-helper-fixtures\.sh' "airgap package must include security DB import helper fixture verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-operations-runbook\.sh' "airgap package must include operations runbook verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-cve-matching-invariants\.sh' "airgap package must include CVE matching invariant verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap package must include backup/restore archive verifier"

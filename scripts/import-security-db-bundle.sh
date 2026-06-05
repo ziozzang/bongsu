@@ -7,6 +7,8 @@ set -euo pipefail
 SERVER_URL="${1:-${BONGSU_SERVER_URL:-}}"
 API_KEY="${2:-${BONGSU_API_KEY:-}}"
 BUNDLE="${3:-bongsu-security-db-bundle.tar.gz}"
+VERIFY_BEFORE_IMPORT="${BONGSU_BUNDLE_VERIFY_BEFORE_IMPORT:-true}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 if [ -z "$SERVER_URL" ] || [ -z "$API_KEY" ]; then
     echo "Usage: $0 <server-url> <api-key> [bundle-file]"
@@ -22,6 +24,11 @@ fi
 echo "=== Importing Bongsu Security DB Bundle ==="
 echo "Server: $SERVER_URL"
 echo "Bundle: $BUNDLE ($(du -h "$BUNDLE" | cut -f1))"
+
+if [ "$VERIFY_BEFORE_IMPORT" != "false" ]; then
+    echo "Verifying bundle before upload..."
+    "${SCRIPT_DIR}/verify-security-db-bundle-file.sh" "$BUNDLE"
+fi
 
 curl -fSL \
     -X POST \
