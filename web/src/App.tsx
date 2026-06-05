@@ -644,6 +644,13 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   }, null);
   const securitySourceRegistryBroken = !!securityDbStatus?.security_sources_error || securitySourceRegistry.some(s => s.enabled && (s.last_status !== 'ok' || (s.record_count || 0) === 0 || s.last_error));
   const securityDbExportStatus = securityDbStatus?.security_db_export;
+  const latestSecuritySourceDataUpdate = securityDbExportStatus?.latest_source_update_at;
+  const latestSecuritySourceRegistryTime = latestSecuritySourceRegistry?.last_sync_finished_at;
+  const latestSecuritySourceDisplay = latestSecuritySourceDataUpdate && (!latestSecuritySourceRegistryTime || new Date(latestSecuritySourceDataUpdate).getTime() > new Date(latestSecuritySourceRegistryTime).getTime())
+    ? { label: 'data', source: 'cve rows', at: latestSecuritySourceDataUpdate }
+    : latestSecuritySourceRegistryTime
+      ? { label: 'registry', source: latestSecuritySourceRegistry?.id || 'source', at: latestSecuritySourceRegistryTime }
+      : null;
   const securityDbExportStale = securityDbExportStatus?.status === 'stale' || securityDbExportStatus?.status === 'never';
   const securitySourceRegistryColor = securitySourceRegistryBroken
     ? 'var(--critical)'
@@ -1469,7 +1476,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
             </div>
           )}
         </div>
-        <div className="stat-card" title={latestSecuritySourceRegistry?.last_sync_finished_at ? `Latest registry source ${latestSecuritySourceRegistry.id} updated ${new Date(latestSecuritySourceRegistry.last_sync_finished_at).toLocaleString()}` : securityDbStatus?.security_sources_error || ''}>
+        <div className="stat-card" title={latestSecuritySourceDisplay ? `Latest ${latestSecuritySourceDisplay.label} update ${new Date(latestSecuritySourceDisplay.at).toLocaleString()}` : securityDbStatus?.security_sources_error || ''}>
           <div className="accent-bar" style={{ background: securitySourceRegistryColor }} />
           <div className="label">Source Registry</div>
           <div className="value" style={{ color: securitySourceRegistryColor }}>
@@ -1482,9 +1489,9 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
                 ? `${securitySourceRegistryRecords.toLocaleString()} records tracked`
                 : 'waiting for source registry'}
           </div>
-          {latestSecuritySourceRegistry?.last_sync_finished_at && (
+          {latestSecuritySourceDisplay && (
             <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.25rem' }}>
-              latest {latestSecuritySourceRegistry.id} {new Date(latestSecuritySourceRegistry.last_sync_finished_at).toLocaleString()}
+              latest {latestSecuritySourceDisplay.source} {new Date(latestSecuritySourceDisplay.at).toLocaleString()}
             </div>
           )}
           {latestSecuritySourceExport?.last_exported_at && (
