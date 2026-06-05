@@ -281,6 +281,7 @@ if [ "$LIVE" = "true" ]; then
     run ./scripts/verify-live-retention-prune.sh
     run ./scripts/verify-live-cve-rematch-workflow.sh
     run ./scripts/verify-live-vulnerability-triage.sh
+    run ./scripts/verify-live-report-export-rbac.sh
     run ./scripts/verify-live-sbom-export-rbac.sh
     run ./scripts/verify-live-sbom-export-workflow.sh
     run ./scripts/verify-live-vulnerability-export-rbac.sh

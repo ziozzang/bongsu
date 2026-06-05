@@ -48,14 +48,22 @@ type RiskBreakdownRow struct {
 	RiskCounts     map[string]int `json:"risk_level_counts"`
 }
 
-func (db *DB) GetExecutiveSummary(ctx context.Context) (*ExecutiveSummary, error) {
+func reportHostFilter(hostIDs []string, alias string, param int) (string, []any) {
+	if hostIDs == nil {
+		return "", nil
+	}
+	return fmt.Sprintf(" AND %s.id = ANY($%d)", alias, param), []any{pqStringArray(hostIDs)}
+}
+
+func (db *DB) GetExecutiveSummary(ctx context.Context, hostIDs []string) (*ExecutiveSummary, error) {
 	summary := &ExecutiveSummary{
 		GeneratedAt:    time.Now().UTC(),
 		SeverityCounts: map[string]int{},
 		RiskCounts:     map[string]int{},
 	}
-	db.QueryRowContext(ctx, `SELECT count(*)::int FROM hosts`).Scan(&summary.TotalHosts)
-	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL()
+	hostFilter, hostArgs := reportHostFilter(hostIDs, "h", 1)
+	db.QueryRowContext(ctx, `SELECT count(*)::int FROM hosts h WHERE 1=1`+hostFilter, hostArgs...).Scan(&summary.TotalHosts)
+	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL() + hostFilter
 	q := fmt.Sprintf(`SELECT count(*)::int,
 		count(*) FILTER (WHERE v.severity='CRITICAL')::int,
 		count(*) FILTER (WHERE v.severity='HIGH')::int,
@@ -81,7 +89,7 @@ func (db *DB) GetExecutiveSummary(ctx context.Context) (*ExecutiveSummary, error
 		baseQ)
 	var riskCritical, riskHigh, riskMedium, riskLow int
 	var sevCritical, sevHigh, sevMedium, sevLow int
-	db.QueryRowContext(ctx, q).Scan(
+	db.QueryRowContext(ctx, q, hostArgs...).Scan(
 		&summary.ActiveVulns,
 		&sevCritical, &sevHigh, &sevMedium, &sevLow,
 		&riskCritical, &riskHigh, &riskMedium, &riskLow,
@@ -100,12 +108,20 @@ func (db *DB) GetExecutiveSummary(ctx context.Context) (*ExecutiveSummary, error
 		summary.SLACompliance = 100
 	}
 	var snapHosts int
-	db.QueryRowContext(ctx, `SELECT count(DISTINCT host_id)::int FROM vuln_trend_snapshots`).Scan(&snapHosts)
+	snapFilter := ""
+	if hostIDs != nil {
+		snapFilter = " WHERE host_id = ANY($1)"
+	}
+	db.QueryRowContext(ctx, `SELECT count(DISTINCT host_id)::int FROM vuln_trend_snapshots`+snapFilter, hostArgs...).Scan(&snapHosts)
 	if summary.TotalHosts > 0 {
 		summary.HostCoverage = float64(snapHosts) / float64(summary.TotalHosts) * 100
 	}
 	var prevTotal int
-	db.QueryRowContext(ctx, `SELECT COALESCE(sum(total_vulns),0)::int FROM vuln_trend_snapshots WHERE snapshot_date = CURRENT_DATE - interval '7 days'`).Scan(&prevTotal)
+	prevFilter := ` WHERE snapshot_date = CURRENT_DATE - interval '7 days'`
+	if hostIDs != nil {
+		prevFilter += " AND host_id = ANY($1)"
+	}
+	db.QueryRowContext(ctx, `SELECT COALESCE(sum(total_vulns),0)::int FROM vuln_trend_snapshots`+prevFilter, hostArgs...).Scan(&prevTotal)
 	summary.TrendDelta = summary.ActiveVulns - prevTotal
 	summary.TrendDirection = "stable"
 	if prevTotal > 0 {
@@ -116,7 +132,7 @@ func (db *DB) GetExecutiveSummary(ctx context.Context) (*ExecutiveSummary, error
 			summary.TrendDirection = "improving"
 		}
 	}
-	topHosts, _ := db.GetTopAtRiskHosts(ctx, 5)
+	topHosts, _ := db.GetTopAtRiskHosts(ctx, 5, hostIDs)
 	if topHosts != nil {
 		summary.TopRiskHosts = topHosts
 	} else {
@@ -125,18 +141,20 @@ func (db *DB) GetExecutiveSummary(ctx context.Context) (*ExecutiveSummary, error
 	return summary, nil
 }
 
-func (db *DB) GetSLAComplianceReport(ctx context.Context) (*SLAComplianceReport, error) {
+func (db *DB) GetSLAComplianceReport(ctx context.Context, hostIDs []string) (*SLAComplianceReport, error) {
 	report := &SLAComplianceReport{
 		GeneratedAt:    time.Now().UTC(),
 		BySeverity:     map[string]SLASevStats{},
 		OverdueByOwner: []SLAOwnerRow{},
 	}
+	hostFilter, hostArgs := reportHostFilter(hostIDs, "h", 2)
 	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL() +
-		` AND COALESCE(vt.status, 'open') IN ('open', 'in_progress')`
+		` AND COALESCE(vt.status, 'open') IN ('open', 'in_progress')` + hostFilter
 	for _, sev := range []string{"CRITICAL", "HIGH", "MEDIUM", "LOW"} {
 		slaDays := SLADaysForSeverity(sev)
 		var total, overdue int
-		db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*)::int, count(*) FILTER (WHERE v.created_at < now() - interval '%d days')::int %s AND v.severity = $1`, slaDays, baseQ), sev).Scan(&total, &overdue)
+		args := append([]any{sev}, hostArgs...)
+		db.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*)::int, count(*) FILTER (WHERE v.created_at < now() - interval '%d days')::int %s AND v.severity = $1`, slaDays, baseQ), args...).Scan(&total, &overdue)
 		rate := 100.0
 		if total > 0 {
 			rate = float64(total-overdue) / float64(total) * 100
@@ -153,6 +171,9 @@ func (db *DB) GetSLAComplianceReport(ctx context.Context) (*SLAComplianceReport,
 	} else {
 		report.OverallRate = 100
 	}
+	ownerHostFilter, ownerHostArgs := reportHostFilter(hostIDs, "h", 1)
+	ownerBaseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL() +
+		` AND COALESCE(vt.status, 'open') IN ('open', 'in_progress')` + ownerHostFilter
 	ownerRows, err := db.QueryContext(ctx, fmt.Sprintf(`SELECT COALESCE(h.owner, '(unassigned)'), count(*)::int,
 		count(*) FILTER (WHERE
 			(v.severity='CRITICAL' AND v.created_at < now() - interval '%d days') OR
@@ -162,7 +183,7 @@ func (db *DB) GetSLAComplianceReport(ctx context.Context) (*SLAComplianceReport,
 		)::int AS overdue
 		%s GROUP BY COALESCE(h.owner, '(unassigned)') ORDER BY overdue DESC LIMIT 10`,
 		SLADaysForSeverity("CRITICAL"), SLADaysForSeverity("HIGH"), SLADaysForSeverity("MEDIUM"), SLADaysForSeverity("LOW"),
-		baseQ))
+		ownerBaseQ), ownerHostArgs...)
 	if err == nil {
 		defer ownerRows.Close()
 		for ownerRows.Next() {
@@ -176,7 +197,7 @@ func (db *DB) GetSLAComplianceReport(ctx context.Context) (*SLAComplianceReport,
 	return report, nil
 }
 
-func (db *DB) GetRiskBreakdown(ctx context.Context, groupBy string) ([]RiskBreakdownRow, error) {
+func (db *DB) GetRiskBreakdown(ctx context.Context, groupBy string, hostIDs []string) ([]RiskBreakdownRow, error) {
 	groupExpr := `COALESCE(h.owner, '')`
 	switch strings.ToLower(groupBy) {
 	case "team":
@@ -186,7 +207,8 @@ func (db *DB) GetRiskBreakdown(ctx context.Context, groupBy string) ([]RiskBreak
 	case "criticality":
 		groupExpr = `COALESCE(h.criticality, '')`
 	}
-	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL()
+	hostFilter, hostArgs := reportHostFilter(hostIDs, "h", 1)
+	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL() + hostFilter
 	q := fmt.Sprintf(`SELECT %s AS group_value,
 		count(*)::int,
 		count(*) FILTER (WHERE v.severity='CRITICAL')::int,
@@ -201,7 +223,7 @@ func (db *DB) GetRiskBreakdown(ctx context.Context, groupBy string) ([]RiskBreak
 		groupExpr,
 		vulnRiskLevelExpr, vulnRiskLevelExpr, vulnRiskLevelExpr, vulnRiskLevelExpr,
 		baseQ)
-	rows, err := db.QueryContext(ctx, q)
+	rows, err := db.QueryContext(ctx, q, hostArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("get risk breakdown: %w", err)
 	}

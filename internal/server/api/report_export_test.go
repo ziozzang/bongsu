@@ -70,6 +70,27 @@ func TestReportExportRequiresExportAuth(t *testing.T) {
 	if !strings.Contains(body, "authenticateExport") {
 		t.Fatal("handleExportReport does not check authenticateExport")
 	}
+	for _, want := range []string{"exportScope", "scope.Empty()", "scopeHostFilter(scope, scope.HostIDs)"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("handleExportReport must enforce export RBAC scope, missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestReportHandlersUseReadScope(t *testing.T) {
+	out := readAllPackageGoFiles(t)
+	for _, fn := range []string{"handleGetExecutiveSummary", "handleGetRiskBreakdown", "handleGetSLACompliance"} {
+		idx := strings.Index(out, "func (s *Server) "+fn)
+		if idx < 0 {
+			t.Fatalf("%s not found", fn)
+		}
+		body := extractFuncBody(out, idx)
+		for _, want := range []string{"accessScope", "scope.Empty()", "scopeHostFilter(scope, scope.HostIDs)"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s must enforce read RBAC scope, missing %q: %s", fn, want, body)
+			}
+		}
+	}
 }
 
 func TestReportExportUsesStableArrayFields(t *testing.T) {

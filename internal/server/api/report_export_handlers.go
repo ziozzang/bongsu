@@ -14,12 +14,18 @@ func (s *Server) handleGetExecutiveSummary(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	summary, err := s.db.GetExecutiveSummary(r.Context())
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	hostIDs := scopeHostFilter(scope, scope.HostIDs)
+	summary, err := s.db.GetExecutiveSummary(r.Context(), hostIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	s.audit(r, "report.generate", "report", "executive-summary", "ok", map[string]any{"format": "json"})
+	s.audit(r, "report.generate", "report", "executive-summary", "ok", map[string]any{"format": "json", "scoped_hosts": len(hostIDs), "scope_all": scope.All})
 	writeJSON(w, http.StatusOK, summary)
 }
 
@@ -32,7 +38,13 @@ func (s *Server) handleGetRiskBreakdown(w http.ResponseWriter, r *http.Request) 
 	if groupBy == "" {
 		groupBy = "owner"
 	}
-	rows, err := s.db.GetRiskBreakdown(r.Context(), groupBy)
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	hostIDs := scopeHostFilter(scope, scope.HostIDs)
+	rows, err := s.db.GetRiskBreakdown(r.Context(), groupBy, hostIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -40,7 +52,7 @@ func (s *Server) handleGetRiskBreakdown(w http.ResponseWriter, r *http.Request) 
 	if rows == nil {
 		rows = []db.RiskBreakdownRow{}
 	}
-	s.audit(r, "report.generate", "report", "risk-breakdown", "ok", map[string]any{"group_by": groupBy})
+	s.audit(r, "report.generate", "report", "risk-breakdown", "ok", map[string]any{"group_by": groupBy, "scoped_hosts": len(hostIDs), "scope_all": scope.All})
 	writeJSON(w, http.StatusOK, map[string]any{"items": rows, "group_by": groupBy})
 }
 
@@ -49,12 +61,18 @@ func (s *Server) handleGetSLACompliance(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	report, err := s.db.GetSLAComplianceReport(r.Context())
+	scope := s.accessScope(r)
+	if scope.Empty() {
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	hostIDs := scopeHostFilter(scope, scope.HostIDs)
+	report, err := s.db.GetSLAComplianceReport(r.Context(), hostIDs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	s.audit(r, "report.generate", "report", "sla-compliance", "ok", nil)
+	s.audit(r, "report.generate", "report", "sla-compliance", "ok", map[string]any{"scoped_hosts": len(hostIDs), "scope_all": scope.All})
 	writeJSON(w, http.StatusOK, report)
 }
 
@@ -63,6 +81,13 @@ func (s *Server) handleExportReport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	scope := s.exportScope(r)
+	if scope.Empty() {
+		s.audit(r, "report.export", "report", r.URL.Query().Get("type"), "forbidden", map[string]any{"reason": "empty export scope"})
+		writeError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	hostIDs := scopeHostFilter(scope, scope.HostIDs)
 	reportType := r.URL.Query().Get("type")
 	if reportType == "" {
 		reportType = "executive"
@@ -71,17 +96,17 @@ func (s *Server) handleExportReport(w http.ResponseWriter, r *http.Request) {
 	if format == "" {
 		format = "json"
 	}
-	s.audit(r, "report.export", "report", reportType, "ok", map[string]any{"type": reportType, "format": format})
+	s.audit(r, "report.export", "report", reportType, "ok", map[string]any{"type": reportType, "format": format, "scoped_hosts": len(hostIDs), "scope_all": scope.All})
 	switch reportType {
 	case "executive":
-		summary, err := s.db.GetExecutiveSummary(r.Context())
+		summary, err := s.db.GetExecutiveSummary(r.Context(), hostIDs)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
 		}
 		writeJSON(w, http.StatusOK, summary)
 	case "sla":
-		report, err := s.db.GetSLAComplianceReport(r.Context())
+		report, err := s.db.GetSLAComplianceReport(r.Context(), hostIDs)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -98,7 +123,7 @@ func (s *Server) handleExportReport(w http.ResponseWriter, r *http.Request) {
 				limit = v
 			}
 		}
-		rows, err := s.db.GetRiskBreakdown(r.Context(), groupBy)
+		rows, err := s.db.GetRiskBreakdown(r.Context(), groupBy, hostIDs)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return

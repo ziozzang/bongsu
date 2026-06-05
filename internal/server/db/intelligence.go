@@ -34,9 +34,17 @@ type PostureComparison struct {
 	PreviousDate   string  `json:"previous_date"`
 }
 
-func (db *DB) GetTopAtRiskHosts(ctx context.Context, limit int) ([]AtRiskHost, error) {
+func (db *DB) GetTopAtRiskHosts(ctx context.Context, limit int, hostIDs ...[]string) ([]AtRiskHost, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 10
+	}
+	var scopedHostIDs []string
+	hostFilter := ""
+	args := []any{}
+	if len(hostIDs) > 0 && hostIDs[0] != nil {
+		scopedHostIDs = hostIDs[0]
+		hostFilter = " AND h.id = ANY($1)"
+		args = append(args, pqStringArray(scopedHostIDs))
 	}
 	q := fmt.Sprintf(`SELECT h.id, h.hostname,
 		count(*)::int AS total,
@@ -55,6 +63,7 @@ func (db *DB) GetTopAtRiskHosts(ctx context.Context, limit int) ([]AtRiskHost, e
 		FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id
 		JOIN %s ls ON v.scan_id = ls.id%s
 		WHERE %s
+		%s
 		GROUP BY h.id, h.hostname
 		ORDER BY critical DESC, high DESC, max_risk DESC, total DESC
 		LIMIT %d`,
@@ -67,9 +76,10 @@ func (db *DB) GetTopAtRiskHosts(ctx context.Context, limit int) ([]AtRiskHost, e
 		latestScansSub,
 		vulnTriageJoin,
 		currentActionableVulnSQL(),
+		hostFilter,
 		limit,
 	)
-	rows, err := db.QueryContext(ctx, q)
+	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get top at risk hosts: %w", err)
 	}

@@ -73,6 +73,7 @@ for command in \
     '\./scripts/verify-live-cve-rematch-workflow\.sh' \
     '\./scripts/verify-live-vulnerability-triage\.sh' \
     '\./scripts/verify-live-retention-prune\.sh' \
+    '\./scripts/verify-live-report-export-rbac\.sh' \
     '\./scripts/verify-live-sbom-export-rbac\.sh' \
     '\./scripts/verify-live-install-script\.sh' \
     '\./scripts/verify-live-installer-payload\.sh' \
@@ -188,6 +189,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap pac
 require_text "$PACKAGE_SCRIPT" 'verify-live-cve-rematch-workflow\.sh' "airgap package must include live CVE rematch workflow verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-vulnerability-triage\.sh' "airgap package must include live vulnerability triage verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-retention-prune\.sh' "airgap package must include live retention prune verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-live-report-export-rbac\.sh' "airgap package must include live report export RBAC verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-sbom-export-rbac\.sh' "airgap package must include live SBOM export RBAC verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-sbom-export-workflow\.sh' "airgap package must include live SBOM export workflow verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-install-script\.sh' "airgap package must include live install script verifier"
@@ -253,6 +255,7 @@ for keyword in \
     'verify-live-oidc-rbac\.sh' \
     'verify-live-server-build\.sh' \
     'verify-live-trusted-identity-rbac\.sh' \
+    'verify-live-report-export-rbac\.sh' \
     'verify-live-vulnerability-export-rbac\.sh' \
     'verify-release-readiness\.sh' \
     'verify-live-web-smoke\.sh' \

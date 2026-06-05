@@ -147,6 +147,7 @@ for script in \
     verify-live-cve-rematch-workflow.sh \
     verify-live-vulnerability-triage.sh \
     verify-live-retention-prune.sh \
+    verify-live-report-export-rbac.sh \
     verify-live-sbom-export-rbac.sh \
     verify-live-sbom-export-workflow.sh \
     verify-live-server-build.sh \
@@ -182,6 +183,7 @@ require_text "$RELEASE" 'verify-live-cvedb-concurrency\.sh' "live release readin
 require_text "$RELEASE" 'verify-live-cve-rematch-workflow\.sh' "live release readiness must verify CVE DB rematch workflow"
 require_text "$RELEASE" 'verify-live-vulnerability-triage\.sh' "live release readiness must verify vulnerability triage lifecycle"
 require_text "$RELEASE" 'verify-live-retention-prune\.sh' "live release readiness must verify destructive retention prune lifecycle"
+require_text "$RELEASE" 'verify-live-report-export-rbac\.sh' "live release readiness must verify report export RBAC scoping"
 require_text "$RELEASE" 'verify-live-sbom-export-rbac\.sh' "live release readiness must verify SBOM export RBAC scoping"
 require_text "$RELEASE" 'verify-live-sbom-export-workflow\.sh' "live release readiness must verify live SBOM export workflow"
 require_text "$RELEASE" 'verify-live-install-script\.sh' "live release readiness must verify one-line install script downloads"

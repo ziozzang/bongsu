@@ -4450,6 +4450,7 @@ func TestReleaseReadinessLiveGateRequiresFreshCveSources(t *testing.T) {
 		`./scripts/verify-live-security-db-export-freshness.sh`,
 		`./scripts/verify-live-cve-rematch-workflow.sh`,
 		`./scripts/verify-live-vulnerability-triage.sh`,
+		`./scripts/verify-live-report-export-rbac.sh`,
 		`./scripts/verify-live-session-auth.sh`,
 		`./scripts/verify-live-oidc-rbac.sh`,
 		`./scripts/verify-live-trusted-identity-rbac.sh`,
@@ -4812,6 +4813,30 @@ func TestLiveVulnerabilityExportRBACVerifierScopesExports(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("live vulnerability export RBAC verifier missing %q", want)
+		}
+	}
+}
+
+func TestLiveReportExportRBACVerifierScopesExports(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-report-export-rbac.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		`permission:"export"`,
+		`resource_type:"asset_group"`,
+		`resource_id:"team:report-export-allowed"`,
+		`/api/reports/export?type=risk&format=json&group_by=team&limit=100`,
+		`/api/reports/export?type=executive&format=json`,
+		`report-export-denied`,
+		`/api/reports/risk-breakdown?group_by=team`,
+		`expected 403`,
+		`export-only viewer report read`,
+		`Live report export RBAC verification passed`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("live report export RBAC verifier missing %q", want)
 		}
 	}
 }
