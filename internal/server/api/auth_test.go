@@ -5538,8 +5538,8 @@ func TestReportAuditStatus(t *testing.T) {
 	if got := reportScanStatus(0, 0); got != "completed" {
 		t.Fatalf("scan status = %q, want completed", got)
 	}
-	if got := reportScanStatus(2, 0); got != "degraded" {
-		t.Fatalf("scan status = %q, want degraded", got)
+	if got := reportScanStatus(2, 0); got != "completed" {
+		t.Fatalf("scan status = %q, want completed", got)
 	}
 	if got := reportScanStatus(0, 1); got != "degraded" {
 		t.Fatalf("scan status = %q, want degraded", got)

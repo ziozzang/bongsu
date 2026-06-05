@@ -504,7 +504,7 @@ func reportAuditStatus(skippedVulns, ingestErrorCount int) string {
 }
 
 func reportScanStatus(skippedVulns, ingestErrorCount int) string {
-	if skippedVulns > 0 || ingestErrorCount > 0 {
+	if ingestErrorCount > 0 {
 		return "degraded"
 	}
 	return "completed"
