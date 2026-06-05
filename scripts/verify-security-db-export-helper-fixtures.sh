@@ -75,7 +75,7 @@ export PATH="$TMP_DIR/bin:$PATH"
 success_out="$TMP_DIR/out/security-db-ok.tar.gz"
 "$TMP_DIR/scripts/export-security-db-bundle.sh" http://fixture.invalid fixture-key "$success_out" >/"$TMP_DIR/success.out"
 grep -q 'fixture security db bundle' "$success_out"
-sha256sum -c "$success_out.sha256" >/dev/null
+(cd "$(dirname "$success_out")" && sha256sum -c "$(basename "$success_out.sha256")" >/dev/null)
 assert_no_tmp_outputs '.security-db-ok.tar.gz.tmp.*'
 
 retry_out="$TMP_DIR/out/security-db-retry.tar.gz"
@@ -91,7 +91,7 @@ if [ "$(cat "$retry_counter")" != "2" ]; then
     echo "ERROR: export helper did not retry delayed freshness verification" >&2
     exit 1
 fi
-sha256sum -c "$retry_out.sha256" >/dev/null
+(cd "$(dirname "$retry_out")" && sha256sum -c "$(basename "$retry_out.sha256")" >/dev/null)
 assert_no_tmp_outputs '.security-db-retry.tar.gz.tmp.*'
 
 fail_out="$TMP_DIR/out/security-db-fail.tar.gz"
@@ -112,7 +112,7 @@ if [ "$current_sum" != "$previous_sum" ]; then
     echo "ERROR: failed freshness verification overwrote the existing final bundle" >&2
     exit 1
 fi
-sha256sum -c "$fail_out.sha256" >/dev/null
+(cd "$(dirname "$fail_out")" && sha256sum -c "$(basename "$fail_out.sha256")" >/dev/null)
 assert_no_tmp_outputs '.security-db-fail.tar.gz.tmp.*'
 
 echo "Security DB export helper fixture verification passed"
