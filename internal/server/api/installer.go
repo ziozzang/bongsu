@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/ziozzang/bongsu/internal/server/db"
 )
 
 func (s *Server) handleInstallScript(w http.ResponseWriter, r *http.Request) {
@@ -479,31 +481,47 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 		staleScanRequestCounts = counts
 	}
 	securityDBRevision := ""
+	securityDBRescanCounts := map[string]int{}
 	securityDBRescanStaleCounts := map[string]int{}
+	var securityDBScanCoverage *db.SecurityDBScanCoverage
 	if revision, err := s.db.GetSecurityDBRevision(r.Context()); err != nil {
 		log.Printf("agent fleet security db revision: %v", err)
 	} else {
 		securityDBRevision = revision
+		if counts, err := s.db.CountSecurityDBRescanRequestsByStatus(r.Context(), nil, true, revision); err != nil {
+			log.Printf("agent fleet security db rescan counts: %v", err)
+		} else {
+			securityDBRescanCounts = counts
+		}
 		if counts, err := s.db.CountStaleSecurityDBRescanRequestsByState(r.Context(), nil, true, revision, scanRequestClaimTimeoutSeconds()); err != nil {
 			log.Printf("agent fleet stale security db rescan counts: %v", err)
 		} else {
 			securityDBRescanStaleCounts = counts
 		}
+		if coverage, err := s.db.GetSecurityDBScanCoverage(r.Context(), nil, true, revision); err != nil {
+			log.Printf("agent fleet security db scan coverage: %v", err)
+		} else {
+			securityDBScanCoverage = coverage
+		}
 	}
-	status, warnings, actions := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, staleScanRequestCounts, securityDBRescanStaleCounts, s.installToken != "", agent, trivy)
+	securityDBRescanProgress := securityDBRescanProgressSummary(securityDBRevision, securityDBRescanCounts)
+	status, warnings, actions := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, staleScanRequestCounts, securityDBRescanCounts, securityDBRescanStaleCounts, securityDBScanCoverage, s.installToken != "", agent, trivy)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":                          status,
-		"warnings":                        warnings,
-		"recommended_actions":             actions,
-		"total_hosts":                     len(hosts),
-		"latest_agent_version":            latestVersion,
-		"agent_status_counts":             agentStatusCounts,
-		"agent_version_counts":            agentVersionCounts,
-		"agent_version_drift_counts":      driftCounts,
-		"outdated_percent":                percent(driftCounts["outdated"], len(hosts)),
-		"scan_request_stale_counts":       staleScanRequestCounts,
-		"security_db_revision":            securityDBRevision,
-		"security_db_rescan_stale_counts": securityDBRescanStaleCounts,
+		"status":                            status,
+		"warnings":                          warnings,
+		"recommended_actions":               actions,
+		"total_hosts":                       len(hosts),
+		"latest_agent_version":              latestVersion,
+		"agent_status_counts":               agentStatusCounts,
+		"agent_version_counts":              agentVersionCounts,
+		"agent_version_drift_counts":        driftCounts,
+		"outdated_percent":                  percent(driftCounts["outdated"], len(hosts)),
+		"scan_request_stale_counts":         staleScanRequestCounts,
+		"security_db_revision":              securityDBRevision,
+		"security_db_rescan_request_counts": securityDBRescanCounts,
+		"security_db_rescan_stale_counts":   securityDBRescanStaleCounts,
+		"security_db_rescan_progress":       securityDBRescanProgress,
+		"security_db_scan_coverage":         securityDBScanCoverage,
 		"installer": map[string]any{
 			"install_token_configured": s.installToken != "",
 			"ready":                    s.installToken != "" && agent.Ready,
@@ -513,7 +531,7 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts, staleScanRequestCounts, staleSecurityDBRescanCounts map[string]int, installTokenConfigured bool, agent, trivy installerBinaryStatus) (string, []string, []string) {
+func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts, staleScanRequestCounts, securityDBRescanCounts, staleSecurityDBRescanCounts map[string]int, securityDBScanCoverage *db.SecurityDBScanCoverage, installTokenConfigured bool, agent, trivy installerBinaryStatus) (string, []string, []string) {
 	warnings := []string{}
 	actions := []string{}
 	add := func(warning, action string) {
@@ -551,6 +569,12 @@ func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts, stal
 		}
 		if staleSecurityDBRescanCounts["pending"] > 0 || staleSecurityDBRescanCounts["claimed"] > 0 {
 			add("current security DB rescans are stale", "restart or redeploy affected agent daemons so they claim current security-db-update requests")
+		}
+		if securityDBRescanCounts["pending"] > 0 || securityDBRescanCounts["claimed"] > 0 {
+			add("current security DB rescans are still open", "keep agent daemons running until current security-db-update requests are claimed and completed")
+		}
+		if securityDBScanCoverage != nil && securityDBScanCoverage.CoveragePercent < 100 {
+			add("not all hosts have reported against the current security DB revision", "wait for current security-db-update requests to complete or force scan affected hosts")
 		}
 	}
 	if len(warnings) > 0 {

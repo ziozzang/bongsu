@@ -151,12 +151,20 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 				staleScanRequestCounts = counts
 			}
 			securityDBRescanStaleCounts := map[string]int{}
+			securityDBRescanCounts := map[string]int{}
+			var securityDBScanCoverage *db.SecurityDBScanCoverage
 			if revision, err := s.db.GetSecurityDBRevision(ctx); err == nil {
+				if counts, err := s.db.CountSecurityDBRescanRequestsByStatus(ctx, nil, true, revision); err == nil {
+					securityDBRescanCounts = counts
+				}
 				if counts, err := s.db.CountStaleSecurityDBRescanRequestsByState(ctx, nil, true, revision, scanRequestClaimTimeoutSeconds()); err == nil {
 					securityDBRescanStaleCounts = counts
 				}
+				if coverage, err := s.db.GetSecurityDBScanCoverage(ctx, nil, true, revision); err == nil {
+					securityDBScanCoverage = coverage
+				}
 			}
-			fleetStatus, warnings, _ := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, staleScanRequestCounts, securityDBRescanStaleCounts, s.installToken != "", agentInstaller, trivyInstaller)
+			fleetStatus, warnings, _ := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, staleScanRequestCounts, securityDBRescanCounts, securityDBRescanStaleCounts, securityDBScanCoverage, s.installToken != "", agentInstaller, trivyInstaller)
 			writePromGauge(&b, "bongsu_agent_fleet_degraded", nil, boolMetric(fleetStatus != "ok"))
 			writePromGauge(&b, "bongsu_agent_fleet_warnings", nil, float64(len(warnings)))
 			writePromGauge(&b, "bongsu_agent_fleet_total_hosts", nil, float64(len(hosts)))

@@ -1546,10 +1546,20 @@ paths:
                       type: integer
                   security_db_revision:
                     type: string
+                  security_db_rescan_request_counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
                   security_db_rescan_stale_counts:
                     type: object
                     additionalProperties:
                       type: integer
+                  security_db_rescan_progress:
+                    type: object
+                    additionalProperties: true
+                  security_db_scan_coverage:
+                    type: object
+                    additionalProperties: true
                   installer:
                     $ref: "#/components/schemas/InstallerStatus"
         "401":
