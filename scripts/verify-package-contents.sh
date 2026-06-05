@@ -146,6 +146,8 @@ done
 
 for pattern in \
     'BONGSU_BUNDLE_VERIFY_FRESHNESS' \
+    'BONGSU_BUNDLE_VERIFY_FRESHNESS_ATTEMPTS' \
+    'BONGSU_BUNDLE_VERIFY_FRESHNESS_RETRY_SECONDS' \
     'verify-live-security-db-export-freshness\.sh' \
     'mktemp "\$\{OUTPUT_DIR%/\}/\.\$\{OUTPUT_BASE\}\.tmp\.XXXXXX"' \
     'mv "\$TMP_OUTPUT" "\$OUTPUT"'

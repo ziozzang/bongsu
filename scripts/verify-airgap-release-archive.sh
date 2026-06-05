@@ -218,6 +218,8 @@ done
 require_text "$ROOT_DIR/scripts/download-trivy-db.sh" 'TRIVY_DOWNLOAD_DIR' "packaged Trivy DB downloader must clean temporary Trivy binary directory"
 require_text "$ROOT_DIR/scripts/download-trivy-db.sh" 'bongsu-trivy-db' "packaged Trivy DB downloader must keep DB cache under managed temp dir"
 require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'BONGSU_BUNDLE_VERIFY_FRESHNESS' "packaged security DB export helper must allow explicit freshness verification control"
+require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'BONGSU_BUNDLE_VERIFY_FRESHNESS_ATTEMPTS' "packaged security DB export helper must retry post-export freshness verification"
+require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'BONGSU_BUNDLE_VERIFY_FRESHNESS_RETRY_SECONDS' "packaged security DB export helper must bound post-export freshness retry delay"
 require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'verify-live-security-db-export-freshness\.sh' "packaged security DB export helper must verify bundle freshness after export"
 require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'mktemp "\$\{OUTPUT_DIR%/\}/\.\$\{OUTPUT_BASE\}\.tmp\.XXXXXX"' "packaged security DB export helper must download to a temporary output path"
 require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'mv "\$TMP_OUTPUT" "\$OUTPUT"' "packaged security DB export helper must publish the final output only after verification"

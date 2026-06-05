@@ -9,6 +9,8 @@ API_KEY="${2:-${BONGSU_API_KEY:-}}"
 OUTPUT="${3:-bongsu-security-db-bundle.tar.gz}"
 INCLUDE_TRIVY="${BONGSU_BUNDLE_INCLUDE_TRIVY:-true}"
 VERIFY_FRESHNESS="${BONGSU_BUNDLE_VERIFY_FRESHNESS:-true}"
+VERIFY_FRESHNESS_ATTEMPTS="${BONGSU_BUNDLE_VERIFY_FRESHNESS_ATTEMPTS:-5}"
+VERIFY_FRESHNESS_RETRY_SECONDS="${BONGSU_BUNDLE_VERIFY_FRESHNESS_RETRY_SECONDS:-2}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUTPUT_DIR="$(dirname "$OUTPUT")"
 OUTPUT_BASE="$(basename "$OUTPUT")"
@@ -39,9 +41,21 @@ curl -fSL \
 
 if [ "$VERIFY_FRESHNESS" != "false" ]; then
     echo "Verifying exported bundle freshness..."
-    BONGSU_API_BASE="$SERVER_URL" \
-    BONGSU_API_KEY="$API_KEY" \
-        "${SCRIPT_DIR}/verify-live-security-db-export-freshness.sh"
+    attempt=1
+    while true; do
+        if BONGSU_API_BASE="$SERVER_URL" \
+            BONGSU_API_KEY="$API_KEY" \
+                "${SCRIPT_DIR}/verify-live-security-db-export-freshness.sh"; then
+            break
+        fi
+        if [ "$attempt" -ge "$VERIFY_FRESHNESS_ATTEMPTS" ]; then
+            echo "ERROR: exported bundle freshness verification failed after ${attempt} attempts" >&2
+            exit 1
+        fi
+        echo "Export freshness not visible yet; retrying in ${VERIFY_FRESHNESS_RETRY_SECONDS}s (${attempt}/${VERIFY_FRESHNESS_ATTEMPTS})..." >&2
+        sleep "$VERIFY_FRESHNESS_RETRY_SECONDS"
+        attempt=$((attempt + 1))
+    done
 fi
 
 mv "$TMP_OUTPUT" "$OUTPUT"
