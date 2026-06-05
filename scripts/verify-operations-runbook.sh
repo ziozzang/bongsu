@@ -69,6 +69,7 @@ for pattern in \
     '\./scripts/verify-live-security-db-schedule\.sh' \
     '\./scripts/verify-live-security-db-export-freshness\.sh' \
     '\./scripts/verify-live-fixture-cleanup\.sh' \
+    'RBAC subjects or policies must visibly delete those RBAC fixtures' \
     '\./scripts/verify-security-db-export-helper-fixtures\.sh' \
     '\./scripts/verify-security-db-export-freshness-fixtures\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \

@@ -118,6 +118,7 @@ for keyword in \
     'numeric epoch' \
     'RBAC' \
     'live RBAC' \
+    'RBAC subject/policy removal' \
     'two-host/two-container' \
     'dynamic asset-group' \
     'live CVE DB' \
