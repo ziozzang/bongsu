@@ -249,9 +249,14 @@ func (s *Server) handleSecurityDbStatus(w http.ResponseWriter, r *http.Request) 
 		out["cve_db_quality"] = cveQuality
 		if status, _ := cveQuality["status"].(string); status == "degraded" {
 			out["status"] = "degraded"
+		} else if status == "warning" && out["status"] == "ok" {
+			out["status"] = "warning"
 		}
 	}
 	warnings, actions := securityDBOperationalGuidance(out["security_db"], freshness, cveQuality, out["security_db_export"], freshnessTimedOut)
+	if len(warnings) > 0 && out["status"] == "ok" {
+		out["status"] = "warning"
+	}
 	out["warnings"] = warnings
 	out["recommended_actions"] = actions
 

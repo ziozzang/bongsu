@@ -703,14 +703,20 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     ? 'not configured'
     : health?.security_db?.running
       ? 'syncing'
+      : securityDbStatus?.status === 'warning'
+        ? 'warning'
       : health?.security_db_freshness?.stale
         ? 'stale'
+        : securityDbStatus?.status === 'degraded'
+          ? 'degraded'
         : effectiveSecurityDbStatus === 'ok'
           ? 'ok'
           : effectiveSecurityDbStatus || health?.security_db?.status || 'unknown';
   const cveDbStatusColor = !securityDbConfigured || cveDbStatus === 'stale'
     ? 'var(--critical)'
-    : cveDbStatus === 'syncing' || cveDbStatus === 'unknown'
+    : cveDbStatus === 'degraded'
+      ? 'var(--critical)'
+    : cveDbStatus === 'syncing' || cveDbStatus === 'unknown' || cveDbStatus === 'warning'
       ? 'var(--medium)'
       : 'var(--low)';
   const securitySyncNext = health?.security_db?.next_sync && !health.security_db.next_sync.startsWith('0001-')

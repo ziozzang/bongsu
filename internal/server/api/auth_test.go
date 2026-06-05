@@ -2166,6 +2166,8 @@ func TestSecurityDBStatusEndpointExposesOperationalState(t *testing.T) {
 		`out["security_db_freshness"]`,
 		`out["security_db_bundle_import"]`,
 		`out["status"] = "degraded"`,
+		`out["status"] = "warning"`,
+		"len(warnings) > 0",
 		"affectedIndexRebuildStatus",
 		"referenceIndexRebuildStatus",
 	} {
@@ -3086,6 +3088,7 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 		"last_exported_at",
 		"securityDbExportStatus",
 		"securityDbExportStale",
+		"securityDbStatus?.status === 'warning'",
 		"security_sources_error",
 		"Security source registry:",
 		"Source registry attention:",
