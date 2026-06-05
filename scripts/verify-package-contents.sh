@@ -162,8 +162,10 @@ done
 
 for pattern in \
     'BONGSU_VERIFY_SECURITY_DB_BUNDLE_REQUIRE_SIDECAR' \
+    'BONGSU_VERIFY_SECURITY_DB_BUNDLE_VALIDATE_JSONL' \
     'cve-database\.jsonl checksum mismatch' \
     'cve-database\.jsonl record count mismatch' \
+    'jq -c \.' \
     'trivy-db\.tar\.gz checksum mismatch' \
     'Security DB bundle file verification passed'
 do
