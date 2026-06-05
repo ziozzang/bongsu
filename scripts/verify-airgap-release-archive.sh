@@ -5,6 +5,7 @@ set -euo pipefail
 # Usage: ./scripts/verify-airgap-release-archive.sh bongsu-<version>.tar.gz
 
 ARCHIVE="${1:-}"
+BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA="${BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA:-false}"
 if [ -z "$ARCHIVE" ]; then
     echo "Usage: $0 <bongsu-release.tar.gz>" >&2
     exit 1
@@ -66,8 +67,12 @@ echo "Archive: $ARCHIVE"
 if [ -f "${ARCHIVE}.sha256" ]; then
     echo "[1/7] Checking outer archive checksum"
     (cd "$(dirname "$ARCHIVE")" && sha256sum -c "$(basename "${ARCHIVE}.sha256")")
+elif [ "$BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA" = "true" ]; then
+    echo "[1/7] No outer .sha256 file found, skipping outer checksum because BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA=true"
 else
-    echo "[1/7] No outer .sha256 file found, skipping outer checksum"
+    echo "ERROR: missing required outer checksum sidecar: ${ARCHIVE}.sha256" >&2
+    echo "Set BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA=true only for legacy non-promotion diagnostics." >&2
+    exit 1
 fi
 
 echo "[2/7] Extracting archive"
@@ -103,6 +108,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-backup-restore-archive.sh" \
     "$ROOT_DIR/scripts/verify-operator-workflow.sh" \
     "$ROOT_DIR/scripts/verify-agent-binary-workflow.sh" \
+    "$ROOT_DIR/scripts/verify-airgap-archive-checksum-fixtures.sh" \
     "$ROOT_DIR/scripts/verify-airgap-release-archive.sh" \
     "$ROOT_DIR/scripts/verify-airgap-offline-rehearsal.sh" \
     "$ROOT_DIR/scripts/verify-airgap-package-smoke.sh" \

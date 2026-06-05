@@ -71,6 +71,7 @@ for script in \
     'verify-operations-runbook.sh' \
     'verify-cve-matching-invariants.sh' \
     'verify-backup-restore-archive.sh' \
+    'verify-airgap-archive-checksum-fixtures.sh' \
     'verify-agent-binary-workflow.sh' \
     'verify-airgap-release-archive.sh' \
     'verify-airgap-offline-rehearsal.sh' \
@@ -127,6 +128,7 @@ for pattern in \
     'verify-live-security-db-schedule\.sh' \
     'verify-live-security-db-export-freshness\.sh' \
     'verify-live-fixture-cleanup\.sh' \
+    'verify-airgap-archive-checksum-fixtures\.sh' \
     'verify-security-db-export-helper-fixtures\.sh' \
     'verify-live-report-export-rbac\.sh' \
     'verify-live-sbom-export-rbac\.sh' \
@@ -153,6 +155,8 @@ done
 
 for pattern in \
     'scripts/sync-all-cvedb\.sh' \
+    'BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA' \
+    'missing required outer checksum sidecar' \
     '\?async=true' \
     'BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS' \
     'BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS' \
@@ -177,6 +181,7 @@ done
 
 for pattern in \
     'sha256sum -c bongsu-0\.1\.0\.tar\.gz\.sha256' \
+    'bongsu-0\.1\.0\.tar\.gz\.sha256' \
     'sha256sum -c SHA256SUMS' \
     'verify-airgap-offline-rehearsal\.sh' \
     'verify-live-web-smoke\.sh' \

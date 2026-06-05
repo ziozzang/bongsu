@@ -64,6 +64,7 @@ go test ./...
 ./scripts/verify-cve-matching-invariants.sh
 ./scripts/verify-openapi.sh
 ./scripts/verify-backup-restore-archive.sh
+./scripts/verify-airgap-archive-checksum-fixtures.sh
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-live-installer-payload.sh
 ./scripts/verify-live-install-script.sh
@@ -230,7 +231,7 @@ Air-gapped deployment:
 sha256sum -c bongsu-0.1.0.tar.gz.sha256
 ./scripts/verify-airgap-release-archive.sh bongsu-0.1.0.tar.gz
 ./scripts/verify-airgap-offline-rehearsal.sh bongsu-0.1.0.tar.gz
-# Transfer bongsu-0.1.0.tar.gz and a security DB bundle into the offline network.
+# Transfer bongsu-0.1.0.tar.gz, bongsu-0.1.0.tar.gz.sha256, and a security DB bundle into the offline network.
 tar xzf bongsu-0.1.0.tar.gz
 cd bongsu-0.1.0
 sha256sum -c SHA256SUMS

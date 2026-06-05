@@ -263,6 +263,7 @@ run ./scripts/verify-cve-matching-invariants.sh
 run ./scripts/verify-openapi.sh
 run ./scripts/verify-package-contents.sh
 run ./scripts/verify-backup-restore-archive.sh
+run ./scripts/verify-airgap-archive-checksum-fixtures.sh
 run ./scripts/verify-installer-smoke.sh
 run ./scripts/verify-static-binaries.sh
 

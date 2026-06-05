@@ -87,6 +87,7 @@ for command in \
     '\./scripts/verify-live-trusted-identity-rbac\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
     '\./scripts/verify-package-contents\.sh' \
+    '\./scripts/verify-airgap-archive-checksum-fixtures\.sh' \
     '\./scripts/verify-airgap-package-smoke\.sh' \
     '\./scripts/verify-airgap-offline-rehearsal\.sh <generated-bongsu-archive\.tar\.gz>' \
     '\./scripts/verify-installer-smoke\.sh' \
@@ -188,6 +189,7 @@ require_text "$PACKAGE_SCRIPT" 'verify-security-db-export-freshness-fixtures\.sh
 require_text "$PACKAGE_SCRIPT" 'verify-operations-runbook\.sh' "airgap package must include operations runbook verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-cve-matching-invariants\.sh' "airgap package must include CVE matching invariant verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap package must include backup/restore archive verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-airgap-archive-checksum-fixtures\.sh' "airgap package must include airgap archive checksum fixture verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap package must include live agent token binding verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-cve-rematch-workflow\.sh' "airgap package must include live CVE rematch workflow verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-vulnerability-triage\.sh' "airgap package must include live vulnerability triage verifier"

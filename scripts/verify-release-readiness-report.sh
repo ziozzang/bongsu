@@ -75,6 +75,7 @@ prepare_release_root() {
         verify-openapi.sh \
         verify-package-contents.sh \
         verify-backup-restore-archive.sh \
+        verify-airgap-archive-checksum-fixtures.sh \
         verify-installer-smoke.sh \
         verify-static-binaries.sh \
         verify-release-readiness-report.sh \

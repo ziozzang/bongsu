@@ -105,6 +105,7 @@ for script in \
     verify-operations-runbook.sh \
     verify-cve-matching-invariants.sh \
     verify-backup-restore-archive.sh \
+    verify-airgap-archive-checksum-fixtures.sh \
     verify-agent-binary-workflow.sh \
     verify-airgap-release-archive.sh \
     verify-airgap-offline-rehearsal.sh \

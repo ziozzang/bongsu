@@ -6,6 +6,7 @@ set -euo pipefail
 # Usage: ./scripts/verify-airgap-offline-rehearsal.sh bongsu-<version>.tar.gz
 
 ARCHIVE="${1:-}"
+BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA="${BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA:-false}"
 if [ -z "$ARCHIVE" ]; then
     echo "Usage: $0 <bongsu-release.tar.gz>" >&2
     exit 1
@@ -64,8 +65,12 @@ echo "Archive: $ARCHIVE"
 if [ -f "${ARCHIVE}.sha256" ]; then
     echo "[1/6] Checking outer archive checksum"
     (cd "$(dirname "$ARCHIVE")" && sha256sum -c "$(basename "${ARCHIVE}.sha256")")
+elif [ "$BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA" = "true" ]; then
+    echo "[1/6] No outer .sha256 file found, skipping outer checksum because BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA=true"
 else
-    echo "[1/6] No outer .sha256 file found, skipping outer checksum"
+    echo "ERROR: missing required outer checksum sidecar: ${ARCHIVE}.sha256" >&2
+    echo "Set BONGSU_AIRGAP_ALLOW_MISSING_OUTER_SHA=true only for legacy non-promotion diagnostics." >&2
+    exit 1
 fi
 
 echo "[2/6] Extracting archive and checking inner manifest"
