@@ -98,16 +98,17 @@ func (s *Server) handleSearchContainers(w http.ResponseWriter, r *http.Request) 
 	}
 
 	f := db.ContainerFilter{
-		HostID:     hostID,
-		HostIDs:    scope.HostIDs,
-		Runtime:    r.URL.Query().Get("runtime"),
-		State:      r.URL.Query().Get("state"),
-		ImageName:  r.URL.Query().Get("image"),
-		NameSearch: r.URL.Query().Get("q"),
-		SortBy:     r.URL.Query().Get("sort_by"),
-		SortDesc:   r.URL.Query().Get("sort_order") == "desc",
-		Limit:      limitParam(r, 100),
-		Offset:     offsetParam(r),
+		HostID:        hostID,
+		HostIDs:       scope.HostIDs,
+		Runtime:       r.URL.Query().Get("runtime"),
+		State:         r.URL.Query().Get("state"),
+		ImageName:     r.URL.Query().Get("image"),
+		NameSearch:    r.URL.Query().Get("q"),
+		IncludeLabels: r.URL.Query().Get("include_labels") == "true",
+		SortBy:        r.URL.Query().Get("sort_by"),
+		SortDesc:      r.URL.Query().Get("sort_order") == "desc",
+		Limit:         limitParam(r, 100),
+		Offset:        offsetParam(r),
 	}
 
 	containers, total, err := s.db.SearchContainers(ctx, f)

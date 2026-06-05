@@ -3625,6 +3625,8 @@ func TestContainersViewShowsImageRiskSummary(t *testing.T) {
 		"max_cvss",
 		"package_count",
 		"latest_scan_id",
+		"label_count",
+		"labels_redacted",
 	} {
 		if !strings.Contains(appBody, want) {
 			t.Fatalf("containers view risk summary missing %q", want)
@@ -3633,7 +3635,7 @@ func TestContainersViewShowsImageRiskSummary(t *testing.T) {
 			t.Fatalf("container API type risk summary missing %q", want)
 		}
 	}
-	for _, want := range []string{"Max CVSS", "Findings"} {
+	for _, want := range []string{"Max CVSS", "Findings", "Labels"} {
 		if !strings.Contains(appBody, want) {
 			t.Fatalf("containers view risk label missing %q", want)
 		}
@@ -3642,8 +3644,11 @@ func TestContainersViewShowsImageRiskSummary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(openapiOut), "latest_scan_id") {
-		t.Fatal("container OpenAPI schema missing latest_scan_id")
+	openapiBody := string(openapiOut)
+	for _, want := range []string{"latest_scan_id", "include_labels", "label_count", "labels_redacted"} {
+		if !strings.Contains(openapiBody, want) {
+			t.Fatalf("container OpenAPI schema missing %q", want)
+		}
 	}
 }
 
@@ -7029,7 +7034,8 @@ func TestInventoryAndScanEndpointsApplyRBACScope(t *testing.T) {
 				"scope := s.accessScope(r)",
 				"scope.Empty()",
 				`writeError(w, http.StatusForbidden, "forbidden")`,
-				"HostIDs:    scope.HostIDs",
+				"HostIDs:",
+				"scope.HostIDs",
 			},
 		},
 		{
@@ -7039,7 +7045,8 @@ func TestInventoryAndScanEndpointsApplyRBACScope(t *testing.T) {
 				"scope := s.accessScope(r)",
 				"scope.Empty()",
 				`writeError(w, http.StatusForbidden, "forbidden")`,
-				"HostIDs:    scope.HostIDs",
+				"HostIDs:",
+				"scope.HostIDs",
 			},
 		},
 		{

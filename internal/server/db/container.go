@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
@@ -42,16 +43,17 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,now())`
 }
 
 type ContainerFilter struct {
-	HostID     string
-	HostIDs    []string
-	Runtime    string
-	State      string
-	ImageName  string
-	NameSearch string
-	SortBy     string
-	SortDesc   bool
-	Limit      int
-	Offset     int
+	HostID        string
+	HostIDs       []string
+	Runtime       string
+	State         string
+	ImageName     string
+	NameSearch    string
+	IncludeLabels bool
+	SortBy        string
+	SortDesc      bool
+	Limit         int
+	Offset        int
 }
 
 func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models.ContainerAsset, int, error) {
@@ -116,11 +118,18 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 	for rows.Next() {
 		var c models.ContainerAsset
 		var started sql.NullTime
+		var labels string
 		if err := rows.Scan(
-			&c.ID, &c.ScanID, &c.HostID, &c.Runtime, &c.ContainerID, &c.Name, &c.ImageName, &c.ImageID, &c.ImageDigest, &c.State, &c.Labels, &started,
+			&c.ID, &c.ScanID, &c.HostID, &c.Runtime, &c.ContainerID, &c.Name, &c.ImageName, &c.ImageID, &c.ImageDigest, &c.State, &labels, &started,
 			&c.PackageCount, &c.VulnerabilityCount, &c.CriticalCount, &c.HighCount, &c.MaxCVSS, &c.CreatedAt,
 		); err != nil {
 			return nil, 0, err
+		}
+		c.LabelCount = containerLabelCount(labels)
+		if f.IncludeLabels {
+			c.Labels = labels
+		} else if c.LabelCount > 0 {
+			c.LabelsRedacted = true
 		}
 		if started.Valid {
 			c.StartedAt = &started.Time
@@ -132,6 +141,17 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 		return nil, 0, err
 	}
 	return out, total, nil
+}
+
+func containerLabelCount(labels string) int {
+	if labels == "" {
+		return 0
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(labels), &m); err != nil {
+		return 0
+	}
+	return len(m)
 }
 
 func containerSortExpr(col string, desc bool) string {

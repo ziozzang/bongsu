@@ -249,6 +249,8 @@ type ContainerAsset struct {
 	ImageDigest        string     `json:"image_digest,omitempty"`
 	State              string     `json:"state"`
 	Labels             string     `json:"labels,omitempty"`
+	LabelCount         int        `json:"label_count"`
+	LabelsRedacted     bool       `json:"labels_redacted,omitempty"`
 	StartedAt          *time.Time `json:"started_at,omitempty"`
 	PackageCount       int        `json:"package_count"`
 	VulnerabilityCount int        `json:"vulnerability_count"`

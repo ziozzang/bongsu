@@ -946,6 +946,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: include_labels
+          in: query
+          schema:
+            type: boolean
+          description: Return raw container labels. Defaults to false; list responses otherwise include label_count and labels_redacted only.
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
         - name: sort_by
@@ -3995,9 +4000,6 @@ components:
           type: string
         scan_id:
           type: string
-        latest_scan_id:
-          type: string
-          description: Alias of scan_id for the latest inventory scan represented by this container row.
         host_id:
           type: string
         vulnerability_id:
@@ -4213,6 +4215,9 @@ components:
           type: string
         scan_id:
           type: string
+        latest_scan_id:
+          type: string
+          description: Alias of scan_id for the latest inventory scan represented by this container row.
         host_id:
           type: string
         runtime:
@@ -4231,6 +4236,11 @@ components:
           type: string
         labels:
           type: string
+          description: Raw container labels, returned only when include_labels=true.
+        label_count:
+          type: integer
+        labels_redacted:
+          type: boolean
         started_at:
           type: string
           format: date-time

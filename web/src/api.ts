@@ -299,6 +299,8 @@ export interface ContainerAsset {
   image_digest?: string;
   state: string;
   labels?: string;
+  label_count: number;
+  labels_redacted?: boolean;
   started_at?: string | null;
   package_count: number;
   vulnerability_count: number;
@@ -1165,7 +1167,7 @@ export const api = {
   cveDbStats: requestCveDbStats,
   packages: (params: { host_id?: string; container?: string; pkg_type?: string; source?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: Pkg[]; total: number }>('/packages', params),
-  containers: (params: { host_id?: string; runtime?: string; state?: string; image?: string; q?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
+  containers: (params: { host_id?: string; runtime?: string; state?: string; image?: string; q?: string; include_labels?: string; sort_by?: string; sort_order?: string; limit?: string; offset?: string }) =>
     request<{ items: ContainerAsset[]; total: number }>('/containers', params),
   packageFilters: () => request<FilterOptions>('/packages/filters'),
   packageVulns: (id: string) => request<Vuln[]>(`/packages/${id}/vulnerabilities`),

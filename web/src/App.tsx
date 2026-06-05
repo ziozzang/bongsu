@@ -3191,6 +3191,7 @@ function ContainersView() {
                 {cols.map(([key, label]) => (
                   <th key={key} className="clickable" onClick={() => toggleSort(key)} style={{ userSelect: 'none' }}>{label}{sortArrow(key)}</th>
                 ))}
+                <th>Labels</th>
                 <th>Image ID</th>
                 <th>Scan</th>
                 <th>Scanned</th>
@@ -3211,12 +3212,13 @@ function ContainersView() {
                   <td className="mono" style={{ color: (c.max_cvss || 0) >= 9 ? 'var(--critical)' : (c.max_cvss || 0) >= 7 ? 'var(--high)' : 'var(--text-muted)' }}>{c.max_cvss ? c.max_cvss.toFixed(1) : '-'}</td>
                   <td className="mono">{c.package_count || 0}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{c.started_at ? new Date(c.started_at).toLocaleString() : '-'}</td>
+                  <td className="mono" title={c.labels_redacted ? 'Labels hidden by default; use include_labels=true in the API for raw labels' : ''}>{c.label_count || 0}</td>
                   <td className="mono" title={c.image_id}>{c.image_id ? c.image_id.replace(/^sha256:/, '').slice(0, 18) : '-'}</td>
                   <td className="mono" title={c.latest_scan_id || c.scan_id}>{(c.latest_scan_id || c.scan_id || '').slice(0, 8) || '-'}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{c.created_at ? new Date(c.created_at).toLocaleString() : '-'}</td>
                 </tr>
               ))}
-              {containers.length === 0 && <tr><td colSpan={15} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No containers found</td></tr>}
+              {containers.length === 0 && <tr><td colSpan={16} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No containers found</td></tr>}
             </tbody>
           </table>
         )}

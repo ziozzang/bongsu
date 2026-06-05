@@ -668,6 +668,23 @@ func TestContainerSearchExposesLatestScanIDAlias(t *testing.T) {
 	if !strings.Contains(fn, "c.LatestScanID = c.ScanID") {
 		t.Fatalf("container search must expose latest_scan_id alias from scan_id: %s", fn)
 	}
+	for _, want := range []string{"IncludeLabels", "c.LabelCount", "c.LabelsRedacted"} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("container search must support label redaction field %q: %s", want, fn)
+		}
+	}
+}
+
+func TestContainerLabelCount(t *testing.T) {
+	if got := containerLabelCount(`{"a":"1","b":"2"}`); got != 2 {
+		t.Fatalf("label count = %d, want 2", got)
+	}
+	if got := containerLabelCount(`{}`); got != 0 {
+		t.Fatalf("empty label count = %d, want 0", got)
+	}
+	if got := containerLabelCount(`not-json`); got != 0 {
+		t.Fatalf("invalid label count = %d, want 0", got)
+	}
 }
 
 func TestAppendUnique(t *testing.T) {
