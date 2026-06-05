@@ -80,7 +80,9 @@ prepare_release_root() {
         verify-release-readiness-report.sh \
         verify-live-fixture-cleanup.sh \
         verify-security-db-export-helper-fixtures.sh \
-        verify-security-db-export-freshness-fixtures.sh
+        verify-security-db-export-freshness-fixtures.sh \
+        verify-airgap-release-archive.sh \
+        verify-airgap-offline-rehearsal.sh
     do
         write_stub_script "$target/scripts/$script"
     done
@@ -102,11 +104,15 @@ run_success_case() {
     local root_dir="$case_dir/root"
     local bin_dir="$case_dir/bin"
     local report="$case_dir/report.json"
+    local archive="$case_dir/bongsu-release.tar.gz"
     prepare_release_root "$root_dir"
     write_tool_stubs "$bin_dir"
+    printf 'fixture release archive\n' >"$archive"
+    sha256sum "$archive" >"$archive.sha256"
 
     PATH="$bin_dir:$PATH" \
         BONGSU_RELEASE_READINESS_REPORT="$report" \
+        BONGSU_RELEASE_ARCHIVE="$archive" \
         BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
         BONGSU_RELEASE_READINESS_LIVE=false \
         BONGSU_RELEASE_READINESS_REQUIRE_DB=true \
@@ -116,7 +122,8 @@ run_success_case() {
     assert_report "$report" '.tool == "verify-release-readiness.sh"' "report must identify the release tool"
     assert_report "$report" '.status == "passed" and .exit_code == 0' "successful run must be recorded as passed"
     assert_report "$report" '.git.head == "abcdef123456" and .git.branch == "main"' "report must include git identity"
-    assert_report "$report" '.options.skip_heavy == true and .options.live == false and .options.require_db == true' "report must include selected options"
+    assert_report "$report" '.options.skip_heavy == true and .options.live == false and .options.require_db == true and (.options.archive | endswith("bongsu-release.tar.gz"))' "report must include selected options"
+    assert_report "$report" '.artifacts.release_archive.path == .options.archive and (.artifacts.release_archive.sha256 | test("^[0-9a-f]{64}$")) and .artifacts.release_archive.sidecar_sha256 == .artifacts.release_archive.sha256 and .artifacts.release_archive.sidecar_matches == true' "report must include verified release archive hashes"
     assert_report "$report" '.gate_count == (.gates | length) and .gate_count >= 12' "report gate count must match recorded gates"
     assert_report "$report" '.failed_gate_count == 0' "successful report must have no failed gates"
     assert_report "$report" 'all(.gates[]; .status == "passed" and (.exit_code | type) == "number")' "all success gates must pass with numeric exit codes"

@@ -69,16 +69,26 @@ write_report() {
     local git_head
     local git_branch
     local report_status
+    local archive_sha256
+    local archive_sidecar_sha256
     finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     finished_unix="$(date +%s)"
     git_head="$(git rev-parse --short=12 HEAD 2>/dev/null || true)"
     git_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    archive_sha256=""
+    archive_sidecar_sha256=""
+    if [ -n "$ARCHIVE" ] && [ -f "$ARCHIVE" ] && command -v sha256sum >/dev/null 2>&1; then
+        archive_sha256="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
+        if [ -f "${ARCHIVE}.sha256" ]; then
+            archive_sidecar_sha256="$(awk '{print $1}' "${ARCHIVE}.sha256" 2>/dev/null || true)"
+        fi
+    fi
     if [ "$exit_code" -eq 0 ]; then
         report_status="passed"
     else
         report_status="failed"
     fi
-    python3 - "$REPORT_PATH" "$REPORT_EVENTS" "$report_status" "$exit_code" "$ROOT" "$git_head" "$git_branch" "$LIVE" "$SKIP_HEAVY" "$REQUIRE_DB" "$ALLOW_DIRTY" "$ARCHIVE" "$REPORT_STARTED_AT" "$finished_at" "$REPORT_STARTED_UNIX" "$finished_unix" <<'PY'
+    python3 - "$REPORT_PATH" "$REPORT_EVENTS" "$report_status" "$exit_code" "$ROOT" "$git_head" "$git_branch" "$LIVE" "$SKIP_HEAVY" "$REQUIRE_DB" "$ALLOW_DIRTY" "$ARCHIVE" "$archive_sha256" "$archive_sidecar_sha256" "$REPORT_STARTED_AT" "$finished_at" "$REPORT_STARTED_UNIX" "$finished_unix" <<'PY'
 import json
 import os
 import sys
@@ -96,6 +106,8 @@ import sys
     require_db,
     allow_dirty,
     archive,
+    archive_sha256,
+    archive_sidecar_sha256,
     started_at,
     finished_at,
     started_unix,
@@ -134,6 +146,15 @@ report = {
     "failed_gate_count": sum(1 for gate in gates if gate.get("status") != "passed"),
     "gates": gates,
 }
+if archive:
+    report["artifacts"] = {
+        "release_archive": {
+            "path": archive,
+            "sha256": archive_sha256,
+            "sidecar_sha256": archive_sidecar_sha256,
+            "sidecar_matches": bool(archive_sha256) and archive_sha256 == archive_sidecar_sha256,
+        }
+    }
 
 tmp_path = report_path + ".tmp"
 with open(tmp_path, "w", encoding="utf-8") as out:

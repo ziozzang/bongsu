@@ -145,6 +145,7 @@ for keyword in \
     'Docker Compose' \
     'release readiness' \
     'JSON evidence report' \
+    'release archive SHA-256/sidecar match evidence' \
     'audited retention dry-run' \
     'destructive retention prune'
 do
