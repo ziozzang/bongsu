@@ -1570,6 +1570,7 @@ func TestLiveVerifiersDefaultToLocalLiveKeys(t *testing.T) {
 	for _, want := range []string{
 		`BONGSU_VIEWER_API_KEY:-viewer-test-key`,
 		`BONGSU_VIEWER_SUBJECT:-rbac-live-viewer`,
+		`CURL_MAX_TIME="${BONGSU_VERIFY_CURL_MAX_TIME_SECONDS:-60}"`,
 	} {
 		if !strings.Contains(rbacBody, want) {
 			t.Fatalf("live RBAC verifier must default viewer fixture identity, missing %q", want)
