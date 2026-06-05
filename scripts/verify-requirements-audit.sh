@@ -132,6 +132,8 @@ for keyword in \
     'dynamic asset-group' \
     'live CVE DB' \
     'direct DB invariant' \
+    'matching `cve_affected_packages` package/ecosystem/fixed-version row' \
+    'every generated `cve-db` finding is backed by a matching `cve_affected_packages` row' \
     'security DB schedule' \
     'effective_status' \
     'effective_source' \
@@ -213,6 +215,13 @@ require_text "$PACKAGE_SCRIPT" 'verify-backup-restore-archive\.sh' "airgap packa
 require_text "$PACKAGE_SCRIPT" 'verify-airgap-archive-checksum-fixtures\.sh' "airgap package must include airgap archive checksum fixture verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-agent-token-binding\.sh' "airgap package must include live agent token binding verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-cve-rematch-workflow\.sh' "airgap package must include live CVE rematch workflow verifier"
+require_text "$ROOT/scripts/verify-live-cve-rematch-workflow.sh" 'BONGSU_DB_DSN is required for live CVE rematch DB evidence verification' "live CVE rematch verifier must require DB evidence checks"
+require_text "$ROOT/scripts/verify-live-cve-rematch-workflow.sh" 'FROM cve_affected_packages cap' "live CVE rematch verifier must check affected-package index evidence"
+require_text "$ROOT/scripts/verify-live-cve-rematch-workflow.sh" 'cap.vulnerability_id = r.vulnerability_id' "live CVE rematch verifier must join by vulnerability ID"
+require_text "$ROOT/scripts/verify-live-cve-rematch-workflow.sh" 'cap.package_name = r.package_name' "live CVE rematch verifier must join by package name"
+require_text "$ROOT/scripts/verify-live-cve-rematch-workflow.sh" 'cap.ecosystem = r.package_ecosystem' "live CVE rematch verifier must join by normalized ecosystem"
+require_text "$ROOT/scripts/verify-live-cve-rematch-workflow.sh" 'cap.fixed_version = r.fixed_version' "live CVE rematch verifier must join by fixed version"
+require_text "$ROOT/scripts/verify-live-cve-rematch-workflow.sh" 'every generated cve-db finding must be backed by matching affected-package evidence' "live CVE rematch verifier must fail on unbacked cve-db findings"
 require_text "$PACKAGE_SCRIPT" 'verify-live-vulnerability-triage\.sh' "airgap package must include live vulnerability triage verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-retention-prune\.sh' "airgap package must include live retention prune verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-live-report-export-rbac\.sh' "airgap package must include live report export RBAC verifier"
