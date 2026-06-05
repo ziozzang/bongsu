@@ -85,7 +85,31 @@ prepare_release_root() {
         verify-security-db-export-helper-fixtures.sh \
         verify-security-db-export-freshness-fixtures.sh \
         verify-airgap-release-archive.sh \
-        verify-airgap-offline-rehearsal.sh
+        verify-airgap-offline-rehearsal.sh \
+        verify-live-server-build.sh \
+        verify-live-installer-payload.sh \
+        verify-live-install-script.sh \
+        verify-live-security-db-schedule.sh \
+        verify-live-security-db-export-freshness.sh \
+        verify-live-session-auth.sh \
+        verify-live-oidc-rbac.sh \
+        verify-live-trusted-identity-rbac.sh \
+        verify-operator-workflow.sh \
+        verify-agent-binary-workflow.sh \
+        verify-live-agent-token-binding.sh \
+        verify-live-scan-request-recovery.sh \
+        verify-live-security-db-auto-rescan.sh \
+        verify-live-retention-prune.sh \
+        verify-live-cve-rematch-workflow.sh \
+        verify-live-vulnerability-triage.sh \
+        verify-live-report-export-rbac.sh \
+        verify-live-sbom-export-rbac.sh \
+        verify-live-sbom-export-workflow.sh \
+        verify-live-vulnerability-export-rbac.sh \
+        verify-live-cvedb-quality.sh \
+        verify-live-cvedb-concurrency.sh \
+        verify-live-rbac-scope.sh \
+        verify-live-web-smoke.sh
     do
         write_stub_script "$target/scripts/$script"
     done
@@ -135,6 +159,32 @@ run_success_case() {
     assert_report "$report" 'all(.gates[]; (.started_at | length) > 0 and (.finished_at | length) > 0 and (.duration_seconds | type) == "number")' "gates must include timestamps and durations"
 }
 
+run_live_success_case() {
+    local case_dir="$TMP_DIR/live-success"
+    local root_dir="$case_dir/root"
+    local bin_dir="$case_dir/bin"
+    local report="$case_dir/report.json"
+    prepare_release_root "$root_dir"
+    write_tool_stubs "$bin_dir"
+
+    PATH="$bin_dir:$PATH" \
+        BONGSU_RELEASE_READINESS_REPORT="$report" \
+        BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
+        BONGSU_RELEASE_READINESS_LIVE=true \
+        BONGSU_RELEASE_READINESS_REQUIRE_DB=true \
+        BONGSU_DB_DSN="postgres://fixture/fixture" \
+        "$root_dir/scripts/verify-release-readiness.sh" >"$case_dir/stdout.log"
+
+    assert_report "$report" '.status == "passed" and .exit_code == 0' "live successful run must be recorded as passed"
+    assert_report "$report" '.options.live == true and .options.require_db == true and .options.skip_heavy == true' "live report must include live DB-backed options"
+    assert_report "$report" '.gate_count == (.gates | length) and .gate_count >= 34' "live report gate count must include live release gates"
+    assert_report "$report" '.failed_gate_count == 0' "live successful report must have no failed gates"
+    assert_report "$report" 'any(.gates[]; .kind == "exec" and .name == "./scripts/verify-operator-workflow.sh")' "live report must record operator workflow gate"
+    assert_report "$report" 'any(.gates[]; .kind == "exec" and .name == "./scripts/verify-live-retention-prune.sh")' "live report must record destructive retention safety gate"
+    assert_report "$report" 'any(.gates[]; .kind == "shell" and (.name | contains("BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true")) and (.name | contains("BONGSU_VERIFY_CVEDB_REQUIRE_DB=true")) and (.name | contains("./scripts/verify-live-cvedb-quality.sh")))' "live report must record strict DB-backed CVE freshness gate"
+    assert_report "$report" 'any(.gates[]; .kind == "exec" and .name == "./scripts/verify-live-web-smoke.sh")' "live report must record deployed web smoke gate"
+}
+
 run_failure_case() {
     local case_dir="$TMP_DIR/failure"
     local root_dir="$case_dir/root"
@@ -172,6 +222,7 @@ require_tool jq
 require_tool python3
 
 run_success_case
+run_live_success_case
 run_failure_case
 
 echo "Release readiness report verification passed"
