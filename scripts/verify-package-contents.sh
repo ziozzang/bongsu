@@ -139,6 +139,13 @@ do
 done
 
 for pattern in \
+    'BONGSU_BUNDLE_VERIFY_FRESHNESS' \
+    'verify-live-security-db-export-freshness\.sh'
+do
+    require_text "$ROOT/scripts/export-security-db-bundle.sh" "$pattern" "security DB bundle export helper must verify freshness after export"
+done
+
+for pattern in \
     'scripts/sync-all-cvedb\.sh' \
     '\?async=true' \
     'BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS' \

@@ -209,6 +209,8 @@ do
 done
 require_text "$ROOT_DIR/scripts/download-trivy-db.sh" 'TRIVY_DOWNLOAD_DIR' "packaged Trivy DB downloader must clean temporary Trivy binary directory"
 require_text "$ROOT_DIR/scripts/download-trivy-db.sh" 'bongsu-trivy-db' "packaged Trivy DB downloader must keep DB cache under managed temp dir"
+require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'BONGSU_BUNDLE_VERIFY_FRESHNESS' "packaged security DB export helper must allow explicit freshness verification control"
+require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'verify-live-security-db-export-freshness\.sh' "packaged security DB export helper must verify bundle freshness after export"
 
 echo "[7/7] Checking airgap deployment invariants"
 require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_TRIVY_DB_INTERVAL_HOURS: "(0|\$\{BONGSU_TRIVY_DB_INTERVAL_HOURS:-0\})"' "airgap compose must disable Trivy DB auto refresh by default"
