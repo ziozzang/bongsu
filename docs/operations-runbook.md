@@ -278,6 +278,15 @@ curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/i
 
 Set `BONGSU_AGENT_SKIP_CONTAINERS=true` for constrained hosts where container inventory should be deferred; bongsu records that as a degraded inventory signal instead of silently pretending container coverage is complete. `BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS` bounds Docker inspection, osquery, process, hostname, and kernel helper commands so an unhealthy runtime cannot hang the whole scan before Trivy timeouts apply.
 
+For sites with maintenance windows, rate-limited reverse proxies, or intermittent WAN links between agents and the API, tune agent retry behavior during install or in the persisted agent config. Agents retry report uploads, scan-request claims, and completion calls on network failures, HTTP 429, and HTTP 5xx. `Retry-After` response headers are honored but capped by `BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS`, so server-side rate limits do not create busy loops or unbounded sleeps:
+
+```bash
+curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/install.sh" | \
+  sudo BONGSU_AGENT_RETRY_ATTEMPTS=8 \
+       BONGSU_AGENT_RETRY_MAX_BACKOFF_SECONDS=60 \
+       bash
+```
+
 Live RBAC scope verification:
 
 ```bash
