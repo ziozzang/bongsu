@@ -28,6 +28,7 @@ REFRESH_SOURCE_STATUS_URL="${SERVER_URL}/api/admin/cve-db/source"
 INDEX_REBUILD_WAIT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS:-900}"
 INDEX_REBUILD_POLL_SECONDS="${BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS:-5}"
 INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS:-600}"
+BONGSU_OSV_POST_SYNC_VERIFY="${BONGSU_OSV_POST_SYNC_VERIFY:-true}"
 
 TOTAL_IMPORTED=0
 FAILED_SOURCES=()
@@ -200,6 +201,24 @@ finalize_deferred_cve_imports() {
     curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
         -H "Content-Type: application/json" \
         -d "{\"reason\":\"${reason}\"}" "${RECALCULATE_URL}" >/dev/null
+}
+
+verify_osv_post_sync_freshness() {
+    if [ "${BONGSU_OSV_POST_SYNC_VERIFY}" != "true" ]; then
+        echo "  Skipping post-sync OSV upstream freshness verification because BONGSU_OSV_POST_SYNC_VERIFY=${BONGSU_OSV_POST_SYNC_VERIFY}."
+        return 0
+    fi
+    if [ "${OSV_PRUNE_FULL_SOURCE}" != "true" ] && [ -z "${BONGSU_DB_DSN:-}" ]; then
+        echo "  Skipping post-sync OSV upstream freshness verification for partial OSV sync without BONGSU_DB_DSN."
+        echo "  Set BONGSU_DB_DSN to verify selected ecosystems without promoting aggregate OSV freshness."
+        return 0
+    fi
+    echo "  Verifying post-sync OSV upstream freshness..."
+    BONGSU_API_BASE="${SERVER_URL}" \
+        BONGSU_API_KEY="${API_KEY}" \
+        BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true \
+        BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS="${OSV_ECOSYSTEMS}" \
+        "${SCRIPT_DIR}/verify-live-cvedb-quality.sh"
 }
 
 echo "=========================================="
@@ -386,6 +405,10 @@ echo ""
 if [ "${#FAILED_SOURCES[@]}" -gt 0 ]; then
     echo "ERROR: source sync incomplete: ${FAILED_SOURCES[*]}" >&2
     exit 1
+fi
+
+if [ "${OSV_TOTAL}" -gt 0 ]; then
+    verify_osv_post_sync_freshness
 fi
 
 # Show DB stats

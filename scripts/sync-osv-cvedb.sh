@@ -26,6 +26,7 @@ REFRESH_OSV_STATUS_URL="${SERVER_URL}/api/admin/cve-db/source/osv/refresh-status
 INDEX_REBUILD_WAIT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS:-900}"
 INDEX_REBUILD_POLL_SECONDS="${BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS:-5}"
 INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS:-600}"
+BONGSU_OSV_POST_SYNC_VERIFY="${BONGSU_OSV_POST_SYNC_VERIFY:-true}"
 DEFAULT_OSV_ECOSYSTEMS="PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,SwiftURL,Hackage,CRAN,opam,VSCode,GitHub Actions,Alpine,Debian,Ubuntu,SUSE,openSUSE,AlmaLinux,Red Hat,Rocky Linux,Azure Linux,Wolfi,Chainguard,openEuler,Mageia,Android"
 OSV_ECOSYSTEMS="${BONGSU_OSV_ECOSYSTEMS:-${DEFAULT_OSV_ECOSYSTEMS}}"
 OSV_PRUNE_BEFORE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
@@ -187,6 +188,24 @@ finalize_osv_imports() {
         -d '{"reason":"osv targeted sync"}' "${RECALCULATE_URL}" >/dev/null
 }
 
+verify_osv_post_sync_freshness() {
+    if [ "${BONGSU_OSV_POST_SYNC_VERIFY}" != "true" ]; then
+        echo "  Skipping post-sync OSV upstream freshness verification because BONGSU_OSV_POST_SYNC_VERIFY=${BONGSU_OSV_POST_SYNC_VERIFY}."
+        return 0
+    fi
+    if [ "${OSV_PRUNE_FULL_SOURCE}" != "true" ] && [ -z "${BONGSU_DB_DSN:-}" ]; then
+        echo "  Skipping post-sync OSV upstream freshness verification for partial OSV sync without BONGSU_DB_DSN."
+        echo "  Set BONGSU_DB_DSN to verify selected ecosystems without promoting aggregate OSV freshness."
+        return 0
+    fi
+    echo "  Verifying post-sync OSV upstream freshness..."
+    BONGSU_API_BASE="${SERVER_URL}" \
+        BONGSU_API_KEY="${API_KEY}" \
+        BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true \
+        BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS="${OSV_ECOSYSTEMS}" \
+        "${SCRIPT_DIR}/verify-live-cvedb-quality.sh"
+}
+
 echo "=========================================="
 echo " Bongsu OSV CVE Database Sync"
 echo " Server: ${SERVER_URL}"
@@ -238,5 +257,6 @@ if [ "${OSV_TOTAL}" -eq 0 ]; then
 fi
 
 finalize_osv_imports
+verify_osv_post_sync_freshness
 echo ""
 echo "OSV sync complete. Imported/updated: ${OSV_TOTAL}"

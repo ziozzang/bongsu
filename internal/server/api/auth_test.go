@@ -3862,6 +3862,32 @@ func TestTargetedOSVSyncScriptSkipsSourceWidePruneForPartialEcosystems(t *testin
 	}
 }
 
+func TestSecurityDBSyncScriptsVerifyOSVFreshnessAfterSuccessfulSync(t *testing.T) {
+	for _, path := range []string{
+		"../../../scripts/sync-all-cvedb.sh",
+		"../../../scripts/sync-osv-cvedb.sh",
+	} {
+		out, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := string(out)
+		for _, want := range []string{
+			`BONGSU_OSV_POST_SYNC_VERIFY="${BONGSU_OSV_POST_SYNC_VERIFY:-true}"`,
+			`verify_osv_post_sync_freshness()`,
+			`BONGSU_VERIFY_CVEDB_REQUIRE_OSV_UPSTREAM_FRESHNESS=true`,
+			`BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS="${OSV_ECOSYSTEMS}"`,
+			`"${SCRIPT_DIR}/verify-live-cvedb-quality.sh"`,
+			`Skipping post-sync OSV upstream freshness verification for partial OSV sync without BONGSU_DB_DSN.`,
+			`Set BONGSU_DB_DSN to verify selected ecosystems without promoting aggregate OSV freshness.`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("%s must verify OSV freshness after successful sync, missing %q", path, want)
+			}
+		}
+	}
+}
+
 func TestSecurityDBSyncScriptCoversCoreOSVEcosystems(t *testing.T) {
 	for _, path := range []string{
 		"../../../scripts/sync-all-cvedb.sh",
