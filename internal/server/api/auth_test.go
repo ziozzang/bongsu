@@ -3763,13 +3763,15 @@ func TestSecurityDBSyncScriptPrunesStaleOSVAfterSuccessfulChunks(t *testing.T) {
 		`if [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then`,
 		`/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}`,
 		`Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override.`,
-		`/api/admin/cve-db/source/osv/refresh-status`,
-		`Refreshing OSV source status after partial sync`,
+		`Keeping aggregate OSV source freshness unchanged after partial sync.`,
 		`finalize_deferred_cve_imports "osv chunk import"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-all-cvedb must prune stale OSV rows only after successful chunks, missing %q", want)
 		}
+	}
+	if strings.Contains(body, `OSV_SOURCE_STATUS_REFRESH_URL`) || strings.Contains(body, `Refreshing OSV source status after partial sync`) {
+		t.Fatal("sync-all-cvedb partial OSV sync must not promote aggregate source freshness")
 	}
 }
 
@@ -3788,12 +3790,14 @@ func TestTargetedOSVSyncScriptSkipsSourceWidePruneForPartialEcosystems(t *testin
 		`/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}`,
 		`Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override.`,
 		`Run a full OSV sync with the default ecosystem list to prune upstream removals safely.`,
-		`/api/admin/cve-db/source/osv/refresh-status`,
-		`Refreshing OSV source status after partial sync`,
+		`Keeping aggregate OSV source freshness unchanged after partial sync.`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-osv-cvedb must protect non-selected ecosystems during partial OSV sync, missing %q", want)
 		}
+	}
+	if strings.Contains(body, `SOURCE_STATUS_REFRESH_URL`) || strings.Contains(body, `Refreshing OSV source status after partial sync`) {
+		t.Fatal("sync-osv-cvedb partial OSV sync must not promote aggregate source freshness")
 	}
 }
 

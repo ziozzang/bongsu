@@ -325,17 +325,20 @@ WHERE source = 'osv'
         fi
     done
 
-    if ! awk -v local="$local_epoch" -v upstream="$max_upstream_epoch" -v grace="$BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS" 'BEGIN { exit !((local + grace) >= upstream) }'; then
-        echo "ERROR: local OSV source is older than upstream sentinel ${max_upstream_ecosystem} beyond grace" >&2
-        echo "local_osv_last_update=${local_last_update} local_epoch=${local_epoch}" >&2
-        echo "upstream_ecosystem=${max_upstream_ecosystem} upstream_epoch=${max_upstream_epoch} grace_seconds=${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS}" >&2
-        exit 1
+    if [ "$db_ready" != "true" ]; then
+        if ! awk -v local="$local_epoch" -v upstream="$max_upstream_epoch" -v grace="$BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS" 'BEGIN { exit !((local + grace) >= upstream) }'; then
+            echo "ERROR: local OSV source is older than upstream sentinel ${max_upstream_ecosystem} beyond grace" >&2
+            echo "local_osv_last_update=${local_last_update} local_epoch=${local_epoch}" >&2
+            echo "upstream_ecosystem=${max_upstream_ecosystem} upstream_epoch=${max_upstream_epoch} grace_seconds=${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS}" >&2
+            exit 1
+        fi
     fi
 
-    echo "OSV upstream freshness ok: local=${local_last_update}, newest_upstream_ecosystem=${max_upstream_ecosystem}"
     if [ "$db_ready" = "true" ]; then
+        echo "OSV upstream freshness ok: newest_upstream_ecosystem=${max_upstream_ecosystem}"
         echo "OSV ecosystem-scoped freshness ok for: ${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_ECOSYSTEMS}"
     else
+        echo "OSV upstream freshness ok: local=${local_last_update}, newest_upstream_ecosystem=${max_upstream_ecosystem}"
         echo "Skipping ecosystem-scoped OSV freshness; set BONGSU_DB_DSN for direct DB checks"
     fi
 }

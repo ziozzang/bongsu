@@ -2320,7 +2320,7 @@ paths:
       operationId: refreshCveSourceStatus
       tags: [admin]
       summary: Refresh CVE source registry status
-      description: Recompute the security source registry timestamp and record count for a source after deferred chunk imports that intentionally skip source-wide stale pruning.
+      description: Recompute the security source registry timestamp and record count for a source after a completed source-wide import or explicit operator repair; partial deferred OSV ecosystem imports should not use this endpoint.
       security:
         - AdminKey: []
       parameters:
