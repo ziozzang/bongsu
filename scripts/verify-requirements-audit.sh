@@ -181,6 +181,7 @@ require_text "$AUDIT" 'reference-key index rebuild timeout' "requirements audit 
 require_text "$PACKAGE_SCRIPT" 'cp -r docs' "airgap package must include docs"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness\.sh' "airgap package must include release readiness verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-release-readiness-report\.sh' "airgap package must include release readiness report verifier"
+require_text "$PACKAGE_SCRIPT" 'verify-security-db-export-helper-fixtures\.sh' "airgap package must include security DB export helper fixture verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-security-db-export-freshness-fixtures\.sh' "airgap package must include security DB export freshness fixture verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-operations-runbook\.sh' "airgap package must include operations runbook verifier"
 require_text "$PACKAGE_SCRIPT" 'verify-cve-matching-invariants\.sh' "airgap package must include CVE matching invariant verifier"
@@ -251,6 +252,7 @@ for keyword in \
     'verify-live-security-db-auto-rescan\.sh' \
     'verify-live-security-db-schedule\.sh' \
     'verify-live-security-db-export-freshness\.sh' \
+    'verify-security-db-export-helper-fixtures\.sh' \
     'verify-live-session-auth\.sh' \
     'verify-live-oidc-rbac\.sh' \
     'verify-live-server-build\.sh' \

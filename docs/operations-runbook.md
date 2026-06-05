@@ -68,6 +68,7 @@ go test ./...
 ./scripts/verify-live-install-script.sh
 ./scripts/verify-live-security-db-schedule.sh
 ./scripts/verify-live-security-db-export-freshness.sh
+./scripts/verify-security-db-export-helper-fixtures.sh
 ./scripts/verify-security-db-export-freshness-fixtures.sh
 ./scripts/verify-live-session-auth.sh
 ./scripts/verify-live-oidc-rbac.sh
@@ -382,7 +383,7 @@ docker compose -f deploy/docker-compose.yml exec -T postgres \
 sha256sum bongsu-postgres.sql bongsu-security-db-bundle.tar.gz > bongsu-backup.sha256
 ```
 
-`export-security-db-bundle.sh` runs the live export freshness verifier after the bundle download by default, so stale source updates are caught before airgap promotion. Set `BONGSU_BUNDLE_VERIFY_FRESHNESS=false` only for emergency backup capture when the bundle is not being promoted as the current security DB.
+`export-security-db-bundle.sh` downloads to a temporary file, runs the live export freshness verifier by default, and publishes the final bundle filename plus `.sha256` sidecar only after that verifier passes. Set `BONGSU_BUNDLE_VERIFY_FRESHNESS=false` only for emergency backup capture when the bundle is not being promoted as the current security DB.
 
 For large backups, restores, Trivy DB downloads, or connected CVE source syncs on hosts with a small `/tmp`, set `BONGSU_TMPDIR=/path/with/space` before running the packaged scripts. The backup, restore, Trivy DB download, NVD/OSV/Trivy CVE sync, OSV download, and Trivy CVE extraction scripts create managed `bongsu-*` work directories under that path and remove them on exit.
 

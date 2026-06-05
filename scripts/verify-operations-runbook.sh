@@ -68,6 +68,7 @@ for pattern in \
     '\./scripts/verify-live-cvedb-quality\.sh' \
     '\./scripts/verify-live-security-db-schedule\.sh' \
     '\./scripts/verify-live-security-db-export-freshness\.sh' \
+    '\./scripts/verify-security-db-export-helper-fixtures\.sh' \
     '\./scripts/verify-security-db-export-freshness-fixtures\.sh' \
     '\./scripts/verify-live-web-smoke\.sh' \
     '\./scripts/verify-live-trusted-identity-rbac\.sh' \
@@ -155,6 +156,7 @@ for script in \
     verify-live-security-db-auto-rescan.sh \
     verify-live-security-db-schedule.sh \
     verify-live-security-db-export-freshness.sh \
+    verify-security-db-export-helper-fixtures.sh \
     verify-security-db-export-freshness-fixtures.sh \
     verify-live-session-auth.sh \
     verify-live-oidc-rbac.sh \
@@ -198,6 +200,7 @@ require_text "$RELEASE" 'verify-live-vulnerability-export-rbac\.sh' "live releas
 require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "live release readiness must fail closed when direct DB checks are required but unavailable"
 require_text "$RUNBOOK" 'BONGSU_VULNERABILITY_EXPORT_TIMEOUT_SECONDS' "runbook must document vulnerability export timeout tuning"
 require_text "$RUNBOOK" '504 vulnerability export timeout' "runbook must document vulnerability export timeout behavior"
+require_text "$RUNBOOK" 'publishes the final bundle filename plus `\.sha256` sidecar only after that verifier passes' "runbook must document safe security DB bundle publication"
 require_text "$RUNBOOK" 'BONGSU_SECURITY_DB_REVISION_TIMEOUT_SECONDS' "runbook must document security DB revision timeout tuning"
 require_text "$RUNBOOK" 'OIDC bearer token authentication' "runbook must document OIDC bearer token authentication"
 require_text "$RUNBOOK" 'BONGSU_OIDC_ISSUER' "runbook must document OIDC issuer configuration"

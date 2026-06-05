@@ -110,6 +110,7 @@ for path in \
     "$ROOT_DIR/scripts/verify-live-cvedb-concurrency.sh" \
     "$ROOT_DIR/scripts/verify-live-cvedb-quality.sh" \
     "$ROOT_DIR/scripts/verify-live-cve-rematch-workflow.sh" \
+    "$ROOT_DIR/scripts/verify-security-db-export-helper-fixtures.sh" \
     "$ROOT_DIR/scripts/verify-security-db-export-freshness-fixtures.sh" \
     "$ROOT_DIR/scripts/verify-live-install-script.sh" \
     "$ROOT_DIR/scripts/verify-live-installer-payload.sh" \
@@ -211,6 +212,8 @@ require_text "$ROOT_DIR/scripts/download-trivy-db.sh" 'TRIVY_DOWNLOAD_DIR' "pack
 require_text "$ROOT_DIR/scripts/download-trivy-db.sh" 'bongsu-trivy-db' "packaged Trivy DB downloader must keep DB cache under managed temp dir"
 require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'BONGSU_BUNDLE_VERIFY_FRESHNESS' "packaged security DB export helper must allow explicit freshness verification control"
 require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'verify-live-security-db-export-freshness\.sh' "packaged security DB export helper must verify bundle freshness after export"
+require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'mktemp "\$\{OUTPUT_DIR%/\}/\.\$\{OUTPUT_BASE\}\.tmp\.XXXXXX"' "packaged security DB export helper must download to a temporary output path"
+require_text "$ROOT_DIR/scripts/export-security-db-bundle.sh" 'mv "\$TMP_OUTPUT" "\$OUTPUT"' "packaged security DB export helper must publish the final output only after verification"
 
 echo "[7/7] Checking airgap deployment invariants"
 require_text "$ROOT_DIR/deploy/docker-compose.airgap.yml" 'BONGSU_TRIVY_DB_INTERVAL_HOURS: "(0|\$\{BONGSU_TRIVY_DB_INTERVAL_HOURS:-0\})"' "airgap compose must disable Trivy DB auto refresh by default"

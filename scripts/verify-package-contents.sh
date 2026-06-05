@@ -65,6 +65,7 @@ for script in \
     'import-security-db-bundle.sh' \
     'verify-release-readiness.sh' \
     'verify-release-readiness-report.sh' \
+    'verify-security-db-export-helper-fixtures.sh' \
     'verify-security-db-export-freshness-fixtures.sh' \
     'verify-operations-runbook.sh' \
     'verify-cve-matching-invariants.sh' \
@@ -124,6 +125,7 @@ for pattern in \
     'verify-live-security-db-auto-rescan\.sh' \
     'verify-live-security-db-schedule\.sh' \
     'verify-live-security-db-export-freshness\.sh' \
+    'verify-security-db-export-helper-fixtures\.sh' \
     'verify-live-report-export-rbac\.sh' \
     'verify-live-sbom-export-rbac\.sh' \
     'verify-live-sbom-export-workflow\.sh' \
@@ -140,7 +142,9 @@ done
 
 for pattern in \
     'BONGSU_BUNDLE_VERIFY_FRESHNESS' \
-    'verify-live-security-db-export-freshness\.sh'
+    'verify-live-security-db-export-freshness\.sh' \
+    'mktemp "\$\{OUTPUT_DIR%/\}/\.\$\{OUTPUT_BASE\}\.tmp\.XXXXXX"' \
+    'mv "\$TMP_OUTPUT" "\$OUTPUT"'
 do
     require_text "$ROOT/scripts/export-security-db-bundle.sh" "$pattern" "security DB bundle export helper must verify freshness after export"
 done

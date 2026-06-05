@@ -78,6 +78,7 @@ prepare_release_root() {
         verify-installer-smoke.sh \
         verify-static-binaries.sh \
         verify-release-readiness-report.sh \
+        verify-security-db-export-helper-fixtures.sh \
         verify-security-db-export-freshness-fixtures.sh
     do
         write_stub_script "$target/scripts/$script"
