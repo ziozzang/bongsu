@@ -108,6 +108,9 @@ for pattern in \
     'effective_source' \
     'effective_last_sync' \
     'security_db_bundle_import\.last_result' \
+    'stale scan-request counts' \
+    'current security DB stale rescan counts' \
+    'agent daemons that are not claiming pending scan requests' \
     'latest_source' \
     'latest_last_update' \
     'server_match' \

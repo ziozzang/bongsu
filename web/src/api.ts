@@ -952,6 +952,9 @@ export interface AgentFleetStatus {
   agent_status_counts?: Record<string, number>;
   agent_version_counts?: Record<string, number>;
   agent_version_drift_counts?: Record<string, number>;
+  scan_request_stale_counts?: Record<string, number>;
+  security_db_revision?: string;
+  security_db_rescan_stale_counts?: Record<string, number>;
   latest_agent_version?: string;
   installer?: InstallerStatus;
 }

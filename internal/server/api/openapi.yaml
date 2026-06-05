@@ -1540,6 +1540,16 @@ paths:
                     type: object
                     additionalProperties:
                       type: integer
+                  scan_request_stale_counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  security_db_revision:
+                    type: string
+                  security_db_rescan_stale_counts:
+                    type: object
+                    additionalProperties:
+                      type: integer
                   installer:
                     $ref: "#/components/schemas/InstallerStatus"
         "401":

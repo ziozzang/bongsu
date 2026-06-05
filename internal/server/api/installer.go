@@ -472,17 +472,38 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 		agentVersionCounts[version]++
 	}
 	driftCounts := agentVersionDriftCounts(agentVersionCounts, latestVersion)
-	status, warnings, actions := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, s.installToken != "", agent, trivy)
+	staleScanRequestCounts := map[string]int{}
+	if counts, err := s.db.CountStaleScanRequestsByState(r.Context(), nil, true, scanRequestClaimTimeoutSeconds()); err != nil {
+		log.Printf("agent fleet stale scan request counts: %v", err)
+	} else {
+		staleScanRequestCounts = counts
+	}
+	securityDBRevision := ""
+	securityDBRescanStaleCounts := map[string]int{}
+	if revision, err := s.db.GetSecurityDBRevision(r.Context()); err != nil {
+		log.Printf("agent fleet security db revision: %v", err)
+	} else {
+		securityDBRevision = revision
+		if counts, err := s.db.CountStaleSecurityDBRescanRequestsByState(r.Context(), nil, true, revision, scanRequestClaimTimeoutSeconds()); err != nil {
+			log.Printf("agent fleet stale security db rescan counts: %v", err)
+		} else {
+			securityDBRescanStaleCounts = counts
+		}
+	}
+	status, warnings, actions := agentFleetOperationalStatus(len(hosts), agentStatusCounts, driftCounts, staleScanRequestCounts, securityDBRescanStaleCounts, s.installToken != "", agent, trivy)
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":                     status,
-		"warnings":                   warnings,
-		"recommended_actions":        actions,
-		"total_hosts":                len(hosts),
-		"latest_agent_version":       latestVersion,
-		"agent_status_counts":        agentStatusCounts,
-		"agent_version_counts":       agentVersionCounts,
-		"agent_version_drift_counts": driftCounts,
-		"outdated_percent":           percent(driftCounts["outdated"], len(hosts)),
+		"status":                          status,
+		"warnings":                        warnings,
+		"recommended_actions":             actions,
+		"total_hosts":                     len(hosts),
+		"latest_agent_version":            latestVersion,
+		"agent_status_counts":             agentStatusCounts,
+		"agent_version_counts":            agentVersionCounts,
+		"agent_version_drift_counts":      driftCounts,
+		"outdated_percent":                percent(driftCounts["outdated"], len(hosts)),
+		"scan_request_stale_counts":       staleScanRequestCounts,
+		"security_db_revision":            securityDBRevision,
+		"security_db_rescan_stale_counts": securityDBRescanStaleCounts,
 		"installer": map[string]any{
 			"install_token_configured": s.installToken != "",
 			"ready":                    s.installToken != "" && agent.Ready,
@@ -492,7 +513,7 @@ func (s *Server) handleAgentFleetStatus(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts map[string]int, installTokenConfigured bool, agent, trivy installerBinaryStatus) (string, []string, []string) {
+func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts, staleScanRequestCounts, staleSecurityDBRescanCounts map[string]int, installTokenConfigured bool, agent, trivy installerBinaryStatus) (string, []string, []string) {
 	warnings := []string{}
 	actions := []string{}
 	add := func(warning, action string) {
@@ -524,6 +545,12 @@ func agentFleetOperationalStatus(totalHosts int, statusCounts, driftCounts map[s
 		}
 		if driftCounts["unknown"] > 0 {
 			add("one or more agents did not report a version", "upgrade agents so reports include agent_version")
+		}
+		if staleScanRequestCounts["pending"] > 0 || staleScanRequestCounts["claimed"] > 0 {
+			add("one or more scan requests are stale", "open Scan History with stale=true and verify agent daemon polling, then requeue or cancel abandoned requests")
+		}
+		if staleSecurityDBRescanCounts["pending"] > 0 || staleSecurityDBRescanCounts["claimed"] > 0 {
+			add("current security DB rescans are stale", "restart or redeploy affected agent daemons so they claim current security-db-update requests")
 		}
 	}
 	if len(warnings) > 0 {
