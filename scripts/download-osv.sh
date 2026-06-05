@@ -18,6 +18,13 @@ OSV_CURL_CONNECT_TIMEOUT="${BONGSU_OSV_CURL_CONNECT_TIMEOUT_SECONDS:-20}"
 OSV_CURL_MAX_TIME="${BONGSU_OSV_CURL_MAX_TIME_SECONDS:-1800}"
 OSV_CURL_RETRIES="${BONGSU_OSV_CURL_RETRIES:-3}"
 OSV_CURL_RETRY_DELAY="${BONGSU_OSV_CURL_RETRY_DELAY_SECONDS:-3}"
+OSV_MIN_FREE_BYTES="${BONGSU_OSV_MIN_FREE_BYTES:-8589934592}"
+case "${OSV_MIN_FREE_BYTES}" in
+    ''|*[!0-9]*)
+        echo "ERROR: BONGSU_OSV_MIN_FREE_BYTES must be a non-negative integer byte count" >&2
+        exit 1
+        ;;
+esac
 
 echo "Downloading OSV.dev data for: ${ECOSYSTEMS}"
 
@@ -26,10 +33,42 @@ SKIPPED_CGA_TOTAL=0
 FAILED_ECOSYSTEMS=()
 > "${OUTPUT_TMP}"
 
+available_tmp_bytes() {
+    local path="$1"
+    local avail_kb
+    avail_kb="$(df -Pk "${path}" | awk 'NR == 2 {print $4}')"
+    if [ -z "${avail_kb}" ]; then
+        return 1
+    fi
+    echo $((avail_kb * 1024))
+}
+
+require_tmp_space() {
+    local phase="$1"
+    local avail_bytes
+    if [ "${OSV_MIN_FREE_BYTES}" -le 0 ]; then
+        return 0
+    fi
+    if ! avail_bytes="$(available_tmp_bytes "${TMP_PARENT}")"; then
+        echo "  ERROR: failed to check free space for ${TMP_PARENT}" >&2
+        return 1
+    fi
+    if [ "${avail_bytes}" -lt "${OSV_MIN_FREE_BYTES}" ]; then
+        echo "  ERROR: insufficient temporary disk space for OSV ${phase}" >&2
+        echo "  tmp_parent=${TMP_PARENT} available_bytes=${avail_bytes} required_bytes=${OSV_MIN_FREE_BYTES}" >&2
+        echo "  Set BONGSU_TMPDIR to a filesystem with more free space or lower BONGSU_OSV_MIN_FREE_BYTES after confirming the selected ecosystems fit." >&2
+        return 1
+    fi
+}
+
 IFS=',' read -ra ECO_ARRAY <<< "${ECOSYSTEMS}"
 for eco in "${ECO_ARRAY[@]}"; do
     eco=$(echo "$eco" | xargs)  # trim whitespace
     echo "  Downloading ${eco}..."
+    if ! require_tmp_space "${eco} download"; then
+        FAILED_ECOSYSTEMS+=("${eco}:tmp-space")
+        continue
+    fi
     # URL-encode spaces for curl
     encoded_eco=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "${eco}")
     if ! curl -fsSL \
@@ -51,6 +90,10 @@ for eco in "${ECO_ARRAY[@]}"; do
     fi
 
     mkdir -p "${WORKDIR}/${eco}"
+    if ! require_tmp_space "${eco} extraction"; then
+        FAILED_ECOSYSTEMS+=("${eco}:tmp-space")
+        continue
+    fi
     if ! unzip -q -o "${WORKDIR}/${eco}.zip" -d "${WORKDIR}/${eco}"; then
         echo "  ERROR: ${eco} zip extraction failed"
         FAILED_ECOSYSTEMS+=("${eco}:unzip")
