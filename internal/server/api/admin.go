@@ -247,6 +247,7 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 			writePromGauge(&b, "bongsu_security_db_effective_source_info", map[string]string{"source": effectiveSource}, 1)
 		}
 		writePromGauge(&b, "bongsu_security_db_effective_last_sync_timestamp_seconds", nil, metricTimestamp(freshness["latest_last_update"]))
+		writePromGauge(&b, "bongsu_security_db_sync_persisted_last_success_timestamp_seconds", nil, metricTimestamp(freshness["latest_last_update"]))
 		writePromGauge(&b, "bongsu_security_db_effective_age_seconds", nil, metricNumber(freshness["latest_age_seconds"]))
 		writePromGauge(&b, "bongsu_security_db_source_stale", nil, boolMetric(freshness["stale"]))
 		if count, ok := freshness["source_count"].(int); ok {

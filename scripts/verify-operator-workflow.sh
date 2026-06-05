@@ -293,6 +293,11 @@ if ! grep -Eq '^bongsu_security_db_effective_last_sync_timestamp_seconds |^bongs
     sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
     exit 1
 fi
+if ! grep -Eq '^bongsu_security_db_sync_persisted_last_success_timestamp_seconds |^bongsu_security_db_freshness_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
+    echo "ERROR: admin metrics must expose persisted security DB last success timestamp or freshness metrics error" >&2
+    sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2
+    exit 1
+fi
 if ! grep -Eq '^bongsu_security_db_effective_age_seconds |^bongsu_security_db_freshness_metrics_error ' "$TMP_DIR/admin-metrics.txt"; then
     echo "ERROR: admin metrics must expose effective security DB age or freshness metrics error" >&2
     sed -n '1,200p' "$TMP_DIR/admin-metrics.txt" >&2

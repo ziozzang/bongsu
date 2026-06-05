@@ -36,6 +36,8 @@ func TestReleaseBuildsInjectAgentMetadata(t *testing.T) {
 		"../../Makefile": {
 			"BONGSU_COMMIT",
 			"BONGSU_BUILD_DATE",
+			"GO_BUILD_FLAGS ?= -trimpath",
+			"go build $(GO_BUILD_FLAGS)",
 			"-X main.version=$(BONGSU_VERSION)",
 			"-X main.commit=$(BONGSU_COMMIT)",
 			"-X main.buildDate=$(BONGSU_BUILD_DATE)",
