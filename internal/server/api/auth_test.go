@@ -4026,6 +4026,42 @@ func TestSecurityDBSyncScriptsVerifyOSVFreshnessAfterSuccessfulSync(t *testing.T
 	}
 }
 
+func TestCveDbQualityVerifierUsesTopLevelOSVEcosystemForFreshness(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/verify-live-cvedb-quality.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "assert_osv_upstream_freshness()")
+	if start < 0 {
+		t.Fatal("assert_osv_upstream_freshness not found")
+	}
+	end := strings.Index(body[start:], "\nrequire_tool curl")
+	if end < 0 {
+		t.Fatal("assert_osv_upstream_freshness end marker not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"lower(split_part(c.ecosystem, ':', 1)) = lower(${eco_literal})",
+		`raw_ecosystem_condition="(${raw_ecosystem_condition} OR lower(split_part(c.ecosystem, ':', 1)) = 'chainguard')"`,
+		"FROM cve_affected_packages",
+		"local_matchable_ecosystem_count",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("OSV upstream freshness verifier missing %q", want)
+		}
+	}
+	for _, disallowed := range []string{
+		"jsonb_array_elements",
+		"affected_products",
+		"COALESCE(ap->>'ecosystem'",
+	} {
+		if strings.Contains(fn, disallowed) {
+			t.Fatalf("OSV upstream freshness must not mix affected package ecosystems into raw source freshness, found %q", disallowed)
+		}
+	}
+}
+
 func TestSecurityDBSyncScriptCoversCoreOSVEcosystems(t *testing.T) {
 	for _, path := range []string{
 		"../../../scripts/sync-all-cvedb.sh",

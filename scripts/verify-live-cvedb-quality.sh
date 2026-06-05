@@ -303,18 +303,15 @@ assert_osv_upstream_freshness() {
         fi
         if [ "$db_ready" = "true" ]; then
             eco_literal="$(sql_literal "$eco")"
+            raw_ecosystem_condition="lower(split_part(c.ecosystem, ':', 1)) = lower(${eco_literal})"
+            if [ "$(printf '%s' "$eco" | tr '[:upper:]' '[:lower:]')" = "wolfi" ]; then
+                raw_ecosystem_condition="(${raw_ecosystem_condition} OR lower(split_part(c.ecosystem, ':', 1)) = 'chainguard')"
+            fi
             local_raw_ecosystem_count="$(db_scalar "
 SELECT count(*)
 FROM cve_database c
 WHERE c.source = 'osv'
-  AND (
-      lower(split_part(c.ecosystem, ':', 1)) = lower(${eco_literal})
-      OR EXISTS (
-          SELECT 1
-          FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
-          WHERE lower(split_part(COALESCE(ap->>'ecosystem', ''), ':', 1)) = lower(${eco_literal})
-      )
-  )")"
+  AND ${raw_ecosystem_condition}")"
             if ! awk -v v="$local_raw_ecosystem_count" 'BEGIN { exit !(v > 0) }'; then
                 echo "ERROR: local OSV raw source has no rows for upstream sentinel ecosystem ${eco}" >&2
                 exit 1
@@ -332,14 +329,7 @@ WHERE source = 'osv'
 SELECT COALESCE(EXTRACT(EPOCH FROM max(updated_at))::bigint, 0)
 FROM cve_database c
 WHERE c.source = 'osv'
-  AND (
-      lower(split_part(c.ecosystem, ':', 1)) = lower(${eco_literal})
-      OR EXISTS (
-          SELECT 1
-          FROM jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap
-          WHERE lower(split_part(COALESCE(ap->>'ecosystem', ''), ':', 1)) = lower(${eco_literal})
-      )
-  )")"
+  AND ${raw_ecosystem_condition}")"
             if ! awk -v local="$local_ecosystem_epoch" -v upstream="$upstream_epoch" -v grace="$BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS" 'BEGIN { exit !((local + grace) >= upstream) }'; then
                 echo "ERROR: local OSV ecosystem ${eco} is older than upstream beyond grace" >&2
                 echo "local_raw_ecosystem_epoch=${local_ecosystem_epoch} upstream_epoch=${upstream_epoch} grace_seconds=${BONGSU_VERIFY_CVEDB_OSV_UPSTREAM_GRACE_SECONDS}" >&2
