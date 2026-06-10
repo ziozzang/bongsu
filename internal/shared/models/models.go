@@ -168,6 +168,7 @@ type Vulnerability struct {
 	TriageStatus     string             `json:"triage_status"`
 	TriageReason     string             `json:"triage_reason,omitempty"`
 	TriageComment    string             `json:"triage_comment,omitempty"`
+	TriageAssignee   string             `json:"triage_assignee,omitempty"`
 	TriageExpiresAt  *time.Time         `json:"triage_expires_at,omitempty"`
 	TriageUpdatedBy  string             `json:"triage_updated_by,omitempty"`
 	TriageUpdatedAt  *time.Time         `json:"triage_updated_at,omitempty"`
@@ -196,6 +197,7 @@ type VulnerabilityTriage struct {
 	Status          string     `json:"status"`
 	Reason          string     `json:"reason,omitempty"`
 	Comment         string     `json:"comment,omitempty"`
+	Assignee        string     `json:"assignee,omitempty"`
 	ExpiresAt       *time.Time `json:"expires_at,omitempty"`
 	UpdatedBy       string     `json:"updated_by,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
