@@ -48,9 +48,38 @@ button {
   transition: all var(--transition);
 }
 
-input, select {
+input, select, textarea {
   font-family: inherit;
   font-size: 0.8125rem;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.6rem;
+}
+
+textarea {
+  width: 100%;
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--text-muted);
+}
+
+input[type='date'] {
+  color-scheme: dark;
+}
+
+input[type='checkbox'], input[type='radio'] {
+  accent-color: var(--primary);
+  padding: 0;
 }
 
 /* ── Layout ── */

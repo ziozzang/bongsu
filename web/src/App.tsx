@@ -86,6 +86,43 @@ function riskLevelColor(level?: string): string {
   }
 }
 
+const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
+
+function severityColor(sev?: string): string {
+  switch ((sev || '').toUpperCase()) {
+    case 'CRITICAL': return 'var(--critical)';
+    case 'HIGH': return 'var(--high)';
+    case 'MEDIUM': return 'var(--medium)';
+    case 'LOW': return 'var(--low)';
+    default: return 'var(--unknown)';
+  }
+}
+
+function Loading() {
+  return <div style={{ color: 'var(--text-muted)', padding: '2rem', textAlign: 'center' }}>Loading...</div>;
+}
+
+function LoadError({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  return (
+    <div style={{ color: 'var(--critical)', padding: '2rem', textAlign: 'center' }}>
+      {message}
+      {onRetry && <button style={{ marginLeft: '0.75rem' }} onClick={onRetry}>Retry</button>}
+    </div>
+  );
+}
+
+function Pager({ page, limit, total, onPage }: { page: number; limit: number; total: number; onPage: (p: number) => void }) {
+  return (
+    <div className="pagination" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.75rem' }}>
+      <button disabled={page === 0} onClick={() => onPage(page - 1)}>Prev</button>
+      <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+        Page {page + 1} / {Math.max(1, Math.ceil(total / limit))} ({total.toLocaleString()} items)
+      </span>
+      <button disabled={(page + 1) * limit >= total} onClick={() => onPage(page + 1)}>Next</button>
+    </div>
+  );
+}
+
 function accessSubjectRef(subject: AccessSubject): string {
   return `${subject.subject_type}:${subject.external_id}`;
 }
@@ -212,7 +249,7 @@ export default function App() {
       <div className="main">
         {view === 'dashboard' && <DashboardView onOpenScanRequests={openScanRequests} onOpenVulnerabilities={openVulnerabilities} onOpenHosts={openHosts} />}
         {view === 'hosts' && <HostsView initialFilters={hostFilters} onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
-        {view === 'host-detail' && <HostDetailView hostId={selectedHostId} onBack={() => setView('hosts')} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
+        {view === 'host-detail' && <HostDetailView key={selectedHostId} hostId={selectedHostId} onBack={() => setView('hosts')} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'packages' && <PackagesView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'containers' && <ContainersView />}
         {view === 'cve-search' && <CveSearchView />}
@@ -220,7 +257,7 @@ export default function App() {
         {view === 'rbac' && <RBACView />}
         {view === 'audit' && <AuditLogView />}
         {view === 'vulns' && <VulnsView initialFilters={vulnerabilityFilters} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
-        {view === 'vuln-detail' && <VulnDetailView vuln={selectedVuln} onBack={() => setView('vulns')} />}
+        {view === 'vuln-detail' && <VulnDetailView key={selectedVuln?.id || ''} vuln={selectedVuln} onBack={() => setView('vulns')} />}
         {view === 'schedules' && <SchedulesView />}
         {view === 'asset-groups' && <AssetGroupsView />}
         {view === 'trends' && <TrendsView />}
@@ -321,7 +358,53 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   );
 }
 
+function ChangePasswordPanel({ onClose }: { onClose: () => void }) {
+  const [current, setCurrent] = useState('');
+  const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!current || !next) { setMsg('All fields are required'); return; }
+    if (next !== confirm) { setMsg('New passwords do not match'); return; }
+    setBusy(true);
+    setMsg('');
+    try {
+      await api.changePassword(current, next);
+      setMsg('Password changed');
+      setCurrent(''); setNext(''); setConfirm('');
+      window.setTimeout(onClose, 1200);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Password change failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <form onSubmit={submit} style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Change Password</div>
+      <input type="password" placeholder="Current password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
+      <input type="password" placeholder="New password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
+      <input type="password" placeholder="Confirm new password" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
+      <div style={{ display: 'flex', gap: '0.5rem' }}>
+        <button type="submit" className="filter-btn" disabled={busy}>{busy ? 'Saving...' : 'Save'}</button>
+        <button type="button" onClick={onClose}>Cancel</button>
+      </div>
+      {msg && <div style={{ fontSize: '0.75rem', color: msg === 'Password changed' ? 'var(--low)' : 'var(--critical)' }}>{msg}</div>}
+    </form>
+  );
+}
+
 function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: View) => void; onLogout?: () => void }) {
+  const [me, setMe] = useState<{ username: string; role: string } | null>(null);
+  const [showPw, setShowPw] = useState(false);
+  useEffect(() => {
+    if (!onLogout) return;
+    api.authMe().then(r => setMe(r.user ? { username: r.user.username, role: r.user.role } : null)).catch(() => setMe(null));
+  }, [onLogout]);
   const items: [View, string, string][] = [
     ['dashboard', 'Dashboard', '■'],
     ['hosts', 'Hosts', '▣'],
@@ -351,13 +434,26 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
           </a>
         ))}
       </nav>
-      {onLogout && <a href="#" className="logout" onClick={(e) => { e.preventDefault(); onLogout(); }}><span className="nav-icon">↩</span> Logout</a>}
+      {onLogout && showPw && <ChangePasswordPanel onClose={() => setShowPw(false)} />}
+      {onLogout && (
+        <a href="#" className="logout" onClick={(e) => { e.preventDefault(); onLogout(); }}>
+          <span className="nav-icon">↩</span> Logout
+          {me && (
+            <span
+              style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.75rem' }}
+              title="Change password"
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPw(s => !s); }}
+            >{me.username} ⚙</span>
+          )}
+        </a>
+      )}
     </div>
   );
 }
 
 function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts }: { onOpenScanRequests: (filters: ScanRequestFilters) => void; onOpenVulnerabilities: (filters: VulnerabilityFilters) => void; onOpenHosts: (filters: HostFilters) => void }) {
   const [stats, setStats] = useState<Stats | null>(null);
+  const [statsError, setStatsError] = useState('');
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [securityDbConfigured, setSecurityDbConfigured] = useState(false);
   const [cveSources, setCveSources] = useState<CveSourceStat[]>([]);
@@ -372,7 +468,6 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [agentFleetStatus, setAgentFleetStatus] = useState<AgentFleetStatus | null>(null);
   const [dashboardHosts, setDashboardHosts] = useState<Host[]>([]);
   const [agentCounts, setAgentCounts] = useState<Record<string, number>>({});
-  const [inventoryCounts, setInventoryCounts] = useState<Record<string, number>>({});
   const [totalPkgs, setTotalPkgs] = useState(0);
   const [ownerSummary, setOwnerSummary] = useState<VulnSummaryRow[]>([]);
   const [teamSummary, setTeamSummary] = useState<VulnSummaryRow[]>([]);
@@ -413,7 +508,11 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     api.securityDbStatus().then(applySecurityDbStatus).catch(() => {});
   }, [applySecurityDbStatus]);
 
-  useEffect(() => { api.stats().then(setStats).catch(() => {}); }, []);
+  const loadStats = useCallback(() => {
+    setStatsError('');
+    api.stats().then(setStats).catch((e) => setStatsError(e instanceof Error ? e.message : 'Failed to load stats'));
+  }, []);
+  useEffect(() => { loadStats(); }, [loadStats]);
   useEffect(() => {
     api.rawHealth().then(h => {
       setHealth(h);
@@ -454,19 +553,6 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
         return acc;
       }, {} as Record<string, number>));
     }).catch(() => {});
-    Promise.all([
-      api.hosts({ inventory_status: 'healthy' }),
-      api.hosts({ inventory_status: 'degraded' }),
-      api.hosts({ inventory_status: 'stale' }),
-      api.hosts({ inventory_status: 'empty' }),
-      api.hosts({ inventory_status: 'none' }),
-    ]).then(([healthy, degraded, stale, empty, none]) => setInventoryCounts({
-      healthy: healthy.length,
-      degraded: degraded.length,
-      stale: stale.length,
-      empty: empty.length,
-      none: none.length,
-    })).catch(() => {});
     api.vulnSummary({ group_by: 'owner' }).then(r => setOwnerSummary(r.items || [])).catch(() => {});
     api.vulnSummary({ group_by: 'team' }).then(r => setTeamSummary(r.items || [])).catch(() => {});
     api.vulnSummary({ group_by: 'environment' }).then(r => setEnvironmentSummary(r.items || [])).catch(() => {});
@@ -808,7 +894,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     .reduce((sum, status) => sum + (triageActiveCounts[status] || 0), 0);
   const triageExpiringSoonTotal = Object.values(triageExpiringSoonCounts).reduce((sum, count) => sum + count, 0);
   const effectiveAgentCounts = stats?.agent_status_counts || agentCounts;
-  const effectiveInventoryCounts = stats?.inventory_status_counts || inventoryCounts;
+  const effectiveInventoryCounts = stats?.inventory_status_counts || {};
   const inventoryCoveragePercent = stats?.inventory_coverage_percent ?? 0;
   const inventoryFreshPercent = stats?.inventory_fresh_percent ?? 0;
   const agentFleetWarnings = agentFleetStatus?.warnings || [];
@@ -913,7 +999,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setSecurityBundleBusy(false);
   };
 
-  if (!stats) return <div style={{ color: 'var(--text-muted)', padding: '2rem' }}>Loading...</div>;
+  if (!stats) return statsError ? <LoadError message={statsError} onRetry={loadStats} /> : <Loading />;
 
   return (
     <>
@@ -1845,9 +1931,9 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
   }, []);
   useEffect(() => { load(agentStatus, inventoryStatus, agentVersionState); }, [load, agentStatus, inventoryStatus, agentVersionState]);
 
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <Loading />;
 
-  const sevColor = (sev: string) => ({ CRITICAL: 'var(--critical)', HIGH: 'var(--high)', MEDIUM: 'var(--medium)', LOW: 'var(--low)' }[sev] || 'var(--unknown)');
+  const sevColor = severityColor;
 
   return (
     <>
@@ -2045,7 +2131,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
     api.hostPorts(hostId, 20, 0).then(r => { setPorts(r.items || []); setTotalPorts(r.total || 0); }).catch(() => {});
   }, [hostId]);
 
-  if (!host) return <div>Loading...</div>;
+  if (!host) return <Loading />;
 
   const saveMetadata = async () => {
     setMetadataMsg('Saving...');
@@ -2250,11 +2336,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
             ))}
           </tbody>
         </table>
-        <div className="pagination">
-          <button disabled={pkgPage === 0} onClick={() => loadPkgs(pkgPage - 1)}>Prev</button>
-          <span>Page {pkgPage + 1} of {Math.max(1, Math.ceil(totalPkgs / limit))}</span>
-          <button disabled={(pkgPage + 1) * limit >= totalPkgs} onClick={() => loadPkgs(pkgPage + 1)}>Next</button>
-        </div>
+        <Pager page={pkgPage} limit={limit} total={totalPkgs} onPage={loadPkgs} />
       </div>
     </>
   );
@@ -2289,10 +2371,14 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const [exploitedOnly, setExploitedOnly] = useState(false);
   const [minEpss, setMinEpss] = useState('');
   const [exportMsg, setExportMsg] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const loadSeq = useRef(0);
   const limit = 50;
 
   const load = useCallback((p: number, sev: string, triage: string, source: string, risk: string, overdue: boolean, exploited: boolean, epss: string, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
+    const seq = ++loadSeq.current;
     setLoading(true);
+    setLoadError('');
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
     if (sev) params.severity = sev;
     if (triage) params.triage_status = triage;
@@ -2313,8 +2399,8 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
     if (sNoFix) params.show_no_fix = 'true';
     if (sMismatch) params.show_mismatch = 'true';
     api.vulnerabilities(params)
-      .then(r => { setVulns(r.items || []); setTotal(r.total); setPage(p); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then(r => { if (seq !== loadSeq.current) return; setVulns(r.items || []); setTotal(r.total); setPage(p); setLoading(false); })
+      .catch((e) => { if (seq !== loadSeq.current) return; setLoadError(e instanceof Error ? e.message : 'Failed to load vulnerabilities'); setLoading(false); });
   }, []);
 
   useEffect(() => {
@@ -2542,7 +2628,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
         )}
       </div>
       <div className="card">
-        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+        {loading ? <Loading /> : loadError ? <LoadError message={loadError} onRetry={handleSearch} /> : (
           <table>
             <thead>
               <tr>
@@ -2608,11 +2694,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
             </tbody>
           </table>
         )}
-        <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Prev</button>
-          <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)}>Next</button>
-        </div>
+        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)} />
       </div>
     </>
   );
@@ -2648,7 +2730,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
   if (!vuln) return <div>No vulnerability selected</div>;
 
   const badgeClass = `badge badge-${vuln.severity.toLowerCase()}`;
-  const sevColor = vuln.severity === 'CRITICAL' ? 'var(--critical)' : vuln.severity === 'HIGH' ? 'var(--high)' : vuln.severity === 'MEDIUM' ? 'var(--medium)' : 'var(--low)';
+  const sevColor = severityColor(vuln.severity);
   const saveTriage = async () => {
     setTriageMsg('Saving...');
     try {
@@ -2887,6 +2969,7 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const loadSeq = useRef(0);
   const [filterOpts, setFilterOpts] = useState<FilterOptions | null>(null);
   const [hostMap, setHostMap] = useState<Record<string, string>>({});
   const [hostIPMap, setHostIPMap] = useState<Record<string, string>>({});
@@ -2912,6 +2995,7 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
   }, []);
 
   const load = useCallback((p: number, hId: string, cont: string, langLabel: string, src: string, q: string, sBy: string, sDesc: boolean) => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     const params: Record<string, string> = {
       limit: String(limit),
@@ -2933,12 +3017,13 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
           const typeSet = new Set(types);
           items = items.filter(pkg => typeSet.has(pkg.pkg_type));
         }
+        if (seq !== loadSeq.current) return;
         setPkgs(items);
         setTotal(types.length > 1 ? items.length : r.total);
         setPage(p);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => { if (seq === loadSeq.current) setLoading(false); });
   }, [filterOpts]);
 
   useEffect(() => { if (filterOpts) load(0, hostId, container, lang, source, query, sortBy, sortDesc); }, [filterOpts]);
@@ -3024,7 +3109,7 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
         <div className="card-header">
           <h2>{total} packages</h2>
         </div>
-        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+        {loading ? <Loading /> : (
           <table>
             <thead>
               <tr>
@@ -3055,11 +3140,7 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
             </tbody>
           </table>
         )}
-        <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, hostId, container, lang, source, query, sortBy, sortDesc)}>Prev</button>
-          <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, hostId, container, lang, source, query, sortBy, sortDesc)}>Next</button>
-        </div>
+        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, hostId, container, lang, source, query, sortBy, sortDesc)} />
       </div>
     </>
   );
@@ -3073,6 +3154,7 @@ function ContainersView() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const loadSeq = useRef(0);
 
   const [hostId, setHostId] = useState('');
   const [runtime, setRuntime] = useState('');
@@ -3095,6 +3177,7 @@ function ContainersView() {
   }, []);
 
   const load = useCallback((p: number, hId: string, rt: string, st: string, img: string, q: string, sBy: string, sDesc: boolean) => {
+    const seq = ++loadSeq.current;
     setLoading(true);
     const params: Record<string, string> = {
       limit: String(limit),
@@ -3109,12 +3192,13 @@ function ContainersView() {
 
     api.containers(params)
       .then(r => {
+        if (seq !== loadSeq.current) return;
         setContainers(r.items || []);
         setTotal(r.total || 0);
         setPage(p);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => { if (seq === loadSeq.current) setLoading(false); });
   }, []);
 
   useEffect(() => { load(0, hostId, runtime, state, image, query, sortBy, sortDesc); }, [hostId, runtime, state]);
@@ -3185,7 +3269,7 @@ function ContainersView() {
         <div className="card-header">
           <h2>{total} containers</h2>
         </div>
-        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+        {loading ? <Loading /> : (
           <table>
             <thead>
               <tr>
@@ -3224,11 +3308,7 @@ function ContainersView() {
             </tbody>
           </table>
         )}
-        <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, hostId, runtime, state, image, query, sortBy, sortDesc)}>Prev</button>
-          <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, hostId, runtime, state, image, query, sortBy, sortDesc)}>Next</button>
-        </div>
+        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, hostId, runtime, state, image, query, sortBy, sortDesc)} />
       </div>
     </>
   );
@@ -3785,11 +3865,7 @@ function CveSearchView() {
             </tbody>
           </table>
           {results.total > limit && (
-            <div className="pagination">
-              <button disabled={page === 0} onClick={() => doSearch(page - 1)}>Prev</button>
-              <span>Page {page + 1} of {Math.max(1, Math.ceil(results.total / limit))}</span>
-              <button disabled={(page + 1) * limit >= results.total} onClick={() => doSearch(page + 1)}>Next</button>
-            </div>
+            <Pager page={page} limit={limit} total={results.total} onPage={doSearch} />
           )}
         </div>
       )}
@@ -3957,7 +4033,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
           </div>
         </div>
         {requestMsg && <div style={{ padding: '0.75rem 1rem 0', color: requestMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{requestMsg}</div>}
-        {requestsLoading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+        {requestsLoading ? <Loading /> : (
           <table>
             <thead>
               <tr><th>Requested</th><th>Age</th><th>Host</th><th>Claimed By</th><th>Type</th><th>Status</th><th>Mode</th><th>DB Rev</th><th>Reason</th><th>Claimed</th><th>Claim Age</th><th>Completed</th><th></th></tr>
@@ -3992,7 +4068,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
         <div className="card-header">
           <h2>{total} scans</h2>
         </div>
-        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+        {loading ? <Loading /> : (
           <table>
             <thead>
               <tr><th>Date</th><th>Host</th><th>Type</th><th>Status</th><th>Issue</th><th>Inventory</th><th>Delta</th><th>Started</th><th>Finished</th><th></th></tr>
@@ -4025,11 +4101,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
             </tbody>
           </table>
         )}
-        <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1)}>Prev</button>
-          <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1)}>Next</button>
-        </div>
+        <Pager page={page} limit={limit} total={total} onPage={load} />
       </div>
     </>
   );
@@ -4215,7 +4287,7 @@ function RBACView() {
       <div className="grid-2">
         <div className="card">
           <div className="card-header"><h2>Subjects</h2></div>
-          {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+          {loading ? <Loading /> : (
             <table>
               <thead><tr><th>Type</th><th>External ID</th><th>Name</th><th>Updated</th><th></th></tr></thead>
               <tbody>
@@ -4235,7 +4307,7 @@ function RBACView() {
         </div>
         <div className="card">
           <div className="card-header"><h2>Policies</h2></div>
-          {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+          {loading ? <Loading /> : (
             <table>
               <thead><tr><th>Subject</th><th>Resource</th><th>Permission</th><th>Created</th><th></th></tr></thead>
               <tbody>
@@ -4383,7 +4455,7 @@ function AuditLogView() {
         </div>
       </div>
       <div className="card">
-        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+        {loading ? <Loading /> : (
           <table>
             <thead>
               <tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>Status</th><th>Client</th><th>Metadata</th></tr>
@@ -4404,11 +4476,7 @@ function AuditLogView() {
             </tbody>
           </table>
         )}
-        <div className="pagination">
-          <button disabled={page === 0} onClick={() => load(page - 1, actorType, action, resourceType, status, createdFrom, createdTo, query)}>Prev</button>
-          <span>Page {page + 1} of {Math.max(1, Math.ceil(total / limit))}</span>
-          <button disabled={(page + 1) * limit >= total} onClick={() => load(page + 1, actorType, action, resourceType, status, createdFrom, createdTo, query)}>Next</button>
-        </div>
+        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, actorType, action, resourceType, status, createdFrom, createdTo, query)} />
       </div>
     </>
   );
@@ -4434,7 +4502,7 @@ function CvssTooltip({ pkgId, score, onSelectVuln }: { pkgId: string; score: num
     setShow(false);
   };
 
-  const sevColor = (s: string) => s === 'CRITICAL' ? 'var(--critical)' : s === 'HIGH' ? 'var(--high)' : s === 'MEDIUM' ? 'var(--medium)' : 'var(--low)';
+  const sevColor = severityColor;
 
   if (s <= 0) return <span className="mono">-</span>;
 
@@ -4548,7 +4616,7 @@ function SchedulesView() {
         </div>
       </div>
       <div className="card">
-        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+        {loading ? <Loading /> : (
           <table>
             <thead>
               <tr><th>Name</th><th>Cron</th><th>Scan Type</th><th>Enabled</th><th>Last Run</th><th>Next Run</th><th></th></tr>
@@ -4582,6 +4650,10 @@ function AssetGroupsView() {
   const [groupType, setGroupType] = useState('static');
   const [ruleExpr, setRuleExpr] = useState('');
   const [msg, setMsg] = useState('');
+  const [allHosts, setAllHosts] = useState<Host[]>([]);
+  const [expandedId, setExpandedId] = useState('');
+  const [detail, setDetail] = useState<AssetGroupDetail | null>(null);
+  const [addHostId, setAddHostId] = useState('');
 
   const load = useCallback(() => {
     setLoading(true);
@@ -4591,6 +4663,43 @@ function AssetGroupsView() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { api.hosts().then(hs => setAllHosts(hs || [])).catch(() => {}); }, []);
+
+  const loadDetail = useCallback((id: string) => {
+    api.assetGroup(id).then(setDetail).catch(() => setDetail(null));
+  }, []);
+
+  const toggleExpand = (id: string) => {
+    if (expandedId === id) { setExpandedId(''); setDetail(null); return; }
+    setExpandedId(id);
+    setDetail(null);
+    setAddHostId('');
+    loadDetail(id);
+  };
+
+  const handleAddHost = async (groupId: string) => {
+    if (!addHostId) return;
+    setMsg('');
+    try {
+      await api.addHostToAssetGroup(groupId, addHostId);
+      setAddHostId('');
+      loadDetail(groupId);
+      load();
+    } catch {
+      setMsg('Failed to add host to group');
+    }
+  };
+
+  const handleRemoveHost = async (groupId: string, hostId: string) => {
+    setMsg('');
+    try {
+      await api.removeHostFromAssetGroup(groupId, hostId);
+      loadDetail(groupId);
+      load();
+    } catch {
+      setMsg('Failed to remove host from group');
+    }
+  };
 
   const handleCreate = async () => {
     if (!name) return;
@@ -4646,22 +4755,56 @@ function AssetGroupsView() {
         </div>
       </div>
       <div className="card">
-        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+        {loading ? <Loading /> : (
           <table>
             <thead>
               <tr><th>Name</th><th>Description</th><th>Type</th><th>Rule</th><th>Hosts</th><th></th><th></th></tr>
             </thead>
             <tbody>
               {items.map(g => (
-                <tr key={g.id}>
-                  <td>{g.name}</td>
+                <React.Fragment key={g.id}>
+                <tr style={{ cursor: 'pointer' }} onClick={() => toggleExpand(g.id)}>
+                  <td>{expandedId === g.id ? '▾ ' : '▸ '}{g.name}</td>
                   <td>{g.description || '-'}</td>
                   <td><span className="badge">{g.rule_type}</span></td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{g.rule_expr || '-'}</td>
                   <td className="mono">{g.host_count || 0}</td>
-                  <td><button className="update-btn" onClick={() => handleScan(g.id)}>Scan</button></td>
-                  <td><button className="delete-btn" onClick={() => handleDelete(g.id)}>Delete</button></td>
+                  <td><button className="update-btn" onClick={(e) => { e.stopPropagation(); handleScan(g.id); }}>Scan</button></td>
+                  <td><button className="delete-btn" onClick={(e) => { e.stopPropagation(); handleDelete(g.id); }}>Delete</button></td>
                 </tr>
+                {expandedId === g.id && (
+                  <tr>
+                    <td colSpan={7} style={{ background: 'var(--bg)', padding: '0.75rem 1rem' }}>
+                      {!detail ? <span style={{ color: 'var(--text-muted)' }}>Loading members...</span> : (
+                        <>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginBottom: (detail.host_ids || []).length ? '0.5rem' : 0 }}>
+                            {(detail.host_ids || []).map(hid => (
+                              <span key={hid} className="badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                                {allHosts.find(h => h.id === hid)?.hostname || hid}
+                                {g.rule_type === 'static' && (
+                                  <button className="delete-btn" style={{ padding: '0 0.3rem', fontSize: '0.7rem' }} onClick={() => handleRemoveHost(g.id, hid)}>x</button>
+                                )}
+                              </span>
+                            ))}
+                            {(detail.host_ids || []).length === 0 && <span style={{ color: 'var(--text-muted)' }}>No member hosts</span>}
+                          </div>
+                          {g.rule_type === 'static' && (
+                            <div className="filters" style={{ margin: 0 }}>
+                              <select value={addHostId} onChange={(e) => setAddHostId(e.target.value)}>
+                                <option value="">Add host...</option>
+                                {allHosts.filter(h => !(detail.host_ids || []).includes(h.id)).map(h => (
+                                  <option key={h.id} value={h.id}>{h.hostname || h.id}</option>
+                                ))}
+                              </select>
+                              <button className="filter-btn" disabled={!addHostId} onClick={() => handleAddHost(g.id)}>Add Host</button>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
               {items.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No asset groups</td></tr>}
             </tbody>
@@ -4675,6 +4818,8 @@ function AssetGroupsView() {
 function TrendsView() {
   const [summary, setSummary] = useState<VulnTrendSummary | null>(null);
   const [rows, setRows] = useState<VulnTrendRow[]>([]);
+  const [posture, setPosture] = useState<PostureComparison | null>(null);
+  const [postureDays, setPostureDays] = useState('7');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -4689,6 +4834,10 @@ function TrendsView() {
     });
   }, []);
 
+  useEffect(() => {
+    api.vulnPosture({ days: postureDays }).then(setPosture).catch(() => setPosture(null));
+  }, [postureDays]);
+
   const trendColor = (dir: string) => dir === 'up' ? 'var(--critical)' : dir === 'down' ? 'var(--low)' : 'var(--medium)';
   const n = (value: unknown) => Number.isFinite(Number(value)) ? Number(value) : 0;
   const currentTotal = n(summary?.current_total);
@@ -4700,7 +4849,7 @@ function TrendsView() {
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>Vulnerability Trends</h1>
-      {loading ? <div>Loading...</div> : (
+      {loading ? <Loading /> : (
         <>
           {summary && (
             <div className="stats-grid" style={{ marginBottom: '1.5rem' }}>
@@ -4733,6 +4882,35 @@ function TrendsView() {
               </div>
             </div>
           )}
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <div className="card-header">
+              <h2>Posture Comparison</h2>
+              <div className="filters" style={{ margin: 0 }}>
+                <select value={postureDays} onChange={(e) => setPostureDays(e.target.value)}>
+                  <option value="7">vs 7 days ago</option>
+                  <option value="14">vs 14 days ago</option>
+                  <option value="30">vs 30 days ago</option>
+                </select>
+              </div>
+            </div>
+            {!posture ? <div style={{ padding: '1rem', color: 'var(--text-muted)' }}>No posture data</div> : (
+              <table>
+                <thead>
+                  <tr><th>Current ({posture.current_date || '-'})</th><th>Previous ({posture.previous_date || 'no snapshot'})</th><th>Delta</th><th>Trend</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="mono">{posture.current_total.toLocaleString()}</td>
+                    <td className="mono">{posture.previous_date ? posture.previous_total.toLocaleString() : '-'}</td>
+                    <td className="mono" style={{ color: posture.delta > 0 ? 'var(--critical)' : posture.delta < 0 ? 'var(--low)' : 'var(--text-muted)' }}>
+                      {posture.delta > 0 ? '+' : ''}{posture.delta.toLocaleString()}{posture.previous_date ? ` (${posture.delta_percent.toFixed(1)}%)` : ''}
+                    </td>
+                    <td style={{ color: trendColor(posture.trend_direction), textTransform: 'uppercase', fontWeight: 600 }}>{posture.trend_direction}</td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+          </div>
           <div className="card">
             <div className="card-header"><h2>Daily Vulnerability Counts</h2></div>
             <table>
@@ -4765,6 +4943,8 @@ function ReportsView() {
   const [sla, setSla] = useState<SLAComplianceReport | null>(null);
   const [riskRows, setRiskRows] = useState<RiskBreakdownRow[]>([]);
   const [riskGroupBy, setRiskGroupBy] = useState('owner');
+  const [topRisk, setTopRisk] = useState<AtRiskHost[]>([]);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
   const [exportMsg, setExportMsg] = useState('');
 
@@ -4774,10 +4954,14 @@ function ReportsView() {
       api.executiveSummary().catch(() => null),
       api.slaCompliance().catch(() => null),
       api.riskBreakdown({ group_by: riskGroupBy }).catch(() => ({ items: [], group_by: riskGroupBy })),
-    ]).then(([s, sl, r]) => {
+      api.topRiskHosts({ limit: '10' }).catch(() => ({ items: [] })),
+      api.recommendations().catch(() => ({ items: [] })),
+    ]).then(([s, sl, r, tr, rec]) => {
       setSummary(s);
       setSla(sl);
       setRiskRows(r?.items || []);
+      setTopRisk(tr?.items || []);
+      setRecommendations(rec?.items || []);
       setLoading(false);
     });
   }, []);
@@ -4798,12 +4982,12 @@ function ReportsView() {
     }
   };
 
-  const sevColor = (s: string) => s === 'CRITICAL' ? 'var(--critical)' : s === 'HIGH' ? 'var(--high)' : s === 'MEDIUM' ? 'var(--medium)' : 'var(--low)';
+  const sevColor = severityColor;
 
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>Reports</h1>
-      {loading ? <div>Loading...</div> : (
+      {loading ? <Loading /> : (
         <>
           {summary && (
             <>
@@ -4842,9 +5026,9 @@ function ReportsView() {
               <div className="card" style={{ marginBottom: '1rem' }}>
                 <div className="card-header"><h2>Severity Counts</h2></div>
                 <div style={{ display: 'flex', gap: '1rem', padding: '1rem', flexWrap: 'wrap' }}>
-                  {Object.entries(summary.severity_counts || {}).map(([sev, count]) => (
+                  {SEVERITY_ORDER.filter(sev => sev in (summary.severity_counts || {})).map(sev => (
                     <div key={sev} style={{ textAlign: 'center' }}>
-                      <div className="mono" style={{ fontSize: '1.25rem', fontWeight: 700, color: sevColor(sev) }}>{count}</div>
+                      <div className="mono" style={{ fontSize: '1.25rem', fontWeight: 700, color: sevColor(sev) }}>{summary.severity_counts[sev]}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sev}</div>
                     </div>
                   ))}
@@ -4860,14 +5044,14 @@ function ReportsView() {
                   <tr><th>Severity</th><th>Total</th><th>Overdue</th><th>Compliance %</th></tr>
                 </thead>
                 <tbody>
-                  {Object.entries(sla.by_severity || {}).map(([sev, stats]) => (
+                  {SEVERITY_ORDER.filter(sev => sev in (sla.by_severity || {})).map(sev => { const stats = sla.by_severity[sev]; return (
                     <tr key={sev}>
                       <td><span className="badge" style={{ color: sevColor(sev) }}>{sev}</span></td>
                       <td className="mono">{stats.total}</td>
                       <td className="mono" style={{ color: stats.overdue > 0 ? 'var(--critical)' : 'var(--text-muted)' }}>{stats.overdue}</td>
                       <td className="mono">{stats.compliance_percent.toFixed(1)}%</td>
                     </tr>
-                  ))}
+                  ); })}
                   {Object.keys(sla.by_severity || {}).length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No SLA data</td></tr>}
                 </tbody>
               </table>
@@ -4892,7 +5076,7 @@ function ReportsView() {
               <tbody>
                 {riskRows.map(r => (
                   <tr key={r.group}>
-                    <td>{r.group}</td>
+                    <td>{r.group || '(unassigned)'}</td>
                     <td className="mono">{r.total.toLocaleString()}</td>
                     <td className="mono" style={{ color: 'var(--critical)' }}>{r.severity_counts?.CRITICAL || 0}</td>
                     <td className="mono" style={{ color: 'var(--high)' }}>{r.severity_counts?.HIGH || 0}</td>
@@ -4901,6 +5085,49 @@ function ReportsView() {
                   </tr>
                 ))}
                 {riskRows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No risk breakdown data</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <div className="card-header"><h2>Top Risk Hosts</h2></div>
+            <table>
+              <thead>
+                <tr><th>Host</th><th>Total Vulns</th><th>Critical</th><th>High</th><th>Exploited</th><th>Overdue</th><th>Max Risk</th></tr>
+              </thead>
+              <tbody>
+                {topRisk.map(h => (
+                  <tr key={h.host_id}>
+                    <td>{h.hostname || h.host_id}</td>
+                    <td className="mono">{h.total_vulns.toLocaleString()}</td>
+                    <td className="mono" style={{ color: 'var(--critical)' }}>{h.critical_count}</td>
+                    <td className="mono" style={{ color: 'var(--high)' }}>{h.high_count}</td>
+                    <td className="mono" style={{ color: h.exploited_count > 0 ? 'var(--critical)' : 'var(--text-muted)' }}>{h.exploited_count}</td>
+                    <td className="mono" style={{ color: h.overdue_count > 0 ? 'var(--critical)' : 'var(--text-muted)' }}>{h.overdue_count}</td>
+                    <td className="mono" style={{ color: riskLevelColor(h.max_risk_score >= 80 ? 'critical' : h.max_risk_score >= 60 ? 'high' : h.max_risk_score >= 40 ? 'medium' : 'low') }}>{h.max_risk_score.toFixed(1)}</td>
+                  </tr>
+                ))}
+                {topRisk.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No host risk data</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <div className="card-header"><h2>Recommendations</h2></div>
+            <table>
+              <thead>
+                <tr><th>Priority</th><th>Category</th><th>Recommendation</th></tr>
+              </thead>
+              <tbody>
+                {recommendations.map((rec, i) => (
+                  <tr key={`${rec.category}-${i}`}>
+                    <td><span className="badge" style={{ color: riskLevelColor(rec.priority) }}>{rec.priority || '-'}</span></td>
+                    <td>{rec.category.replace(/_/g, ' ')}</td>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{rec.title}</div>
+                      {rec.description && <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{rec.description}</div>}
+                    </td>
+                  </tr>
+                ))}
+                {recommendations.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No recommendations</td></tr>}
               </tbody>
             </table>
           </div>
@@ -5010,7 +5237,7 @@ function NotificationsView() {
         </div>
       </div>
       <div className="card">
-        {loading ? <div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div> : (
+        {loading ? <Loading /> : (
           <table>
             <thead>
               <tr><th>Name</th><th>Trigger Event</th><th>Min Severity</th><th>Channel</th><th>Enabled</th><th>Last Triggered</th><th></th><th></th></tr>
