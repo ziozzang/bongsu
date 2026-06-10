@@ -131,6 +131,11 @@ func (n *ruleNotifier) dispatch(ctx context.Context, rule *db.NotificationRule, 
 		logEntry.Status = status
 		logEntry.ErrorMessage = errMsg
 		logEntry.Attempts = attempts
+	case "email":
+		status, errMsg, attempts := n.sendEmail(ctx, rule, event, payload)
+		logEntry.Status = status
+		logEntry.ErrorMessage = errMsg
+		logEntry.Attempts = attempts
 	case "log":
 		log.Printf("[NOTIFICATION] rule=%s event=%s data=%s", rule.Name, event, string(payloadJSON))
 		logEntry.Status = "sent"
@@ -218,6 +223,15 @@ func (n *ruleNotifier) dispatchTest(ctx context.Context, rule *db.NotificationRu
 		}
 		if errMsg == "" {
 			errMsg = "webhook failed"
+		}
+		return fmt.Errorf("%s", errMsg)
+	case "email":
+		status, errMsg, _ := n.sendEmail(ctx, rule, "test", payload)
+		if status == "sent" {
+			return nil
+		}
+		if errMsg == "" {
+			errMsg = "email send failed"
 		}
 		return fmt.Errorf("%s", errMsg)
 	case "log":

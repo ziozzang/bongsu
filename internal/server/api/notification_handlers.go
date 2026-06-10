@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/ziozzang/bongsu/internal/server/db"
@@ -56,6 +58,10 @@ func (s *Server) handleCreateNotificationRule(w http.ResponseWriter, r *http.Req
 	channelType := "webhook"
 	if req.ChannelType != "" {
 		channelType = req.ChannelType
+	}
+	if err := validateNotificationChannel(channelType, req.ChannelConfig); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
 	}
 	enabled := true
 	if req.Enabled != nil {
@@ -152,6 +158,10 @@ func (s *Server) handleUpdateNotificationRule(w http.ResponseWriter, r *http.Req
 	if req.ChannelConfig != nil {
 		existing.ChannelConfig = req.ChannelConfig
 	}
+	if err := validateNotificationChannel(existing.ChannelType, existing.ChannelConfig); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
 	if err := s.db.UpdateNotificationRule(r.Context(), existing); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -220,4 +230,32 @@ func (s *Server) handleListNotificationLog(w http.ResponseWriter, r *http.Reques
 		entries = []db.NotificationLog{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": entries, "total": total})
+}
+
+// validateNotificationChannel rejects unknown channel types and ensures the
+// channel_config carries the fields each sender requires.
+func validateNotificationChannel(channelType string, cfgRaw json.RawMessage) error {
+	cfg := map[string]string{}
+	if len(cfgRaw) > 0 {
+		if err := json.Unmarshal(cfgRaw, &cfg); err != nil {
+			return fmt.Errorf("channel_config must be a JSON object of strings")
+		}
+	}
+	switch channelType {
+	case "webhook":
+		if strings.TrimSpace(cfg["url"]) == "" {
+			return fmt.Errorf("channel_config.url is required for webhook channel")
+		}
+	case "email":
+		if len(emailRecipients(cfg)) == 0 {
+			return fmt.Errorf("channel_config.to must contain at least one email address")
+		}
+		if _, err := smtpConfigFromEnv(); err != nil {
+			return fmt.Errorf("smtp is not configured on the server: %v", err)
+		}
+	case "log":
+	default:
+		return fmt.Errorf("channel_type must be webhook, email, or log")
+	}
+	return nil
 }
