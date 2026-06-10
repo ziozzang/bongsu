@@ -251,6 +251,7 @@ export interface Vuln {
   triage_status: string;
   triage_reason: string;
   triage_comment: string;
+  triage_assignee?: string;
   triage_expires_at?: string | null;
   triage_updated_by: string;
   triage_updated_at?: string | null;
@@ -1175,7 +1176,7 @@ export const api = {
     request<{ items: ContainerAsset[]; total: number }>('/containers', params),
   packageFilters: () => request<FilterOptions>('/packages/filters'),
   packageVulns: (id: string) => request<Vuln[]>(`/packages/${id}/vulnerabilities`),
-  triageVulnerability: (body: { vulnerability_id: string; host_id?: string; pkg_name?: string; status: string; reason?: string; comment?: string; expires_at?: string | null }) =>
+  triageVulnerability: (body: { vulnerability_id: string; host_id?: string; pkg_name?: string; status: string; reason?: string; comment?: string; assignee?: string; expires_at?: string | null }) =>
     requestJSON<{ id: string; status: string }>('/vulnerabilities/triage', body),
   scans: (params: { host_id?: string; limit?: string; offset?: string }) =>
     request<{ items: Scan[]; total: number }>('/scans', params),

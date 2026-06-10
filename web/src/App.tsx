@@ -2348,6 +2348,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const [page, setPage] = useState(0);
   const [severity, setSeverity] = useState('');
   const [triageStatus, setTriageStatus] = useState(initialFilters?.triageStatus || '');
+  const [assignee, setAssignee] = useState('');
   const [findingSource, setFindingSource] = useState('');
   const [riskLevel, setRiskLevel] = useState(initialFilters?.riskLevel || '');
   const [hostId, setHostId] = useState('');
@@ -2375,13 +2376,14 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const loadSeq = useRef(0);
   const limit = 50;
 
-  const load = useCallback((p: number, sev: string, triage: string, source: string, risk: string, overdue: boolean, exploited: boolean, epss: string, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
+  const load = useCallback((p: number, sev: string, triage: string, asg: string, source: string, risk: string, overdue: boolean, exploited: boolean, epss: string, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
     const seq = ++loadSeq.current;
     setLoading(true);
     setLoadError('');
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
     if (sev) params.severity = sev;
     if (triage) params.triage_status = triage;
+    if (asg) params.assignee = asg;
     if (source) params.finding_source = source;
     if (risk) params.risk_level = risk;
     if (overdue) params.overdue = 'true';
@@ -2418,16 +2420,16 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { load(0, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
+  useEffect(() => { load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
 
-  const handleSearch = () => { load(0, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
+  const handleSearch = () => { load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
     const nextDesc = sortBy === col ? !sortDesc : col === 'risk_score' || col === 'cvss_score' || col === 'severity' || col === 'exploited' || col === 'epss_score' || col === 'epss_percentile';
     setSortBy(col);
     setSortDesc(nextDesc);
-    load(0, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
+    load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
   };
 
   const sortArrow = (col: string) => {
@@ -2445,6 +2447,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
     const params: Record<string, string> = { format };
     if (severity) params.severity = severity;
     if (triageStatus) params.triage_status = triageStatus;
+    if (assignee) params.assignee = assignee;
     if (findingSource) params.finding_source = findingSource;
     if (riskLevel) params.risk_level = riskLevel;
     if (overdueOnly) params.overdue = 'true';
@@ -2480,6 +2483,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const clearFilters = () => {
     setSeverity('');
     setTriageStatus('');
+    setAssignee('');
     setFindingSource('');
     setRiskLevel('');
     setHostId('');
@@ -2498,6 +2502,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const activeFilters = [
     severity && `Severity: ${severity}`,
     triageStatus && `Status: ${triageStatus.replace('_', ' ')}`,
+    assignee && `Assignee: ${assignee}`,
     findingSource && `Source: ${findingSourceLabel(findingSource)}`,
     riskLevel && `Risk: ${riskLevel}`,
     overdueOnly && 'Overdue',
@@ -2541,6 +2546,14 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
             <option value="fixed">Fixed</option>
             <option value="ignored">Ignored</option>
           </select>
+          <input
+            type="text"
+            placeholder="Assignee (or 'unassigned')"
+            value={assignee}
+            onChange={(e) => setAssignee(e.target.value)}
+            style={{ minWidth: 170 }}
+            title="Filter by triage assignee; use 'unassigned' for findings without an assignee"
+          />
           <select value={findingSource} onChange={(e) => setFindingSource(e.target.value)}>
             <option value="">All Sources</option>
             {(findingSources.length ? findingSources : ['scanner', 'cve-db']).map(s => (
@@ -2694,7 +2707,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
             </tbody>
           </table>
         )}
-        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, severity, triageStatus, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)} />
+        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)} />
       </div>
     </>
   );
@@ -2705,6 +2718,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
   const [hostIPMap, setHostIPMap] = useState<Record<string, string>>({});
   const [triageStatus, setTriageStatus] = useState(vuln?.triage_status || 'open');
   const [triageReason, setTriageReason] = useState(vuln?.triage_reason || '');
+  const [triageAssignee, setTriageAssignee] = useState(vuln?.triage_assignee || '');
   const [triageComment, setTriageComment] = useState(vuln?.triage_comment || '');
   const [triageExpiresAt, setTriageExpiresAt] = useState(dateInputValue(vuln?.triage_expires_at));
   const [triageScope, setTriageScope] = useState<'finding' | 'host' | 'global'>('finding');
@@ -2722,6 +2736,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
   useEffect(() => {
     setTriageStatus(vuln?.triage_status || 'open');
     setTriageReason(vuln?.triage_reason || '');
+    setTriageAssignee(vuln?.triage_assignee || '');
     setTriageComment(vuln?.triage_comment || '');
     setTriageExpiresAt(dateInputValue(vuln?.triage_expires_at));
     setTriageMsg('');
@@ -2741,6 +2756,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         status: triageStatus,
         reason: triageReason,
         comment: triageComment,
+        assignee: triageAssignee,
         expires_at: triageExpiresAt ? `${triageExpiresAt}T00:00:00Z` : null,
       });
       setTriageMsg('Saved');
@@ -2833,6 +2849,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
             <option value="global">All hosts for this CVE</option>
           </select>
           <input type="text" placeholder="Reason" value={triageReason} onChange={(e) => setTriageReason(e.target.value)} />
+          <input type="text" placeholder="Assignee (담당자)" value={triageAssignee} onChange={(e) => setTriageAssignee(e.target.value)} title="Assignee responsible for remediation" />
           <input type="date" value={triageExpiresAt} onChange={(e) => setTriageExpiresAt(e.target.value)} title="Triage expiry date" />
           {triageExpiresAt && <button onClick={() => setTriageExpiresAt('')}>Clear Expiry</button>}
         </div>
@@ -5148,6 +5165,10 @@ function NotificationsView() {
   const [triggerEvent, setTriggerEvent] = useState('scan.completed');
   const [minSeverity, setMinSeverity] = useState('CRITICAL');
   const [channelType, setChannelType] = useState('webhook');
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [webhookSecret, setWebhookSecret] = useState('');
+  const [emailTo, setEmailTo] = useState('');
+  const [emailSubjectPrefix, setEmailSubjectPrefix] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [msg, setMsg] = useState('');
   const [logEntries, setLogEntries] = useState<NotificationLogEntry[]>([]);
@@ -5165,13 +5186,24 @@ function NotificationsView() {
   const handleCreate = async () => {
     if (!name) return;
     setMsg('');
+    const channelConfig: Record<string, string> = {};
+    if (channelType === 'webhook') {
+      if (!webhookUrl.trim()) { setMsg('Webhook URL is required'); return; }
+      channelConfig.url = webhookUrl.trim();
+      if (webhookSecret.trim()) channelConfig.secret = webhookSecret.trim();
+    } else if (channelType === 'email') {
+      if (!emailTo.trim()) { setMsg('Recipient email is required'); return; }
+      channelConfig.to = emailTo.trim();
+      if (emailSubjectPrefix.trim()) channelConfig.subject_prefix = emailSubjectPrefix.trim();
+    }
     try {
-      await api.createNotificationRule({ name, trigger_event: triggerEvent, min_severity: minSeverity, channel_type: channelType, enabled });
+      await api.createNotificationRule({ name, trigger_event: triggerEvent, min_severity: minSeverity, channel_type: channelType, channel_config: channelConfig, enabled });
       setMsg('Notification rule created');
       setName('');
+      setWebhookUrl(''); setWebhookSecret(''); setEmailTo(''); setEmailSubjectPrefix('');
       load();
-    } catch {
-      setMsg('Failed to create notification rule');
+    } catch (err) {
+      setMsg(err instanceof Error ? `Failed to create rule: ${err.message}` : 'Failed to create notification rule');
     }
   };
 
@@ -5227,8 +5259,21 @@ function NotificationsView() {
           </select>
           <select value={channelType} onChange={(e) => setChannelType(e.target.value)}>
             <option value="webhook">Webhook</option>
+            <option value="email">Email</option>
             <option value="log">Log</option>
           </select>
+          {channelType === 'webhook' && (
+            <>
+              <input type="text" placeholder="Webhook URL" value={webhookUrl} onChange={(e) => setWebhookUrl(e.target.value)} style={{ minWidth: 240 }} />
+              <input type="text" placeholder="HMAC secret (optional)" value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} />
+            </>
+          )}
+          {channelType === 'email' && (
+            <>
+              <input type="text" placeholder="Recipients (comma-separated)" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} style={{ minWidth: 240 }} />
+              <input type="text" placeholder="Subject prefix (optional)" value={emailSubjectPrefix} onChange={(e) => setEmailSubjectPrefix(e.target.value)} />
+            </>
+          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
           </label>
