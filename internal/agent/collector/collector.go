@@ -139,14 +139,17 @@ func (c *Collector) CollectHostPackages() ([]models.Package, []models.Vulnerabil
 	return trivyparse.ExtractPackagesAndVulns(out, "trivy-host", "")
 }
 
-func (c *Collector) CollectContainerPackages(containerName string) ([]models.Package, []models.Vulnerability, error) {
+func (c *Collector) CollectContainerPackages(containerName, imageRef, runtime string) ([]models.Package, []models.Vulnerability, error) {
 	if err := c.ensureTrivy(); err != nil {
 		return nil, nil, err
 	}
 
-	imageRef, err := c.getContainerImage(containerName)
-	if err != nil {
-		return nil, nil, err
+	if imageRef == "" {
+		ref, err := c.getContainerImage(containerName)
+		if err != nil {
+			return nil, nil, err
+		}
+		imageRef = ref
 	}
 
 	var cmd *exec.Cmd
@@ -156,11 +159,15 @@ func (c *Collector) CollectContainerPackages(containerName string) ([]models.Pac
 		ctx, cancel = context.WithTimeout(ctx, c.ImageTimeout)
 	}
 	defer cancel()
-	if c.PackagesOnly {
-		cmd = c.trivyCommandContext(ctx, "image", "--format", "json", "--list-all-pkgs", imageRef)
-	} else {
-		cmd = c.trivyCommandContext(ctx, "image", "--format", "json", "--list-all-pkgs", "--scanners", "vuln", imageRef)
+	args := []string{"image", "--format", "json", "--list-all-pkgs"}
+	if src := trivyImageSrc(runtime); src != "" {
+		args = append(args, "--image-src", src)
 	}
+	if !c.PackagesOnly {
+		args = append(args, "--scanners", "vuln")
+	}
+	args = append(args, imageRef)
+	cmd = c.trivyCommandContext(ctx, args...)
 	out, err := outputWithStderr(cmd)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -170,6 +177,20 @@ func (c *Collector) CollectContainerPackages(containerName string) ([]models.Pac
 	}
 
 	return trivyparse.ExtractPackagesAndVulns(out, "trivy-container", containerName)
+}
+
+// trivyImageSrc maps the container runtime that discovered a container to the
+// trivy --image-src that can read its image without a docker daemon.
+func trivyImageSrc(runtime string) string {
+	switch runtime {
+	case "docker":
+		return "docker"
+	case "podman":
+		return "podman"
+	case "nerdctl", "cri", "containerd":
+		return "containerd"
+	}
+	return ""
 }
 
 func (c *Collector) getContainerImage(containerName string) (string, error) {

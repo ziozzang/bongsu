@@ -208,20 +208,80 @@ func CollectProcesses() ([]models.ProcessSnapshot, error) {
 	return procs, nil
 }
 
+// GetRunningContainers enumerates containers across every runtime CLI found
+// on the host: docker, podman, nerdctl (docker-compatible CLIs), and crictl
+// (CRI/kubernetes nodes). Containers seen by more than one CLI (e.g. nerdctl
+// and crictl on the same containerd) are deduplicated by container ID.
 func GetRunningContainers() ([]models.ContainerAsset, error) {
-	out, err := commandOutput("docker", "ps", "--format", "{{.ID}}")
+	var containers []models.ContainerAsset
+	var errs []string
+	seen := map[string]bool{}
+	available := 0
+	dedup := func(list []models.ContainerAsset) {
+		for _, c := range list {
+			key := containerDedupKey(c.ContainerID)
+			if key == "" || seen[key] {
+				continue
+			}
+			seen[key] = true
+			containers = append(containers, c)
+		}
+	}
+	for _, rt := range []string{"docker", "podman", "nerdctl"} {
+		if _, err := exec.LookPath(rt); err != nil {
+			continue
+		}
+		available++
+		list, err := dockerCompatContainers(rt)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", rt, err))
+			continue
+		}
+		dedup(list)
+	}
+	if _, err := exec.LookPath("crictl"); err == nil {
+		available++
+		list, err := crictlContainers()
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("crictl: %v", err))
+		} else {
+			dedup(list)
+		}
+	}
+	if available == 0 {
+		return nil, fmt.Errorf("no container runtime CLI found (docker, podman, nerdctl, crictl)")
+	}
+	if len(containers) == 0 && len(errs) > 0 {
+		return nil, fmt.Errorf("container enumeration failed: %s", strings.Join(errs, "; "))
+	}
+	for _, e := range errs {
+		fmt.Fprintf(os.Stderr, "warning: container runtime %s\n", e)
+	}
+	return containers, nil
+}
+
+func containerDedupKey(id string) string {
+	id = strings.TrimSpace(id)
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
+}
+
+func dockerCompatContainers(bin string) ([]models.ContainerAsset, error) {
+	out, err := commandOutput(bin, "ps", "--format", "{{.ID}}")
 	if err != nil {
-		return nil, fmt.Errorf("docker ps: %w", err)
+		return nil, fmt.Errorf("%s ps: %w", bin, err)
 	}
 	var containers []models.ContainerAsset
 	for _, id := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if id == "" {
 			continue
 		}
-		c, err := inspectDockerContainer(id)
+		c, err := inspectDockerCompatContainer(bin, id)
 		if err != nil {
 			containers = append(containers, models.ContainerAsset{
-				Runtime:     "docker",
+				Runtime:     bin,
 				ContainerID: id,
 				Name:        id,
 				State:       "running",
@@ -233,8 +293,60 @@ func GetRunningContainers() ([]models.ContainerAsset, error) {
 	return containers, nil
 }
 
-func inspectDockerContainer(id string) (models.ContainerAsset, error) {
-	out, err := commandOutput("docker", "inspect", id)
+// crictlContainers enumerates CRI-managed containers (containerd/cri-o on
+// kubernetes nodes) and preserves pod metadata via the CRI labels.
+func crictlContainers() ([]models.ContainerAsset, error) {
+	out, err := commandOutput("crictl", "ps", "-o", "json")
+	if err != nil {
+		return nil, fmt.Errorf("crictl ps: %w", err)
+	}
+	var data struct {
+		Containers []struct {
+			ID       string `json:"id"`
+			Metadata struct {
+				Name string `json:"name"`
+			} `json:"metadata"`
+			Image struct {
+				Image string `json:"image"`
+			} `json:"image"`
+			ImageRef  string            `json:"imageRef"`
+			State     string            `json:"state"`
+			CreatedAt string            `json:"createdAt"`
+			Labels    map[string]string `json:"labels"`
+		} `json:"containers"`
+	}
+	if err := json.Unmarshal(out, &data); err != nil {
+		return nil, fmt.Errorf("crictl ps parse: %w", err)
+	}
+	var containers []models.ContainerAsset
+	for _, c := range data.Containers {
+		state := strings.ToLower(strings.TrimPrefix(c.State, "CONTAINER_"))
+		labels, _ := json.Marshal(c.Labels)
+		var startedAt *time.Time
+		if ns, err := strconv.ParseInt(strings.TrimSpace(c.CreatedAt), 10, 64); err == nil && ns > 0 {
+			t := time.Unix(0, ns)
+			startedAt = &t
+		}
+		name := c.Metadata.Name
+		if pod := c.Labels["io.kubernetes.pod.name"]; pod != "" {
+			name = pod + "/" + name
+		}
+		containers = append(containers, models.ContainerAsset{
+			Runtime:     "cri",
+			ContainerID: c.ID,
+			Name:        name,
+			ImageName:   c.Image.Image,
+			ImageID:     c.ImageRef,
+			State:       state,
+			Labels:      string(labels),
+			StartedAt:   startedAt,
+		})
+	}
+	return containers, nil
+}
+
+func inspectDockerCompatContainer(bin, id string) (models.ContainerAsset, error) {
+	out, err := commandOutput(bin, "inspect", id)
 	if err != nil {
 		return models.ContainerAsset{}, err
 	}
@@ -255,7 +367,7 @@ func inspectDockerContainer(id string) (models.ContainerAsset, error) {
 		return models.ContainerAsset{}, err
 	}
 	if len(data) == 0 {
-		return models.ContainerAsset{}, fmt.Errorf("empty docker inspect")
+		return models.ContainerAsset{}, fmt.Errorf("empty %s inspect", bin)
 	}
 	name := strings.TrimPrefix(data[0].Name, "/")
 	labels, _ := json.Marshal(data[0].Config.Labels)
@@ -264,7 +376,7 @@ func inspectDockerContainer(id string) (models.ContainerAsset, error) {
 		startedAt = &t
 	}
 	return models.ContainerAsset{
-		Runtime:     "docker",
+		Runtime:     bin,
 		ContainerID: data[0].ID,
 		Name:        name,
 		ImageName:   data[0].Config.Image,

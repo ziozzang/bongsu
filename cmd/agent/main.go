@@ -390,7 +390,7 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 		}
 		for _, c := range containers {
 			log.Printf("Running Trivy scan for container: %s (%s)", c.Name, c.ImageName)
-			pkgs, vulns, err := coll.CollectContainerPackages(c.Name)
+			pkgs, vulns, err := coll.CollectContainerPackages(c.Name, c.ImageName, c.Runtime)
 			if err != nil {
 				log.Printf("Warning: container %s scan failed: %v", c.Name, err)
 				collectionErrors = appendCollectionError(collectionErrors, "container "+c.Name, err)
