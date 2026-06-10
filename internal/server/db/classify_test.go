@@ -193,6 +193,74 @@ func TestCompatibleSecurityCandidateMatchesUbuntuAsUbuntu(t *testing.T) {
 	}
 }
 
+func TestNormalizeEcosystemStripsDistroReleaseSuffixes(t *testing.T) {
+	cases := map[string]string{
+		"Alpine:v3.21":                          "alpine",
+		"alpine":                                "alpine",
+		"apk":                                   "alpine",
+		"Debian:13":                             "debian",
+		"Ubuntu:Pro:14.04:LTS":                  "ubuntu",
+		"Red Hat:enterprise_linux:8::appstream": "rhel",
+		"AlmaLinux:8":                           "rhel",
+		"Rocky Linux:9":                         "rhel",
+		"Oracle Linux:8":                        "rhel",
+		"Amazon Linux:2023":                     "rhel",
+		"SUSE:Linux Enterprise:15":              "suse",
+		"openSUSE:Tumbleweed":                   "suse",
+		"Azure Linux:3":                         "azurelinux",
+		"CBL-Mariner:2.0":                       "azurelinux",
+		"Chainguard":                            "wolfi",
+		"npm":                                   "npm",
+		"crates.io":                             "crates.io",
+		"GitHub Actions":                        "github actions",
+	}
+	for in, want := range cases {
+		if got := normalizeEcosystem(in); got != want {
+			t.Fatalf("normalizeEcosystem(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestNormalizeEcosystemSQLStripsDistroReleaseSuffixes(t *testing.T) {
+	got := normalizeEcosystemSQL("eco")
+	for _, want := range []string{
+		"split_part(eco, ':', 1) IN ('debian', 'deb')",
+		"split_part(eco, ':', 1) = 'ubuntu'",
+		"split_part(eco, ':', 1) IN ('alpine', 'apk')",
+		"'red hat'",
+		"'rocky linux'",
+		"'almalinux'",
+		"'oracle linux'",
+		"'opensuse'",
+		"'azurelinux'",
+		"'cbl-mariner'",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("normalizeEcosystemSQL must normalize versioned distro ecosystems, missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestCompatibleSecurityCandidateMatchesVersionedAlpineAdvisory(t *testing.T) {
+	affected := `[{"name":"busybox","ecosystem":"Alpine:v3.21","fixed":["1.37.0-r14"]}]`
+	if _, ok := compatibleSecurityCandidate("busybox", "alpine", "Alpine", "1.37.0-r10", "os-package", "Alpine:v3.21", affected); !ok {
+		t.Fatal("Alpine package should match versioned Alpine advisory")
+	}
+	if _, ok := compatibleSecurityCandidate("busybox", "debian", "Debian", "1.37.0-r10", "os-package", "Alpine:v3.21", affected); ok {
+		t.Fatal("versioned Alpine advisory must not match Debian package")
+	}
+}
+
+func TestCompatibleSecurityCandidateMatchesVersionedRhelFamilyAdvisory(t *testing.T) {
+	affected := `[{"name":"openssl","ecosystem":"AlmaLinux:8","fixed":["1:1.1.1k-14.el8_6"]}]`
+	if _, ok := compatibleSecurityCandidate("openssl", "rpm", "AlmaLinux", "1:1.1.1k-12.el8_6", "os-package", "AlmaLinux:8", affected); !ok {
+		t.Fatal("AlmaLinux package should match versioned AlmaLinux advisory")
+	}
+	if _, ok := compatibleSecurityCandidate("openssl", "alpine", "Alpine", "1:1.1.1k-12.el8_6", "os-package", "AlmaLinux:8", affected); ok {
+		t.Fatal("AlmaLinux advisory must not match Alpine package")
+	}
+}
+
 func TestCompatibleSecurityCandidateRejectsWeakOrWrongCandidates(t *testing.T) {
 	noFixed := `[{"name":"foo","ecosystem":"npm"}]`
 	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "4.5.5", "code-library", "", noFixed); ok {

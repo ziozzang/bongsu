@@ -82,41 +82,56 @@ func isOSEcosystem(ecosystem string) bool {
 		eco = strings.TrimSpace(eco[:idx])
 	}
 	switch eco {
-	case "debian", "ubuntu", "alpine", "red hat", "rhel", "suse", "opensuse", "almalinux", "amazon linux", "wolfi", "chainguard", "rocky linux", "oracle linux", "azure linux", "openeuler", "mageia", "android":
+	case "debian", "ubuntu", "alpine", "red hat", "redhat", "rhel", "centos", "rocky", "alma", "amazon", "suse", "opensuse", "almalinux", "amazon linux", "wolfi", "chainguard", "rocky linux", "oracle linux", "azure linux", "azurelinux", "cbl-mariner", "openeuler", "mageia", "android":
 		return true
 	default:
 		return false
 	}
 }
 
+// normalizeEcosystem must stay in sync with normalizeEcosystemSQL: both layers
+// gate the same package↔advisory match and a divergence silently drops matches.
 func normalizeEcosystem(eco string) string {
 	eco = strings.ToLower(strings.TrimSpace(eco))
 	switch eco {
-	case "python", "python-pkg", "pip":
+	case "python", "python-pkg", "pip", "poetry":
 		return "pypi"
-	case "node", "node-pkg", "javascript":
+	case "node", "node-pkg", "javascript", "yarn", "pnpm":
 		return "npm"
-	case "golang", "gomod":
+	case "golang", "gomod", "gobinary":
 		return "go"
 	case "ruby", "gem":
 		return "rubygems"
-	case "rust", "cargo":
+	case "rust", "cargo", "rustbinary":
 		return "crates.io"
-	case "debian:10", "debian:11", "debian:12", "debian:13":
-		return "debian"
-	case "ubuntu:18.04", "ubuntu:20.04", "ubuntu:22.04", "ubuntu:24.04":
-		return "ubuntu"
-	case "redhat", "red hat enterprise linux", "centos", "rocky", "almalinux", "alma", "amazon":
-		return "rhel"
-	default:
-		if strings.HasPrefix(eco, "debian:") {
-			return "debian"
-		}
-		if strings.HasPrefix(eco, "ubuntu:") {
-			return "ubuntu"
-		}
-		return eco
+	case "jar":
+		return "maven"
+	case "composer":
+		return "packagist"
 	}
+	// Distro ecosystems carry release suffixes after ':' (e.g. Alpine:v3.21,
+	// Red Hat:enterprise_linux:8::appstream); normalize on the family segment.
+	family := eco
+	if idx := strings.Index(family, ":"); idx >= 0 {
+		family = strings.TrimSpace(family[:idx])
+	}
+	switch family {
+	case "debian", "deb":
+		return "debian"
+	case "ubuntu":
+		return "ubuntu"
+	case "alpine", "apk":
+		return "alpine"
+	case "redhat", "red hat", "red hat enterprise linux", "rhel", "centos", "rocky", "rocky linux", "almalinux", "alma", "amazon", "amazon linux", "oracle linux", "rpm":
+		return "rhel"
+	case "suse", "opensuse":
+		return "suse"
+	case "wolfi", "chainguard":
+		return "wolfi"
+	case "azure linux", "azurelinux", "cbl-mariner":
+		return "azurelinux"
+	}
+	return eco
 }
 
 func compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installedVersion, cveCategory, cveEco, affectedProducts string) (affectedProduct, bool) {
