@@ -92,9 +92,9 @@ function apiHeaders(extra?: Record<string, string>): Record<string, string> {
   return headers;
 }
 
-async function requestJSON<T>(path: string, body: unknown): Promise<T> {
+async function requestJSON<T>(path: string, body: unknown, method = 'POST'): Promise<T> {
   const headers = apiHeaders({ 'Content-Type': 'application/json' });
-  const res = await fetch(API_BASE + path, { method: 'POST', headers, body: JSON.stringify(body) });
+  const res = await fetch(API_BASE + path, { method, headers, body: JSON.stringify(body) });
   if (res.status === 401) {
     throw handleUnauthorized();
   }
@@ -996,7 +996,7 @@ export interface AssetGroup {
 }
 
 export interface AssetGroupDetail extends AssetGroup {
-  hosts: Host[];
+  host_ids: string[];
 }
 
 // Phase 4: Intelligence & Reports
@@ -1030,10 +1030,11 @@ export interface AtRiskHost {
 }
 
 export interface Recommendation {
-  type: string;
-  severity: string;
-  count: number;
-  message: string;
+  priority: string;
+  category: string;
+  title: string;
+  description: string;
+  host_ids?: string[];
 }
 
 export interface PostureComparison {
@@ -1244,13 +1245,15 @@ export const api = {
     requestJSON<ScheduledScan>('/admin/schedules', body),
   schedule: (id: string) => request<ScheduledScan>(`/admin/schedules/${id}`),
   updateSchedule: (id: string, body: { name?: string; cron_expr?: string; scan_type?: string; host_filter?: string; packages_only?: boolean; enabled?: boolean }) =>
-    requestJSON<ScheduledScan>(`/admin/schedules/${id}`, body),
+    requestJSON<ScheduledScan>(`/admin/schedules/${id}`, body, 'PUT'),
   deleteSchedule: (id: string) => requestEmpty<{ status: string }>(`/admin/schedules/${id}`, 'DELETE'),
 
   assetGroups: () => request<{ items: AssetGroup[] }>('/asset-groups'),
   createAssetGroup: (body: { name: string; description?: string; rule_type?: string; rule_expr?: string }) =>
     requestJSON<AssetGroup>('/asset-groups', body),
-  assetGroup: (id: string) => request<AssetGroupDetail>(`/asset-groups/${id}`),
+  assetGroup: (id: string) =>
+    request<{ group: AssetGroup; host_ids: string[] }>(`/asset-groups/${id}`)
+      .then((r): AssetGroupDetail => ({ ...r.group, host_ids: r.host_ids || [] })),
   deleteAssetGroup: (id: string) => requestEmpty<{ status: string }>(`/asset-groups/${id}`, 'DELETE'),
   addHostToAssetGroup: (id: string, hostId: string) =>
     requestJSON<{ status: string }>(`/asset-groups/${id}/hosts`, { host_id: hostId }),
@@ -1282,7 +1285,7 @@ export const api = {
     requestJSON<NotificationRule>('/admin/notification-rules', body),
   notificationRule: (id: string) => request<NotificationRule>(`/admin/notification-rules/${id}`),
   updateNotificationRule: (id: string, body: Partial<NotificationRule>) =>
-    requestJSON<NotificationRule>(`/admin/notification-rules/${id}`, body),
+    requestJSON<NotificationRule>(`/admin/notification-rules/${id}`, body, 'PUT'),
   deleteNotificationRule: (id: string) => requestEmpty<{ status: string }>(`/admin/notification-rules/${id}`, 'DELETE'),
   testNotificationRule: (id: string) =>
     requestJSON<{ status: string; message: string }>(`/admin/notification-rules/${id}/test`, {}),
