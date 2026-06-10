@@ -13,20 +13,21 @@ import (
 )
 
 type Manager struct {
-	command      string
-	interval     time.Duration
-	mu           sync.RWMutex
-	running      bool
-	lastSync     time.Time
-	lastAttempt  time.Time
-	nextSync     time.Time
-	lastStatus   string
-	lastError    string
-	lastOutput   string
-	updateHook   func(string)
-	failureHook  func(string, error)
-	syncOnStart  bool
-	lastSyncHint time.Time
+	command       string
+	interval      time.Duration
+	mu            sync.RWMutex
+	running       bool
+	lastSync      time.Time
+	lastAttempt   time.Time
+	nextSync      time.Time
+	lastStatus    string
+	lastError     string
+	lastOutput    string
+	updateHook    func(string)
+	failureHook   func(string, error)
+	syncOnStart   bool
+	lastSyncHint  time.Time
+	failureStreak int
 }
 
 func NewManager(command string, interval time.Duration) *Manager {
@@ -71,8 +72,10 @@ func (m *Manager) Start(ctx context.Context) {
 		case <-timer.C:
 			if err := m.UpdateNowWithReason(ctx, "security-db periodic sync"); err != nil {
 				log.Printf("security-db sync failed: %v", err)
+				m.scheduleRetrySync(time.Now())
+			} else {
+				m.scheduleNextPeriodicSync(time.Now())
 			}
-			m.scheduleNextPeriodicSync(time.Now())
 		}
 	}
 }
@@ -91,6 +94,50 @@ func (m *Manager) scheduleNextPeriodicSync(now time.Time) {
 		next = now
 	}
 	m.nextSync = next
+}
+
+// scheduleRetrySync backs off exponentially after a failed sync instead of
+// waiting a full interval with a stale security DB: base*2^(streak-1) capped
+// at the retry max and at the regular interval.
+func (m *Manager) scheduleRetrySync(now time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	base := retryBaseDelay()
+	maxDelay := retryMaxDelay()
+	if m.interval > 0 && maxDelay > m.interval {
+		maxDelay = m.interval
+	}
+	delay := base
+	for i := 1; i < m.failureStreak && delay < maxDelay; i++ {
+		delay *= 2
+	}
+	if delay > maxDelay {
+		delay = maxDelay
+	}
+	m.nextSync = now.Add(delay)
+	log.Printf("security-db sync retry in %s (consecutive failures: %d)", delay.Round(time.Second), m.failureStreak)
+}
+
+func retryBaseDelay() time.Duration {
+	minutes := envMinutes("BONGSU_SECURITY_DB_RETRY_BASE_MINUTES", 5)
+	return time.Duration(minutes) * time.Minute
+}
+
+func retryMaxDelay() time.Duration {
+	minutes := envMinutes("BONGSU_SECURITY_DB_RETRY_MAX_MINUTES", 60)
+	return time.Duration(minutes) * time.Minute
+}
+
+func envMinutes(key string, def int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }
 
 func (m *Manager) nextSyncTime() time.Time {
@@ -170,6 +217,7 @@ func (m *Manager) UpdateNowWithReason(ctx context.Context, reason string) error 
 		m.lastStatus = "failed"
 		m.lastError = syncErr.Error()
 		m.lastOutput = output
+		m.failureStreak++
 		hook := m.failureHook
 		m.mu.Unlock()
 		if hook != nil {
@@ -181,6 +229,7 @@ func (m *Manager) UpdateNowWithReason(ctx context.Context, reason string) error 
 	m.lastStatus = "ok"
 	m.lastOutput = output
 	m.lastSync = time.Now()
+	m.failureStreak = 0
 	hook := m.updateHook
 	m.mu.Unlock()
 	if hook != nil {
@@ -202,15 +251,16 @@ func (m *Manager) Status() map[string]any {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return map[string]any{
-		"configured":   m.command != "",
-		"running":      m.running,
-		"last_sync":    m.lastSync,
-		"last_attempt": m.lastAttempt,
-		"next_sync":    m.nextSync,
-		"status":       m.lastStatus,
-		"last_error":   m.lastError,
-		"last_output":  m.lastOutput,
-		"interval":     m.interval.String(),
+		"configured":           m.command != "",
+		"running":              m.running,
+		"last_sync":            m.lastSync,
+		"last_attempt":         m.lastAttempt,
+		"next_sync":            m.nextSync,
+		"status":               m.lastStatus,
+		"last_error":           m.lastError,
+		"last_output":          m.lastOutput,
+		"consecutive_failures": m.failureStreak,
+		"interval":             m.interval.String(),
 	}
 }
 
