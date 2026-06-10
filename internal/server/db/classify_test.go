@@ -3735,6 +3735,36 @@ func TestListVulnerabilitiesAlwaysUsesLatestScan(t *testing.T) {
 	}
 }
 
+func TestListVulnerabilitiesPaginatesBeforeHeavyEnrichment(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	start := strings.Index(body, "func (db *DB) ListVulnerabilities")
+	if start < 0 {
+		t.Fatal("ListVulnerabilities not found")
+	}
+	end := strings.Index(body[start:], "func (db *DB) GetHostVulnCounts")
+	if end < 0 {
+		t.Fatal("GetHostVulnCounts not found")
+	}
+	fn := body[start : start+end]
+	for _, want := range []string{
+		"WITH page AS MATERIALIZED",
+		"SELECT v.id, row_number() OVER",
+		"JOIN vulnerabilities v ON v.id = page.id",
+		"ORDER BY page.ord",
+		"vulnSelectCols",
+		"vulnTriageCols",
+		"vulnTriageJoin",
+	} {
+		if !strings.Contains(fn, want) {
+			t.Fatalf("ListVulnerabilities must page before heavy enrichment, missing %q: %s", want, fn)
+		}
+	}
+}
+
 func TestListVulnerabilitiesSupportsFindingSourceFilter(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {
