@@ -676,6 +676,7 @@ func (s *Server) buildSecurityDBBundleTemp(ctx context.Context, includeTrivy boo
 	manifest := securityDBBundleManifest{
 		Format:             "bongsu-security-db-bundle",
 		Version:            1,
+		ExporterVersion:    s.buildInfo.Version,
 		CreatedAt:          time.Now().UTC().Format(time.RFC3339),
 		SecurityDBRevision: revision,
 		CveRecords:         cveCount,
@@ -934,6 +935,7 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 type securityDBBundleManifest struct {
 	Format             string              `json:"format"`
 	Version            int                 `json:"version"`
+	ExporterVersion    string              `json:"exporter_version,omitempty"`
 	CreatedAt          string              `json:"created_at"`
 	SecurityDBRevision string              `json:"security_db_revision,omitempty"`
 	CveRecords         int                 `json:"cve_records"`
@@ -950,6 +952,7 @@ func securityDBBundleImportMeta(manifest *securityDBBundleManifest) map[string]a
 	}
 	meta["security_db_revision"] = manifest.SecurityDBRevision
 	meta["bundle_created_at"] = manifest.CreatedAt
+	meta["bundle_exporter_version"] = manifest.ExporterVersion
 	meta["bundle_source_count"] = len(manifest.Sources)
 	meta["bundle_cve_records"] = manifest.CveRecords
 	meta["bundle_trivy_db_included"] = manifest.TrivyDBIncluded
@@ -986,8 +989,12 @@ func validateSecurityDBBundle(manifest *securityDBBundleManifest, cveFile, cveSH
 		return fmt.Errorf("unsupported bundle version")
 	}
 	if strings.TrimSpace(manifest.CreatedAt) != "" {
-		if _, err := time.Parse(time.RFC3339, manifest.CreatedAt); err != nil {
+		created, err := time.Parse(time.RFC3339, manifest.CreatedAt)
+		if err != nil {
 			return fmt.Errorf("invalid bundle created_at")
+		}
+		if maxAge := bundleMaxAgeFromEnv(); maxAge > 0 && time.Since(created) > maxAge {
+			return fmt.Errorf("bundle is older than %s (created %s); export a fresh bundle or raise BONGSU_SECURITY_DB_BUNDLE_MAX_AGE_DAYS", maxAge, manifest.CreatedAt)
 		}
 	}
 	if cveFile == "" {
@@ -1011,6 +1018,16 @@ func validateSecurityDBBundle(manifest *securityDBBundleManifest, cveFile, cveSH
 		}
 	}
 	return nil
+}
+
+// bundleMaxAgeFromEnv guards airgap imports against stale/replayed bundles.
+// 0 disables the check; default 30 days.
+func bundleMaxAgeFromEnv() time.Duration {
+	days := envInt("BONGSU_SECURITY_DB_BUNDLE_MAX_AGE_DAYS", 30)
+	if days <= 0 {
+		return 0
+	}
+	return time.Duration(days) * 24 * time.Hour
 }
 
 func validateSecurityDBBundleImportedCount(manifest *securityDBBundleManifest, imported int) error {
