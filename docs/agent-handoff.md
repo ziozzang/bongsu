@@ -1,8 +1,6 @@
-# Bongsu Agent Handoff
+# Contributor Onboarding
 
-Updated: 2026-06-11
-
-This document is the handoff point for the next engineer session. Read `docs/architecture.md` first for the full component map, then come back here for practical orientation.
+This document orients a new engineer on the codebase. Read `docs/architecture.md` first for the full component map, then come back here for practical orientation.
 
 ---
 
@@ -188,7 +186,7 @@ If `/api/auth/login` returns HTTP 500, check that port 5677 is listening and tha
 
 ## Key Verification Commands
 
-Run these after pulling a new session state:
+Run these to verify a clean working tree:
 
 ```bash
 git status --short --branch
@@ -223,6 +221,11 @@ curl -sS -H 'X-API-Key: test-admin-key' \
 # Live web smoke
 BONGSU_WEB_BASE=http://127.0.0.1:5678 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-web-smoke.sh
 
+# Security DB export freshness
+BONGSU_API_KEY=test-admin-key \
+  BONGSU_DB_DSN='postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable' \
+  ./scripts/verify-live-security-db-export-freshness.sh
+
 # Full live CVE DB quality check (needs BONGSU_DB_DSN for direct DB checks)
 BONGSU_API_KEY=test-admin-key \
   BONGSU_DB_DSN='postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable' \
@@ -246,34 +249,3 @@ See `docs/vulnerability-matching-rules.md` for the detailed source of truth. Sho
 - CPE matching for runtimes: requires version bounds; product-name-only NVD entries never match.
 - Epoch-loss tolerance: if the installed version has no epoch and the advisory does, strip the advisory epoch before comparing.
 
----
-
-## What Was Completed in This Wave (2026-06-11)
-
-The following subsystems were built and are verifiable in the current codebase:
-
-1. **Native scanner GA** — `internal/agent/scanner/` with dpkg/apk/rpm/lang/runtime. Default `-scanner native`.
-2. **vercmp engine** — `internal/server/vercmp/` with dpkg/rpmvercmp/apk/semver; replaces all version heuristics.
-3. **Epoch-loss tolerance** — `compareVersions` in `classify.go`.
-4. **Runtime CPE matching** — `RematchCPE` + `compatibleCPECandidate` version-gated; refreshed on DB recalc.
-5. **Host and container facts** — `CollectFacts`/`CollectContainerFacts` in `system/facts.go`; migrations 055/056.
-6. **Triage assignee** — migration 053; `VulnFilter.Assignee`; `unassigned` sentinel.
-7. **Owner auto-assign** — `autoAssignFindingsToOwner` in `report.go`; resolves owner from DB.
-8. **Email notification channel** — `notifier_email.go`; migration 054; SMTP starttls/tls/none.
-9. **scan.failed trigger** — migration 057; `scanFailedPayload` in `report.go`.
-10. **VulnFilter expansion** — ecosystem, pkg_type, vuln_id_like, has_fix, min/max_cvss, assignee.
-11. **CVE-to-assets endpoint** — `GET /api/vulnerabilities/affected-assets`; `AffectedAssetsForVulnerability`.
-12. **Multilingual landing page** — `docs/index.html`; 8 languages with language switcher.
-
----
-
-## Next Work
-
-1. Confirm this handoff commit is pushed to `origin/main`.
-2. Re-run the full verification suite after pulling the latest state; do not assume long-running local processes survived.
-3. Re-run `BONGSU_WEB_BASE=http://127.0.0.1:5678 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-web-smoke.sh` after any UI change.
-4. Consider adding Go unit tests for `ScanRuntimes` (runtime.go) — the `runtime_test.go` file exists; expand fixture coverage for JDK `release` file parsing and Node tarball path detection.
-5. Add Go unit tests for `CollectFacts` and `CollectContainerFacts` using mock filesystem roots.
-6. Continue requirement audit against the original product list. See `TODO.md` for remaining items: registry/OCI image scanning, IaC/secrets scanning, Kubernetes inventory, ticketing integration, TLS in-process, release binary signing, multi-tenancy.
-7. Repeat the airgap archive/load/compose/import rehearsal after any packaging or security DB import change.
-8. Keep extending Playwright coverage: CVE-to-assets modal, assignee filter, scan.failed notification rule creation.

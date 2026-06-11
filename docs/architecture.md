@@ -97,9 +97,9 @@ The scanner runs on the target host (or inside a container rootfs) without any e
 - **`scanner.go` / `ScanRoot(root)`**: probes `var/lib/dpkg/status` (Debian/Ubuntu), `lib/apk/db/installed` (Alpine), then falls back to the `rpm` binary for RHEL-family. Same entry point for host (`/`) and container (merged overlay path). Returns `Result{Packages, OSFamily, Source}`.
 - **`dpkg.go`**: pure-Go dpkg status parser. Reads `Package`/`Version`/`Architecture`/`Status` fields; sets `PkgType` to `debian` or `ubuntu` from `os-release`.
 - **`apk.go`**: pure-Go apk installed-packages parser (`P:`/`V:`/`A:` fields).
-- **`rpm.go`**: invokes the host `rpm -qa --queryformat ...` binary; used for BerkeleyDB/NDB/sqlite RPM DB formats that have no pure-Go reader.
+- **`rpm.go`**: invokes the host `rpm -qa --queryformat ...` binary; used for BerkeleyDB/NDB/sqlite RPM DB formats that have no pure-Go reader. The RPM database has three on-disk formats (BerkeleyDB Hash, NDB, sqlite); pure-Go parsing for the BDB and NDB variants is not implemented, so the scanner probes for any of `rpmdb.sqlite`, `Packages`, or `Packages.db` under `var/lib/rpm` and falls back to the system `rpm` binary with `--root <root>`. A shared `RPMQueryFormat` constant and `ParseRPMQuery` function are exported so the container-exec fallback (which runs rpm inside the container via the runtime CLI) produces identically-structured output.
 - **`lang.go` / `ScanLanguagePackages(root, maxDepth)`**: bounded `WalkDir` for lockfiles and manifests. Prunes pseudo-filesystems at depth 1 and skips `.git`, `__pycache__`, `.terraform`, `.gradle`, `.m2`. Source field: `native-lang`.
-- **`runtime.go` / `ScanRuntimes(root, maxDepth)`**: same bounded walk pattern; identifies runtime interpreters from on-disk layout without executing any binary. Source field: `native-runtime`. Sets `PkgType=runtime` and a CPE-product ecosystem key.
+- **`runtime.go` / `ScanRuntimes(root, maxDepth)`**: same bounded walk pattern; identifies runtime interpreters from on-disk layout without executing any binary. Source field: `native-runtime`. Sets `PkgType=runtime` and a CPE-product ecosystem key. `dedupeRuntimes` collapses entries with the same `(name, version, FilePath)` key to handle symlinked launchers (e.g. `python → python3 → python3.12` in one `bin/`). For JDK/JRE the `release` file's `IMPLEMENTOR` field selects the CPE product name: Oracle builds → `jdk`; Adoptium, Temurin, or Eclipse builds → `openjdk`; all others → `openjdk`. The `Ecosystem` field on runtime packages carries a CPE product name (`python`, `nodejs`, `jdk`, `golang`, `ruby`, `php`) rather than an SBOM registry ecosystem (PyPI, npm, Maven) because runtime CVEs are matched against NVD CPE product entries, not library registry advisories; `PkgType=runtime` keeps these out of the OSV library matcher entirely.
 - **`ecosystem.go`**: maps `pkg_type` strings to normalized OSV/CPE ecosystem names.
 
 ### Facts Collector (`internal/agent/system/facts.go`)
@@ -110,6 +110,8 @@ The scanner runs on the target host (or inside a container rootfs) without any e
 ### Collector (`internal/agent/collector/`)
 
 Orchestrates the full scan run: invokes `ScanRoot`, `ScanLanguagePackages`, `ScanRuntimes`, `CollectFacts`, container enumeration (docker/podman/nerdctl/crictl), user accounts, process snapshots, and listening ports. Optional Trivy path (`-scanner trivy`) is also wired here.
+
+**Container rootfs acquisition** (`containerRootfs`): for docker, podman, and nerdctl the merged overlay filesystem path is obtained by running `<runtime> inspect --format '{{.GraphDriver.Data.MergedDir}}' <id>`. That path is passed directly to `ScanRoot` and `CollectContainerFacts`, so the same scanner code operates on host and container rootfs identically. CRI-based runtimes (crictl/containerd) do not expose a stable merged-dir via inspect and fall through with an unsupported error. **Container RPM fallback** (`rpmViaExec`): when `ScanRoot` returns `Source=rpmdb-unreadable` (RPM DB present but the host lacks a compatible `rpm` binary to read it), the collector runs `<runtime> exec <containerID> rpm -qa --qf <RPMQueryFormat>` inside the container itself, then parses the output with the shared `ParseRPMQuery` function. This avoids a host-installed scanner while still handling RHEL-based container images.
 
 ## Server Subsystems
 
@@ -127,6 +129,7 @@ Orchestrates the full scan run: invokes `ScanRoot`, `ScanLanguagePackages`, `Sca
 - `compareVersions`: adds epoch-loss tolerance on top of the vercmp engine — strips advisory epoch when the installed version has none.
 - `compatibleCPECandidate`: NVD CPE matching for runtimes. Requires product name match (tolerates nodejs/node.js, jdk/jre spelling variants) AND at least one explicit version bound or exact version. Returns false for product-name-only entries with no version constraints.
 - `cpeVersionAffected`: evaluates `VersionStartIncluding`, `VersionStartExcluding`, `VersionEndIncluding`, `VersionEndExcluding`, and exact `Version` fields from NVD CPE advisory data.
+- `isSafeFixedVersion`: rejects URL/package URL/git URL/branch/hash-like fixed evidence and literal `0` fixed placeholders, so advisories carrying non-version junk in their fixed field can neither create findings nor compute remediation hints.
 
 ### Ingest Pipeline (`internal/server/api/report.go`)
 
@@ -225,9 +228,17 @@ React single-page app served by a static web server on port 5678, proxying API c
 - **Agent API**: `X-API-Key: <BONGSU_AGENT_API_KEY>` on `/api/report` and scan-request endpoints.
 - **Install token**: `X-Install-Token: <BONGSU_INSTALL_TOKEN>` on `/api/install.sh`.
 - **Session**: cookie-based web session from `POST /api/auth/login`.
-- **OIDC**: RS256 JWT bearer verification; maps user/group claims to RBAC subjects.
+- **OIDC**: OIDC bearer token authentication (RS256 JWT verification against `BONGSU_OIDC_ISSUER`, audience `BONGSU_OIDC_CLIENT_ID`); maps user/group claims to RBAC subjects, with `BONGSU_OIDC_ADMIN_GROUPS` granting admin.
 - **Viewer keys**: `BONGSU_VIEWER_API_KEYS=key:subject`; scoped via RBAC policies.
 - **Trusted headers**: `BONGSU_TRUSTED_IDENTITY_HEADER` / `BONGSU_TRUSTED_GROUPS_HEADER` for reverse-proxy auth.
+
+### Operational timeouts
+
+Long-running API work is bounded by tunable timeouts: `BONGSU_VULNERABILITY_EXPORT_TIMEOUT_SECONDS` (vulnerability report export), `BONGSU_SECURITY_DB_REVISION_TIMEOUT_SECONDS` (security DB revision lookups), and `BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS` (CVE reference index rebuilds), so a slow database degrades a single request instead of hanging the worker.
+
+### Agent installer
+
+The generated one-line installer and packaged `scripts/install-agent.sh` render credentials safely, verify downloaded binaries against the server's `X-Bongsu-SHA256` header, and persist a per-host `agent.token`. Cron mode replaces prior bongsu cron entries; systemd mode writes hardened service, timer, and optional daemon units. `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` keep that path testable without changing the production defaults of `/etc/systemd/system` and `systemctl`.
 
 ## Test Surface
 

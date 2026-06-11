@@ -1,5 +1,7 @@
 # TODO
 
+> **Scope of this file:** Forward-looking roadmap checklist — what is planned, in-progress, or remaining. For a structured evidence matrix of what has been built and verified, see [`docs/requirements-audit.md`](docs/requirements-audit.md).
+
 This file tracks remaining work items. Items marked **DONE** are implemented and verifiable in code.
 
 ---

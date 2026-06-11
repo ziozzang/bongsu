@@ -2,7 +2,7 @@
 
 Updated: 2026-06-11 KST
 
-This is the **canonical** operations runbook for running Bongsu in connected or air-gapped environments: production readiness, install, agent deployment and the native scanner, email/notification alerting, upgrade, backup/restore, security DB operations, monitoring, incident response, and routine maintenance. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu. (The legacy [operator-runbook.md](operator-runbook.md) is now a thin pointer into this document to eliminate divergence.)
+This is the **canonical** operations runbook for running Bongsu in connected or air-gapped environments: production readiness, install, agent deployment and the native scanner, email/notification alerting, upgrade, backup/restore, security DB operations, monitoring, incident response, and routine maintenance. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu.
 
 ## Production Readiness Checklist
 
