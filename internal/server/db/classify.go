@@ -215,6 +215,9 @@ func compatibleCPECandidate(cpeProduct, installedVersion, affectedProducts strin
 		if !cpeProductMatches(cpeProduct, strings.ToLower(strings.TrimSpace(p.Product))) {
 			continue
 		}
+		if !cpeVendorCompatible(cpeProduct, strings.ToLower(strings.TrimSpace(p.Vendor))) {
+			continue
+		}
 		if cpeVersionAffected(installedVersion, p) {
 			return p, true
 		}
@@ -229,21 +232,57 @@ func cpeProductMatches(pkgProduct, advProduct string) bool {
 	if pkgProduct == advProduct {
 		return true
 	}
-	norm := func(s string) string {
-		s = strings.ReplaceAll(s, ".", "")
-		s = strings.ReplaceAll(s, "_", "")
-		s = strings.ReplaceAll(s, "-", "")
-		switch s {
-		case "nodejs", "node":
-			return "nodejs"
-		case "jdk", "jre", "openjdk", "java", "javase", "javasedevelopmentkit":
-			return "jdk"
-		case "go", "golang":
-			return "go"
-		}
-		return s
+	return cpeNormProduct(pkgProduct) == cpeNormProduct(advProduct)
+}
+
+func cpeNormProduct(s string) string {
+	s = strings.ReplaceAll(s, ".", "")
+	s = strings.ReplaceAll(s, "_", "")
+	s = strings.ReplaceAll(s, "-", "")
+	switch s {
+	case "nodejs", "node":
+		return "nodejs"
+	case "jdk", "jre", "openjdk", "java", "javase", "javasedevelopmentkit":
+		return "jdk"
+	case "go", "golang":
+		return "go"
 	}
-	return norm(pkgProduct) == norm(advProduct)
+	return s
+}
+
+// cpeRuntimeVendors maps each runtime product family to the CPE vendors that
+// actually publish that runtime. NVD product names collide across vendors —
+// e.g. Microsoft's VS Code Python EXTENSION is (microsoft, python) — and
+// without a vendor gate the CPython interpreter would match extension/IDE
+// advisories with nonsense fixed versions (the observed CVE-2024-49050 case).
+// An advisory with an empty vendor is allowed through (product+version gates
+// still apply); an unknown product family is also allowed (no list to check).
+var cpeRuntimeVendors = map[string]map[string]bool{
+	"python": {"python": true, "python_software_foundation": true},
+	"nodejs": {"nodejs": true, "node.js": true},
+	"jdk": {
+		"oracle": true, "sun": true, "eclipse": true, "adoptium": true, "azul": true,
+		"ibm": true, "redhat": true, "red_hat": true, "amazon": true, "bellsoft": true,
+		"sap": true, "temurin": true, "openjdk": true,
+	},
+	"go":   {"golang": true, "google": true},
+	"ruby": {"ruby-lang": true, "ruby": true},
+	"php":  {"php": true, "php_group": true},
+}
+
+// cpeVendorCompatible reports whether the advisory's CPE vendor is a known
+// publisher of the runtime product. This is the cross-vendor false-positive
+// gate: same product name under a foreign vendor (IDE plugins, wrappers,
+// distro meta-products) must not match the runtime itself.
+func cpeVendorCompatible(pkgProduct, advVendor string) bool {
+	if advVendor == "" {
+		return true
+	}
+	allowed, ok := cpeRuntimeVendors[cpeNormProduct(pkgProduct)]
+	if !ok {
+		return true
+	}
+	return allowed[advVendor]
 }
 
 // cpeVersionAffected reports whether installed falls within the CPE version

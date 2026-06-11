@@ -61,4 +61,27 @@ func TestCompatibleCPECandidate(t *testing.T) {
 	if _, ok := compatibleCPECandidate("ruby", "3.9.5", pyRange); ok {
 		t.Fatal("ruby must not match a python advisory")
 	}
+
+	// Cross-vendor guard: Microsoft's VS Code Python EXTENSION shares the
+	// product name "python" but is not the CPython runtime (observed live as
+	// CVE-2024-49050 flagging python 3.11.4 with fixed version 2024.18.2).
+	vscodeExt := `[{"vendor":"microsoft","product":"python","version_end_excluding":"2024.18.2"}]`
+	if _, ok := compatibleCPECandidate("python", "3.11.4", vscodeExt); ok {
+		t.Fatal("microsoft/python (VS Code extension) must not match the CPython runtime")
+	}
+	// The canonical vendor still matches.
+	psf := `[{"vendor":"python","product":"python","version_start_including":"3.11.0","version_end_excluding":"3.11.9"}]`
+	if _, ok := compatibleCPECandidate("python", "3.11.4", psf); !ok {
+		t.Fatal("python/python must still match")
+	}
+	// Empty vendor passes the gate (product+version constraints still apply).
+	noVendor := `[{"product":"python","version_start_including":"3.11.0","version_end_excluding":"3.11.9"}]`
+	if _, ok := compatibleCPECandidate("python", "3.11.4", noVendor); !ok {
+		t.Fatal("empty-vendor python advisory should still match")
+	}
+	// JDK family: eclipse/adoptium and oracle are legitimate.
+	adoptium := `[{"vendor":"eclipse","product":"openjdk","version_start_including":"21.0.0","version_end_including":"21.0.2"}]`
+	if _, ok := compatibleCPECandidate("jdk", "21.0.1", adoptium); !ok {
+		t.Fatal("eclipse/openjdk must match a jdk runtime")
+	}
 }
