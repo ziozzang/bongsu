@@ -2441,6 +2441,14 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const [minEpss, setMinEpss] = useState('');
   const [exportMsg, setExportMsg] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [bulkAssignee, setBulkAssignee] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkMsg, setBulkMsg] = useState('');
+  const [editAssigneeId, setEditAssigneeId] = useState('');
+  const [editAssigneeVal, setEditAssigneeVal] = useState('');
+  const [editAssigneeBusy, setEditAssigneeBusy] = useState(false);
   const loadSeq = useRef(0);
   const limit = 50;
 
@@ -2469,7 +2477,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
     if (sNoFix) params.show_no_fix = 'true';
     if (sMismatch) params.show_mismatch = 'true';
     api.vulnerabilities(params)
-      .then(r => { if (seq !== loadSeq.current) return; setVulns(r.items || []); setTotal(r.total); setPage(p); setLoading(false); })
+      .then(r => { if (seq !== loadSeq.current) return; setVulns(r.items || []); setTotal(r.total); setPage(p); setLoading(false); setSelectedIds(new Set()); setEditAssigneeId(''); })
       .catch((e) => { if (seq !== loadSeq.current) return; setLoadError(e instanceof Error ? e.message : 'Failed to load vulnerabilities'); setLoading(false); });
   }, []);
 
@@ -2542,6 +2550,74 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
     } catch {
       setExportMsg('Export failed');
     }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const allSelected = vulns.length > 0 && vulns.every(v => selectedIds.has(v.id));
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => {
+      if (vulns.length > 0 && vulns.every(v => prev.has(v.id))) {
+        const next = new Set(prev);
+        vulns.forEach(v => next.delete(v.id));
+        return next;
+      }
+      const next = new Set(prev);
+      vulns.forEach(v => next.add(v.id));
+      return next;
+    });
+  };
+  const reloadCurrent = () => load(page, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch);
+  const applyBulkTriage = async () => {
+    const targets = vulns.filter(v => selectedIds.has(v.id));
+    if (targets.length === 0 || !bulkStatus) return;
+    setBulkBusy(true);
+    let done = 0;
+    let failed = 0;
+    for (const v of targets) {
+      setBulkMsg(`Applying ${done + 1}/${targets.length}...`);
+      try {
+        await api.triageVulnerability({
+          vulnerability_id: v.vulnerability_id,
+          host_id: v.host_id,
+          pkg_name: v.pkg_name,
+          status: bulkStatus,
+          assignee: bulkAssignee,
+        });
+      } catch {
+        failed++;
+      }
+      done++;
+    }
+    setBulkBusy(false);
+    setBulkMsg(failed ? `Applied ${done - failed}/${targets.length} (${failed} failed)` : `Applied to ${done} finding${done === 1 ? '' : 's'}`);
+    reloadCurrent();
+  };
+  const startEditAssignee = (v: Vuln) => {
+    setEditAssigneeId(v.id);
+    setEditAssigneeVal(v.triage_assignee || '');
+  };
+  const saveEditAssignee = async (v: Vuln) => {
+    setEditAssigneeBusy(true);
+    try {
+      await api.triageVulnerability({
+        vulnerability_id: v.vulnerability_id,
+        host_id: v.host_id,
+        pkg_name: v.pkg_name,
+        status: v.triage_status || 'open',
+        assignee: editAssigneeVal,
+      });
+      setVulns(prev => prev.map(x => x.id === v.id ? { ...x, triage_assignee: editAssigneeVal } : x));
+      setEditAssigneeId('');
+    } catch {
+      // keep editor open on failure
+    }
+    setEditAssigneeBusy(false);
   };
 
   const owners = Array.from(new Set(Object.values(hostMeta).map(h => h.owner || '').filter(Boolean))).sort();
@@ -2708,22 +2784,54 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
           </div>
         )}
       </div>
+      {selectedIds.size > 0 && (
+        <div className="card" style={{ marginBottom: '1rem', padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <strong style={{ whiteSpace: 'nowrap' }}>{selectedIds.size} selected</strong>
+          <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)} disabled={bulkBusy}>
+            <option value="">Set status...</option>
+            <option value="open">Open</option>
+            <option value="in_progress">In Progress</option>
+            <option value="accepted_risk">Accepted Risk</option>
+            <option value="false_positive">False Positive</option>
+            <option value="fixed">Fixed</option>
+            <option value="ignored">Ignored</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Assignee (optional)"
+            value={bulkAssignee}
+            onChange={(e) => setBulkAssignee(e.target.value)}
+            disabled={bulkBusy}
+            style={{ minWidth: 170 }}
+          />
+          <button className="filter-btn" onClick={applyBulkTriage} disabled={bulkBusy || !bulkStatus}>
+            {bulkBusy ? 'Applying...' : 'Apply to selected'}
+          </button>
+          <button type="button" className="filter-clear" onClick={() => { setSelectedIds(new Set()); setBulkMsg(''); }} disabled={bulkBusy}>Clear selection</button>
+          {bulkMsg && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{bulkMsg}</span>}
+        </div>
+      )}
       <div className="card">
         {loading ? <Loading /> : loadError ? <LoadError message={loadError} onRetry={handleSearch} /> : (
           <table>
             <thead>
               <tr>
+                <th style={{ width: 28 }}><input type="checkbox" checked={allSelected} onChange={toggleSelectAll} title="Select all on page" /></th>
                 <th>Host</th>
                 <th>Status</th>
                 <th>Source</th>
                 {cols.map(([key, label]) => (
                   <th key={key} className="clickable" onClick={() => toggleSort(key)} style={{ userSelect: 'none' }}>{label}{sortArrow(key)}</th>
                 ))}
+                <th>Assignee</th>
               </tr>
             </thead>
             <tbody>
               {vulns.map(v => (
                 <tr key={v.id} style={{ cursor: 'pointer' }} onClick={() => onSelectVuln(v)}>
+                  <td onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
+                    <input type="checkbox" checked={selectedIds.has(v.id)} onChange={() => toggleSelect(v.id)} />
+                  </td>
                   <td><span className="host-link">{hostMap[v.host_id] || v.host_id.slice(0, 8)}</span></td>
                   <td><span className="badge">{(v.triage_status || 'open').replace('_', ' ')}</span></td>
                   <td>
@@ -2769,9 +2877,35 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
                   <td className="mono" style={{ color: v.overdue ? 'var(--critical)' : 'var(--text-muted)' }}>
                     {v.due_at ? new Date(v.due_at).toLocaleDateString() : '-'}
                   </td>
+                  <td onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
+                    {editAssigneeId === v.id ? (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input
+                          type="text"
+                          autoFocus
+                          value={editAssigneeVal}
+                          onChange={(e) => setEditAssigneeVal(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') saveEditAssignee(v); if (e.key === 'Escape') setEditAssigneeId(''); }}
+                          disabled={editAssigneeBusy}
+                          style={{ width: 110 }}
+                        />
+                        <button className="filter-btn" onClick={() => saveEditAssignee(v)} disabled={editAssigneeBusy} style={{ padding: '2px 6px' }}>✓</button>
+                        <button type="button" className="filter-clear" onClick={() => setEditAssigneeId('')} disabled={editAssigneeBusy} style={{ padding: '2px 6px' }}>✕</button>
+                      </span>
+                    ) : (
+                      <span
+                        className="host-link"
+                        title="Click to set assignee"
+                        onClick={() => startEditAssignee(v)}
+                        style={{ color: v.triage_assignee ? 'inherit' : 'var(--text-muted)' }}
+                      >
+                        {v.triage_assignee || '—'}
+                      </span>
+                    )}
+                  </td>
                 </tr>
               ))}
-              {vulns.length === 0 && <tr><td colSpan={17} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
+              {vulns.length === 0 && <tr><td colSpan={19} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
             </tbody>
           </table>
         )}
