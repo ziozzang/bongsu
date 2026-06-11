@@ -82,8 +82,10 @@ This file tracks remaining work items. Items marked **DONE** are implemented and
 
 ## Database and Query Performance
 
-- [ ] **REMAINING** Materialize CVE reference-group counts (total / matchable / sources per `reference_key`) into a summary table refreshed by the reference-index rebuild, instead of the live per-page join over `cve_reference_keys` (1.7M+ rows). The live join is currently guarded by a member-count cap and timeout, but a precomputed table makes CVE search O(1) and removes the "group summary unavailable" failure mode entirely.
-- [ ] **REMAINING** General query-optimization pass on the large hot tables (`cve_database`, `cve_reference_keys`, `cve_affected_packages`, `vulnerabilities`): review/`EXPLAIN ANALYZE` the dashboard, search, and rematch paths; add covering/partial indexes where the planner falls back to scans; consider partial materialized views for the dashboard aggregates and per-host vuln counts.
+- [x] **DONE** Materialize CVE reference-group counts into `cve_reference_group_summary` (migration 058), refreshed at the end of every reference-index rebuild; CVE search reads it with PK lookups, removing the "group summary unavailable" failure mode.
+- [x] **DONE** Query-optimization pass on the hot paths: CVE search bounded count + parallel count/data + work_mem (8.25s -> 2.3s); dashboard aggregates pinned in MATERIALIZED CTEs (vuln-summary 2168ms -> 140ms, executive-summary ~2s -> 154ms); migration 059 `vulnerabilities(host_id, severity)` and migration 060 `vulnerabilities(scan_id, cvss_score DESC)` (cvss-sorted list 3.3s -> 0.1s).
+- [x] **DONE** Pre-built, revision-keyed airgap export bundle cache (export TTFB ~28s -> ~2s).
+- [ ] **REMAINING** `GET /api/packages?has_vulns=true` (~9.5s): a behavior-identical reshape to force the nested-loop semi-join (verified ~476ms) — the actionable-finding EXISTS is correlated to the package row, so it is a planner cost-estimate problem, not a missing index.
 - [ ] **REMAINING** Background `VACUUM`/`ANALYZE` and bloat monitoring guidance for long-running deployments with frequent rematch churn.
 
 ## Infrastructure and Deployment
