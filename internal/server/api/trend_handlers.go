@@ -10,6 +10,34 @@ import (
 	"github.com/ziozzang/bongsu/internal/server/db"
 )
 
+// handleGetScanActivity serves the per-day scan activity timeline for the
+// dashboard (scans run, hosts reporting, packages ingested, status mix).
+func (s *Server) handleGetScanActivity(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	days := 30
+	if d := r.URL.Query().Get("days"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			days = v
+		}
+	}
+	if days > 365 {
+		days = 365
+	}
+	activity, err := s.db.GetScanActivity(r.Context(), days)
+	if err != nil {
+		log.Printf("scan activity: %v", err)
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if activity == nil {
+		activity = []db.ScanActivityRow{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"days": days, "items": activity})
+}
+
 func (s *Server) handleGetVulnTrends(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")

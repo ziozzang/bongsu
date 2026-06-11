@@ -358,6 +358,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("DELETE /api/asset-groups/{id}/hosts/{hostId}", s.handleRemoveHostFromAssetGroup)
 	s.mux.HandleFunc("POST /api/asset-groups/{id}/scan", s.handleTriggerAssetGroupScan)
 	s.mux.HandleFunc("GET /api/vuln-trends", s.handleGetVulnTrends)
+	s.mux.HandleFunc("GET /api/scan-activity", s.handleGetScanActivity)
 	s.mux.HandleFunc("GET /api/vuln-trends/summary", s.handleGetVulnTrendSummary)
 	s.mux.HandleFunc("GET /api/intelligence/top-risk", s.handleGetTopAtRiskHosts)
 	s.mux.HandleFunc("GET /api/intelligence/recommendations", s.handleGetRecommendations)

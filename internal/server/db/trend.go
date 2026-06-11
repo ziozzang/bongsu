@@ -139,6 +139,54 @@ func (db *DB) GetVulnTrends(ctx context.Context, days int, hostID string) ([]Vul
 	return out, rows.Err()
 }
 
+// ScanActivityRow is one day of fleet scan activity for the dashboard
+// timeline: how many scans ran, how many distinct hosts reported, and how
+// many packages were ingested.
+type ScanActivityRow struct {
+	Date      string `json:"date"`
+	Scans     int    `json:"scans"`
+	Hosts     int    `json:"hosts"`
+	Packages  int    `json:"packages"`
+	Failed    int    `json:"failed"`
+	Degraded  int    `json:"degraded"`
+	Completed int    `json:"completed"`
+}
+
+// GetScanActivity aggregates per-day scan activity over the last N days.
+func (db *DB) GetScanActivity(ctx context.Context, days int) ([]ScanActivityRow, error) {
+	if days <= 0 || days > 365 {
+		days = 30
+	}
+	rows, err := db.QueryContext(ctx, `
+SELECT s.created_at::date::text,
+       count(*)::int,
+       count(DISTINCT s.host_id)::int,
+       COALESCE(sum(p.pkg_count), 0)::int,
+       count(*) FILTER (WHERE s.status IN ('failed', 'error'))::int,
+       count(*) FILTER (WHERE s.status = 'degraded')::int,
+       count(*) FILTER (WHERE s.status = 'completed')::int
+FROM scans s
+LEFT JOIN LATERAL (
+    SELECT count(*) AS pkg_count FROM packages p WHERE p.scan_id = s.id
+) p ON true
+WHERE s.created_at >= (CURRENT_DATE - $1 * interval '1 day')
+GROUP BY s.created_at::date
+ORDER BY s.created_at::date`, days)
+	if err != nil {
+		return nil, fmt.Errorf("get scan activity: %w", err)
+	}
+	defer rows.Close()
+	var out []ScanActivityRow
+	for rows.Next() {
+		var r ScanActivityRow
+		if err := rows.Scan(&r.Date, &r.Scans, &r.Hosts, &r.Packages, &r.Failed, &r.Degraded, &r.Completed); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) GetVulnTrendSummary(ctx context.Context) (*VulnTrendSummary, error) {
 	var summary VulnTrendSummary
 	currentQ := `SELECT COALESCE(sum(total_vulns),0)::int, COALESCE(sum(critical_count),0)::int,
