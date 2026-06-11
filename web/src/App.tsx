@@ -98,15 +98,57 @@ function severityColor(sev?: string): string {
   }
 }
 
-function Loading() {
-  return <div style={{ color: 'var(--text-muted)', padding: '2rem', textAlign: 'center' }}>Loading...</div>;
+function Loading({ label = 'Loading...' }: { label?: string }) {
+  return (
+    <div className="state-block">
+      <div className="spinner" />
+      <span>{label}</span>
+    </div>
+  );
 }
 
 function LoadError({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div style={{ color: 'var(--critical)', padding: '2rem', textAlign: 'center' }}>
-      {message}
-      {onRetry && <button style={{ marginLeft: '0.75rem' }} onClick={onRetry}>Retry</button>}
+    <div className="state-block state-error">
+      <span>{message}</span>
+      {onRetry && <button className="btn btn-secondary btn-sm" onClick={onRetry}>Retry</button>}
+    </div>
+  );
+}
+
+// EmptyState renders the standard "no results" message for an empty list/table.
+function EmptyState({ message = 'No results found' }: { message?: string }) {
+  return <div className="state-block">{message}</div>;
+}
+
+// CheckboxField is the single clickable checkbox+label control used across all
+// filter bars and forms (replaces ad-hoc inline-styled <label> wrappers).
+function CheckboxField({ label, checked, onChange, title, disabled }: { label: string; checked: boolean; onChange: (checked: boolean) => void; title?: string; disabled?: boolean }) {
+  return (
+    <label className="checkbox-field" title={title}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      {label}
+    </label>
+  );
+}
+
+// Modal is the shared dialog shell: consistent backdrop, header with title + X,
+// Escape-to-close, and a scrollable body.
+function Modal({ title, onClose, children, width }: { title: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: string }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={width ? { width } : undefined}>
+        <div className="modal-header">
+          <h2>{title}</h2>
+          <button type="button" className="modal-close" onClick={onClose} aria-label="Close" title="Close (Esc)">×</button>
+        </div>
+        <div className="modal-body">{children}</div>
+      </div>
     </div>
   );
 }
@@ -2012,7 +2054,7 @@ function SummaryTable({ title, groupBy, rows, onOpenVulnerabilities }: { title: 
               <td className="mono" style={{ color: row.overdue ? 'var(--critical)' : 'var(--text-muted)', fontWeight: row.overdue ? 700 : 400 }}><button type="button" className="link-button mono" onClick={() => openRow(row, { overdueOnly: true })}>{row.overdue || 0}</button></td>
             </tr>
           ))}
-          {topRows.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No findings</td></tr>}
+          {topRows.length === 0 && <tr className="empty-row"><td colSpan={5}>No findings</td></tr>}
         </tbody>
       </table>
     </div>
@@ -2022,6 +2064,7 @@ function SummaryTable({ title, groupBy, rows, onOpenVulnerabilities }: { title: 
 function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: HostFilters; onSelectHost: (id: string) => void }) {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [scanMsg, setScanMsg] = useState('');
   const [agentStatus, setAgentStatus] = useState(initialFilters.agent_status || '');
   const [inventoryStatus, setInventoryStatus] = useState(initialFilters.inventory_status || '');
@@ -2036,6 +2079,7 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
   const reloadHosts = () => load(agentStatus, inventoryStatus, agentVersionState, meta);
   const load = useCallback((status: string, inventory: string, versionState: string, m: { q: string; owner: string; team: string; environment: string; criticality: string; os: string }) => {
     setLoading(true);
+    setLoadError('');
     const params: Record<string, string> = {};
     if (status) params.agent_status = status;
     if (inventory) params.inventory_status = inventory;
@@ -2048,13 +2092,11 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
     if (m.os) params.os = m.os;
     api.hosts(params)
       .then(h => { setHosts(h || []); setLoading(false); })
-      .catch(() => setLoading(false));
+      .catch((e) => { setLoadError(e instanceof Error ? e.message : 'Failed to load hosts'); setLoading(false); });
   }, []);
   useEffect(() => { load(agentStatus, inventoryStatus, agentVersionState, meta); }, [load, agentStatus, inventoryStatus, agentVersionState]);
   const handleHostSearch = () => load(agentStatus, inventoryStatus, agentVersionState, meta);
   const handleHostKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleHostSearch(); };
-
-  if (loading) return <Loading />;
 
   const sevColor = severityColor;
 
@@ -2077,7 +2119,7 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
           Force Scan All
         </button>
       </div>
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
         <div className="filters">
           <select value={agentStatus} onChange={(e) => setAgentStatus(e.target.value)}>
             <option value="">All Agent Status</option>
@@ -2149,14 +2191,20 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
             onKeyDown={handleHostKeyDown}
             style={{ minWidth: 150 }}
           />
-          <button className="filter-btn" onClick={handleHostSearch}>Search</button>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
+        </div>
+        <div className="filter-controls-row">
+          <span className="result-count" style={{ whiteSpace: 'normal' }}>
             Agent status uses last_seen; inventory status uses latest completed or degraded scan
           </span>
+          <div className="filter-actions">
+            <span className="result-count">{hosts.length.toLocaleString()} hosts</span>
+            <button className="btn btn-primary" onClick={handleHostSearch}>Search</button>
+          </div>
         </div>
       </div>
       {scanMsg && <div style={{ marginBottom: '0.75rem', color: scanMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{scanMsg}</div>}
       <div className="card">
+        {loading ? <Loading /> : loadError ? <LoadError message={loadError} onRetry={handleHostSearch} /> : (
         <table>
           <thead>
             <tr>
@@ -2252,9 +2300,10 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
                 </tr>
               );
             })}
-            {hosts.length === 0 && <tr><td colSpan={16} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No hosts registered</td></tr>}
+            {hosts.length === 0 && <tr className="empty-row"><td colSpan={16}>No hosts registered</td></tr>}
           </tbody>
         </table>
+        )}
       </div>
     </>
   );
@@ -2424,7 +2473,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
           <h2>Agent Trust</h2>
         </div>
         <div className="filters">
-          <button onClick={resetAgentToken}>Reset Agent Token</button>
+          <button className="btn btn-secondary" onClick={resetAgentToken}>Reset Agent Token</button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             Current binding: {host.agent_token_set ? 'bound to this host' : 'waiting for next valid agent token'}
           </span>
@@ -2445,7 +2494,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
                   <td className="mono">{u.username}</td><td>{u.uid}</td><td>{u.gid}</td><td className="mono">{u.shell || '-'}</td>
                 </tr>
               ))}
-              {users.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No user inventory</td></tr>}
+              {users.length === 0 && <tr className="empty-row"><td colSpan={4}>No user inventory</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2459,7 +2508,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
                   <td className="mono">{p.port}</td><td>{p.protocol}</td><td className="mono">{p.name || p.pid || '-'}</td><td className="mono">{p.address || '-'}</td>
                 </tr>
               ))}
-              {ports.length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No port inventory</td></tr>}
+              {ports.length === 0 && <tr className="empty-row"><td colSpan={4}>No port inventory</td></tr>}
             </tbody>
           </table>
         </div>
@@ -2484,7 +2533,7 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
                 <td className="mono" style={{ maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.cmdline || '-'}</td>
               </tr>
             ))}
-            {processes.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No process inventory</td></tr>}
+            {processes.length === 0 && <tr className="empty-row"><td colSpan={6}>No process inventory</td></tr>}
           </tbody>
         </table>
       </div>
@@ -2807,7 +2856,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>Vulnerabilities</h1>
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
         <div className="filters">
           <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
             <option value="">All Severities</option>
@@ -2943,21 +2992,6 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
             style={{ width: 100 }}
             title="Maximum CVSS score"
           />
-          <button className="filter-btn" onClick={handleSearch}>
-            Search
-          </button>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" checked={showNoFix} onChange={e => setShowNoFix(e.target.checked)} /> No fix info
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" checked={showMismatch} onChange={e => setShowMismatch(e.target.checked)} /> Wrong ecosystem
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} /> Overdue
-          </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" checked={exploitedOnly} onChange={e => setExploitedOnly(e.target.checked)} /> CISA KEV
-          </label>
           <input
             type="number"
             min="0"
@@ -2969,9 +3003,20 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
             onKeyDown={handleKeyDown}
             style={{ width: 115 }}
           />
-          <button className="filter-btn" onClick={() => exportVulns('csv')}>Export CSV</button>
-          <button className="filter-btn" onClick={() => exportVulns('json')}>JSON</button>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{exportMsg || `${total} results`}</span>
+        </div>
+        <div className="filter-controls-row">
+          <div className="check-group">
+            <CheckboxField label="No fix info" checked={showNoFix} onChange={setShowNoFix} />
+            <CheckboxField label="Wrong ecosystem" checked={showMismatch} onChange={setShowMismatch} />
+            <CheckboxField label="Overdue" checked={overdueOnly} onChange={setOverdueOnly} />
+            <CheckboxField label="CISA KEV" checked={exploitedOnly} onChange={setExploitedOnly} />
+          </div>
+          <div className="filter-actions">
+            <span className="result-count">{exportMsg || `${total.toLocaleString()} results`}</span>
+            <button className="btn btn-primary" onClick={handleSearch}>Search</button>
+            <button className="btn btn-secondary" onClick={() => exportVulns('csv')}>Export CSV</button>
+            <button className="btn btn-secondary" onClick={() => exportVulns('json')}>Export JSON</button>
+          </div>
         </div>
         {activeFilters.length > 0 && (
           <div className="active-filters">
@@ -3000,11 +3045,11 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
             disabled={bulkBusy}
             style={{ minWidth: 170 }}
           />
-          <button className="filter-btn" onClick={applyBulkTriage} disabled={bulkBusy || !bulkStatus}>
+          <button className="btn btn-primary" onClick={applyBulkTriage} disabled={bulkBusy || !bulkStatus}>
             {bulkBusy ? 'Applying...' : 'Apply to selected'}
           </button>
-          <button type="button" className="filter-clear" onClick={() => { setSelectedIds(new Set()); setBulkMsg(''); }} disabled={bulkBusy}>Clear selection</button>
-          {bulkMsg && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{bulkMsg}</span>}
+          <button type="button" className="btn btn-secondary" onClick={() => { setSelectedIds(new Set()); setBulkMsg(''); }} disabled={bulkBusy}>Clear selection</button>
+          {bulkMsg && <span className="result-count">{bulkMsg}</span>}
         </div>
       )}
       <div className="card">
@@ -3046,8 +3091,8 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
                   <td className="mono">
                     <span className="host-link" style={{ color: 'var(--primary)' }}>{v.vulnerability_id}</span>
                     <button
-                      className="filter-btn"
-                      style={{ marginLeft: 6, padding: '1px 6px', fontSize: '0.625rem' }}
+                      className="btn btn-secondary btn-sm"
+                      style={{ marginLeft: 6, height: '1.25rem', padding: '0 6px', fontSize: '0.625rem' }}
                       title="Show hosts & containers affected by this CVE"
                       onClick={(e) => { e.stopPropagation(); setAffectedFor(v.vulnerability_id); }}
                     >
@@ -3109,7 +3154,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
                   </td>
                 </tr>
               ))}
-              {vulns.length === 0 && <tr><td colSpan={19} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No vulnerabilities found</td></tr>}
+              {vulns.length === 0 && <tr className="empty-row"><td colSpan={19}>No vulnerabilities found</td></tr>}
             </tbody>
           </table>
         )}
@@ -3135,42 +3180,21 @@ function AffectedAssetsModal({ vulnerabilityId, onClose }: { vulnerabilityId: st
     return () => { active = false; };
   }, [vulnerabilityId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
-
   const assets = data?.assets || [];
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000,
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 1rem',
-      }}
+    <Modal
+      onClose={onClose}
+      title={<>
+        Affected assets — <span className="mono" style={{ color: 'var(--primary)' }}>{vulnerabilityId}</span>
+        {data && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 10, fontSize: '0.8125rem' }}>{data.total} asset{data.total === 1 ? '' : 's'}</span>}
+      </>}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: '#1e2030', border: '1px solid var(--border)', borderRadius: 10,
-          width: 'min(1100px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column',
-          boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
-          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>
-            Affected assets — <span className="mono" style={{ color: 'var(--primary)' }}>{vulnerabilityId}</span>
-            {data && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 10, fontSize: '0.8125rem' }}>{data.total} asset{data.total === 1 ? '' : 's'}</span>}
-          </h2>
-          <button type="button" className="filter-clear" onClick={onClose} style={{ padding: '2px 10px' }}>Close</button>
-        </div>
-        <div style={{ overflow: 'auto', padding: '0.5rem 0' }}>
-          {loading ? <Loading /> : error ? (
-            <div style={{ padding: '1.25rem', color: 'var(--critical)' }}>{error}</div>
+      <>
+          {loading ? <Loading label="Loading affected assets..." /> : error ? (
+            <LoadError message={error} />
           ) : assets.length === 0 ? (
-            <div style={{ padding: '1.25rem', color: 'var(--text-muted)', textAlign: 'center' }}>No affected assets found</div>
+            <EmptyState message="No affected assets found" />
           ) : (
             <table>
               <thead>
@@ -3202,7 +3226,7 @@ function AffectedAssetsModal({ vulnerabilityId, onClose }: { vulnerabilityId: st
                     <td className="mono" style={{ fontSize: '0.75rem' }}>
                       {a.installed_version || '-'}
                       {a.fixed_version
-                        ? <span style={{ color: '#22c55e', fontWeight: 600 }}> → {a.fixed_version}</span>
+                        ? <span style={{ color: 'var(--low)', fontWeight: 600 }}> → {a.fixed_version}</span>
                         : <span style={{ color: 'var(--text-muted)' }}> → no fix</span>}
                     </td>
                     <td><span className={`badge badge-${(a.severity || 'unknown').toLowerCase()}`}>{a.severity || '-'}</span></td>
@@ -3214,9 +3238,8 @@ function AffectedAssetsModal({ vulnerabilityId, onClose }: { vulnerabilityId: st
               </tbody>
             </table>
           )}
-        </div>
-      </div>
-    </div>
+      </>
+    </Modal>
   );
 }
 
@@ -3358,7 +3381,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
           <input type="text" placeholder="Reason" value={triageReason} onChange={(e) => setTriageReason(e.target.value)} />
           <input type="text" placeholder="Assignee (담당자)" value={triageAssignee} onChange={(e) => setTriageAssignee(e.target.value)} title="Assignee responsible for remediation" />
           <input type="date" value={triageExpiresAt} onChange={(e) => setTriageExpiresAt(e.target.value)} title="Triage expiry date" />
-          {triageExpiresAt && <button onClick={() => setTriageExpiresAt('')}>Clear Expiry</button>}
+          {triageExpiresAt && <button className="btn btn-secondary btn-sm" onClick={() => setTriageExpiresAt('')}>Clear Expiry</button>}
         </div>
         <textarea
           value={triageComment}
@@ -3591,7 +3614,7 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>Packages</h1>
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
         <div className="filters">
           <select value={hostId} onChange={(e) => setHostId(e.target.value)}>
             <option value="">All Hosts</option>
@@ -3684,21 +3707,18 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
             style={{ width: 110 }}
             title="Minimum CVSS score"
           />
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" checked={hasVulns} onChange={e => setHasVulns(e.target.checked)} /> Has vulnerabilities
-          </label>
-          <button
-            className="filter-btn"
-            onClick={handleSearch}
-          >
-            Search
-          </button>
+        </div>
+        <div className="filter-controls-row">
+          <div className="check-group">
+            <CheckboxField label="Has vulnerabilities" checked={hasVulns} onChange={setHasVulns} />
+          </div>
+          <div className="filter-actions">
+            <span className="result-count">{total.toLocaleString()} packages</span>
+            <button className="btn btn-primary" onClick={handleSearch}>Search</button>
+          </div>
         </div>
       </div>
       <div className="card">
-        <div className="card-header">
-          <h2>{total} packages</h2>
-        </div>
         {loading ? <Loading /> : (
           <table>
             <thead>
@@ -3726,7 +3746,7 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{p.created_at ? new Date(p.created_at).toLocaleDateString() : '-'}</td>
                 </tr>
               ))}
-              {pkgs.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No packages found</td></tr>}
+              {pkgs.length === 0 && <tr className="empty-row"><td colSpan={10}>No packages found</td></tr>}
             </tbody>
           </table>
         )}
@@ -3821,7 +3841,7 @@ function ContainersView() {
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>Containers</h1>
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
         <div className="filters">
           <select value={hostId} onChange={(e) => setHostId(e.target.value)}>
             <option value="">All Hosts</option>
@@ -3853,13 +3873,13 @@ function ContainersView() {
             onKeyDown={handleKeyDown}
             style={{ minWidth: 240 }}
           />
-          <button className="filter-btn" onClick={handleSearch}>Search</button>
+          <div className="filter-actions">
+            <span className="result-count">{total.toLocaleString()} containers</span>
+            <button className="btn btn-primary" onClick={handleSearch}>Search</button>
+          </div>
         </div>
       </div>
       <div className="card">
-        <div className="card-header">
-          <h2>{total} containers</h2>
-        </div>
         {loading ? <Loading /> : (
           <table>
             <thead>
@@ -3909,7 +3929,7 @@ function ContainersView() {
                 )}
                 </React.Fragment>
               ))}
-              {containers.length === 0 && <tr><td colSpan={16} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No containers found</td></tr>}
+              {containers.length === 0 && <tr className="empty-row"><td colSpan={16}>No containers found</td></tr>}
             </tbody>
           </table>
         )}
@@ -4080,7 +4100,7 @@ function CveSearchView() {
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>CVE Search</h1>
 
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
         <div className="filters">
           <input
             type="text"
@@ -4133,36 +4153,28 @@ function CveSearchView() {
             min="0" max="1" step="0.01"
             style={{ width: 120 }}
           />
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-            <input
-              type="checkbox"
-              checked={matchableOnly}
-              onChange={e => setMatchableOnly(e.target.checked)}
-            />
-            Matchable only
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
-            <input
-              type="checkbox"
-              checked={includePrioritySources}
-              onChange={e => setIncludePrioritySources(e.target.checked)}
-            />
-            Include priority feeds
-          </label>
-          <button className="filter-btn" onClick={() => doSearch(0)} disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
-          {searched && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{results.total.toLocaleString()} results</span>}
+        </div>
+        <div className="filter-controls-row">
+          <div className="check-group">
+            <CheckboxField label="Matchable only" checked={matchableOnly} onChange={setMatchableOnly} />
+            <CheckboxField label="Include priority feeds" checked={includePrioritySources} onChange={setIncludePrioritySources} />
+          </div>
+          <div className="filter-actions">
+            {searched && <span className="result-count">{results.total.toLocaleString()} results</span>}
+            <button className="btn btn-primary" onClick={() => doSearch(0)} disabled={loading}>{loading ? 'Searching...' : 'Search'}</button>
+          </div>
         </div>
       </div>
 
-      {error && <div className="card" style={{ padding: '1rem', marginBottom: '1rem', color: 'var(--critical)' }}>{error}</div>}
+      {error && <div className="card"><LoadError message={error} onRetry={() => doSearch(0)} /></div>}
 
-      {!searched && !loading && (
-        <div className="card" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-          Search the CVE database by CVE ID, affected package, ecosystem, keyword, severity, source, or minimum CVSS score.
+      {!searched && !loading && !error && (
+        <div className="card">
+          <EmptyState message="Search the CVE database by CVE ID, affected package, ecosystem, keyword, severity, source, or minimum CVSS score." />
         </div>
       )}
 
-      {loading && <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>Searching...</div>}
+      {loading && <div className="card"><Loading label="Searching..." /></div>}
 
       {searched && !loading && (
         <div className="card">
@@ -4465,7 +4477,7 @@ function CveSearchView() {
                 );
               })}
               {results.items.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No results found</td></tr>
+                <tr className="empty-row"><td colSpan={8}>No results found</td></tr>
               )}
             </tbody>
           </table>
@@ -4634,7 +4646,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
               onChange={(e) => setRequestRevision(e.target.value)}
               style={{ maxWidth: '12rem' }}
             />
-            {(requestStatus || requestType || requestRevision || requestStale) && <button onClick={() => { setRequestStatus(''); setRequestType(''); setRequestRevision(''); setRequestStale(''); }}>Clear</button>}
+            {(requestStatus || requestType || requestRevision || requestStale) && <button className="btn btn-secondary btn-sm" onClick={() => { setRequestStatus(''); setRequestType(''); setRequestRevision(''); setRequestStale(''); }}>Clear</button>}
           </div>
         </div>
         {requestMsg && <div style={{ padding: '0.75rem 1rem 0', color: requestMsg.includes('failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{requestMsg}</div>}
@@ -4664,7 +4676,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
                   </td>
                 </tr>
               ))}
-              {requests.length === 0 && <tr><td colSpan={13} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scan requests</td></tr>}
+              {requests.length === 0 && <tr className="empty-row"><td colSpan={13}>No scan requests</td></tr>}
             </tbody>
           </table>
         )}
@@ -4702,7 +4714,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
                   }}>Delete</button></td>
                 </tr>
               ))}
-              {scans.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No scans recorded</td></tr>}
+              {scans.length === 0 && <tr className="empty-row"><td colSpan={10}>No scans recorded</td></tr>}
             </tbody>
           </table>
         )}
@@ -4879,14 +4891,16 @@ function RBACView() {
           </div>
         </div>
       </div>
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
         <div className="filters">
           <input list="rbac-subjects" type="text" placeholder="Filter by user:alice or group:platform" value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} />
-          <button className="filter-btn" onClick={() => load(subjectFilter)}>Search</button>
-          <button onClick={() => { setSubjectFilter(''); load(''); }}>Clear</button>
-          <span style={{ color: message.startsWith('Failed') || message.includes('requires') || message.includes('required') ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>
-            {message || `${subjects.length} subjects / ${policies.length} policies`}
-          </span>
+          <div className="filter-actions">
+            <span className="result-count" style={{ color: message.startsWith('Failed') || message.includes('requires') || message.includes('required') ? 'var(--critical)' : 'var(--text-muted)' }}>
+              {message || `${subjects.length} subjects / ${policies.length} policies`}
+            </span>
+            <button className="btn btn-primary" onClick={() => load(subjectFilter)}>Search</button>
+            <button className="btn btn-secondary" onClick={() => { setSubjectFilter(''); load(''); }}>Clear</button>
+          </div>
         </div>
       </div>
       <div className="grid-2">
@@ -4905,7 +4919,7 @@ function RBACView() {
                     <td><button className="delete-btn" onClick={() => deleteSubject(s)}>Revoke</button></td>
                   </tr>
                 ))}
-                {subjects.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No subjects</td></tr>}
+                {subjects.length === 0 && <tr className="empty-row"><td colSpan={5}>No subjects</td></tr>}
               </tbody>
             </table>
           )}
@@ -4925,7 +4939,7 @@ function RBACView() {
                     <td><button className="delete-btn" onClick={() => deletePolicy(p)}>Revoke</button></td>
                   </tr>
                 ))}
-                {policies.length === 0 && <tr><td colSpan={5} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No policies</td></tr>}
+                {policies.length === 0 && <tr className="empty-row"><td colSpan={5}>No policies</td></tr>}
               </tbody>
             </table>
           )}
@@ -4981,7 +4995,7 @@ function AuditLogView() {
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>Audit Log</h1>
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
         <div className="filters">
           <select value={actorType} onChange={(e) => setActorType(e.target.value)}>
             <option value="">All Actors</option>
@@ -5055,8 +5069,10 @@ function AuditLogView() {
             value={createdTo}
             onChange={(e) => setCreatedTo(e.target.value)}
           />
-          <button className="filter-btn" onClick={handleSearch}>Search</button>
-          <span style={{ color: error ? 'var(--critical)' : 'var(--text-muted)', fontSize: '0.8125rem' }}>{error || `${total} events`}</span>
+          <div className="filter-actions">
+            <span className="result-count" style={{ color: error ? 'var(--critical)' : 'var(--text-muted)' }}>{error || `${total.toLocaleString()} events`}</span>
+            <button className="btn btn-primary" onClick={handleSearch}>Search</button>
+          </div>
         </div>
       </div>
       <div className="card">
@@ -5077,7 +5093,7 @@ function AuditLogView() {
                   <td className="path-cell">{JSON.stringify(item.metadata || {})}<span className="path-tip">{JSON.stringify(item.metadata || {}, null, 2)}</span></td>
                 </tr>
               ))}
-              {items.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No audit events</td></tr>}
+              {items.length === 0 && <tr className="empty-row"><td colSpan={7}>No audit events</td></tr>}
             </tbody>
           </table>
         )}
@@ -5207,8 +5223,8 @@ function SchedulesView() {
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>Schedules</h1>
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
-        <div className="card-header" style={{ margin: '-1rem -1rem 1rem' }}><h2>Create Schedule</h2></div>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 0' }}><h2>Create Schedule</h2></div>
         <div className="filters">
           <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <input type="text" placeholder="Cron expression (e.g. 0 2 * * *)" value={cronExpr} onChange={(e) => setCronExpr(e.target.value)} style={{ minWidth: 260 }} />
@@ -5216,8 +5232,10 @@ function SchedulesView() {
             <option value="full">Full Scan</option>
             <option value="packages_only">Packages Only</option>
           </select>
-          <button className="filter-btn" onClick={handleCreate}>Create</button>
-          {msg && <span style={{ color: msg.includes('Failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{msg}</span>}
+          <div className="filter-actions">
+            {msg && <span className="result-count" style={{ color: msg.includes('Failed') ? 'var(--critical)' : 'var(--low)' }}>{msg}</span>}
+            <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+          </div>
         </div>
       </div>
       <div className="card">
@@ -5235,10 +5253,10 @@ function SchedulesView() {
                   <td><span className="badge" style={{ color: s.enabled ? 'var(--low)' : 'var(--medium)' }}>{s.enabled ? 'yes' : 'no'}</span></td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.last_run ? new Date(s.last_run).toLocaleString() : '-'}</td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.next_run ? new Date(s.next_run).toLocaleString() : '-'}</td>
-                  <td><button className="delete-btn" onClick={() => handleDelete(s.id)}>Delete</button></td>
+                  <td><button className="btn btn-danger btn-sm" onClick={() => handleDelete(s.id)}>Delete</button></td>
                 </tr>
               ))}
-              {items.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No schedules</td></tr>}
+              {items.length === 0 && <tr className="empty-row"><td colSpan={7}>No schedules</td></tr>}
             </tbody>
           </table>
         )}
@@ -5411,7 +5429,7 @@ function AssetGroupsView() {
                 )}
                 </React.Fragment>
               ))}
-              {items.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No asset groups</td></tr>}
+              {items.length === 0 && <tr className="empty-row"><td colSpan={7}>No asset groups</td></tr>}
             </tbody>
           </table>
         )}
@@ -5533,7 +5551,7 @@ function TrendsView() {
                     <td className="mono" style={{ color: 'var(--low)', fontWeight: n(r.low) ? 600 : 400 }}>{n(r.low)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No trend data</td></tr>}
+                {rows.length === 0 && <tr className="empty-row"><td colSpan={6}>No trend data</td></tr>}
               </tbody>
             </table>
           </div>
@@ -5657,7 +5675,7 @@ function ReportsView() {
                       <td className="mono">{stats.compliance_percent.toFixed(1)}%</td>
                     </tr>
                   ); })}
-                  {Object.keys(sla.by_severity || {}).length === 0 && <tr><td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No SLA data</td></tr>}
+                  {Object.keys(sla.by_severity || {}).length === 0 && <tr className="empty-row"><td colSpan={4}>No SLA data</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -5689,7 +5707,7 @@ function ReportsView() {
                     <td className="mono" style={{ color: 'var(--low)' }}>{r.severity_counts?.LOW || 0}</td>
                   </tr>
                 ))}
-                {riskRows.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No risk breakdown data</td></tr>}
+                {riskRows.length === 0 && <tr className="empty-row"><td colSpan={6}>No risk breakdown data</td></tr>}
               </tbody>
             </table>
           </div>
@@ -5711,7 +5729,7 @@ function ReportsView() {
                     <td className="mono" style={{ color: riskLevelColor(h.max_risk_score >= 80 ? 'critical' : h.max_risk_score >= 60 ? 'high' : h.max_risk_score >= 40 ? 'medium' : 'low') }}>{h.max_risk_score.toFixed(1)}</td>
                   </tr>
                 ))}
-                {topRisk.length === 0 && <tr><td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No host risk data</td></tr>}
+                {topRisk.length === 0 && <tr className="empty-row"><td colSpan={7}>No host risk data</td></tr>}
               </tbody>
             </table>
           </div>
@@ -5732,7 +5750,7 @@ function ReportsView() {
                     </td>
                   </tr>
                 ))}
-                {recommendations.length === 0 && <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No recommendations</td></tr>}
+                {recommendations.length === 0 && <tr className="empty-row"><td colSpan={3}>No recommendations</td></tr>}
               </tbody>
             </table>
           </div>
@@ -5830,8 +5848,8 @@ function NotificationsView() {
   return (
     <>
       <h1 style={{ marginBottom: '1.5rem' }}>Notifications</h1>
-      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
-        <div className="card-header" style={{ margin: '-1rem -1rem 1rem' }}><h2>Create Notification Rule</h2></div>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 0' }}><h2>Create Notification Rule</h2></div>
         <div className="filters">
           <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <select value={triggerEvent} onChange={(e) => setTriggerEvent(e.target.value)}>
@@ -5862,11 +5880,15 @@ function NotificationsView() {
               <input type="text" placeholder="Subject prefix (optional)" value={emailSubjectPrefix} onChange={(e) => setEmailSubjectPrefix(e.target.value)} />
             </>
           )}
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Enabled
-          </label>
-          <button className="filter-btn" onClick={handleCreate}>Create</button>
-          {msg && <span style={{ color: msg.includes('Failed') ? 'var(--critical)' : 'var(--low)', fontSize: '0.8125rem' }}>{msg}</span>}
+        </div>
+        <div className="filter-controls-row">
+          <div className="check-group">
+            <CheckboxField label="Enabled" checked={enabled} onChange={setEnabled} />
+          </div>
+          <div className="filter-actions">
+            {msg && <span className="result-count" style={{ color: msg.includes('Failed') ? 'var(--critical)' : 'var(--low)' }}>{msg}</span>}
+            <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+          </div>
         </div>
       </div>
       <div className="card">
@@ -5884,17 +5906,17 @@ function NotificationsView() {
                   <td>{r.channel_type}</td>
                   <td><span className="badge" style={{ color: r.enabled ? 'var(--low)' : 'var(--medium)' }}>{r.enabled ? 'yes' : 'no'}</span></td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{r.last_triggered ? new Date(r.last_triggered).toLocaleString() : '-'}</td>
-                  <td><button className="update-btn" onClick={() => handleTest(r.id)}>Test</button></td>
-                  <td><button className="delete-btn" onClick={() => handleDelete(r.id)}>Delete</button></td>
+                  <td><button className="btn btn-secondary btn-sm" onClick={() => handleTest(r.id)}>Test</button></td>
+                  <td><button className="btn btn-danger btn-sm" onClick={() => handleDelete(r.id)}>Delete</button></td>
                 </tr>
               ))}
-              {items.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No notification rules</td></tr>}
+              {items.length === 0 && <tr className="empty-row"><td colSpan={8}>No notification rules</td></tr>}
             </tbody>
           </table>
         )}
       </div>
       <div style={{ marginTop: '1rem' }}>
-        <button className="filter-btn" onClick={handleLoadLog}>{showLog ? 'Hide Log' : 'Show Log'}</button>
+        <button className="btn btn-secondary" onClick={handleLoadLog}>{showLog ? 'Hide Log' : 'Show Log'}</button>
       </div>
       {showLog && (
         <div className="card" style={{ marginTop: '1rem' }}>
@@ -5914,7 +5936,7 @@ function NotificationsView() {
                   <td style={{ fontSize: '0.8125rem', color: e.error_message ? 'var(--critical)' : 'var(--text-muted)' }}>{e.error_message || '-'}</td>
                 </tr>
               ))}
-              {logEntries.length === 0 && <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No log entries</td></tr>}
+              {logEntries.length === 0 && <tr className="empty-row"><td colSpan={6}>No log entries</td></tr>}
             </tbody>
           </table>
         </div>

@@ -405,6 +405,15 @@ tbody tr:hover td {
 
 /* ── Filters ── */
 
+/* Standard filter bar layout shared by all list views: a wrapping row of
+   uniform-height controls, a grouped block of checkboxes, then a right-aligned
+   action cluster (Search / Export / result count). */
+.filter-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
 .filters {
   display: flex;
   gap: 0.625rem;
@@ -414,7 +423,8 @@ tbody tr:hover td {
 
 .filters input,
 .filters select {
-  padding: 0.4375rem 0.75rem;
+  height: 2.125rem;
+  padding: 0 0.75rem;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -432,6 +442,59 @@ tbody tr:hover td {
 
 .filters input::placeholder {
   color: var(--text-muted);
+}
+
+/* Grouped checkboxes — kept together on their own row with a subtle divider. */
+.check-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.checkbox-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.checkbox-field input[type='checkbox'] {
+  width: 0.9rem;
+  height: 0.9rem;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.checkbox-field:hover {
+  color: var(--text);
+}
+
+/* Action cluster: Search / Export buttons + result count, pinned to the right. */
+.filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  margin-left: auto;
+}
+
+.result-count {
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
+/* When checkboxes share the action row, keep them left while actions go right. */
+.filter-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem 1rem;
 }
 
 .active-filters {
@@ -487,7 +550,8 @@ tbody tr:hover td {
 }
 
 .filter-btn {
-  padding: 0.4375rem 1rem;
+  height: 2.125rem;
+  padding: 0 1rem;
   background: var(--primary);
   color: #fff;
   border: none;
@@ -496,9 +560,72 @@ tbody tr:hover td {
   font-weight: 600;
 }
 
-.filter-btn:hover {
+.filter-btn:hover:not(:disabled) {
   background: var(--primary-hover);
   box-shadow: 0 0 0 3px var(--primary-dim);
+}
+
+.filter-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Button system ──
+   One visual language for primary / secondary / danger actions. Use .btn as the
+   base plus a variant. Sizes: default (form/filter height) and .btn-sm (inline). */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 2.125rem;
+  padding: 0 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  height: 1.75rem;
+  padding: 0 0.625rem;
+  font-size: 0.75rem;
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: 0 0 0 3px var(--primary-dim);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-light);
+  color: var(--text);
+}
+
+.btn-danger {
+  background: transparent;
+  color: var(--critical);
+  border-color: var(--border);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--critical-dim);
+  border-color: var(--critical);
 }
 
 /* ── Pagination ── */
@@ -847,13 +974,108 @@ th.clickable { white-space: nowrap; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
 
-/* ── Empty state ── */
+/* ── Empty / loading / error states ── */
 
 .empty-row td {
   text-align: center;
   color: var(--text-muted);
   padding: 2rem;
   font-size: 0.875rem;
+}
+
+.state-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 3rem 2rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.state-block.state-error {
+  color: var(--critical);
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border-light);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Modal ── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 2000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4vh 1rem;
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(1100px, 96vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.modal-close:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-light);
+  color: var(--text);
+}
+
+.modal-body {
+  overflow: auto;
+  padding: 0.5rem 0;
 }
 
 /* ── Path tooltip ── */
