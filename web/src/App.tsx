@@ -1539,7 +1539,7 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
 
   const handleSecurityBundleExport = async () => {
     setSecurityBundleBusy(true);
-    setSecurityBundleMsg('Exporting security DB bundle...');
+    setSecurityBundleMsg('Preparing bundle on the server — the full CVE DB is packaged and checksummed before the download starts, which takes roughly 30–90 seconds. The download begins automatically when ready...');
     try {
       await api.exportSecurityDBBundle(securityBundleIncludeTrivy);
       setSecurityBundleMsg(`Exported airgap bundle${securityBundleIncludeTrivy ? ' with Trivy DB when available' : ' without Trivy DB'}`);
