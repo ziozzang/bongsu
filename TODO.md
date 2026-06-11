@@ -1,18 +1,109 @@
-# 작업.
+# TODO
 
-trivy 및 osquery 를 사용하여, 해당 컨테이너 또는 시스템에 설치된 라이브러리, 패키지, 바이너리 등 버전 정보를 수집하고 이를 대시보드로 정리하는 프로그램을 만들려고 한다.
+This file tracks remaining work items. Items marked **DONE** are implemented and verifiable in code.
 
-# 검색대상.
-- Host
-- Host 에 올라간 모든 구동중인 컨테이너에 대해서 검색.
+---
 
-# 검색 방법
-- 1일 1회 (정기적) / 또는 수동으로 (수집 서버를 명시하면 수집서버로 모두 수집)
-  - 해당 쉘 스크립트 또는 바이너리(스태틱으로 버전 무관하게 동작할것)로 되어 있어서, 호스트 및 + 컨테이너가 설치되어있는 경우, 해당 경로로 전송
-  - 기본 정보 수집해볼것(계정, OS버전, CPU, 메모리, 프로세스 스냅샷 등)
+## Scanning
 
-- 대시 보드는 다양한 조건으로 검색, 필터링 할수 있어야 한다.
-  - CVSS데이터베이스가 있다면, 매칭 조건을 설정하여 보안 취약점을 스캐닝 할수 있어야 한다. (매칭 조건)
+- [x] **DONE** Native, dependency-free package scanner (pure-Go dpkg/apk, rpm via exec) — `internal/agent/scanner/`
+- [x] **DONE** `-scanner native|trivy` flag; `native` is the default and requires no external binary
+- [x] **DONE** Language dependency scanning from lockfiles/manifests (npm, PyPI, Go, Cargo, Gem) — `ScanLanguagePackages`
+- [x] **DONE** Runtime detection from filesystem layout (Python/pyenv, Node, JDK/JRE, Ruby, PHP, Go SDK) — `ScanRuntimes`
+- [x] **DONE** Container rootfs scanned natively through merged overlay; host and container share `ScanRoot`
+- [x] **DONE** Multi-runtime container enumeration (docker, podman, nerdctl, crictl) with dedup
+- [ ] **REMAINING** Registry/OCI image scanning (pull image, scan without running container)
+- [ ] **REMAINING** IaC and secrets scanning (Terraform, Helm, Kubernetes YAML, env files)
+- [ ] **REMAINING** Windows agent / WMI-based inventory
 
+## Version Comparison and CVE Matching
 
+- [x] **DONE** Ecosystem-aware vercmp engine (`internal/server/vercmp/`): dpkg, rpmvercmp, apk, semver
+- [x] **DONE** Epoch-loss tolerance to cut false positives from distro epoch bumps
+- [x] **DONE** Version-gated CPE matching for runtimes (`compatibleCPECandidate`)
+- [x] **DONE** Runtime CPE matching against NVD advisories, refreshed on DB recalculation
+- [x] **DONE** Distro backport suffix ordering (`+debNuM`, `+ubuntu`)
+- [ ] **REMAINING** Maven/Gradle POM version comparison (maven version ordering has additional rules)
+- [ ] **REMAINING** Debian/Ubuntu DSA-to-CVE resolution completeness audit
 
+## Facts and Inventory
+
+- [x] **DONE** Comprehensive host facts (os_release, kernel, cpu, memory, dmi, virtualization, network, filesystems) in `hosts.facts` JSONB
+- [x] **DONE** Container distro-identity facts in `container_assets.facts` JSONB
+- [x] **DONE** Facts surfaced in dashboard (host System Facts card, container row expansion)
+- [ ] **REMAINING** Kubernetes node/pod inventory (native CRI/containerd enumeration or k8s API)
+- [ ] **REMAINING** Cloud instance metadata (EC2 IMDSv2, GCP metadata server) as optional fact source
+
+## Vulnerability Management
+
+- [x] **DONE** Per-finding triage assignee with `?assignee=` filter and `unassigned` sentinel
+- [x] **DONE** Owner auto-assign on scan ingestion (`BONGSU_AUTO_ASSIGN_BY_OWNER`)
+- [x] **DONE** Triage status workflow (open, in_progress, accepted_risk, false_positive, fixed, ignored)
+- [x] **DONE** Triage expiry with time-bound exceptions
+- [x] **DONE** SLA days per severity (`BONGSU_SLA_*_DAYS`)
+- [x] **DONE** Risk score (CVSS + EPSS + KEV + criticality)
+- [x] **DONE** `GET /api/vulnerabilities/affected-assets` CVE-to-assets reverse lookup
+- [x] **DONE** Detailed VulnFilter (assignee, ecosystem, pkg_type, vuln_id_like, has_fix, min/max_cvss)
+- [ ] **REMAINING** Ticketing integration (Jira, ServiceNow, GitHub Issues) for triage-to-ticket workflow
+- [ ] **REMAINING** Bulk triage export/import (CSV round-trip for offline review)
+
+## Notifications
+
+- [x] **DONE** Webhook channel (per-rule URL, HMAC signing)
+- [x] **DONE** SMTP email channel (starttls/tls/none, per-rule recipients)
+- [x] **DONE** Log channel
+- [x] **DONE** `scan.failed` trigger
+- [x] **DONE** Full trigger taxonomy: scan.completed, scan.failed, vuln.new_critical, vuln.new_high, sla.breach, security_db.updated, schedule.daily
+- [ ] **REMAINING** Slack / Teams / PagerDuty notification channels
+- [ ] **REMAINING** Per-host or per-owner notification routing
+
+## CVE Database and Data Sources
+
+- [x] **DONE** Multi-source CVE DB: OSV, NVD, EPSS, CISA-KEV, Trivy
+- [x] **DONE** Security DB sync with exponential-backoff retry
+- [x] **DONE** Airgap bundle export/import with age validation and `exporter_version` check
+- [x] **DONE** Raw OSV ecosystem freshness (`raw_last_update`) separate from index freshness
+- [ ] **REMAINING** GitHub Security Advisory (GHSA) direct API import (currently covered via OSV aliases)
+- [ ] **REMAINING** Vendor-specific advisory feeds (Red Hat RHSA API, Debian LTS, Ubuntu USN direct)
+
+## Security
+
+- [x] **DONE** Session-based web auth, bcrypt passwords, OIDC bearer JWT
+- [x] **DONE** Three-tier API keys (admin, agent, install token)
+- [x] **DONE** RBAC (host/container/image/asset_group scopes, viewer/export/write/admin)
+- [x] **DONE** Audit logging for all admin and agent events
+- [x] **DONE** Agent host-binding token (`BONGSU_AGENT_HOST_BINDING`)
+- [x] **DONE** Security headers (HSTS, CSP, X-Frame-Options, Permissions-Policy)
+- [ ] **REMAINING** TLS termination in the server binary itself (`BONGSU_TLS_CERT`/`BONGSU_TLS_KEY`); currently delegated to reverse proxy
+- [ ] **REMAINING** Release binary signing and bundle signature verification (GPG/cosign)
+- [ ] **REMAINING** SAST/dependency audit CI gate (govulncheck, `go mod verify`)
+
+## Infrastructure and Deployment
+
+- [x] **DONE** Docker Compose deployment (connected and airgap compose files)
+- [x] **DONE** Static binary build with version/commit/build-date ldflags
+- [x] **DONE** One-liner agent installer (cron and systemd modes)
+- [x] **DONE** Airgap release archive (`scripts/package.sh`) with SHA256 manifest
+- [ ] **REMAINING** Kubernetes / Helm chart for the management server
+- [ ] **REMAINING** Multi-tenancy (separate namespaces or organizations within one deployment)
+- [ ] **REMAINING** HA mode (multiple server replicas with shared PostgreSQL)
+- [ ] **REMAINING** Official OCI image publishing (GitHub Container Registry)
+
+## Dashboard and UX
+
+- [x] **DONE** React dashboard with Vite
+- [x] **DONE** Hosts, Containers, Packages, Vulnerabilities, Scan History, CVE Search, Trends, Reports, Notifications, Schedules, Asset Groups, RBAC, Audit Log views
+- [x] **DONE** CVE-to-assets modal in vulnerability list
+- [x] **DONE** Multilingual landing page (`docs/index.html`) — 8 languages
+- [ ] **REMAINING** Mobile-responsive layout improvements
+- [ ] **REMAINING** Customizable dashboard widgets / saved filter presets
+
+## Testing
+
+- [x] **DONE** Go unit tests (`go test ./...`)
+- [x] **DONE** Python API e2e robustness suite (`tests/e2e/api_e2e.py`)
+- [x] **DONE** Playwright browser smoke (`web/tests/e2e/cve-db.spec.ts`)
+- [x] **DONE** Live verification scripts (`scripts/verify-*.sh`)
+- [x] **DONE** Release readiness gate (`scripts/verify-release-readiness.sh`)
+- [ ] **REMAINING** Agent integration test with real package DB fixtures (dpkg/apk/rpm)
+- [ ] **REMAINING** Fuzz testing for vercmp and lockfile parsers

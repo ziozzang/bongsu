@@ -1,359 +1,279 @@
 # Bongsu Agent Handoff
 
-Updated: 2026-06-05 11:20:11 KST
+Updated: 2026-06-11
 
-This document is the handoff point for the next agent session. Continue from the repository state after this file is committed and pushed.
+This document is the handoff point for the next engineer session. Read `docs/architecture.md` first for the full component map, then come back here for practical orientation.
+
+---
 
 ## Non-Negotiable Constraints
 
 - Product name: `bongsu`, meaning "봉수대".
 - Repository: `/home/ziozzang/bongsu`.
 - Remote target: push local `master` to `origin/main`.
-- Web UI must listen on `http://10.2.2.10:5678/`.
-- API must listen on port `5677`.
+- Web UI listens on `http://10.2.2.10:5678/`. API listens on port `5677`.
 - Do not touch or reconfigure Caddy.
 - Docker Compose deployment must remain available for the management server.
 - Air-gapped deployment is required: update outside, export bundle, import inside.
-- Air-gapped release archives must include static server/agent binaries, source sync scripts, import/export scripts, server/web/agent/postgres Docker images, migrations, web assets, and a package `SHA256SUMS` manifest.
-- CVE matching must use only matchable affected package evidence: package name, ecosystem/target such as `Packagist`, and fixed-version/range data. Name-only, priority-only, URL/package URL/git URL/branch/hash-like fixed values, and literal `0` placeholder fixed values must remain searchable or ignored as source data but must not create rematch/rescan findings.
-- `TEMP-*` and `CVD-*` placeholder vulnerabilities are invalid for the CVE DB and should not appear in `cve_database`, `cve_affected_packages`, reference keys, or rematch candidates.
-- EPSS belongs on matching CVE/advisory rows as columns, not only as separate EPSS source records.
+- Air-gapped release archives must include static server/agent binaries, source sync scripts, import/export scripts, server/web/agent/postgres Docker images, migrations, web assets, docs, and a `SHA256SUMS` manifest.
+- CVE matching must use only matchable affected package evidence: package name + ecosystem/target + fixed-version or range data. Name-only, priority-only, URL/hash-like fixed values, and literal `0` fixed placeholders must not create rematch/rescan findings.
+- `TEMP-*` and `CVD-*` placeholder vulnerabilities must not appear in `cve_database`, `cve_affected_packages`, reference keys, or rematch candidates.
+- EPSS belongs on matching CVE/advisory rows as `epss_score`/`epss_percentile` columns, not only as separate EPSS source records.
+- `BONGSU_AUTO_ASSIGN_BY_OWNER` defaults `true`; the server resolves owner from the DB (not from the agent report) before auto-assigning findings.
 
-## Current Git State
+---
 
-Expected committed head at this handoff:
+## Current Subsystem Map
 
-```text
-master / origin/main latest commit: Document zero fixed-version rejection
+```
+cmd/
+  agent/main.go          Agent entry point; all flags and env vars
+  server/main.go         Server entry point
+
+internal/
+  agent/
+    scanner/             Native package scanner (dpkg/apk/rpm/lang/runtime)
+      scanner.go         ScanRoot — OS package entry point
+      dpkg.go            Pure-Go dpkg reader
+      apk.go             Pure-Go apk reader
+      rpm.go             rpm exec-based reader (RHEL-family)
+      lang.go            ScanLanguagePackages — lockfile/manifest walk
+      runtime.go         ScanRuntimes — interpreter detection from filesystem
+      ecosystem.go       pkg_type → ecosystem normalization
+    system/
+      facts.go           CollectFacts / CollectContainerFacts (no exec)
+    collector/
+      collector.go       Orchestrates full scan: scanner + facts + containers + users/procs/ports
+    reporter/            HTTP client for posting reports to the server
+
+  server/
+    api/
+      api.go             Mux setup; all route registrations
+      report.go          POST /api/report — ingest pipeline + auto-assign + notifications
+      vulnerability.go   GET /api/vulnerabilities + handleAffectedAssets
+      notifier_email.go  SMTP email notification channel
+      notifier_engine.go Rule notifier dispatch
+      notify.go          Webhook / global notification helpers
+      (many other handlers for hosts, scans, schedules, RBAC, etc.)
+    db/
+      classify.go        compatibleSecurityCandidate, compatibleCPECandidate,
+                         compareVersions (epoch-loss), vercmpGeneric
+      cvedb.go           RematchCVEs, RematchCPE, CVE DB management
+      vulnerability.go   ListVulnerabilities (VulnFilter), AffectedAssetsForVulnerability
+      (other domain files: host.go, scan.go, container.go, notification.go, ...)
+    vercmp/
+      vercmp.go          Compare(ecosystem, a, b) — dispatch
+      deb.go             Debian verrevcmp
+      rpm.go             RPM rpmvercmp
+      apk.go             Alpine apk version algorithm
+      generic.go         Semver fallback
+
+  shared/
+    models/              Shared data models (Package, Vulnerability, ScanReport, etc.)
+    trivyparse/          Trivy JSON output parser
+
+migrations/              SQL files 001–057; applied once at startup
+web/                     React/Vite dashboard source
+deploy/                  Docker Compose files, Dockerfiles, nginx config
+scripts/                 Operational scripts (sync, verify, package, backup/restore)
+tests/e2e/               Python API e2e suite
+docs/                    Architecture, handoff, runbooks, openapi.yaml, index.html
 ```
 
-Important recent commits:
+---
 
-```text
-<latest> Document zero fixed-version rejection
-579f74b Reject zero fixed versions in CVE matching
-dd07e28 Update live CVE DB verification handoff
-cfde381 Cache security DB revision lookups
-7da00c3 Add fixture coverage for export freshness gate
-379194a Include export freshness gate in handoff checks
-32652bf Reject non-regular backup archive entries
-8d312c4 Verify OpenAPI operation security
-190ff69 Harden generated installer systemd path
-477177c Verify static server build metadata
-d6f2f27 Verify latest SBOM package ontology
-c90c4df Verify stale CVE rematch cleanup
-a8db21a Verify matchable CVE rematch insertion
-ba171bf Verify security DB rescan queue
-699020d Verify dashboard product identity
-c2298c9 Verify dynamic asset-group RBAC scope
-5bb05ac Harden CVE matching invariants
-0229dd2 Verify CVE reference grouping quality
-a22626c Expand live web smoke coverage
-1183cfb Harden backup restore archives
-651f783 Verify CVE DB direct invariants
-e25c19a Verify live agent token binding
-b0d4cd7 Verify multi-host agent identity
-39ce162 Run release readiness gate in CI
-c4237f3 Add release readiness gate
-8d58410 Document live multi-host RBAC coverage
-265cba9 Verify live web smoke workflow
-f4be3fd Verify airgap release archive
-fa030f8 Verify live agent scan request completion
-f6e99ac Add live operator workflow verification
-c86ada7 Expand operator workflow browser coverage
-cced8c1 Sync OpenAPI docs and audit handoff
-6627f13 Allow short admin password when BONGSU_ALLOW_WEAK_SECRETS is set
-4f13d45 Add admin credentials to .env.example
-0c110c7 Add Phase 5 polish: performance indexes, frontend integration, error consistency
-78397ff Add actionable intelligence: trending, recommendations, notifications, reports
-049735b Add fleet management: agent retry, scan scheduling, asset groups
-fca7b5d Add local user accounts, session auth, and OIDC interface
-5bdb43d Add Phase 1 operational safety features
-fc827a5 Decompose api.go and db.go into domain-specific files
-13da542 Harden live dashboard and summary queries
-82972fb Preserve container SBOM relationships
-7a9762a Verify airgap package contents
-c3fa8e0 Add RBAC scope enforcement tests
+## Where Matching Lives
+
+### OSV / Trivy ecosystem matching
+- **Entry**: `internal/server/db/cvedb.go` → `RematchCVEs(ctx, opts)`
+- **Compatibility check**: `internal/server/db/classify.go` → `compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installedVersion, cveCategory, cveEco, affectedProducts)`
+- **Version comparison**: `compareVersions(eco, a, b)` in `classify.go` → `vercmp.Compare(eco, a, b)` in `internal/server/vercmp/`
+- **Epoch-loss**: applied in `compareVersions` before calling vercmp
+
+### NVD CPE matching (runtimes)
+- **Entry**: `internal/server/db/cvedb.go` → `RematchCPE(ctx, opts)`
+- **Compatibility check**: `internal/server/db/classify.go` → `compatibleCPECandidate(cpeProduct, installedVersion, affectedProducts)`
+- **Version gating**: `cpeVersionAffected(installed, p)` — returns false if no version bounds present
+- **Product normalization**: `cpeProductMatches(pkgProduct, advProduct)` — tolerates nodejs/node.js, jdk/jre, etc.
+
+### Both paths are triggered
+1. Per-scan after `POST /api/report` (report.go lines ~190–196)
+2. On CVE DB recalculation (triggered after any successful DB sync/import)
+
+---
+
+## Running Tests
+
+```bash
+# Unit tests (includes vercmp, classify, lang/runtime parsers, cpe_match, etc.)
+go test ./...
+
+# Python API e2e suite
+python3 tests/e2e/api_e2e.py
+
+# Playwright browser smoke (requires npm deps)
+npm --prefix web install
+npm --prefix web run test:e2e
+
+# Verify migrations are consistent
+./scripts/verify-migrations.sh
+
+# CVE matching invariants (same-name OS/library collisions, epoch, pre-release, CPE gating)
+./scripts/verify-cve-matching-invariants.sh
+
+# Full release readiness gate (34 sub-gates, light mode)
+BONGSU_RELEASE_READINESS_SKIP_HEAVY=true ./scripts/verify-release-readiness.sh
 ```
 
-This handoff commit should include:
+---
 
-- `docs/agent-handoff.md`
-- `docs/requirements-audit.md`
-- `docs/operations-runbook.md`
-- `scripts/verify-requirements-audit.sh`
-- `scripts/verify-package-contents.sh`
-- `scripts/verify-airgap-package-smoke.sh`
-- `scripts/verify-release-readiness.sh`
-- `scripts/package.sh`
-- `.github/workflows/ci.yml`
-- `README.md`
-- `web/tests/e2e/cve-db.spec.ts`
-- `internal/server/api/auth_test.go`
-- `internal/server/db/classify_test.go`
-- `scripts/verify-installer-smoke.sh`
-- A cron-mode one-line installer smoke verification that installs local packaged agent/Trivy binaries into a temporary work directory, generates and reuses a persistent agent token, writes `0600` config/token files, replaces the bongsu cron entry on reinstall, and runs the first agent scan without requiring root, systemd, network access, or Caddy changes.
-- Download-path installer verification that fetches agent and Trivy binaries through header-authenticated `curl`, rejects token-bearing URLs, requires the `X-Bongsu-SHA256` header, and fails closed while removing a checksum-mismatched binary.
-- Systemd-mode installer verification that writes service/timer/daemon unit files into a test systemd directory, validates hardening directives and daemon polling command, calls `systemctl daemon-reload` plus timer/daemon enablement, and runs the first scan without touching `/etc/systemd` during tests.
-- Requirements audit coverage that maps the original product requirements to evidence, verification commands, and remaining commercial-readiness gaps without declaring the overall goal complete.
-- Browser smoke coverage for Hosts force-scan requests and RBAC subject/policy creation, including POST body verification.
-- Browser workflow coverage for scheduled scan creation, dynamic asset-group creation, asset-group scan trigger, report rendering/export, notification rule creation/test delivery, and notification-log loading, including request payload verification.
-- Live API operator workflow verifier covering liveness/readiness, OpenAPI docs, optional local session login, scheduled scan CRUD, dynamic asset-group creation and scan trigger, report surfaces, notification rule test delivery, notification log shape, backup dry-run, and restore dry-run.
-- Live operator workflow verifier now also checks `/api/health` and `/api/admin/metrics` for security DB revision, recalculation state, usable affected/reference index status, EPSS enrichment, and security DB rescan progress observability.
-- Backup/restore archive verifier covers safe tar entries, regular-file enforcement, required members, duplicate member rejection, symlink member rejection, and manifest checksum rejection without requiring a live database.
-- Live API agent workflow verification now creates a verifier host report, creates a host-specific scan request, claims it through `/api/agent/scan-requests/claim`, posts a scan report tied to that request, completes it through `/api/agent/scan-requests/{id}/complete`, and verifies both scan-request and scan list state.
-- Real agent binary workflow verifier builds `cmd/agent`, runs it against fixture Trivy/osquery/docker tools for two logical host IDs, verifies host/container package ontology and host-id isolation through the live API, then runs daemon polling to claim and complete a host-specific scan request.
-- Live agent token binding verifier binds a host to one token, then proves a different token cannot report inventory, claim scan requests, or complete requests for the bound host when `BONGSU_AGENT_HOST_BINDING=true`.
-- Live CVE DB quality verifier checks production-scale source count, matchability, EPSS enrichment, affected/reference index health, placeholder rejection, affected package evidence, reference grouping, endpoint responsiveness, and optional direct PostgreSQL invariants when `BONGSU_DB_DSN` is set; direct checks use local `psql` or `docker exec` against `BONGSU_DB_PSQL_CONTAINER`.
-- OSV CVE/source upserts now merge `affected_products` and `refs` instead of overwriting the previous row when different ecosystem chunks share a CVE alias. This fixed the live Packagist loss where `phenx/php-svg-lib` was absent after later distro chunks overwrote the same CVE rows. After reimporting the Packagist chunk, live OSV had 330843 rows, 6299 top-level Packagist rows, 282765 affected-package rows, 99597 indexed/matchable CVEs, and CVE Search returned three matchable `phenx/php-svg-lib` rows with `Packagist` ecosystem and fixed versions `0.5.1`/`0.5.2`.
-- Live RBAC scope verifier ingests allowed and denied host/container fixtures, creates a viewer subject and dynamic `asset_group` policy (`team:rbac-allowed`), then verifies viewer-key access filters hosts, packages, containers, scans, and scan requests.
-- Airgap package smoke verifier runs `scripts/package.sh` end-to-end with lightweight `go`/`npm`/`docker` stubs, then validates the generated `bongsu-*.tar.gz`.
-- Airgap offline rehearsal verifier extracts a generated package, checks checksums, rehearses `load-images.sh` with a Docker-load stub, renders packaged airgap compose with real `docker compose config`, and checks import/export script targets.
-- Airgap release archive verifier unpacks a generated `bongsu-*.tar.gz`, checks outer and inner SHA256 manifests, required files, executable/static binaries, Docker image tarballs, loader script, runbook/audit references, and airgap compose invariants.
-- Frontend API contract fixes for schedules (`{items}` response plus `packages_only`) and asset groups (`rule_type` instead of stale `group_type`).
-- Operations runbook covering production readiness, install, upgrade, backup/restore, security DB operations, monitoring/alerting, incident response, and routine maintenance. Air-gapped packages now include `docs/` and top-level `README.md`.
-- RBAC enforcement regression coverage for package/container/scan/scan-request endpoint scoping and container/image/asset-group policy expansion through latest container assets and host metadata.
-- Airgap package contents verifier that checks the release package script includes static binaries, Docker images, deploy files, migrations, docs, web assets, source sync/import/export tools, loader script, and SHA256 manifests.
-- Agent package annotation, DB persistence, and CycloneDX/SPDX export tests that preserve host/container/image/package target relationship context for SBOM and inventory data.
-- Live dashboard hardening: optional admin/summary widget failures no longer log out the no-auth dashboard, package/vulnerability summary SQL no longer references a package alias outside scope, and the dashboard action bar wraps instead of clipping controls.
-- API and DB decomposition into domain-specific files, preserving previous behavior while reducing the monolithic `api.go`/`db.go` maintenance risk.
-- Operational safety additions: per-IP rate limiting, `/api/live`, `/api/ready`, embedded OpenAPI 3.0, `scripts/backup.sh`, `scripts/restore.sh`, `scripts/verify-openapi.sh`, `scripts/verify-operator-workflow.sh`, `scripts/verify-agent-binary-workflow.sh`, and `scripts/verify-airgap-release-archive.sh`.
-- Local user/session authentication, initial admin bootstrap, secure session cookies, `Authorization: Bearer` support for the web client, and OIDC bearer JWT verification that maps user/group claims into RBAC subjects while keeping local password login active.
-- Fleet management additions: scheduled scans, asset groups, asset-group force scans, agent report retry configuration, and frontend views for schedules and asset groups.
-- Actionable intelligence additions: vulnerability trends, top-risk hosts, remediation recommendations, notification rules/logs, executive/risk/SLA reports, report export, and corresponding frontend views.
+## Running the Server Locally
 
-## Live Runtime
+```bash
+# Build
+commit=$(git rev-parse --short=12 HEAD)
+build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+go build -trimpath -ldflags "-s -w -X main.version=0.1.0 -X main.commit=${commit} -X main.buildDate=${build_date}" \
+  -o /tmp/bongsu-server ./cmd/server
 
-The current live target is:
+# Run (env vars from file or inline)
+BONGSU_API_KEY=test-admin-key \
+BONGSU_AGENT_API_KEY=test-agent-key \
+BONGSU_DB_PASSWORD=bongsu \
+/tmp/bongsu-server
+```
 
+API: `http://localhost:5677` (or `http://10.2.2.10:5677` on the live target)
+Web: `http://localhost:5678` (or `http://10.2.2.10:5678`)
+
+---
+
+## Deploy Stack
+
+The management server runs from `deploy/`:
+- `docker-compose.yml` — connected deployment (PostgreSQL + server + web + trivy-db init)
+- `docker-compose.airgap.yml` — air-gapped variant (no outbound CVE sync)
+- `Dockerfile.server`, `Dockerfile.agent`, `Dockerfile.web` — build targets
+- `.env.example` — all configurable env vars with defaults
+
+Key env vars for a new deployment:
+
+| Variable | Role |
+|---|---|
+| `BONGSU_API_KEY` | Admin API key |
+| `BONGSU_AGENT_API_KEY` | Agent reports and scan-request polling |
+| `BONGSU_INSTALL_TOKEN` | One-liner installer generation |
+| `BONGSU_DB_PASSWORD` | PostgreSQL password |
+| `BONGSU_SMTP_HOST` + `BONGSU_SMTP_FROM` | Email notifications (optional) |
+| `BONGSU_AUTO_ASSIGN_BY_OWNER` | Auto-assign findings to host owner (default `true`) |
+
+---
+
+## Live Runtime State
+
+Live target:
 - Web: `http://10.2.2.10:5678/`
 - API: `http://10.2.2.10:5677/`
 
-Last known listener state:
-
-```text
-0.0.0.0:5678  web static server
-*:5677        bongsu API server
-```
-
-API was last started with a fresh build from the current checkout:
-
+After any rebuild, verify the login path:
 ```bash
-commit=$(git rev-parse --short=12 HEAD)
-build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-go build -trimpath -ldflags "-s -w -X main.version=0.1.0 -X main.commit=${commit} -X main.buildDate=${build_date}" -o /tmp/bongsu-server-current ./cmd/server
-setsid -f bash -c 'while IFS= read -r -d "" kv; do export "$kv"; done < /tmp/bongsu-server-current.env; exec /tmp/bongsu-server-current' >/tmp/bongsu-server-current.log 2>&1 < /dev/null
+curl -sS -X POST http://127.0.0.1:5677/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"<password>"}' | jq .
 ```
 
-The current live API process is detached with parent PID `1` and session ID equal to the process PID. Last verified live build metadata:
+If `/api/auth/login` returns HTTP 500, check that port 5677 is listening and that the running binary was rebuilt from the current checkout. A stale binary from an earlier session will lack recent routes.
 
-```text
-version=0.1.0
-commit=cfde381ed045
-build_date=2026-06-04T19:03:28Z
-```
+---
 
-Do not change this to `8080`. Keep API and web split as `5677` and `5678`. If `http://10.2.2.10:5678/api/auth/login` returns HTTP 500, check that `5677` is listening and that the running API binary was rebuilt from the current checkout. A stale `/tmp/bongsu-server-live` binary previously lacked the current login routes.
+## Key Verification Commands
 
-Latest login check passed through both the API and the web proxy:
-
-```text
-POST http://127.0.0.1:5677/api/auth/login admin/password -> 200
-POST http://127.0.0.1:5678/api/auth/login admin/password -> 200
-```
-
-Latest live verification passed after redeploying `cfde381ed045`:
-
-```bash
-./scripts/verify-live-session-auth.sh
-./scripts/verify-live-security-db-export-freshness.sh
-./scripts/verify-live-server-build.sh
-BONGSU_VERIFY_CVEDB_REQUIRE_FRESH_SOURCES=true BONGSU_VERIFY_CVEDB_REQUIRE_DB=true ./scripts/verify-live-cvedb-quality.sh
-```
-
-The direct-DB CVE quality run passed with `961359` records, `208854` matchable records, `5` sources, direct placeholder rejection, affected/reference orphan checks, EPSS column enrichment checks, and multi-source reference-group checks.
-
-Latest DB-backed live release readiness also passed after fixing the deploy-config subgate to ignore live runtime overrides such as `BONGSU_ALLOW_WEAK_SECRETS=true`:
-
-```bash
-BONGSU_RELEASE_READINESS_ALLOW_DIRTY=true \
-BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
-BONGSU_RELEASE_READINESS_LIVE=true \
-BONGSU_RELEASE_READINESS_REPORT=/tmp/bongsu-live-release-readiness.json \
-./scripts/verify-release-readiness.sh
-```
-
-The report summary was `status=passed`, `gate_count=34`, `failed_gate_count=0`, `live=true`, `require_db=true`, `skip_heavy=true`, finished at `2026-06-04T19:19:18Z`.
-
-## Current CVE DB Status
-
-OSV sync bugs fixed in recent handoffs:
-
-- First root cause: `scripts/sync-all-cvedb.sh` imported each OSV ecosystem chunk with the same `source=osv`, while `/api/admin/cve-db/import` replaced all rows for that source on every import. The final ecosystem chunk overwrote earlier chunks.
-- First fix: the import API accepts `replace=false`, OSV ecosystem chunks use append/upsert mode, and OSV chunks use `finalize=false` so affected/reference indexes plus security recalculation run once after all OSV chunks finish instead of once per ecosystem.
-- Second root cause: after append mode was fixed, rows sharing the same OSV source and CVE alias still conflicted on `(vulnerability_id, source)`. Later distro chunks could overwrite earlier Packagist/PyPI/npm `affected_products`.
-- Second fix: CVE/source upserts now merge existing and incoming `affected_products`/`refs` arrays. The live verifier includes a Packagist sentinel for `phenx/php-svg-lib` when the DB contains a production-scale OSV Packagist feed.
-
-Latest OSV live snapshot after rejecting literal `0` fixed-version placeholders:
-
-```text
-osv cve_database rows:       466825
-osv affected index rows:     1604566
-osv indexed/matchable CVEs:  208833
-osv fixed_version='0' rows:  0
-phenx/php-svg-lib matches:   Packagist rows with package/ecosystem/fixed evidence
-```
-
-Last verified operational metrics:
-
-```text
-/api/cve-db/stats miss: ~2.32s, X-Bongsu-Cache: miss
-/api/cve-db/stats hit:  ~0.0006s, X-Bongsu-Cache: hit
-stale stats path:       ~0.0005s, X-Bongsu-Cache: stale
-/api/vulnerabilities?limit=50: ~0.69-0.71s
-/api/cve-db/search?q=openssl&limit=20: ~0.25s
-```
-
-Last quality snapshot:
-
-```json
-{
-  "temporary_placeholders": 0,
-  "total_records": 961419,
-  "total_matchable": 208833,
-  "osv_fixed_zero_rows": 0,
-  "affected_index_coverage": 100,
-  "affected_index_orphans": 0,
-  "reference_index_coverage": 99.9,
-  "reference_index_orphans": 0,
-  "epss_non_epss_coverage": 96.1
-}
-```
-
-Last direct DB check found zero `TEMP-*` and zero `CVD-*` rows in `cve_database`, `cve_affected_packages`, and `cve_reference_keys`; zero OSV `fixed_version='0'` affected-package rows; affected-package rows all had package/ecosystem/fixed evidence; canonical CVE reference groups merged multiple non-priority sources; vendor/advisory reference keys were materialized beside canonical CVE keys.
-
-## What Has Been Completed
-
-- Management server and dashboard are deployed locally with web on `5678` and API on `5677`.
-- Server-side scan report normalization now backfills host/container asset context for package and vulnerability rows from reported containers, and rejects invalid package/vulnerability `asset_type` values before persistence.
-- Security DB ingest/import/export exists for connected and air-gapped flows.
-- CVE DB quality and status are visible on the dashboard.
-- CVE search is backed by indexes and bounded request timeouts.
-- Affected packages lookup and reference grouping are bounded.
-- Live CVE DB quality verification now checks reference-group API structure, and direct DB mode verifies canonical CVE groups merge multiple non-priority sources while vendor/advisory keys are materialized beside canonical CVE keys.
-- Matchable CVE evidence is materialized into `cve_affected_packages`; OSV rows whose only fixed evidence is literal `0` are excluded from this index and from rematch/rescan.
-- Vulnerability evidence/listing now uses matchable affected package rows instead of raw JSON name matches.
-- CVE DB rematch filters require compatible package name, ecosystem, fixed version/range, and affected range semantics.
-- CVE rematch false-positive controls now have `./scripts/verify-cve-matching-invariants.sh`, covering same-name OS/library collisions, fixed/range evidence, rejection of literal `0` fixed-version placeholders, inclusive `last_affected`, exclusive `limit`, pre-release ordering, and numeric Debian/RPM-style epoch comparison.
-- EPSS data is merged into matching non-EPSS CVE/advisory rows.
-- TEMP placeholder identifiers are blocked/removed from CVE DB matching paths.
-- CVSS v2/v3.x/v4 recalculation support exists and startup recalculation is timeout-bounded.
-- Background stale-while-revalidate cache for `/api/cve-db/stats` is implemented.
-- The dashboard API client now reads `X-Bongsu-Cache` for CVE DB stats and the dashboard card exposes cache state, generated timestamp, and stats duration.
-- `scripts/verify-openapi.sh` now verifies not only route/spec sync but also that non-public operations declare security, admin operations include `AdminKey`, agent operations include `AgentKey`, installer/download operations include `InstallToken`/`AdminKey`, and export/SBOM operations are not documented as public.
-- `scripts/restore.sh` now rejects allowed-name backup archive members unless they are regular files, and `scripts/verify-backup-restore-archive.sh` covers symlink `database.dump` rejection.
-- The generated `/api/install.sh` one-line installer now supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN`, matching the packaged installer test hooks so systemd service/timer generation can be verified without touching `/etc/systemd/system` or real `systemctl`.
-- Static release verification now executes both `bongsu-agent --version` and `bongsu-server --version`, checking injected version/commit/build-date metadata after confirming both linux/amd64 binaries are statically linked; `scripts/package.sh` now builds release binaries with `-trimpath`.
-- `scripts/install-agent.sh` supports `BONGSU_SYSTEMD_DIR` and `BONGSU_SYSTEMCTL_BIN` for controlled systemd installation testing while preserving `/etc/systemd/system` and `systemctl` defaults.
-- `./scripts/verify-live-rbac-scope.sh` now validates dynamic `asset_group` policy expansion instead of relying only on a direct host policy.
-- `internal/server/db/package_sbom_exec_test.go` now executes `GetLatestPackagesForSBOM` through a fake `database/sql` driver and verifies the latest-inventory query preserves container/image/package target ontology fields before CycloneDX/SPDX generation.
-- `internal/server/db/stale_rematch_cleanup_exec_test.go` now executes `RemoveStaleRematchedVulnerabilities` through a fake `database/sql` driver and verifies cleanup candidates are restricted to `finding_source='cve-db'`, compatible findings are kept, and missing-fixed/wrong-ecosystem rematch findings are deleted.
-- `internal/server/db/cve_rematch_exec_test.go` now executes `RematchCVEs` through a fake `database/sql` driver and verifies that only a compatible, fixed-version-backed, affected npm candidate inserts a `cve-db` finding; missing fixed evidence, non-affected installed versions, and same-name Debian/package ecosystem mismatches are skipped.
-- `internal/server/db/scan_rescan_test.go` now executes `QueueSecurityDBRescans` through a fake `database/sql` driver, verifying host eligibility filtering, transaction commit, pending dedupe accounting, requested_by/reason propagation, and `security_db_revision` stamping without requiring a live PostgreSQL instance.
-- Playwright coverage now verifies dashboard CVE DB status, CVE Search fixed-version evidence, Hosts force-scan POST bodies, RBAC subject/policy POST bodies, scheduled scan creation payloads, dynamic asset-group creation and scan trigger payloads, report export query parameters, notification rule creation/test payloads, and notification-log rendering.
-- Dashboard E2E and live web smoke now verify first-screen `bongsu` branding plus the `봉수대` meaning/product intro text.
-- `docs/operations-runbook.md` is available and `scripts/package.sh` includes documentation in release archives.
-- Real airgap package generation was exercised with `scripts/package.sh 0.1.0-real-20260604055407` after fixing server/agent Dockerfiles from `golang:1.24-alpine` to `golang:1.25-alpine` to match `go.mod`. The generated archive was `bongsu-0.1.0-real-20260604055407.tar.gz`, size 208M, SHA256 `ff200255584ecc524a1cf6daf387c5a5ab47dfe65a8b804c5bfef44ba45d7900`; both `scripts/verify-airgap-release-archive.sh` and `scripts/verify-airgap-offline-rehearsal.sh` passed against it. The packaged loader loaded `bongsu-server`, `bongsu-agent`, `bongsu-web`, and `postgres:16-alpine`; packaged compose started on isolated ports `5687/5688`; a 109M exported security DB bundle imported successfully with 806272 CVE rows, 682665 affected-package rows, 1308724 reference keys, and 100% affected/reference index coverage.
-- Go tests now assert RBAC access scope expansion for host, container, image, and asset-group policies and verify inventory/scan list endpoints apply those scopes.
-- CI runs `scripts/verify-package-contents.sh` and `scripts/verify-airgap-package-smoke.sh` to keep air-gapped release archives from silently losing required files or breaking package generation.
-- Container package rows are annotated with container name, container ID, image name, and image ID before upload. Source-level regression tests now check that package persistence, container asset persistence, CycloneDX properties, and SPDX package comments keep this runtime identity and package target context.
-- Live Playwright smoke is now scripted by `./scripts/verify-live-web-smoke.sh` and passed against `http://127.0.0.1:5678` using `BONGSU_API_KEY=test-admin-key`. It covers dashboard product identity, CVE DB status, CVE Search, Hosts, Packages, Containers, Scan History, Vulnerabilities, RBAC, Audit Log, Schedules, Asset Groups, Trends, Reports, and Notifications routes, while asserting that live `/api/` responses do not return 5xx.
-- Other agents added domain file decomposition, sessions/local admin auth, rate limiting, OpenAPI verification, scheduled scans, asset groups, trend/intelligence/report/notification APIs, backup/restore scripts, migration `049`, and frontend integration. Current automated verification has been rerun on this state, the newest browser suite now covers the added schedule/asset-group/report/notification views with mocked API contract assertions, and the live operator verifier passed against `127.0.0.1:5677` using the running API and agent credentials, including agent claim/report/complete.
-
-## Verification Commands
-
-Run these after pulling this handoff state:
+Run these after pulling a new session state:
 
 ```bash
 git status --short --branch
-./scripts/verify-release-readiness.sh
 go test ./...
 ./scripts/verify-migrations.sh
 ./scripts/verify-deploy-config.sh
-./scripts/verify-requirements-audit.sh
-./scripts/verify-security-db-export-freshness-fixtures.sh
 ./scripts/verify-cve-matching-invariants.sh
 ./scripts/verify-openapi.sh
 ./scripts/verify-backup-restore-archive.sh
-./scripts/verify-operator-workflow.sh
-./scripts/verify-agent-binary-workflow.sh
-./scripts/verify-live-agent-token-binding.sh
-./scripts/verify-live-cvedb-quality.sh
-./scripts/verify-live-security-db-export-freshness.sh
-./scripts/verify-live-rbac-scope.sh
-./scripts/verify-live-web-smoke.sh
-./scripts/verify-package-contents.sh
-./scripts/verify-airgap-package-smoke.sh
-./scripts/verify-airgap-release-archive.sh <generated-bongsu-archive.tar.gz>
-./scripts/verify-airgap-offline-rehearsal.sh <generated-bongsu-archive.tar.gz>
 ./scripts/verify-installer-smoke.sh
 ./scripts/verify-static-binaries.sh
 npm --prefix web run build
-npm --prefix web run test:e2e
 BONGSU_DB_PASSWORD=bongsu docker compose -f deploy/docker-compose.yml config >/tmp/bongsu-compose.out
-BONGSU_DB_PASSWORD=bongsu docker compose -f deploy/docker-compose.airgap.yml config >/tmp/bongsu-airgap-compose.out
-git diff --check
 ```
 
-Useful live checks:
-
+Live checks (require a running API):
 ```bash
-curl -sS -H 'X-API-Key: test-admin' http://127.0.0.1:5677/api/cve-db/stats -o /tmp/cve-stats.json -D /tmp/cve-stats.headers
-cat /tmp/cve-stats.headers
-curl -sS -H 'X-API-Key: test-admin' 'http://127.0.0.1:5677/api/cve-db/search?q=openssl&limit=20' >/tmp/cve-search.json
-curl -sS http://127.0.0.1:5678/ >/tmp/bongsu-web.html
-BONGSU_API_KEY=test-admin-key BONGSU_ADMIN_USERNAME=admin BONGSU_ADMIN_PASSWORD=password ./scripts/verify-operator-workflow.sh
-BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-agent-binary-workflow.sh
-BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key ./scripts/verify-live-agent-token-binding.sh
-BONGSU_API_KEY=test-admin-key BONGSU_DB_DSN='postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable' ./scripts/verify-live-cvedb-quality.sh
-BONGSU_API_KEY=test-admin-key ./scripts/verify-live-security-db-export-freshness.sh
-BONGSU_API_KEY=test-admin-key BONGSU_AGENT_API_KEY=test-agent-key BONGSU_VIEWER_API_KEY=viewer-test-key BONGSU_VIEWER_SUBJECT=rbac-live-viewer ./scripts/verify-live-rbac-scope.sh
+# CVE DB stats
+curl -sS -H 'X-API-Key: test-admin-key' http://127.0.0.1:5677/api/cve-db/stats | jq .
+
+# CVE search
+curl -sS -H 'X-API-Key: test-admin-key' 'http://127.0.0.1:5677/api/cve-db/search?q=openssl&limit=5' | jq .
+
+# Vulnerability list with new filters
+curl -sS -H 'X-API-Key: test-admin-key' \
+  'http://127.0.0.1:5677/api/vulnerabilities?ecosystem=debian&has_fix=yes&limit=5' | jq .
+
+# CVE-to-assets reverse lookup
+curl -sS -H 'X-API-Key: test-admin-key' \
+  'http://127.0.0.1:5677/api/vulnerabilities/affected-assets?vulnerability_id=CVE-2024-1234' | jq .
+
+# Live web smoke
 BONGSU_WEB_BASE=http://127.0.0.1:5678 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-web-smoke.sh
-./scripts/verify-airgap-release-archive.sh bongsu-0.1.0.tar.gz
+
+# Full live CVE DB quality check (needs BONGSU_DB_DSN for direct DB checks)
+BONGSU_API_KEY=test-admin-key \
+  BONGSU_DB_DSN='postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable' \
+  ./scripts/verify-live-cvedb-quality.sh
+
+# Release readiness gate (live mode)
+BONGSU_RELEASE_READINESS_SKIP_HEAVY=true \
+  BONGSU_RELEASE_READINESS_LIVE=true \
+  ./scripts/verify-release-readiness.sh
 ```
 
-TEMP/CVD direct DB check:
+---
 
-```bash
-psql 'postgres://bongsu:bongsu@localhost:5432/bongsu?sslmode=disable' -c "
-select 'cve_database' as table_name, count(*) from cve_database
-where vulnerability_id like 'TEMP-%' or vulnerability_id like 'CVD-%'
-union all
-select 'cve_affected_packages', count(*) from cve_affected_packages
-where vulnerability_id like 'TEMP-%' or vulnerability_id like 'CVD-%'
-union all
-select 'cve_reference_keys', count(*) from cve_reference_keys
-where cve_id like 'TEMP-%' or cve_id like 'CVD-%'
-   or reference_key like '%TEMP-%' or reference_key like '%CVD-%';
-"
-```
+## Matching Rules Reminder
+
+See `docs/vulnerability-matching-rules.md` for the detailed source of truth. Short version:
+
+- A valid matchable row: `phenx/php-svg-lib / Packagist / Fixed: 0.5.2` — has name, ecosystem, fixed version.
+- Invalid for matching: rows without name, ecosystem, or fixed-version/range evidence.
+- EPSS and CISA KEV can enrich risk signals but must not create package-name findings by themselves.
+- CPE matching for runtimes: requires version bounds; product-name-only NVD entries never match.
+- Epoch-loss tolerance: if the installed version has no epoch and the advisory does, strip the advisory epoch before comparing.
+
+---
+
+## What Was Completed in This Wave (2026-06-11)
+
+The following subsystems were built and are verifiable in the current codebase:
+
+1. **Native scanner GA** — `internal/agent/scanner/` with dpkg/apk/rpm/lang/runtime. Default `-scanner native`.
+2. **vercmp engine** — `internal/server/vercmp/` with dpkg/rpmvercmp/apk/semver; replaces all version heuristics.
+3. **Epoch-loss tolerance** — `compareVersions` in `classify.go`.
+4. **Runtime CPE matching** — `RematchCPE` + `compatibleCPECandidate` version-gated; refreshed on DB recalc.
+5. **Host and container facts** — `CollectFacts`/`CollectContainerFacts` in `system/facts.go`; migrations 055/056.
+6. **Triage assignee** — migration 053; `VulnFilter.Assignee`; `unassigned` sentinel.
+7. **Owner auto-assign** — `autoAssignFindingsToOwner` in `report.go`; resolves owner from DB.
+8. **Email notification channel** — `notifier_email.go`; migration 054; SMTP starttls/tls/none.
+9. **scan.failed trigger** — migration 057; `scanFailedPayload` in `report.go`.
+10. **VulnFilter expansion** — ecosystem, pkg_type, vuln_id_like, has_fix, min/max_cvss, assignee.
+11. **CVE-to-assets endpoint** — `GET /api/vulnerabilities/affected-assets`; `AffectedAssetsForVulnerability`.
+12. **Multilingual landing page** — `docs/index.html`; 8 languages with language switcher.
+
+---
 
 ## Next Work
 
 1. Confirm this handoff commit is pushed to `origin/main`.
-2. Re-run full verification after the next session starts; do not assume long-running local processes survived.
-3. Re-run `BONGSU_WEB_BASE=http://127.0.0.1:5678 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-web-smoke.sh` after any UI change, then visually verify dashboard, CVE Search, vulnerability list, RBAC/admin pages, schedules, asset groups, reports, notifications, and force scan controls on `http://10.2.2.10:5678/`.
-4. Keep extending browser coverage beyond the current dashboard/CVE Search/Hosts/Vulnerabilities/RBAC smoke paths.
-5. Continue requirement audit against the original product list. The system is not yet declared complete.
-6. Continue requirement audit against the original product list and fill the next strongest commercial-readiness gap.
-7. Keep optimizing CVE DB quality/statistics paths if the imported DB grows beyond the current snapshot.
-8. Repeat the airgap archive/load/compose/import rehearsal after any packaging or security DB import change. A real isolated local rehearsal passed with Docker image loading and security DB bundle import; the final commercial gate should still exercise transfer into a physically separate offline network or disposable air-gapped host.
-
-## Matching Rules Reminder
-
-Use `docs/vulnerability-matching-rules.md` as the detailed source of truth. The short rule is:
-
-- Affected package row such as `phenx/php-svg-lib / Packagist / Fixed: 0.5.2` is valid and matchable.
-- Rows without package name, ecosystem target, or fixed-version/range evidence are reference/enrichment data only.
-- Priority sources such as EPSS and CISA KEV can enrich risk, but must not create package-name findings by themselves.
-- Multiple source records for the same CVE can be grouped by CVE/reference key, but matching must still be package/ecosystem/range safe.
+2. Re-run the full verification suite after pulling the latest state; do not assume long-running local processes survived.
+3. Re-run `BONGSU_WEB_BASE=http://127.0.0.1:5678 BONGSU_API_KEY=test-admin-key ./scripts/verify-live-web-smoke.sh` after any UI change.
+4. Consider adding Go unit tests for `ScanRuntimes` (runtime.go) — the `runtime_test.go` file exists; expand fixture coverage for JDK `release` file parsing and Node tarball path detection.
+5. Add Go unit tests for `CollectFacts` and `CollectContainerFacts` using mock filesystem roots.
+6. Continue requirement audit against the original product list. See `TODO.md` for remaining items: registry/OCI image scanning, IaC/secrets scanning, Kubernetes inventory, ticketing integration, TLS in-process, release binary signing, multi-tenancy.
+7. Repeat the airgap archive/load/compose/import rehearsal after any packaging or security DB import change.
+8. Keep extending Playwright coverage: CVE-to-assets modal, assignee filter, scan.failed notification rule creation.

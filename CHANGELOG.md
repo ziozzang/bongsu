@@ -4,29 +4,82 @@ All notable changes to Bongsu are documented in this file.
 
 ## [Unreleased] - 2026-06-11
 
-### Scanning
-- Native, dependency-free package scanner (`internal/agent/scanner/`) replacing trivy as the default: pure-Go dpkg/apk readers and rpm via the host/container `rpm` binary
-- Agent `-scanner native|trivy` flag (`BONGSU_AGENT_SCANNER`), defaulting to `native`; the agent no longer requires the trivy binary
-- Language dependency scanning outside the OS package manager (pyenv, nvm, app bundles, vendored deps) via `-lang-scan-roots` (`BONGSU_AGENT_LANG_SCAN_ROOTS`, sentinels `none`/`all`) and `-lang-scan-depth` (`BONGSU_AGENT_LANG_SCAN_DEPTH`)
-- Container rootfs scanned natively through the merged overlay, with per-container facts; the same `ScanRoot` path serves hosts and containers
-- Multi-runtime container enumeration across docker, podman, nerdctl, and crictl with dedup by container ID
+### Native Scanner GA
 
-### Inventory/Facts
-- Comprehensive host facts collected directly from `/proc`, `/sys`, `/etc` (os-release, kernel, cpu, memory, dmi, virtualization, network, filesystems) into `hosts.facts` (JSONB)
-- Distro-identity container facts into `container_assets.facts`
-- Facts surfaced in the dashboard: host detail "System Facts" card and container row expansion
+- Dependency-free native package scanner (`internal/agent/scanner/`) is now the default, replacing Trivy as the primary inventory path. Agent `-scanner native|trivy` flag (`BONGSU_AGENT_SCANNER`) selects the engine; `native` requires no external binary.
+- Pure-Go dpkg reader: parses `var/lib/dpkg/status`, resolves Debian vs Ubuntu from `os-release`. Pure-Go apk reader: parses `lib/apk/db/installed`. rpm via host/container `rpm` exec (RHEL-family base OS ships `rpm`, no extra scanner needed).
+- The same `ScanRoot` entry point serves the host (`/`) and each container's merged overlay rootfs so host and container inventory share one code path.
+- Container rootfs scanned natively per-container through `GraphDriver.Data.MergedDir`; per-container distro-identity facts collected alongside the package inventory.
+- Multi-runtime container enumeration across docker, podman, nerdctl, and crictl with container-ID dedup.
 
-### Vulnerability Management
-- Per-finding triage assignee (담당자) with `?assignee=` filter and `unassigned` sentinel
-- Distro backport version ordering fix, reducing missed Debian/Ubuntu `+debNuM`/`+ubuntu` findings
+### Language Dependency Scanning
 
-### Notifications
-- SMTP email notification channel (`BONGSU_SMTP_HOST/PORT/USERNAME/PASSWORD/FROM/ENCRYPTION`, starttls/tls/none) alongside webhook and log; per-rule recipients via channel_config
+- `ScanLanguagePackages` walks configurable roots for lockfiles and manifests: `package-lock.json` (npm v1/v2/v3), `package.json`, `requirements.txt` (pinned `==`), `go.mod`, `Cargo.lock`, `Gemfile.lock`, PEP 503 `.dist-info/METADATA`.
+- Bounded walk with configurable depth (default 12); prunes `/proc`, `/sys`, `.git`, `__pycache__`, `.gradle`, `.m2`, etc.
+- `-lang-scan-roots` (`BONGSU_AGENT_LANG_SCAN_ROOTS`): `none` to disable, `all` for full scan-root. `-lang-scan-depth` (`BONGSU_AGENT_LANG_SCAN_DEPTH`).
 
-### Data freshness
-- Security DB sync exponential-backoff retry (`BONGSU_SECURITY_DB_RETRY_BASE_MINUTES`/`MAX_MINUTES`)
-- Security DB bundle records `exporter_version` and rejects stale bundles on airgap import (`BONGSU_SECURITY_DB_BUNDLE_MAX_AGE_DAYS`, default 30 days)
-- Raw OSV ecosystem freshness tracking and verification improvements
+### Runtime Detection
+
+- `ScanRuntimes` detects language interpreter/VM installations outside the OS package manager from filesystem layout only — no binary execution: pyenv-built Python, Node tarballs, JDK (Oracle/OpenJDK/Temurin from `release` file), Ruby (`lib/ruby/<X.Y.Z>/`), PHP, Go SDK (`VERSION` file).
+- Detected runtimes carry `PkgType=runtime` and a CPE-style ecosystem key (python/nodejs/jdk/go/ruby/php) for downstream CPE matching.
+- Runtime CPE matching (`RematchCPE`) matches detected runtimes against NVD CPE advisories, version-gated via `compatibleCPECandidate` to suppress false positives from product-name-only matches. Runtime findings are kept out of the OSV stale-rematch cleanup path.
+- Runtime CPE findings refreshed on CVE DB recalculation.
+
+### Ecosystem-aware Version Comparison Engine (vercmp)
+
+- New `internal/server/vercmp/` package replaces ad-hoc version heuristics with real per-ecosystem algorithms: Debian `verrevcmp` (dpkg/deb-version(5)), RPM `rpmvercmp` (epoch:version-release, tilde/caret), Alpine apk version algorithm, generic semver fallback for language packages.
+- Covers: debian/ubuntu, alpine/wolfi, rhel/centos/rocky/almalinux/amazon/suse/opensuse/azurelinux, and all language ecosystems.
+- Cross-ecosystem policy: epoch-loss tolerance — when the installed version has no epoch but the advisory version does, the epoch is stripped before comparison, eliminating the dominant false-positive source from distro epoch bumps.
+- Distro backport version suffixes (`+debNuM`, `+ubuntu`) ordered correctly.
+
+### False Positive Reductions
+
+- Version-gated CPE matching: NVD entries with no version constraint never match on product name alone.
+- `compatibleCPECandidate` in `internal/server/db/classify.go` requires at least one explicit version bound or an exact pinned version.
+- Epoch-loss tolerance in `compareVersions` reduces false positives from administrative distro epoch bumps.
+
+### Host and Container Facts
+
+- `CollectFacts()` (`internal/agent/system/facts.go`): comprehensive host facts from `/proc`, `/sys`, `/etc` (os_release, kernel, cpu, memory, dmi, virtualization, network, filesystems, system) stored in `hosts.facts` JSONB (migration 055). Schema evolves without future migrations.
+- `CollectContainerFacts(root)`: distro-identity facts (os-release, lsb-release, release files) from inside the container rootfs stored in `container_assets.facts` JSONB (migration 056). Host-level facts intentionally excluded.
+- Facts surfaced in the dashboard: host detail "System Facts" card and container row expansion.
+
+### Triage and Auto-Assignment
+
+- Per-finding triage assignee column added to `vulnerability_triage` (migration 053). `?assignee=` filter on vulnerability list; `unassigned` sentinel returns only unassigned findings.
+- Owner auto-assign: after scan ingestion the server resolves the host's authoritative owner from the DB and sets it as the assignee on all new (un-triaged) findings. Existing triage rows are never overwritten. Controlled by `BONGSU_AUTO_ASSIGN_BY_OWNER` (default `true`).
+- Assignee column and bulk triage exposed in the vulnerability dashboard.
+
+### Email and scan.failed Alerting
+
+- SMTP email notification channel (migration 054): `BONGSU_SMTP_HOST/PORT/USERNAME/PASSWORD/FROM/ENCRYPTION` (starttls/tls/none). Per-rule recipients via `channel_config: {"to": "a@x,b@y", "subject_prefix"?: "..."}`. Delivery retried with bounded backoff.
+- `scan.failed` notification trigger (migration 057): fires when a scan finishes degraded/failed or with ingest errors. Added to the trigger event allowlist alongside `scan.completed`, `vuln.new_critical`, `vuln.new_high`, `sla.breach`, `security_db.updated`, `schedule.daily`.
+
+### Search Expansion and CVE-to-Assets
+
+- `VulnFilter` expanded: `Assignee`, `Ecosystem`, `PkgType`, `VulnIDLike` (substring match on vulnerability_id, e.g. `CVE-2024` or `DEBIAN-`), `HasFix` (`yes`/`no`), `MinCVSS`/`MaxCVSS`, plus sort controls.
+- `GET /api/vulnerabilities/affected-assets?vulnerability_id=...`: CVE-to-assets reverse lookup — returns all hosts and containers currently affected by a given CVE in the latest scan, scoped to the caller's RBAC access.
+- Dashboard: detailed column filters and CVE-to-assets modal on the vulnerability list.
+
+### Data Freshness
+
+- Security DB sync exponential-backoff retry (`BONGSU_SECURITY_DB_RETRY_BASE_MINUTES`, default 5; `BONGSU_SECURITY_DB_RETRY_MAX_MINUTES`, default 60).
+- Security DB bundle now records `exporter_version`; import rejects bundles older than `BONGSU_SECURITY_DB_BUNDLE_MAX_AGE_DAYS` (default 30 days).
+- Raw OSV ecosystem `raw_last_update` tracked separately from `indexed_last_update` so source freshness is not overstated by a global affected-index rebuild. Strict live OSV freshness verifier checks raw timestamps.
+
+### Multilingual Landing Page
+
+- `docs/index.html`: one-page project introduction in 8 languages — 한국어, English, 中文, 日本語, Français, Deutsch, Español, Português. Language preference persisted in localStorage; defaults to Korean, falls back to browser language detection.
+
+### Migrations
+
+| # | Change |
+|---|---|
+| 053 | `vulnerability_triage.assignee` column + index |
+| 054 | `notification_rules.channel_type` CHECK extended to include `email` |
+| 055 | `hosts.facts` JSONB column + GIN index; `hosts.facts_collected_at` |
+| 056 | `container_assets.facts` JSONB column |
+| 057 | `notification_rules.trigger_event` CHECK extended to include `scan.failed` |
 
 ## [0.1.0] - 2026-06-03
 
