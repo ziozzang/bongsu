@@ -1007,11 +1007,26 @@ export interface AssetGroupDetail extends AssetGroup {
 
 export interface VulnTrendRow {
   date: string;
-  total: number;
-  critical: number;
-  high: number;
-  medium: number;
-  low: number;
+  total_vulns: number;
+  critical_count: number;
+  high_count: number;
+  medium_count: number;
+  low_count: number;
+  exploited_count: number;
+  overdue_count: number;
+  new_count: number;
+  fixed_count: number;
+  host_count: number;
+}
+
+export interface ScanActivityRow {
+  date: string;
+  scans: number;
+  hosts: number;
+  packages: number;
+  failed: number;
+  degraded: number;
+  completed: number;
 }
 
 export interface VulnTrendSummary {
@@ -1269,6 +1284,8 @@ export const api = {
   // Phase 4: Intelligence & Reports
   vulnTrends: (params?: { host_id?: string; days?: string }) =>
     request<{ items: VulnTrendRow[] }>('/vuln-trends', params),
+  scanActivity: (params?: { days?: string }) =>
+    request<{ days: number; items: ScanActivityRow[] }>('/scan-activity', params),
   vulnTrendSummary: (params?: { host_id?: string; days?: string }) =>
     request<VulnTrendSummary>('/vuln-trends/summary', params),
   topRiskHosts: (params?: { limit?: string }) =>

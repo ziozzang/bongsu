@@ -80,6 +80,12 @@ This file tracks remaining work items. Items marked **DONE** are implemented and
 - [ ] **REMAINING** Release binary signing and bundle signature verification (GPG/cosign)
 - [ ] **REMAINING** SAST/dependency audit CI gate (govulncheck, `go mod verify`)
 
+## Database and Query Performance
+
+- [ ] **REMAINING** Materialize CVE reference-group counts (total / matchable / sources per `reference_key`) into a summary table refreshed by the reference-index rebuild, instead of the live per-page join over `cve_reference_keys` (1.7M+ rows). The live join is currently guarded by a member-count cap and timeout, but a precomputed table makes CVE search O(1) and removes the "group summary unavailable" failure mode entirely.
+- [ ] **REMAINING** General query-optimization pass on the large hot tables (`cve_database`, `cve_reference_keys`, `cve_affected_packages`, `vulnerabilities`): review/`EXPLAIN ANALYZE` the dashboard, search, and rematch paths; add covering/partial indexes where the planner falls back to scans; consider partial materialized views for the dashboard aggregates and per-host vuln counts.
+- [ ] **REMAINING** Background `VACUUM`/`ANALYZE` and bloat monitoring guidance for long-running deployments with frequent rematch churn.
+
 ## Infrastructure and Deployment
 
 - [x] **DONE** Docker Compose deployment (connected and airgap compose files)

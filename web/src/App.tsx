@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -119,6 +119,391 @@ function LoadError({ message, onRetry }: { message: string; onRetry?: () => void
 // EmptyState renders the standard "no results" message for an empty list/table.
 function EmptyState({ message = 'No results found' }: { message?: string }) {
   return <div className="state-block">{message}</div>;
+}
+
+// ── Icon system ──────────────────────────────────────────────────────────────
+// Single stroke-based inline SVG icon component (lucide-style: 1.5px stroke,
+// round caps/joins, currentColor). No external icon dependency.
+const ICON_PATHS: Record<string, React.ReactNode> = {
+  dashboard: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /></>,
+  hosts: <><rect x="3" y="4" width="18" height="6" rx="1.5" /><rect x="3" y="14" width="18" height="6" rx="1.5" /><path d="M7 7h.01M7 17h.01" /></>,
+  packages: <><path d="M21 8v8a1.5 1.5 0 0 1-.8 1.3l-7 3.8a1.5 1.5 0 0 1-1.4 0l-7-3.8A1.5 1.5 0 0 1 3 16V8a1.5 1.5 0 0 1 .8-1.3l7-3.8a1.5 1.5 0 0 1 1.4 0l7 3.8A1.5 1.5 0 0 1 21 8Z" /><path d="m3.3 7 8.7 4.7L20.7 7M12 21.8V11.7" /></>,
+  containers: <><path d="m12 2 9 4.9-9 4.9-9-4.9L12 2Z" /><path d="m3 12 9 4.9 9-4.9M3 17l9 4.9 9-4.9" /></>,
+  vulnerabilities: <><path d="M12 3 5 6v5c0 4 3 6.5 7 8 4-1.5 7-4 7-8V6l-7-3Z" /><path d="M12 9v3.5M12 16h.01" /></>,
+  'cve-search': <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
+  scans: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 4v4h4M12 8v4l3 2" /></>,
+  rbac: <><circle cx="8" cy="8" r="3.5" /><path d="m12.5 11 7 7M16 14l2.5-2.5M18.5 16.5 21 14" /></>,
+  audit: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" /><path d="M14 3v5h5M9 13h6M9 17h6" /></>,
+  schedules: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 9h18" /><circle cx="12" cy="15" r="2.5" /><path d="M12 14v1.2l.8.8" /></>,
+  'asset-groups': <><path d="M4 7a2 2 0 0 1 2-2h3.5l2 2.5H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" /></>,
+  trends: <><path d="m3 17 6-6 4 4 8-8" /><path d="M17 7h4v4" /></>,
+  reports: <><path d="M3 3v18h18" /><rect x="7" y="11" width="3" height="6" rx="0.5" /><rect x="12.5" y="7" width="3" height="10" rx="0.5" /><rect x="18" y="13" width="3" height="4" rx="0.5" /></>,
+  notifications: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9Z" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></>,
+  logout: <><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></>,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1A2 2 0 1 1 7 4.5l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z" /></>,
+  // misc icons used in the console
+  alert: <><path d="M12 9v4M12 17h.01" /><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  flame: <><path d="M12 3c1 3 4 5 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 .5 1.5 2 2 2 3.5" /></>,
+  check: <><path d="M20 6 9 17l-5-5" /></>,
+  arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
+};
+
+function Icon({ name, size = 16, className, strokeWidth = 1.5, style }: { name: string; size?: number; className?: string; strokeWidth?: number; style?: React.CSSProperties }) {
+  return (
+    <svg
+      className={className}
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={style}
+    >
+      {ICON_PATHS[name] || ICON_PATHS.dashboard}
+    </svg>
+  );
+}
+
+// Compact 22px beacon-tower brand mark (signal-fire watchtower).
+function BeaconMark({ size = 22 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="beacon-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#fff3e0" />
+          <stop offset="1" stopColor="#ffd9a8" />
+        </linearGradient>
+      </defs>
+      <path d="M32 10 C36 18 40 20 40 27 a8 8 0 0 1 -16 0 c0-5 4-8 5-13 1 4 3 5 3 8 a3 3 0 0 0 0-12Z" fill="url(#beacon-grad)" />
+      <rect x="26" y="38" width="12" height="14" rx="2" fill="rgba(255,255,255,0.85)" />
+      <rect x="20" y="52" width="24" height="4" rx="2" fill="rgba(255,255,255,0.85)" />
+    </svg>
+  );
+}
+
+// ── Badge ────────────────────────────────────────────────────────────────────
+// One Badge look used everywhere. `dot` variant prepends a status dot for tables.
+type SeverityTone = 'critical' | 'high' | 'medium' | 'low' | 'unknown' | 'neutral' | 'accent';
+function toneColor(tone: SeverityTone): string {
+  switch (tone) {
+    case 'critical': return 'var(--critical)';
+    case 'high': return 'var(--high)';
+    case 'medium': return 'var(--medium)';
+    case 'low': return 'var(--low)';
+    case 'accent': return 'var(--primary)';
+    case 'unknown': return 'var(--unknown)';
+    default: return 'var(--text-muted)';
+  }
+}
+function Badge({ tone = 'neutral', dot, children, title }: { tone?: SeverityTone; dot?: boolean; children: React.ReactNode; title?: string }) {
+  const color = toneColor(tone);
+  return (
+    <span className="badge2" title={title} style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
+      {dot && <span className="badge2-dot" style={{ background: color }} />}
+      {children}
+    </span>
+  );
+}
+
+// ── Pure-SVG chart primitives ────────────────────────────────────────────────
+const CHART_W = 720; // viewBox width; charts scale responsively via preserveAspectRatio
+const SEV_KEYS = [
+  { key: 'critical_count', label: 'Critical', color: 'var(--critical)', raw: '#f04444' },
+  { key: 'high_count', label: 'High', color: 'var(--high)', raw: '#f07830' },
+  { key: 'medium_count', label: 'Medium', color: 'var(--medium)', raw: '#e0b020' },
+  { key: 'low_count', label: 'Low', color: 'var(--low)', raw: '#30c060' },
+] as const;
+
+function shortDate(d: string): string {
+  const dt = new Date(d + 'T00:00:00');
+  if (isNaN(dt.getTime())) return d;
+  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+function niceMax(v: number): number {
+  if (v <= 0) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const norm = v / pow;
+  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
+  return step * pow;
+}
+
+// StackedAreaChart: severity-over-time, stacked filled areas + line tops, with
+// a hover guide and tooltip showing the day's breakdown.
+function StackedAreaChart({ rows, height = 220 }: { rows: VulnTrendRow[]; height?: number }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const padL = 44, padR = 12, padT = 12, padB = 24;
+  const w = CHART_W, h = height;
+  const innerW = w - padL - padR, innerH = h - padT - padB;
+  const n = rows.length;
+  const totals = rows.map(r => r.critical_count + r.high_count + r.medium_count + r.low_count);
+  const yMax = niceMax(Math.max(1, ...totals));
+  const x = (i: number) => padL + (n <= 1 ? innerW / 2 : (i / (n - 1)) * innerW);
+  const y = (v: number) => padT + innerH - (v / yMax) * innerH;
+
+  // build cumulative stacks
+  const bands = SEV_KEYS.map((sev, si) => {
+    const upper = rows.map(r => SEV_KEYS.slice(0, si + 1).reduce((s, k) => s + (r as unknown as Record<string, number>)[k.key], 0));
+    const lower = rows.map(r => SEV_KEYS.slice(0, si).reduce((s, k) => s + (r as unknown as Record<string, number>)[k.key], 0));
+    return { sev, upper, lower };
+  });
+  // Catmull-Rom → cubic bezier smoothing so series read as flowing curves
+  // instead of angular polylines. Both stack edges use the same smoothing so
+  // adjacent bands stay flush.
+  const smoothPath = (pts: { px: number; py: number }[], move = true) => {
+    if (pts.length === 0) return '';
+    if (pts.length === 1) return `${move ? 'M' : 'L'}${pts[0].px},${pts[0].py}`;
+    let d = move ? `M${pts[0].px},${pts[0].py}` : `L${pts[0].px},${pts[0].py}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(pts.length - 1, i + 2)];
+      const c1x = p1.px + (p2.px - p0.px) / 6, c1y = p1.py + (p2.py - p0.py) / 6;
+      const c2x = p2.px - (p3.px - p1.px) / 6, c2y = p2.py - (p3.py - p1.py) / 6;
+      d += ` C${c1x},${c1y} ${c2x},${c2y} ${p2.px},${p2.py}`;
+    }
+    return d;
+  };
+  const toPts = (vals: number[]) => vals.map((v, i) => ({ px: x(i), py: y(v) }));
+  const areaPath = (upper: number[], lower: number[]) => {
+    const top = smoothPath(toPts(upper));
+    const bottomPts = lower.map((_, i) => ({ px: x(n - 1 - i), py: y(lower[n - 1 - i]) }));
+    return `${top} ${smoothPath(bottomPts, false)} Z`;
+  };
+  const linePath = (upper: number[]) => smoothPath(toPts(upper));
+  const labelEvery = Math.max(1, Math.ceil(n / 6));
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(yMax * f));
+
+  return (
+    <div className="chart-wrap" onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="chart-svg" style={{ height }}>
+        {gridLines.map((g, i) => (
+          <g key={i}>
+            <line x1={padL} x2={w - padR} y1={y(g)} y2={y(g)} stroke="var(--border)" strokeWidth={1} />
+            <text x={padL - 6} y={y(g) + 3} textAnchor="end" className="chart-axis-text">{g.toLocaleString()}</text>
+          </g>
+        ))}
+        {bands.map(b => (
+          <path key={b.sev.key} d={areaPath(b.upper, b.lower)} fill={b.sev.raw} fillOpacity={0.18} />
+        ))}
+        {bands.map(b => (
+          <path key={b.sev.key + '-l'} d={linePath(b.upper)} fill="none" stroke={b.sev.raw} strokeWidth={2} strokeLinejoin="round" />
+        ))}
+        {rows.map((r, i) => i % labelEvery === 0 && (
+          <text key={r.date} x={x(i)} y={h - 6} textAnchor="middle" className="chart-axis-text">{shortDate(r.date)}</text>
+        ))}
+        {hover !== null && (
+          <line x1={x(hover)} x2={x(hover)} y1={padT} y2={h - padB} stroke="var(--text-muted)" strokeWidth={1} strokeDasharray="3 3" />
+        )}
+        {rows.map((_, i) => (
+          <rect key={i} x={x(i) - (innerW / Math.max(1, n)) / 2} y={padT} width={innerW / Math.max(1, n)} height={innerH} fill="transparent" onMouseEnter={() => setHover(i)} />
+        ))}
+      </svg>
+      {hover !== null && rows[hover] && (
+        <div className="chart-tooltip" style={{ left: `${(x(hover) / w) * 100}%` }}>
+          <div className="chart-tooltip-date">{shortDate(rows[hover].date)}</div>
+          {SEV_KEYS.map(s => (
+            <div key={s.key} className="chart-tooltip-row">
+              <span className="chart-tooltip-dot" style={{ background: s.raw }} />
+              <span>{s.label}</span>
+              <span className="chart-tooltip-val">{(rows[hover] as unknown as Record<string, number>)[s.key].toLocaleString()}</span>
+            </div>
+          ))}
+          <div className="chart-tooltip-row chart-tooltip-total">
+            <span>Total</span>
+            <span className="chart-tooltip-val">{totals[hover].toLocaleString()}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// BarSeries: scan activity per day (completed/degraded/failed stacked bars) plus
+// a thin line overlay for packages ingested (secondary axis hint in tooltip).
+function BarSeries({ rows, height = 200 }: { rows: ScanActivityRow[]; height?: number }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const padL = 40, padR = 40, padT = 12, padB = 24;
+  const w = CHART_W, h = height;
+  const innerW = w - padL - padR, innerH = h - padT - padB;
+  const n = rows.length;
+  const totals = rows.map(r => r.completed + r.degraded + r.failed || r.scans);
+  const yMax = niceMax(Math.max(1, ...totals));
+  const pkgMax = niceMax(Math.max(1, ...rows.map(r => r.packages)));
+  const slot = innerW / Math.max(1, n);
+  const bw = Math.min(28, slot * 0.6);
+  const y = (v: number) => padT + innerH - (v / yMax) * innerH;
+  const cx = (i: number) => padL + slot * i + slot / 2;
+  const py = (v: number) => padT + innerH - (v / pkgMax) * innerH;
+  const segs = [
+    { key: 'completed' as const, color: 'var(--primary)', raw: '#7c6cf0', label: 'Completed' },
+    { key: 'degraded' as const, color: 'var(--medium)', raw: '#e0b020', label: 'Degraded' },
+    { key: 'failed' as const, color: 'var(--critical)', raw: '#f04444', label: 'Failed' },
+  ];
+  const gridLines = [0, 0.5, 1].map(f => Math.round(yMax * f));
+  const pkgLine = rows.map((r, i) => `${i === 0 ? 'M' : 'L'}${cx(i)},${py(r.packages)}`).join(' ');
+  const labelEvery = Math.max(1, Math.ceil(n / 6));
+
+  return (
+    <div className="chart-wrap" onMouseLeave={() => setHover(null)}>
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" className="chart-svg" style={{ height }}>
+        {gridLines.map((g, i) => (
+          <g key={i}>
+            <line x1={padL} x2={w - padR} y1={y(g)} y2={y(g)} stroke="var(--border)" strokeWidth={1} />
+            <text x={padL - 6} y={y(g) + 3} textAnchor="end" className="chart-axis-text">{g}</text>
+          </g>
+        ))}
+        {rows.map((r, i) => {
+          let acc = 0;
+          return (
+            <g key={r.date}>
+              {segs.map(s => {
+                const v = r[s.key];
+                if (v <= 0) return null;
+                const yTop = y(acc + v);
+                const yBot = y(acc);
+                acc += v;
+                return <rect key={s.key} x={cx(i) - bw / 2} y={yTop} width={bw} height={Math.max(0, yBot - yTop)} fill={s.raw} rx={1} opacity={hover === null || hover === i ? 1 : 0.45} />;
+              })}
+            </g>
+          );
+        })}
+        <path d={pkgLine} fill="none" stroke="var(--text-secondary)" strokeWidth={1.5} strokeDasharray="2 3" opacity={0.7} />
+        {rows.map((r, i) => <circle key={r.date} cx={cx(i)} cy={py(r.packages)} r={2} fill="var(--text-secondary)" />)}
+        {rows.map((r, i) => i % labelEvery === 0 && (
+          <text key={r.date} x={cx(i)} y={h - 6} textAnchor="middle" className="chart-axis-text">{shortDate(r.date)}</text>
+        ))}
+        {rows.map((_, i) => (
+          <rect key={i} x={padL + slot * i} y={padT} width={slot} height={innerH} fill="transparent" onMouseEnter={() => setHover(i)} />
+        ))}
+      </svg>
+      {hover !== null && rows[hover] && (
+        <div className="chart-tooltip" style={{ left: `${(cx(hover) / w) * 100}%` }}>
+          <div className="chart-tooltip-date">{shortDate(rows[hover].date)}</div>
+          {segs.map(s => (
+            <div key={s.key} className="chart-tooltip-row">
+              <span className="chart-tooltip-dot" style={{ background: s.raw }} />
+              <span>{s.label}</span>
+              <span className="chart-tooltip-val">{rows[hover][s.key].toLocaleString()}</span>
+            </div>
+          ))}
+          <div className="chart-tooltip-row chart-tooltip-total">
+            <span>Packages</span>
+            <span className="chart-tooltip-val">{rows[hover].packages.toLocaleString()}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// DonutChart: current severity distribution with center total + legend.
+function DonutChart({ segments, size = 180 }: { segments: { label: string; value: number; color: string }[]; size?: number }) {
+  const total = segments.reduce((s, x) => s + x.value, 0);
+  const r = size / 2 - 14;
+  const cx = size / 2, cy = size / 2;
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+  const strokeW = 18;
+  return (
+    <div className="donut-wrap">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="donut-svg">
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border)" strokeWidth={strokeW} />
+        {total > 0 && segments.map((s) => {
+          const frac = s.value / total;
+          const dash = frac * circ;
+          const el = (
+            <circle
+              key={s.label}
+              cx={cx} cy={cy} r={r}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={strokeW}
+              strokeDasharray={`${dash} ${circ - dash}`}
+              strokeDashoffset={-offset}
+              transform={`rotate(-90 ${cx} ${cy})`}
+            />
+          );
+          offset += dash;
+          return el;
+        })}
+        <text x={cx} y={cy - 2} textAnchor="middle" className="donut-total">{total.toLocaleString()}</text>
+        <text x={cx} y={cy + 16} textAnchor="middle" className="donut-sub">findings</text>
+      </svg>
+      <div className="donut-legend">
+        {segments.map(s => (
+          <div key={s.label} className="donut-legend-row">
+            <span className="donut-legend-dot" style={{ background: s.color }} />
+            <span className="donut-legend-label">{s.label}</span>
+            <span className="donut-legend-val">{s.value.toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Sparkline: tiny line for stat cards.
+function Sparkline({ values, width = 90, height = 28, color = 'var(--primary)' }: { values: number[]; width?: number; height?: number; color?: string }) {
+  if (values.length < 2) return <svg width={width} height={height} aria-hidden="true" />;
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = max - min || 1;
+  const x = (i: number) => (i / (values.length - 1)) * (width - 2) + 1;
+  const y = (v: number) => height - 3 - ((v - min) / span) * (height - 6);
+  const d = values.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i)},${y(v)}`).join(' ');
+  const area = `${d} L${x(values.length - 1)},${height} L${x(0)},${height} Z`;
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" className="sparkline">
+      <path d={area} fill={color} fillOpacity={0.12} />
+      <path d={d} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// KPI stat card with optional delta + sparkline for the ops console.
+function KpiCard({ label, value, accent, delta, deltaInverse, spark, sparkColor, onClick, sub }: {
+  label: string; value: React.ReactNode; accent: string; delta?: number | null; deltaInverse?: boolean; spark?: number[]; sparkColor?: string; onClick?: () => void; sub?: React.ReactNode;
+}) {
+  const hasDelta = delta !== undefined && delta !== null && Number.isFinite(delta);
+  // For findings, an increase is "bad" (red). deltaInverse flips that.
+  const positive = hasDelta && delta! > 0;
+  const negative = hasDelta && delta! < 0;
+  const goodWhenDown = !deltaInverse;
+  const deltaColor = !hasDelta || delta === 0 ? 'var(--text-muted)'
+    : (positive === goodWhenDown ? 'var(--critical)' : 'var(--low)');
+  return (
+    <div className={`kpi-card${onClick ? ' kpi-card-clickable' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}>
+      <div className="accent-bar" style={{ background: accent }} />
+      <div className="kpi-top">
+        <div className="kpi-label">{label}</div>
+        {spark && spark.length >= 2 && <Sparkline values={spark} color={sparkColor || accent} />}
+      </div>
+      <div className="kpi-value tnum" style={{ color: accent }}>{value}</div>
+      <div className="kpi-foot">
+        {hasDelta && (
+          <span className="kpi-delta tnum" style={{ color: deltaColor }}>
+            {positive ? '▲' : negative ? '▼' : '■'} {Math.abs(delta!).toLocaleString()}
+            <span className="kpi-delta-note"> vs 7d</span>
+          </span>
+        )}
+        {sub && <span className="kpi-sub">{sub}</span>}
+      </div>
+    </div>
+  );
+}
+
+// Shared range switcher for the dashboard charts.
+function RangeSwitcher({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="range-switcher" role="tablist">
+      {['14', '30', '90'].map(d => (
+        <button key={d} type="button" role="tab" aria-selected={value === d} className={value === d ? 'active' : ''} onClick={() => onChange(d)}>{d}d</button>
+      ))}
+    </div>
+  );
 }
 
 // CheckboxField is the single clickable checkbox+label control used across all
@@ -310,7 +695,7 @@ function parseCvssVector(vector: string) {
 
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
-type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
+type VulnerabilityFilters = { overdueOnly?: boolean; exploitedOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
 type HostFilters = { agent_status?: string; inventory_status?: string; agent_version_state?: string };
 
 type AffectedAsset = {
@@ -551,47 +936,70 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
     if (!onLogout) return;
     api.authMe().then(r => setMe(r.user ? { username: r.user.username, role: r.user.role } : null)).catch(() => setMe(null));
   }, [onLogout]);
-  const items: [View, string, string][] = [
-    ['dashboard', 'Dashboard', '■'],
-    ['hosts', 'Hosts', '▣'],
-    ['packages', 'Packages', '▦'],
-    ['containers', 'Containers', '▤'],
-    ['vulns', 'Vulnerabilities', '◆'],
-    ['cve-search', 'CVE Search', '◈'],
-    ['scans', 'Scan History', '☰'],
-    ['rbac', 'RBAC', '◎'],
-    ['audit', 'Audit Log', '◇'],
-    ['schedules', 'Schedules', '⏱'],
-    ['asset-groups', 'Asset Groups', '📁'],
-    ['trends', 'Trends', '📈'],
-    ['reports', 'Reports', '📊'],
-    ['notifications', 'Notifications', '🔔'],
+  const groups: { label: string; items: [View, string, string][] }[] = [
+    { label: 'Overview', items: [
+      ['dashboard', 'Dashboard', 'dashboard'],
+      ['trends', 'Trends', 'trends'],
+      ['reports', 'Reports', 'reports'],
+    ] },
+    { label: 'Inventory', items: [
+      ['hosts', 'Hosts', 'hosts'],
+      ['packages', 'Packages', 'packages'],
+      ['containers', 'Containers', 'containers'],
+      ['asset-groups', 'Asset Groups', 'asset-groups'],
+    ] },
+    { label: 'Security', items: [
+      ['vulns', 'Vulnerabilities', 'vulnerabilities'],
+      ['cve-search', 'CVE Search', 'cve-search'],
+      ['scans', 'Scan History', 'scans'],
+    ] },
+    { label: 'Administration', items: [
+      ['rbac', 'RBAC', 'rbac'],
+      ['audit', 'Audit Log', 'audit'],
+      ['schedules', 'Schedules', 'schedules'],
+      ['notifications', 'Notifications', 'notifications'],
+    ] },
   ];
   return (
     <div className="sidebar">
       <div className="sidebar-brand">
-        <h1><span className="brand-icon">☀</span> Bongsu</h1>
+        <h1><span className="brand-icon"><BeaconMark size={22} /></span> Bongsu</h1>
       </div>
       <nav>
-        {items.map(([v, label, icon]) => (
-          <a key={v} className={view === v ? 'active' : ''} href="#" onClick={(e) => { e.preventDefault(); onNavigate(v); }}>
-            <span className="nav-icon">{icon}</span>
-            {label}
-          </a>
+        {groups.map(group => (
+          <div className="nav-group" key={group.label}>
+            <div className="nav-group-label">{group.label}</div>
+            {group.items.map(([v, label, icon]) => (
+              <a key={v} className={view === v ? 'active' : ''} href="#" onClick={(e) => { e.preventDefault(); onNavigate(v); }}>
+                <span className="nav-icon"><Icon name={icon} size={17} /></span>
+                {label}
+              </a>
+            ))}
+          </div>
         ))}
       </nav>
       {onLogout && showPw && <ChangePasswordPanel onClose={() => setShowPw(false)} />}
       {onLogout && (
-        <a href="#" className="logout" onClick={(e) => { e.preventDefault(); onLogout(); }}>
-          <span className="nav-icon">↩</span> Logout
+        <div className="sidebar-footer">
           {me && (
-            <span
-              style={{ marginLeft: 'auto', color: 'var(--text-muted)', fontSize: '0.75rem' }}
+            <button
+              type="button"
+              className="user-chip"
               title="Change password"
-              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPw(s => !s); }}
-            >{me.username} ⚙</span>
+              onClick={() => setShowPw(s => !s)}
+            >
+              <span className="user-avatar">{me.username.slice(0, 1).toUpperCase()}</span>
+              <span className="user-meta">
+                <span className="user-name">{me.username}</span>
+                <span className="user-role">{me.role}</span>
+              </span>
+              <Icon name="settings" size={15} className="user-chip-gear" />
+            </button>
           )}
-        </a>
+          <a href="#" className="logout" onClick={(e) => { e.preventDefault(); onLogout(); }}>
+            <span className="nav-icon"><Icon name="logout" size={16} /></span> Logout
+          </a>
+        </div>
       )}
     </div>
   );
@@ -619,6 +1027,10 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const [teamSummary, setTeamSummary] = useState<VulnSummaryRow[]>([]);
   const [environmentSummary, setEnvironmentSummary] = useState<VulnSummaryRow[]>([]);
   const [criticalitySummary, setCriticalitySummary] = useState<VulnSummaryRow[]>([]);
+  const [trendRange, setTrendRange] = useState('30');
+  const [trendRows, setTrendRows] = useState<VulnTrendRow[]>([]);
+  const [scanRows, setScanRows] = useState<ScanActivityRow[]>([]);
+  const [chartsLoading, setChartsLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
   const [updateMsg, setUpdateMsg] = useState('');
   const [rematching, setRematching] = useState(false);
@@ -704,6 +1116,21 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     api.vulnSummary({ group_by: 'environment' }).then(r => setEnvironmentSummary(r.items || [])).catch(() => {});
     api.vulnSummary({ group_by: 'criticality' }).then(r => setCriticalitySummary(r.items || [])).catch(() => {});
   }, [applyCveStats]);
+
+  useEffect(() => {
+    let active = true;
+    setChartsLoading(true);
+    Promise.all([
+      api.vulnTrends({ days: trendRange }).catch(() => ({ items: [] as VulnTrendRow[] })),
+      api.scanActivity({ days: trendRange }).catch(() => ({ days: 0, items: [] as ScanActivityRow[] })),
+    ]).then(([t, s]) => {
+      if (!active) return;
+      setTrendRows(t.items || []);
+      setScanRows(s.items || []);
+      setChartsLoading(false);
+    });
+    return () => { active = false; };
+  }, [trendRange]);
 
   const handleUpdate = async () => {
     setUpdating(true);
@@ -1145,6 +1572,32 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     setSecurityBundleBusy(false);
   };
 
+  // ── Ops console derived data ────────────────────────────────────────────────
+  const trendTotals = trendRows.map(r => r.total_vulns);
+  const lastTrend = trendRows[trendRows.length - 1];
+  // delta vs ~7 days ago within the loaded series (or earliest available point)
+  const deltaAt = (sel: (r: VulnTrendRow) => number): number | null => {
+    if (trendRows.length < 2) return null;
+    const idx = Math.max(0, trendRows.length - 1 - 7);
+    const ref = trendRows[idx];
+    if (!lastTrend || !ref || ref === lastTrend) return null;
+    return sel(lastTrend) - sel(ref);
+  };
+  const totalDelta = deltaAt(r => r.total_vulns);
+  const critDelta = deltaAt(r => r.critical_count);
+  const exploitedDelta = deltaAt(r => r.exploited_count);
+  const sparkSlice = (sel: (r: VulnTrendRow) => number) => trendRows.slice(-14).map(sel);
+  const enoughHistory = trendRows.length >= 2;
+  const enoughScans = scanRows.length >= 2;
+
+  const sevCounts = stats?.active_risk_level_counts || {};
+  const donutSegments = [
+    { label: 'Critical', value: sevCounts.critical || 0, color: '#f04444' },
+    { label: 'High', value: sevCounts.high || 0, color: '#f07830' },
+    { label: 'Medium', value: sevCounts.medium || 0, color: '#e0b020' },
+    { label: 'Low', value: sevCounts.low || 0, color: '#30c060' },
+  ];
+
   if (!stats) return statsError ? <LoadError message={statsError} onRetry={loadStats} /> : <Loading />;
 
   return (
@@ -1186,6 +1639,98 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
           )}
         </div>
       </section>
+
+      {/* ── Operations console ──────────────────────────────────────────────── */}
+      <div className="console-head">
+        <div>
+          <h2 className="console-title">Operations Console</h2>
+          <div className="console-sub">Fleet vulnerability posture and scan activity</div>
+        </div>
+        <RangeSwitcher value={trendRange} onChange={setTrendRange} />
+      </div>
+
+      <div className="kpi-grid">
+        <KpiCard
+          label="Total Findings"
+          value={(lastTrend?.total_vulns ?? stats.active_vulnerabilities ?? stats.total_vulnerabilities).toLocaleString()}
+          accent="var(--primary)"
+          delta={totalDelta}
+          spark={sparkSlice(r => r.total_vulns)}
+          onClick={() => onOpenVulnerabilities({})}
+        />
+        <KpiCard
+          label="Critical Risk"
+          value={(stats.active_risk_level_counts?.critical || 0).toLocaleString()}
+          accent="var(--critical)"
+          delta={critDelta}
+          spark={sparkSlice(r => r.critical_count)}
+          sparkColor="#f04444"
+          onClick={() => onOpenVulnerabilities({ riskLevel: 'critical' })}
+        />
+        <KpiCard
+          label="Exploited"
+          value={(lastTrend?.exploited_count || 0).toLocaleString()}
+          accent="var(--high)"
+          delta={exploitedDelta}
+          spark={sparkSlice(r => r.exploited_count)}
+          sparkColor="#f07830"
+          onClick={() => onOpenVulnerabilities({ exploitedOnly: true })}
+        />
+        <KpiCard
+          label="SLA Overdue"
+          value={(stats.overdue_sla_count || 0).toLocaleString()}
+          accent="var(--medium)"
+          sub={<>C {stats.overdue_sla_risk_counts?.critical || 0} · H {stats.overdue_sla_risk_counts?.high || 0}</>}
+          onClick={() => onOpenVulnerabilities({ overdueOnly: true })}
+        />
+        <KpiCard
+          label="Hosts"
+          value={(stats.total_hosts || 0).toLocaleString()}
+          accent="var(--low)"
+          sub={<>{(lastTrend?.host_count ?? stats.total_hosts) || 0} reporting</>}
+          onClick={() => onOpenHosts({})}
+        />
+      </div>
+
+      <div className="console-charts">
+        <div className="card chart-card chart-card-wide">
+          <div className="card-header">
+            <h2>Findings over time</h2>
+            <span className="chart-legend">
+              {SEV_KEYS.map(s => (
+                <span key={s.key} className="chart-legend-item"><span className="chart-legend-dot" style={{ background: s.raw }} />{s.label}</span>
+              ))}
+            </span>
+          </div>
+          <div className="chart-body">
+            {chartsLoading ? <Loading /> : enoughHistory ? <StackedAreaChart rows={trendRows} /> : <EmptyState message="Not enough history yet — charts appear after 2+ days of snapshots." />}
+          </div>
+        </div>
+        <div className="card chart-card">
+          <div className="card-header"><h2>Severity distribution</h2></div>
+          <div className="chart-body">
+            {donutSegments.reduce((s, x) => s + x.value, 0) > 0
+              ? <DonutChart segments={donutSegments} />
+              : <EmptyState message="No active findings." />}
+          </div>
+        </div>
+      </div>
+
+      <div className="card chart-card" style={{ marginBottom: '1.5rem' }}>
+        <div className="card-header">
+          <h2>Scan activity ({trendRange}d)</h2>
+          <span className="chart-legend">
+            <span className="chart-legend-item"><span className="chart-legend-dot" style={{ background: '#7c6cf0' }} />Completed</span>
+            <span className="chart-legend-item"><span className="chart-legend-dot" style={{ background: '#e0b020' }} />Degraded</span>
+            <span className="chart-legend-item"><span className="chart-legend-dot" style={{ background: '#f04444' }} />Failed</span>
+            <span className="chart-legend-item"><span className="chart-legend-dot chart-legend-line" />Packages</span>
+          </span>
+        </div>
+        <div className="chart-body">
+          {chartsLoading ? <Loading /> : enoughScans ? <BarSeries rows={scanRows} /> : <EmptyState message="Not enough scan activity yet." />}
+        </div>
+      </div>
+
       <div className="stats-grid">
         <div className="stat-card">
           <div className="accent-bar" style={{ background: 'var(--primary)' }} />
@@ -2593,7 +3138,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const [showNoFix, setShowNoFix] = useState(false);
   const [showMismatch, setShowMismatch] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(!!initialFilters?.overdueOnly);
-  const [exploitedOnly, setExploitedOnly] = useState(false);
+  const [exploitedOnly, setExploitedOnly] = useState(!!initialFilters?.exploitedOnly);
   const [minEpss, setMinEpss] = useState('');
   const [vulnId, setVulnId] = useState('');
   const [vEcosystem, setVEcosystem] = useState('');
@@ -5449,7 +5994,7 @@ function TrendsView() {
     setLoading(true);
     Promise.all([
       api.vulnTrendSummary().catch(() => null),
-      api.vulnTrends().catch(() => ({ items: [] })),
+      api.vulnTrends({ days: '90' }).catch(() => ({ items: [] as VulnTrendRow[] })),
     ]).then(([s, r]) => {
       setSummary(s);
       setRows(r?.items || []);
@@ -5534,24 +6079,38 @@ function TrendsView() {
               </table>
             )}
           </div>
+          <div className="card chart-card" style={{ marginBottom: '1rem' }}>
+            <div className="card-header">
+              <h2>Findings over time</h2>
+              <span className="chart-legend">
+                {SEV_KEYS.map(s => (
+                  <span key={s.key} className="chart-legend-item"><span className="chart-legend-dot" style={{ background: s.raw }} />{s.label}</span>
+                ))}
+              </span>
+            </div>
+            <div className="chart-body">
+              {rows.length >= 2 ? <StackedAreaChart rows={rows} height={260} /> : <EmptyState message="Not enough history yet — at least 2 days of snapshots are needed." />}
+            </div>
+          </div>
           <div className="card">
             <div className="card-header"><h2>Daily Vulnerability Counts</h2></div>
-            <table>
+            <table className="tnum">
               <thead>
-                <tr><th>Date</th><th>Total</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th></tr>
+                <tr><th>Date</th><th>Total</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Exploited</th></tr>
               </thead>
               <tbody>
                 {rows.map(r => (
                   <tr key={r.date}>
                     <td className="mono" style={{ fontSize: '0.8125rem' }}>{r.date}</td>
-                    <td className="mono">{n(r.total).toLocaleString()}</td>
-                    <td className="mono" style={{ color: 'var(--critical)', fontWeight: n(r.critical) ? 600 : 400 }}>{n(r.critical)}</td>
-                    <td className="mono" style={{ color: 'var(--high)', fontWeight: n(r.high) ? 600 : 400 }}>{n(r.high)}</td>
-                    <td className="mono" style={{ color: 'var(--medium)', fontWeight: n(r.medium) ? 600 : 400 }}>{n(r.medium)}</td>
-                    <td className="mono" style={{ color: 'var(--low)', fontWeight: n(r.low) ? 600 : 400 }}>{n(r.low)}</td>
+                    <td className="mono">{n(r.total_vulns).toLocaleString()}</td>
+                    <td className="mono" style={{ color: 'var(--critical)', fontWeight: n(r.critical_count) ? 600 : 400 }}>{n(r.critical_count)}</td>
+                    <td className="mono" style={{ color: 'var(--high)', fontWeight: n(r.high_count) ? 600 : 400 }}>{n(r.high_count)}</td>
+                    <td className="mono" style={{ color: 'var(--medium)', fontWeight: n(r.medium_count) ? 600 : 400 }}>{n(r.medium_count)}</td>
+                    <td className="mono" style={{ color: 'var(--low)', fontWeight: n(r.low_count) ? 600 : 400 }}>{n(r.low_count)}</td>
+                    <td className="mono" style={{ color: n(r.exploited_count) ? 'var(--high)' : 'var(--text-muted)', fontWeight: n(r.exploited_count) ? 600 : 400 }}>{n(r.exploited_count)}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr className="empty-row"><td colSpan={6}>No trend data</td></tr>}
+                {rows.length === 0 && <tr className="empty-row"><td colSpan={7}>No trend data</td></tr>}
               </tbody>
             </table>
           </div>
