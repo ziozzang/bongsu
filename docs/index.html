@@ -1,0 +1,728 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>봉수 (Bongsu) — Self-hosted Package Vulnerability Monitoring</title>
+<style>
+  :root{
+    --bg:#0a0e14;
+    --bg-soft:#0d1320;
+    --panel:#121823;
+    --panel-2:#161e2b;
+    --border:#1f2937;
+    --border-soft:#26303f;
+    --text:#e6edf3;
+    --muted:#9aa7b8;
+    --muted-2:#6b7888;
+    --accent:#ff7849;
+    --accent-2:#ffb347;
+    --accent-glow:rgba(255,120,73,.35);
+    --green:#3fb950;
+    --blue:#58a6ff;
+    --radius:16px;
+    --maxw:1140px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue","Noto Sans KR","Noto Sans JP","Noto Sans SC",Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+  }
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .accent{color:var(--accent)}
+
+  /* background glow */
+  body::before{
+    content:"";position:fixed;inset:0;z-index:-1;
+    background:
+      radial-gradient(900px 500px at 80% -10%, rgba(255,120,73,.10), transparent 60%),
+      radial-gradient(700px 500px at 10% 10%, rgba(88,166,255,.07), transparent 55%);
+  }
+
+  /* ---- nav ---- */
+  nav{
+    position:sticky;top:0;z-index:50;
+    backdrop-filter:blur(12px);
+    background:rgba(10,14,20,.72);
+    border-bottom:1px solid var(--border);
+  }
+  .nav-inner{display:flex;align-items:center;gap:18px;height:64px}
+  .brand{display:flex;align-items:center;gap:11px;font-weight:700;font-size:18px;letter-spacing:.2px}
+  .brand .sub{color:var(--muted-2);font-weight:500;font-size:13px;letter-spacing:1px}
+  .nav-spacer{flex:1}
+  .nav-links{display:flex;gap:24px;font-size:14px;color:var(--muted)}
+  .nav-links a:hover{color:var(--text)}
+  .gh-btn{
+    display:inline-flex;align-items:center;gap:8px;
+    border:1px solid var(--border-soft);border-radius:10px;
+    padding:8px 14px;font-size:13px;font-weight:600;color:var(--text);
+    transition:border-color .2s,background .2s;
+  }
+  .gh-btn:hover{border-color:var(--accent);background:rgba(255,120,73,.08)}
+
+  /* ---- language switcher ---- */
+  .lang-switch{display:flex;gap:4px;flex-wrap:wrap}
+  .lang-btn{
+    background:transparent;border:1px solid var(--border-soft);
+    color:var(--muted);border-radius:8px;padding:5px 9px;
+    font-size:12px;font-weight:600;cursor:pointer;
+    font-family:inherit;transition:.15s;
+  }
+  .lang-btn:hover{color:var(--text);border-color:var(--muted-2)}
+  .lang-btn.active{background:var(--accent);border-color:var(--accent);color:#1a0e07}
+
+  /* ---- hero ---- */
+  .hero{padding:84px 0 64px;text-align:center;position:relative}
+  .logo-mark{margin:0 auto 28px;width:96px;height:96px;display:block;filter:drop-shadow(0 8px 28px var(--accent-glow))}
+  .badge{
+    display:inline-flex;align-items:center;gap:8px;
+    border:1px solid var(--border-soft);border-radius:999px;
+    padding:6px 14px;font-size:13px;color:var(--muted);margin-bottom:24px;
+    background:var(--panel);
+  }
+  .badge .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px var(--green)}
+  .hero h1{
+    font-size:clamp(40px,7vw,72px);line-height:1.05;font-weight:800;
+    letter-spacing:-1.5px;margin-bottom:8px;
+  }
+  .hero h1 .ko{
+    background:linear-gradient(120deg,var(--accent),var(--accent-2));
+    -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+  }
+  .hero h1 .en{font-size:.42em;color:var(--muted);font-weight:600;letter-spacing:2px;display:block;margin-top:6px}
+  .tagline{font-size:clamp(18px,2.6vw,24px);font-weight:600;color:var(--text);margin:22px auto 16px;max-width:760px}
+  .hero p.desc{font-size:16px;color:var(--muted);max-width:680px;margin:0 auto 34px}
+  .hero-cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  .btn-primary{
+    background:linear-gradient(120deg,var(--accent),var(--accent-2));color:#1a0e07;
+    font-weight:700;font-size:15px;padding:13px 26px;border-radius:12px;
+    box-shadow:0 8px 28px var(--accent-glow);transition:transform .15s;
+  }
+  .btn-primary:hover{transform:translateY(-2px)}
+  .btn-ghost{
+    border:1px solid var(--border-soft);color:var(--text);font-weight:600;
+    font-size:15px;padding:13px 26px;border-radius:12px;transition:.15s;
+  }
+  .btn-ghost:hover{border-color:var(--accent)}
+
+  /* ---- origin ---- */
+  .origin{
+    margin:56px auto 0;max-width:820px;
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border:1px solid var(--border);border-radius:var(--radius);
+    padding:26px 30px;display:flex;gap:20px;align-items:flex-start;text-align:left;
+  }
+  .origin .beacon{flex-shrink:0;width:54px;height:54px}
+  .origin h3{font-size:15px;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+  .origin p{font-size:15px;color:var(--muted)}
+
+  /* ---- sections ---- */
+  section.block{padding:72px 0}
+  .section-head{text-align:center;max-width:720px;margin:0 auto 48px}
+  .section-head .eyebrow{font-size:13px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--accent);margin-bottom:12px}
+  .section-head h2{font-size:clamp(28px,4vw,40px);font-weight:800;letter-spacing:-.6px;margin-bottom:14px}
+  .section-head p{font-size:16px;color:var(--muted)}
+
+  /* ---- why row ---- */
+  .why-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .why-card{
+    background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    padding:26px 24px;transition:.2s;
+  }
+  .why-card:hover{border-color:var(--border-soft);transform:translateY(-3px)}
+  .why-card .ic{font-size:22px;margin-bottom:14px;display:block}
+  .why-card h4{font-size:17px;font-weight:700;margin-bottom:8px}
+  .why-card p{font-size:14px;color:var(--muted)}
+
+  /* ---- feature grid ---- */
+  .feat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+  .feat{
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border:1px solid var(--border);border-radius:var(--radius);
+    padding:24px 22px;transition:.2s;position:relative;overflow:hidden;
+  }
+  .feat::after{
+    content:"";position:absolute;inset:0;border-radius:var(--radius);
+    background:radial-gradient(160px 80px at 80% -10%,rgba(255,120,73,.10),transparent);
+    opacity:0;transition:.25s;pointer-events:none;
+  }
+  .feat:hover{border-color:var(--accent);transform:translateY(-4px)}
+  .feat:hover::after{opacity:1}
+  .feat .fic{
+    width:44px;height:44px;border-radius:11px;display:flex;align-items:center;justify-content:center;
+    background:rgba(255,120,73,.12);color:var(--accent);margin-bottom:16px;
+  }
+  .feat h4{font-size:16px;font-weight:700;margin-bottom:8px}
+  .feat p{font-size:13.5px;color:var(--muted);line-height:1.6}
+
+  /* ---- architecture ---- */
+  .arch{
+    background:linear-gradient(180deg,var(--panel),var(--panel-2));
+    border:1px solid var(--border);border-radius:20px;padding:44px 36px;
+  }
+  .arch-flow{display:flex;align-items:stretch;gap:0;justify-content:center;flex-wrap:wrap}
+  .arch-node{
+    flex:1;min-width:200px;background:var(--bg);border:1px solid var(--border-soft);
+    border-radius:14px;padding:24px 20px;text-align:center;
+  }
+  .arch-node .an-ic{font-size:26px;margin-bottom:10px}
+  .arch-node h4{font-size:16px;font-weight:700;margin-bottom:8px}
+  .arch-node p{font-size:13px;color:var(--muted)}
+  .arch-arrow{display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:24px;padding:0 14px;font-weight:700}
+  .arch-foot{text-align:center;margin-top:26px;font-size:14px;color:var(--muted-2)}
+
+  .src-row{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:28px}
+  .src-chip{
+    border:1px solid var(--border-soft);background:var(--bg);border-radius:999px;
+    padding:7px 16px;font-size:13px;font-weight:600;color:var(--muted);
+  }
+  .src-chip b{color:var(--accent);font-weight:700}
+
+  /* ---- footer ---- */
+  footer{border-top:1px solid var(--border);padding:48px 0 40px;margin-top:40px}
+  .foot-inner{display:flex;justify-content:space-between;gap:28px;flex-wrap:wrap;align-items:flex-start}
+  .foot-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px}
+  .foot-tag{color:var(--muted);font-size:14px;margin-top:10px;max-width:420px}
+  .foot-links{display:flex;flex-direction:column;gap:9px;font-size:14px;color:var(--muted)}
+  .foot-links a:hover{color:var(--accent)}
+  .foot-bottom{margin-top:34px;padding-top:24px;border-top:1px solid var(--border);font-size:13px;color:var(--muted-2);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+  @media(max-width:900px){
+    .feat-grid{grid-template-columns:repeat(2,1fr)}
+    .why-grid{grid-template-columns:1fr}
+    .nav-links{display:none}
+    .arch-arrow{transform:rotate(90deg);padding:10px 0}
+    .arch-node{min-width:100%}
+  }
+  @media(max-width:560px){
+    .feat-grid{grid-template-columns:1fr}
+    .origin{flex-direction:column}
+    .hero{padding:56px 0 40px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== NAV ===================== -->
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top">
+      <svg width="30" height="30" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <defs><linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#ff7849"/><stop offset="1" stop-color="#ffb347"/>
+        </linearGradient></defs>
+        <path d="M32 6 L40 22 H24 Z" fill="url(#g1)"/>
+        <path d="M22 26 h20 l-3 8 H25 Z" fill="url(#g1)" opacity=".85"/>
+        <rect x="26" y="36" width="12" height="20" rx="2" fill="#26303f"/>
+        <rect x="20" y="56" width="24" height="4" rx="2" fill="#26303f"/>
+      </svg>
+      <span>봉수<span class="sub"> · BONGSU</span></span>
+    </a>
+    <div class="nav-spacer"></div>
+    <div class="nav-links">
+      <a href="#why" data-i18n="nav.why"></a>
+      <a href="#features" data-i18n="nav.features"></a>
+      <a href="#architecture" data-i18n="nav.arch"></a>
+    </div>
+    <div class="lang-switch" id="langSwitch"></div>
+    <a class="gh-btn" href="https://github.com/ziozzang/bongsu" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8a8 8 0 0 0 5.47 7.59c.4.07.55-.17.55-.38l-.01-1.49c-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48l-.01 2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+  </div>
+</nav>
+
+<!-- ===================== HERO ===================== -->
+<header class="hero wrap" id="top">
+  <svg class="logo-mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+    <defs><linearGradient id="g2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff7849"/><stop offset="1" stop-color="#ffb347"/>
+    </linearGradient></defs>
+    <circle cx="32" cy="20" r="6" fill="url(#g2)" opacity=".5"/>
+    <path d="M32 8 L42 26 H22 Z" fill="url(#g2)"/>
+    <path d="M20 30 h24 l-4 9 H24 Z" fill="url(#g2)" opacity=".9"/>
+    <rect x="25" y="41" width="14" height="13" rx="2" fill="#26303f"/>
+    <rect x="18" y="54" width="28" height="5" rx="2.5" fill="#26303f"/>
+  </svg>
+  <div class="badge"><span class="dot"></span><span data-i18n="hero.badge"></span></div>
+  <h1><span class="ko">봉수</span><span class="en">BONGSU</span></h1>
+  <p class="tagline" data-i18n="hero.tagline"></p>
+  <p class="desc" data-i18n="hero.desc"></p>
+  <div class="hero-cta">
+    <a class="btn-primary" href="https://github.com/ziozzang/bongsu" target="_blank" rel="noopener" data-i18n="hero.cta1"></a>
+    <a class="btn-ghost" href="#features" data-i18n="hero.cta2"></a>
+  </div>
+
+  <div class="origin">
+    <svg class="beacon" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <path d="M32 10 C36 18 40 20 40 27 a8 8 0 0 1 -16 0 c0-5 4-8 5-13 1 4 3 5 3 8 a3 3 0 0 0 0-12Z" fill="url(#g2)"/>
+      <rect x="26" y="38" width="12" height="14" rx="2" fill="#26303f"/>
+      <rect x="20" y="52" width="24" height="4" rx="2" fill="#26303f"/>
+    </svg>
+    <div>
+      <h3 data-i18n="origin.title"></h3>
+      <p data-i18n="origin.body"></p>
+    </div>
+  </div>
+</header>
+
+<!-- ===================== WHY ===================== -->
+<section class="block wrap" id="why">
+  <div class="section-head">
+    <div class="eyebrow" data-i18n="why.eyebrow"></div>
+    <h2 data-i18n="why.title"></h2>
+    <p data-i18n="why.subtitle"></p>
+  </div>
+  <div class="why-grid">
+    <div class="why-card">
+      <span class="ic">🛰️</span>
+      <h4 data-i18n="why.c1.t"></h4>
+      <p data-i18n="why.c1.d"></p>
+    </div>
+    <div class="why-card">
+      <span class="ic">🎯</span>
+      <h4 data-i18n="why.c2.t"></h4>
+      <p data-i18n="why.c2.d"></p>
+    </div>
+    <div class="why-card">
+      <span class="ic">🔒</span>
+      <h4 data-i18n="why.c3.t"></h4>
+      <p data-i18n="why.c3.d"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FEATURES ===================== -->
+<section class="block wrap" id="features">
+  <div class="section-head">
+    <div class="eyebrow" data-i18n="feat.eyebrow"></div>
+    <h2 data-i18n="feat.title"></h2>
+    <p data-i18n="feat.subtitle"></p>
+  </div>
+  <div class="feat-grid">
+    <div class="feat">
+      <div class="fic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 8h10M7 12h6M7 16h8"/></svg></div>
+      <h4 data-i18n="feat.native.t"></h4>
+      <p data-i18n="feat.native.d"></p>
+    </div>
+    <div class="feat">
+      <div class="fic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+      <h4 data-i18n="feat.fp.t"></h4>
+      <p data-i18n="feat.fp.d"></p>
+    </div>
+    <div class="feat">
+      <div class="fic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-6-6-6"/><path d="M12 19h8"/></svg></div>
+      <h4 data-i18n="feat.runtime.t"></h4>
+      <p data-i18n="feat.runtime.d"></p>
+    </div>
+    <div class="feat">
+      <div class="fic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
+      <h4 data-i18n="feat.facts.t"></h4>
+      <p data-i18n="feat.facts.d"></p>
+    </div>
+    <div class="feat">
+      <div class="fic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg></div>
+      <h4 data-i18n="feat.assignee.t"></h4>
+      <p data-i18n="feat.assignee.d"></p>
+    </div>
+    <div class="feat">
+      <div class="fic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v11H4z"/><path d="M4 5l8 7 8-7"/></svg></div>
+      <h4 data-i18n="feat.notify.t"></h4>
+      <p data-i18n="feat.notify.d"></p>
+    </div>
+    <div class="feat">
+      <div class="fic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/></svg></div>
+      <h4 data-i18n="feat.airgap.t"></h4>
+      <p data-i18n="feat.airgap.d"></p>
+    </div>
+    <div class="feat">
+      <div class="fic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg></div>
+      <h4 data-i18n="feat.cvedb.t"></h4>
+      <p data-i18n="feat.cvedb.d"></p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== ARCHITECTURE ===================== -->
+<section class="block wrap" id="architecture">
+  <div class="section-head">
+    <div class="eyebrow" data-i18n="arch.eyebrow"></div>
+    <h2 data-i18n="arch.title"></h2>
+    <p data-i18n="arch.subtitle"></p>
+  </div>
+  <div class="arch">
+    <div class="arch-flow">
+      <div class="arch-node">
+        <div class="an-ic">📡</div>
+        <h4 data-i18n="arch.agent.t"></h4>
+        <p data-i18n="arch.agent.d"></p>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-node">
+        <div class="an-ic">🗄️</div>
+        <h4 data-i18n="arch.server.t"></h4>
+        <p data-i18n="arch.server.d"></p>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-node">
+        <div class="an-ic">📊</div>
+        <h4 data-i18n="arch.dash.t"></h4>
+        <p data-i18n="arch.dash.d"></p>
+      </div>
+    </div>
+    <div class="src-row">
+      <span class="src-chip" data-i18n="arch.srclabel"></span>
+      <span class="src-chip"><b>OSV</b></span>
+      <span class="src-chip"><b>NVD</b></span>
+      <span class="src-chip"><b>EPSS</b></span>
+      <span class="src-chip"><b>CISA-KEV</b></span>
+      <span class="src-chip"><b>Trivy DB</b></span>
+    </div>
+    <p class="arch-foot" data-i18n="arch.foot"></p>
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer>
+  <div class="wrap">
+    <div class="foot-inner">
+      <div>
+        <div class="foot-brand">
+          <svg width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <path d="M32 8 L42 26 H22 Z" fill="url(#g2)"/>
+            <rect x="25" y="30" width="14" height="22" rx="2" fill="#26303f"/>
+            <rect x="18" y="52" width="28" height="5" rx="2.5" fill="#26303f"/>
+          </svg>
+          봉수 · Bongsu
+        </div>
+        <p class="foot-tag" data-i18n="foot.tag"></p>
+      </div>
+      <div class="foot-links">
+        <a href="https://github.com/ziozzang/bongsu" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/ziozzang/bongsu/blob/main/README.md" target="_blank" rel="noopener" data-i18n="foot.readme"></a>
+        <a href="https://github.com/ziozzang/bongsu/issues" target="_blank" rel="noopener" data-i18n="foot.issues"></a>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span data-i18n="foot.copyright"></span>
+      <span data-i18n="foot.license"></span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ============================================================
+   i18n — all visible copy keyed by language code.
+   Technical terms (CVE/OSV/NVD/EPSS/SBOM/RBAC/dpkg/rpm/apk)
+   are kept as-is across all languages.
+   ============================================================ */
+const I18N = {
+  ko:{
+    "nav.why":"왜 봉수인가","nav.features":"기능","nav.arch":"아키텍처",
+    "hero.badge":"자체 호스팅 · 외부 스캐너 불필요",
+    "hero.tagline":"호스트와 컨테이너의 패키지 취약점을 직접 감시하는 자체 호스팅 모니터링 플랫폼",
+    "hero.desc":"각 호스트·컨테이너의 에이전트가 설치된 패키지를 수집하고, 서버가 권위 있는 CVE 데이터베이스와 대조합니다. 봉수대가 위험을 빠르게 알렸던 것처럼, 취약점을 담당자에게 전달합니다.",
+    "hero.cta1":"GitHub에서 보기","hero.cta2":"기능 살펴보기",
+    "origin.title":"이름의 유래 — 烽燧臺",
+    "origin.body":"봉수(烽燧)는 조선 시대에 봉화와 연기로 변경의 위험을 차례로 전국에 전한 봉수대에서 따온 이름입니다. 한 봉수대가 위험을 감지하면 다음 봉수대로 신호를 이어 빠르게 경보를 전달했습니다 — 감시하고 즉시 알리는 이 시스템에 꼭 맞는 비유입니다.",
+    "why.eyebrow":"왜 봉수인가","why.title":"오탐은 줄이고, 사각지대는 없앱니다","why.subtitle":"외부 스캐너에 기대지 않고, 권위 있는 데이터로 정확하게 — 그리고 데이터는 인프라 밖으로 나가지 않습니다.",
+    "why.c1.t":"외부 스캐너 의존성 없음","why.c1.d":"순수 Go 네이티브 스캐너가 dpkg·apk·rpm 데이터베이스를 직접 읽습니다. Trivy 바이너리 없이도 동작하는, 사실상 런타임 의존성 제로 설계입니다.",
+    "why.c2.t":"낮은 오탐률","why.c2.d":"배포판별 실제 버전 비교 알고리즘(dpkg·rpmvercmp·apk·semver)과 epoch 손실 허용, 버전 범위로 게이트되는 CPE 매칭으로 잘못된 경보를 최소화합니다.",
+    "why.c3.t":"자체 호스팅 · 에어갭 지원","why.c3.d":"데이터는 인프라 밖으로 나가지 않습니다. 오프라인 환경을 위한 CVE DB 번들 export/import와 stale 번들 거부 검증을 제공합니다.",
+    "feat.eyebrow":"기능","feat.title":"감시에 필요한 모든 것","feat.subtitle":"OS 패키지부터 패키지 매니저 밖 런타임까지, 호스트와 컨테이너를 하나의 경로로 수집합니다.",
+    "feat.native.t":"네이티브 스캐너","feat.native.d":"순수 Go로 dpkg status, apk installed DB를 직접 파싱하고 rpm은 호스트/컨테이너의 rpm 바이너리로 조회합니다. 동일한 ScanRoot 진입점이 호스트와 컨테이너 rootfs에 모두 쓰입니다.",
+    "feat.fp.t":"낮은 오탐","feat.fp.d":"ecosystem 인식 버전 비교를 일반화된 규칙으로 구현했습니다. Debian backport 접미사 정렬, distro epoch 손실 허용, 버전 범위로 게이트되는 NVD CPE 매칭을 적용합니다.",
+    "feat.runtime.t":"런타임 탐지","feat.runtime.d":"pyenv-Python, 풀어 놓은 Node, 손수 설치한 JDK·Go SDK 등 패키지 매니저 밖에 설치된 언어 런타임을 파일시스템 레이아웃으로 탐지합니다. 바이너리는 실행하지 않습니다.",
+    "feat.facts.t":"호스트/컨테이너 facts","feat.facts.d":"/proc·/sys·/etc를 직접 읽어 CPU·메모리·DMI 하드웨어·가상화·네트워크·OS 정보를 JSONB로 수집하고, 대시보드의 System Facts 카드에서 투명하게 보여줍니다.",
+    "feat.assignee.t":"담당자 워크플로","feat.assignee.d":"finding마다 담당자(assignee)를 지정·필터할 수 있고, 호스트 소유자 기반 자동 할당을 지원합니다. 취약점이 책임자에게 정확히 전달됩니다.",
+    "feat.notify.t":"알림","feat.notify.d":"SMTP 이메일, webhook, 로그 채널을 지원합니다. 규칙별 수신자 설정과 scan.completed·scan.failed 트리거로 필요한 사람에게 경보를 보냅니다.",
+    "feat.airgap.t":"에어갭 · 자체 호스팅","feat.airgap.d":"온라인은 시작 시와 6시간 주기로 자동 업데이트하고 실패 시 지수 backoff로 재시도합니다. 에어갭은 sha256 검증 번들로 offline import합니다.",
+    "feat.cvedb.t":"다중 출처 CVE DB","feat.cvedb.d":"OSV·NVD·EPSS·CISA-KEV·Trivy DB를 한 데이터베이스로 모읍니다. matchable row, EPSS 병합률, 인덱스 커버리지를 대시보드에서 확인합니다.",
+    "arch.eyebrow":"아키텍처","arch.title":"Agent → Server → Dashboard","arch.subtitle":"단순하고 자체 호스팅 가능한 세 단계 파이프라인. 권위 있는 출처에서 모은 CVE DB가 매칭을 뒷받침합니다.",
+    "arch.agent.t":"에이전트","arch.agent.d":"각 호스트·컨테이너에서 OS 패키지, 언어 의존성, 런타임, 시스템 facts를 네이티브로 수집해 전송합니다.",
+    "arch.server.t":"서버 + CVE DB","arch.server.d":"ecosystem 인식 버전 비교로 패키지를 CVE에 매칭하고, RBAC·감사 로그·SBOM export를 처리합니다.",
+    "arch.dash.t":"대시보드","arch.dash.d":"React 대시보드에서 취약점·담당자·호스트 facts·CVE DB 상태를 한눈에 확인하고 triage합니다.",
+    "arch.srclabel":"CVE DB 출처:",
+    "arch.foot":"PostgreSQL에 저장 · CycloneDX 1.5 / SPDX 2.3 SBOM export · Docker 및 에어갭 배포 지원",
+    "foot.tag":"자체 호스팅 패키지 취약점 모니터링 시스템. 봉수대에서 이름을 따왔습니다.",
+    "foot.readme":"문서","foot.issues":"이슈",
+    "foot.copyright":"© 2026 Bongsu 프로젝트","foot.license":"MIT 라이선스"
+  },
+  en:{
+    "nav.why":"Why Bongsu","nav.features":"Features","nav.arch":"Architecture",
+    "hero.badge":"Self-hosted · No external scanner required",
+    "hero.tagline":"A self-hosted platform that watches package vulnerabilities across every host and container",
+    "hero.desc":"An agent on each host and container collects installed packages, and the server matches them against an authoritative CVE database. Like the beacon-fire towers it is named after, Bongsu relays each warning straight to the right person.",
+    "hero.cta1":"View on GitHub","hero.cta2":"Explore features",
+    "origin.title":"The name — 烽燧臺",
+    "origin.body":"Bongsu is named after Korea's historical beacon-fire signal towers (봉수대, 烽燧臺), which relayed warnings of danger across the country with fire and smoke. When one tower spotted a threat, it passed the signal to the next, carrying the alarm swiftly nationwide — a fitting metaphor for a system that watches and immediately alerts.",
+    "why.eyebrow":"Why Bongsu","why.title":"Fewer false positives, no blind spots","why.subtitle":"Accurate results from authoritative data, with no reliance on an external scanner — and your data never leaves your infrastructure.",
+    "why.c1.t":"No external scanner dependency","why.c1.d":"A pure-Go native scanner reads the dpkg, apk and rpm databases directly. It works without the Trivy binary — a design with effectively zero runtime dependencies.",
+    "why.c2.t":"Low false-positive rate","why.c2.d":"Real per-distro version algorithms (dpkg, rpmvercmp, apk, semver) plus epoch-loss tolerance and CPE matching gated by version range keep spurious alerts to a minimum.",
+    "why.c3.t":"Self-hosted & airgap-ready","why.c3.d":"Your data never leaves your infrastructure. Export and import offline CVE DB bundles, with stale-bundle rejection to keep airgapped servers fresh.",
+    "feat.eyebrow":"Features","feat.title":"Everything you need to keep watch","feat.subtitle":"From OS packages to runtimes installed outside the package manager — hosts and containers, all through one collection path.",
+    "feat.native.t":"Native scanner","feat.native.d":"Pure Go parses the dpkg status and apk installed DB directly; rpm is read via the host or container rpm binary. The same ScanRoot entry point serves both hosts and container rootfs.",
+    "feat.fp.t":"Low false positives","feat.fp.d":"Ecosystem-aware version comparison as a generalized ruleset: correct Debian backport-suffix ordering, distro epoch-loss tolerance, and NVD CPE matching gated by the affected version range.",
+    "feat.runtime.t":"Runtime detection","feat.runtime.d":"Detects language runtimes installed outside the package manager — pyenv-Python, unpacked Node, hand-installed JDK and Go SDKs — purely from on-disk layout, never executing a binary.",
+    "feat.facts.t":"Host / container facts","feat.facts.d":"Reads /proc, /sys and /etc directly to collect CPU, memory, DMI hardware, virtualization, network and OS facts into JSONB, surfaced transparently in the dashboard's System Facts card.",
+    "feat.assignee.t":"Assignee workflow","feat.assignee.d":"Assign and filter an owner (담당자) per finding, with host-owner-based auto-assignment, so each vulnerability reaches the person responsible for it.",
+    "feat.notify.t":"Notifications","feat.notify.d":"SMTP email, webhook and log channels, with per-rule recipients and scan.completed / scan.failed triggers so alerts go to exactly the right people.",
+    "feat.airgap.t":"Airgap & self-hosted","feat.airgap.d":"Online installs auto-update on start and every six hours, retrying with exponential backoff on failure; airgapped sites import sha256-verified offline bundles.",
+    "feat.cvedb.t":"Multi-source CVE DB","feat.cvedb.d":"Aggregates OSV, NVD, EPSS, CISA-KEV and the Trivy DB into one database, with matchable-row counts, EPSS merge rate and index coverage shown in the dashboard.",
+    "arch.eyebrow":"Architecture","arch.title":"Agent → Server → Dashboard","arch.subtitle":"A simple, fully self-hostable three-stage pipeline, backed by a CVE database aggregated from authoritative sources.",
+    "arch.agent.t":"Agent","arch.agent.d":"On each host and container, natively collects OS packages, language dependencies, runtimes and system facts, then reports them.",
+    "arch.server.t":"Server + CVE DB","arch.server.d":"Matches packages to CVEs with ecosystem-aware version comparison, and handles RBAC, audit logging and SBOM export.",
+    "arch.dash.t":"Dashboard","arch.dash.d":"A React dashboard to triage vulnerabilities and review assignees, host facts and CVE DB status at a glance.",
+    "arch.srclabel":"CVE DB sources:",
+    "arch.foot":"Stored in PostgreSQL · CycloneDX 1.5 / SPDX 2.3 SBOM export · Docker and airgapped deployment",
+    "foot.tag":"Self-hosted package vulnerability monitoring, named after Korea's beacon-fire towers.",
+    "foot.readme":"Docs","foot.issues":"Issues",
+    "foot.copyright":"© 2026 The Bongsu project","foot.license":"MIT License"
+  },
+  zh:{
+    "nav.why":"为何选择 Bongsu","nav.features":"功能","nav.arch":"架构",
+    "hero.badge":"自托管 · 无需外部扫描器",
+    "hero.tagline":"自托管平台，持续监控每台主机与容器的软件包漏洞",
+    "hero.desc":"每台主机和容器上的代理收集已安装的软件包，服务端将其与权威 CVE 数据库进行匹配。正如其得名的烽燧台一样，Bongsu 将每一条警报直接传递给负责人。",
+    "hero.cta1":"在 GitHub 查看","hero.cta2":"了解功能",
+    "origin.title":"名字由来 — 烽燧臺",
+    "origin.body":"Bongsu（봉수）得名于韩国历史上的烽燧台（봉수대，烽燧臺）——以烽火与狼烟在全国接力传递危险警报。一座烽燧台发现威胁，便把信号传给下一座，迅速将警报传遍全境——这正是一套持续监控并即时告警系统的贴切隐喻。",
+    "why.eyebrow":"为何选择 Bongsu","why.title":"更少误报，没有盲区","why.subtitle":"基于权威数据得出准确结果，无需依赖外部扫描器——而且数据绝不离开你的基础设施。",
+    "why.c1.t":"无外部扫描器依赖","why.c1.d":"纯 Go 原生扫描器直接读取 dpkg、apk、rpm 数据库。无需 Trivy 二进制即可运行——几乎零运行时依赖的设计。",
+    "why.c2.t":"低误报率","why.c2.d":"采用各发行版真实的版本比较算法（dpkg、rpmvercmp、apk、semver），并容忍 epoch 缺失，CPE 匹配受版本范围约束，将虚假告警降到最低。",
+    "why.c3.t":"自托管 · 支持隔离网络","why.c3.d":"数据绝不离开你的基础设施。支持离线 CVE 数据库包的导出与导入，并通过陈旧包拒绝机制保持隔离服务器的数据新鲜。",
+    "feat.eyebrow":"功能","feat.title":"持续监控所需的一切","feat.subtitle":"从操作系统软件包到包管理器之外安装的运行时——主机与容器，统一走一条采集路径。",
+    "feat.native.t":"原生扫描器","feat.native.d":"纯 Go 直接解析 dpkg status 与 apk installed 数据库；rpm 通过主机或容器的 rpm 二进制查询。同一个 ScanRoot 入口同时服务于主机和容器 rootfs。",
+    "feat.fp.t":"低误报","feat.fp.d":"以通用规则集实现的、感知生态的版本比较：正确排序 Debian backport 后缀、容忍发行版 epoch 缺失，并以受影响版本范围约束 NVD CPE 匹配。",
+    "feat.runtime.t":"运行时检测","feat.runtime.d":"检测包管理器之外安装的语言运行时——pyenv 编译的 Python、解压的 Node、手动安装的 JDK 与 Go SDK——完全依据磁盘布局推断，绝不执行任何二进制。",
+    "feat.facts.t":"主机 / 容器 facts","feat.facts.d":"直接读取 /proc、/sys、/etc，将 CPU、内存、DMI 硬件、虚拟化、网络与操作系统信息收集为 JSONB，并在仪表盘的 System Facts 卡片中透明呈现。",
+    "feat.assignee.t":"负责人工作流","feat.assignee.d":"可为每条 finding 指定并筛选负责人（담당자），支持基于主机归属的自动分配，让每个漏洞都到达真正负责的人手中。",
+    "feat.notify.t":"通知","feat.notify.d":"支持 SMTP 邮件、webhook 与日志通道，可按规则配置收件人，并通过 scan.completed / scan.failed 触发，将告警精准送达相关人员。",
+    "feat.airgap.t":"隔离网络 · 自托管","feat.airgap.d":"联网部署在启动时及每六小时自动更新，失败时以指数退避重试；隔离站点导入经 sha256 校验的离线数据包。",
+    "feat.cvedb.t":"多来源 CVE 数据库","feat.cvedb.d":"将 OSV、NVD、EPSS、CISA-KEV 与 Trivy DB 汇聚为一个数据库，并在仪表盘展示可匹配行数、EPSS 合并率与索引覆盖率。",
+    "arch.eyebrow":"架构","arch.title":"Agent → Server → Dashboard","arch.subtitle":"一条简单且完全可自托管的三段式流水线，由汇聚自权威来源的 CVE 数据库支撑。",
+    "arch.agent.t":"代理","arch.agent.d":"在每台主机与容器上原生采集操作系统软件包、语言依赖、运行时及系统 facts，并上报。",
+    "arch.server.t":"服务端 + CVE 数据库","arch.server.d":"以感知生态的版本比较将软件包匹配到 CVE，并处理 RBAC、审计日志与 SBOM 导出。",
+    "arch.dash.t":"仪表盘","arch.dash.d":"React 仪表盘，一目了然地分流漏洞，查看负责人、主机 facts 与 CVE 数据库状态。",
+    "arch.srclabel":"CVE 数据库来源：",
+    "arch.foot":"存储于 PostgreSQL · CycloneDX 1.5 / SPDX 2.3 SBOM 导出 · 支持 Docker 与隔离网络部署",
+    "foot.tag":"自托管软件包漏洞监控系统，得名于韩国的烽燧台。",
+    "foot.readme":"文档","foot.issues":"问题反馈",
+    "foot.copyright":"© 2026 Bongsu 项目","foot.license":"MIT 许可证"
+  },
+  ja:{
+    "nav.why":"Bongsu の理由","nav.features":"機能","nav.arch":"アーキテクチャ",
+    "hero.badge":"セルフホスト · 外部スキャナー不要",
+    "hero.tagline":"すべてのホストとコンテナのパッケージ脆弱性を見張る、セルフホスト型監視プラットフォーム",
+    "hero.desc":"各ホスト・コンテナのエージェントがインストール済みパッケージを収集し、サーバーが権威ある CVE データベースと照合します。その名の由来である烽燧台のように、Bongsu は各警報を担当者へとまっすぐ伝えます。",
+    "hero.cta1":"GitHub で見る","hero.cta2":"機能を見る",
+    "origin.title":"名前の由来 — 烽燧臺",
+    "origin.body":"Bongsu（봉수）は、韓国の歴史的な烽燧台（봉수대、烽燧臺）に由来します。烽火と煙で危険の知らせを全国へ次々とリレーした施設です。ある台が脅威を察知すると次の台へ信号を伝え、警報を素早く全土へ届けました — 見張り、即座に警告するこのシステムにふさわしい比喩です。",
+    "why.eyebrow":"Bongsu の理由","why.title":"誤検知を減らし、死角をなくす","why.subtitle":"外部スキャナーに頼らず、権威あるデータで正確に。そしてデータはインフラの外へ出ません。",
+    "why.c1.t":"外部スキャナー依存なし","why.c1.d":"純 Go のネイティブスキャナーが dpkg・apk・rpm データベースを直接読み取ります。Trivy バイナリなしで動作する、実質ゼロ依存の設計です。",
+    "why.c2.t":"低い誤検知率","why.c2.d":"ディストリ固有の実際のバージョン比較アルゴリズム（dpkg・rpmvercmp・apk・semver）に加え、epoch 欠落の許容とバージョン範囲でゲートした CPE マッチングで、誤った警報を最小化します。",
+    "why.c3.t":"セルフホスト・エアギャップ対応","why.c3.d":"データはインフラの外へ出ません。オフライン用 CVE DB バンドルの export/import と、古いバンドルの拒否検証を備えます。",
+    "feat.eyebrow":"機能","feat.title":"見張りに必要なすべて","feat.subtitle":"OS パッケージから、パッケージマネージャー外のランタイムまで。ホストもコンテナも、ひとつの収集経路で。",
+    "feat.native.t":"ネイティブスキャナー","feat.native.d":"純 Go で dpkg status と apk installed DB を直接パースし、rpm はホストまたはコンテナの rpm バイナリで照会します。同じ ScanRoot 入口がホストとコンテナ rootfs の双方に使われます。",
+    "feat.fp.t":"低い誤検知","feat.fp.d":"エコシステムを意識したバージョン比較を汎用ルールセットとして実装。Debian backport 接尾辞の正しい並び、ディストリ epoch 欠落の許容、影響バージョン範囲でゲートした NVD CPE マッチングを行います。",
+    "feat.runtime.t":"ランタイム検出","feat.runtime.d":"パッケージマネージャー外にインストールされた言語ランタイム — pyenv の Python、展開した Node、手動導入の JDK・Go SDK — をディスク上の配置だけから検出し、バイナリは一切実行しません。",
+    "feat.facts.t":"ホスト／コンテナ facts","feat.facts.d":"/proc・/sys・/etc を直接読み、CPU・メモリ・DMI ハードウェア・仮想化・ネットワーク・OS 情報を JSONB に収集。ダッシュボードの System Facts カードで透明に表示します。",
+    "feat.assignee.t":"担当者ワークフロー","feat.assignee.d":"finding ごとに担当者（assignee）を指定・絞り込みでき、ホスト所有者ベースの自動割り当てに対応。各脆弱性が責任者へ確実に届きます。",
+    "feat.notify.t":"通知","feat.notify.d":"SMTP メール・webhook・ログのチャネルに対応。ルールごとの宛先設定と scan.completed／scan.failed トリガーで、必要な人へ警報を届けます。",
+    "feat.airgap.t":"エアギャップ・セルフホスト","feat.airgap.d":"オンライン環境は起動時と 6 時間ごとに自動更新し、失敗時は指数バックオフで再試行。エアギャップ環境は sha256 検証済みバンドルをオフライン import します。",
+    "feat.cvedb.t":"複数ソースの CVE DB","feat.cvedb.d":"OSV・NVD・EPSS・CISA-KEV・Trivy DB をひとつのデータベースに集約。matchable 行数、EPSS マージ率、インデックスカバレッジをダッシュボードで確認できます。",
+    "arch.eyebrow":"アーキテクチャ","arch.title":"Agent → Server → Dashboard","arch.subtitle":"シンプルで完全にセルフホスト可能な三段パイプライン。権威あるソースから集約した CVE データベースが照合を支えます。",
+    "arch.agent.t":"エージェント","arch.agent.d":"各ホスト・コンテナで OS パッケージ、言語依存、ランタイム、システム facts をネイティブに収集し、送信します。",
+    "arch.server.t":"サーバー + CVE DB","arch.server.d":"エコシステムを意識したバージョン比較でパッケージを CVE に照合し、RBAC・監査ログ・SBOM export を処理します。",
+    "arch.dash.t":"ダッシュボード","arch.dash.d":"React ダッシュボードで脆弱性を triage し、担当者・ホスト facts・CVE DB 状態を一目で確認できます。",
+    "arch.srclabel":"CVE DB ソース：",
+    "arch.foot":"PostgreSQL に保存 · CycloneDX 1.5 / SPDX 2.3 SBOM export · Docker およびエアギャップ展開に対応",
+    "foot.tag":"韓国の烽燧台に由来する、セルフホスト型パッケージ脆弱性監視システム。",
+    "foot.readme":"ドキュメント","foot.issues":"Issue",
+    "foot.copyright":"© 2026 Bongsu プロジェクト","foot.license":"MIT ライセンス"
+  },
+  fr:{
+    "nav.why":"Pourquoi Bongsu","nav.features":"Fonctionnalités","nav.arch":"Architecture",
+    "hero.badge":"Auto-hébergé · Aucun scanner externe requis",
+    "hero.tagline":"Une plateforme auto-hébergée qui surveille les vulnérabilités des paquets sur chaque hôte et conteneur",
+    "hero.desc":"Un agent sur chaque hôte et conteneur recense les paquets installés, et le serveur les confronte à une base CVE faisant autorité. À l'image des tours à feu qui lui ont donné son nom, Bongsu relaie chaque alerte directement à la bonne personne.",
+    "hero.cta1":"Voir sur GitHub","hero.cta2":"Découvrir les fonctionnalités",
+    "origin.title":"L'origine du nom — 烽燧臺",
+    "origin.body":"Bongsu (봉수) tient son nom des tours à feu historiques de Corée (봉수대, 烽燧臺), qui relayaient les alertes de danger à travers tout le pays par le feu et la fumée. Lorsqu'une tour repérait une menace, elle transmettait le signal à la suivante, propageant rapidement l'alarme dans tout le territoire — une métaphore parfaite pour un système qui surveille et alerte aussitôt.",
+    "why.eyebrow":"Pourquoi Bongsu","why.title":"Moins de faux positifs, aucun angle mort","why.subtitle":"Des résultats précis issus de données faisant autorité, sans dépendre d'un scanner externe — et vos données ne quittent jamais votre infrastructure.",
+    "why.c1.t":"Aucune dépendance à un scanner externe","why.c1.d":"Un scanner natif en pur Go lit directement les bases dpkg, apk et rpm. Il fonctionne sans le binaire Trivy — une conception pratiquement sans dépendance d'exécution.",
+    "why.c2.t":"Faible taux de faux positifs","why.c2.d":"De vrais algorithmes de comparaison de versions par distribution (dpkg, rpmvercmp, apk, semver), la tolérance à la perte d'epoch et un appariement CPE borné par plage de versions réduisent les alertes erronées au minimum.",
+    "why.c3.t":"Auto-hébergé et prêt pour l'airgap","why.c3.d":"Vos données ne quittent jamais votre infrastructure. Exportez et importez des bundles CVE hors ligne, avec rejet des bundles obsolètes pour garder les serveurs isolés à jour.",
+    "feat.eyebrow":"Fonctionnalités","feat.title":"Tout ce qu'il faut pour rester vigilant","feat.subtitle":"Des paquets OS aux runtimes installés hors du gestionnaire de paquets — hôtes et conteneurs, par un seul chemin de collecte.",
+    "feat.native.t":"Scanner natif","feat.native.d":"Du pur Go analyse directement le status dpkg et la base installed d'apk ; rpm est lu via le binaire rpm de l'hôte ou du conteneur. Le même point d'entrée ScanRoot sert les hôtes et le rootfs des conteneurs.",
+    "feat.fp.t":"Peu de faux positifs","feat.fp.d":"Comparaison de versions sensible à l'écosystème, sous forme d'un ensemble de règles généralisé : tri correct des suffixes de backport Debian, tolérance à la perte d'epoch et appariement CPE NVD borné par la plage de versions affectée.",
+    "feat.runtime.t":"Détection des runtimes","feat.runtime.d":"Détecte les runtimes de langage installés hors du gestionnaire de paquets — Python via pyenv, Node décompressé, JDK et SDK Go installés à la main — uniquement d'après l'agencement sur disque, sans jamais exécuter de binaire.",
+    "feat.facts.t":"Facts hôte / conteneur","feat.facts.d":"Lit directement /proc, /sys et /etc pour collecter CPU, mémoire, matériel DMI, virtualisation, réseau et infos OS au format JSONB, présentés en toute transparence dans la carte System Facts du tableau de bord.",
+    "feat.assignee.t":"Flux d'attribution","feat.assignee.d":"Attribuez et filtrez un responsable (담당자) par finding, avec attribution automatique basée sur le propriétaire de l'hôte, afin que chaque vulnérabilité atteigne la personne responsable.",
+    "feat.notify.t":"Notifications","feat.notify.d":"Canaux e-mail SMTP, webhook et journal, avec destinataires par règle et déclencheurs scan.completed / scan.failed, pour que les alertes parviennent exactement aux bonnes personnes.",
+    "feat.airgap.t":"Airgap et auto-hébergement","feat.airgap.d":"Les installations en ligne se mettent à jour au démarrage et toutes les six heures, avec relance en backoff exponentiel en cas d'échec ; les sites isolés importent des bundles hors ligne vérifiés par sha256.",
+    "feat.cvedb.t":"Base CVE multi-sources","feat.cvedb.d":"Agrège OSV, NVD, EPSS, CISA-KEV et la Trivy DB en une seule base, avec le nombre de lignes exploitables, le taux de fusion EPSS et la couverture des index affichés dans le tableau de bord.",
+    "arch.eyebrow":"Architecture","arch.title":"Agent → Serveur → Tableau de bord","arch.subtitle":"Un pipeline simple en trois étapes, entièrement auto-hébergeable, adossé à une base CVE agrégée de sources faisant autorité.",
+    "arch.agent.t":"Agent","arch.agent.d":"Sur chaque hôte et conteneur, collecte nativement paquets OS, dépendances de langage, runtimes et facts système, puis les transmet.",
+    "arch.server.t":"Serveur + base CVE","arch.server.d":"Apparie les paquets aux CVE par comparaison de versions sensible à l'écosystème, et gère RBAC, journalisation d'audit et export SBOM.",
+    "arch.dash.t":"Tableau de bord","arch.dash.d":"Un tableau de bord React pour trier les vulnérabilités et consulter d'un coup d'œil responsables, facts hôtes et état de la base CVE.",
+    "arch.srclabel":"Sources de la base CVE :",
+    "arch.foot":"Stocké dans PostgreSQL · Export SBOM CycloneDX 1.5 / SPDX 2.3 · Déploiement Docker et airgap",
+    "foot.tag":"Surveillance auto-hébergée des vulnérabilités de paquets, nommée d'après les tours à feu de Corée.",
+    "foot.readme":"Documentation","foot.issues":"Tickets",
+    "foot.copyright":"© 2026 Le projet Bongsu","foot.license":"Licence MIT"
+  },
+  de:{
+    "nav.why":"Warum Bongsu","nav.features":"Funktionen","nav.arch":"Architektur",
+    "hero.badge":"Selbst gehostet · Kein externer Scanner nötig",
+    "hero.tagline":"Eine selbst gehostete Plattform, die Paket-Schwachstellen auf jedem Host und Container überwacht",
+    "hero.desc":"Ein Agent auf jedem Host und Container erfasst installierte Pakete, und der Server gleicht sie mit einer maßgeblichen CVE-Datenbank ab. Wie die namensgebenden Signalfeuertürme leitet Bongsu jede Warnung direkt an die zuständige Person weiter.",
+    "hero.cta1":"Auf GitHub ansehen","hero.cta2":"Funktionen entdecken",
+    "origin.title":"Der Name — 烽燧臺",
+    "origin.body":"Bongsu (봉수) ist nach den historischen koreanischen Signalfeuertürmen (봉수대, 烽燧臺) benannt, die Gefahrenwarnungen mit Feuer und Rauch landesweit weiterreichten. Erkannte ein Turm eine Bedrohung, gab er das Signal an den nächsten weiter und trug den Alarm rasch durchs ganze Land — ein treffendes Bild für ein System, das wacht und sofort alarmiert.",
+    "why.eyebrow":"Warum Bongsu","why.title":"Weniger Fehlalarme, keine blinden Flecken","why.subtitle":"Präzise Ergebnisse aus maßgeblichen Daten, ohne Abhängigkeit von einem externen Scanner — und Ihre Daten verlassen nie Ihre Infrastruktur.",
+    "why.c1.t":"Keine externe Scanner-Abhängigkeit","why.c1.d":"Ein nativer Scanner in reinem Go liest die dpkg-, apk- und rpm-Datenbanken direkt. Er läuft ohne das Trivy-Binary — ein Design mit praktisch null Laufzeitabhängigkeiten.",
+    "why.c2.t":"Niedrige Fehlalarmrate","why.c2.d":"Echte distributionsspezifische Versionsalgorithmen (dpkg, rpmvercmp, apk, semver) sowie Toleranz gegenüber fehlendem Epoch und ein durch Versionsbereiche begrenzter CPE-Abgleich halten falsche Alarme minimal.",
+    "why.c3.t":"Selbst gehostet & airgap-fähig","why.c3.d":"Ihre Daten verlassen nie Ihre Infrastruktur. Exportieren und importieren Sie Offline-CVE-DB-Bundles, mit Abweisung veralteter Bundles, damit isolierte Server aktuell bleiben.",
+    "feat.eyebrow":"Funktionen","feat.title":"Alles, was zur Überwachung nötig ist","feat.subtitle":"Von OS-Paketen bis zu Runtimes außerhalb der Paketverwaltung — Hosts und Container über einen einzigen Erfassungspfad.",
+    "feat.native.t":"Nativer Scanner","feat.native.d":"Reines Go parst dpkg status und die apk-installed-DB direkt; rpm wird über das rpm-Binary des Hosts oder Containers gelesen. Derselbe ScanRoot-Einstiegspunkt dient Hosts und Container-rootfs.",
+    "feat.fp.t":"Wenige Fehlalarme","feat.fp.d":"Ökosystembewusster Versionsvergleich als verallgemeinertes Regelwerk: korrekte Sortierung von Debian-Backport-Suffixen, Toleranz gegenüber fehlendem Distro-Epoch und durch den betroffenen Versionsbereich begrenzter NVD-CPE-Abgleich.",
+    "feat.runtime.t":"Runtime-Erkennung","feat.runtime.d":"Erkennt Sprach-Runtimes außerhalb der Paketverwaltung — pyenv-Python, entpacktes Node, von Hand installierte JDKs und Go-SDKs — allein anhand des Layouts auf der Platte, ohne je ein Binary auszuführen.",
+    "feat.facts.t":"Host-/Container-Facts","feat.facts.d":"Liest /proc, /sys und /etc direkt und erfasst CPU, Speicher, DMI-Hardware, Virtualisierung, Netzwerk und OS-Infos als JSONB — transparent dargestellt in der System-Facts-Karte des Dashboards.",
+    "feat.assignee.t":"Zuständigkeits-Workflow","feat.assignee.d":"Weisen Sie pro Finding einen Verantwortlichen (담당자) zu und filtern Sie danach, mit automatischer Zuweisung anhand des Host-Eigentümers, damit jede Schwachstelle die zuständige Person erreicht.",
+    "feat.notify.t":"Benachrichtigungen","feat.notify.d":"SMTP-E-Mail-, Webhook- und Log-Kanäle mit regelbezogenen Empfängern und scan.completed-/scan.failed-Auslösern, damit Alarme genau die richtigen Personen erreichen.",
+    "feat.airgap.t":"Airgap & selbst gehostet","feat.airgap.d":"Online-Installationen aktualisieren sich beim Start und alle sechs Stunden und wiederholen Versuche bei Fehlern mit exponentiellem Backoff; isolierte Standorte importieren sha256-verifizierte Offline-Bundles.",
+    "feat.cvedb.t":"CVE-DB aus mehreren Quellen","feat.cvedb.d":"Bündelt OSV, NVD, EPSS, CISA-KEV und die Trivy DB in einer Datenbank, mit Anzahl matchbarer Zeilen, EPSS-Merge-Rate und Indexabdeckung im Dashboard.",
+    "arch.eyebrow":"Architektur","arch.title":"Agent → Server → Dashboard","arch.subtitle":"Eine einfache, vollständig selbst hostbare dreistufige Pipeline, gestützt auf eine aus maßgeblichen Quellen aggregierte CVE-Datenbank.",
+    "arch.agent.t":"Agent","arch.agent.d":"Erfasst auf jedem Host und Container nativ OS-Pakete, Sprachabhängigkeiten, Runtimes und System-Facts und meldet sie.",
+    "arch.server.t":"Server + CVE-DB","arch.server.d":"Gleicht Pakete per ökosystembewusstem Versionsvergleich mit CVEs ab und übernimmt RBAC, Audit-Logging und SBOM-Export.",
+    "arch.dash.t":"Dashboard","arch.dash.d":"Ein React-Dashboard, um Schwachstellen zu triagieren und Zuständige, Host-Facts und CVE-DB-Status auf einen Blick zu prüfen.",
+    "arch.srclabel":"CVE-DB-Quellen:",
+    "arch.foot":"In PostgreSQL gespeichert · CycloneDX 1.5 / SPDX 2.3 SBOM-Export · Docker- und Airgap-Deployment",
+    "foot.tag":"Selbst gehostete Überwachung von Paket-Schwachstellen, benannt nach Koreas Signalfeuertürmen.",
+    "foot.readme":"Dokumentation","foot.issues":"Issues",
+    "foot.copyright":"© 2026 Das Bongsu-Projekt","foot.license":"MIT-Lizenz"
+  },
+  es:{
+    "nav.why":"Por qué Bongsu","nav.features":"Funciones","nav.arch":"Arquitectura",
+    "hero.badge":"Autoalojado · Sin escáner externo",
+    "hero.tagline":"Una plataforma autoalojada que vigila las vulnerabilidades de paquetes en cada host y contenedor",
+    "hero.desc":"Un agente en cada host y contenedor recopila los paquetes instalados, y el servidor los coteja con una base de datos CVE de referencia. Como las torres de fuego que le dan nombre, Bongsu transmite cada alerta directamente a la persona indicada.",
+    "hero.cta1":"Ver en GitHub","hero.cta2":"Explorar funciones",
+    "origin.title":"El origen del nombre — 烽燧臺",
+    "origin.body":"Bongsu (봉수) toma su nombre de las históricas torres de fuego de Corea (봉수대, 烽燧臺), que transmitían avisos de peligro por todo el país mediante fuego y humo. Cuando una torre detectaba una amenaza, pasaba la señal a la siguiente, llevando la alarma con rapidez a todo el territorio — una metáfora perfecta para un sistema que vigila y alerta al instante.",
+    "why.eyebrow":"Por qué Bongsu","why.title":"Menos falsos positivos, sin puntos ciegos","why.subtitle":"Resultados precisos a partir de datos de referencia, sin depender de un escáner externo — y tus datos nunca salen de tu infraestructura.",
+    "why.c1.t":"Sin dependencia de escáner externo","why.c1.d":"Un escáner nativo en Go puro lee directamente las bases dpkg, apk y rpm. Funciona sin el binario de Trivy — un diseño prácticamente sin dependencias de ejecución.",
+    "why.c2.t":"Baja tasa de falsos positivos","why.c2.d":"Algoritmos reales de comparación de versiones por distribución (dpkg, rpmvercmp, apk, semver), tolerancia a la pérdida de epoch y emparejamiento CPE acotado por rango de versiones reducen al mínimo las alertas erróneas.",
+    "why.c3.t":"Autoalojado y listo para airgap","why.c3.d":"Tus datos nunca salen de tu infraestructura. Exporta e importa paquetes de base CVE sin conexión, con rechazo de paquetes obsoletos para mantener al día los servidores aislados.",
+    "feat.eyebrow":"Funciones","feat.title":"Todo lo necesario para mantener la vigilancia","feat.subtitle":"Desde paquetes del SO hasta runtimes instalados fuera del gestor de paquetes — hosts y contenedores, por una única vía de recopilación.",
+    "feat.native.t":"Escáner nativo","feat.native.d":"Go puro analiza directamente el status de dpkg y la base installed de apk; rpm se lee con el binario rpm del host o del contenedor. El mismo punto de entrada ScanRoot sirve a hosts y al rootfs de los contenedores.",
+    "feat.fp.t":"Pocos falsos positivos","feat.fp.d":"Comparación de versiones consciente del ecosistema como un conjunto de reglas generalizado: orden correcto de sufijos de backport de Debian, tolerancia a la pérdida de epoch y emparejamiento CPE de NVD acotado por el rango de versiones afectado.",
+    "feat.runtime.t":"Detección de runtimes","feat.runtime.d":"Detecta runtimes de lenguaje instalados fuera del gestor de paquetes — Python de pyenv, Node descomprimido, JDK y SDK de Go instalados a mano — solo a partir de la disposición en disco, sin ejecutar nunca un binario.",
+    "feat.facts.t":"Facts de host / contenedor","feat.facts.d":"Lee directamente /proc, /sys y /etc para recopilar CPU, memoria, hardware DMI, virtualización, red e info del SO en JSONB, mostrados con transparencia en la tarjeta System Facts del panel.",
+    "feat.assignee.t":"Flujo de asignación","feat.assignee.d":"Asigna y filtra un responsable (담당자) por finding, con asignación automática según el propietario del host, para que cada vulnerabilidad llegue a quien corresponde.",
+    "feat.notify.t":"Notificaciones","feat.notify.d":"Canales de correo SMTP, webhook y registro, con destinatarios por regla y disparadores scan.completed / scan.failed, para que las alertas lleguen exactamente a las personas adecuadas.",
+    "feat.airgap.t":"Airgap y autoalojado","feat.airgap.d":"Las instalaciones en línea se actualizan al arrancar y cada seis horas, reintentando con backoff exponencial ante fallos; los sitios aislados importan paquetes sin conexión verificados con sha256.",
+    "feat.cvedb.t":"Base CVE multifuente","feat.cvedb.d":"Agrega OSV, NVD, EPSS, CISA-KEV y la Trivy DB en una sola base, con recuento de filas emparejables, tasa de fusión de EPSS y cobertura de índices visibles en el panel.",
+    "arch.eyebrow":"Arquitectura","arch.title":"Agente → Servidor → Panel","arch.subtitle":"Una canalización sencilla de tres etapas, totalmente autoalojable, respaldada por una base CVE agregada de fuentes de referencia.",
+    "arch.agent.t":"Agente","arch.agent.d":"En cada host y contenedor, recopila de forma nativa paquetes del SO, dependencias de lenguaje, runtimes y facts del sistema, y los reporta.",
+    "arch.server.t":"Servidor + base CVE","arch.server.d":"Empareja paquetes con CVE mediante comparación de versiones consciente del ecosistema, y gestiona RBAC, registro de auditoría y exportación de SBOM.",
+    "arch.dash.t":"Panel","arch.dash.d":"Un panel en React para clasificar vulnerabilidades y revisar responsables, facts de host y estado de la base CVE de un vistazo.",
+    "arch.srclabel":"Fuentes de la base CVE:",
+    "arch.foot":"Almacenado en PostgreSQL · Exportación SBOM CycloneDX 1.5 / SPDX 2.3 · Despliegue Docker y airgap",
+    "foot.tag":"Monitoreo autoalojado de vulnerabilidades de paquetes, llamado así por las torres de fuego de Corea.",
+    "foot.readme":"Documentación","foot.issues":"Incidencias",
+    "foot.copyright":"© 2026 El proyecto Bongsu","foot.license":"Licencia MIT"
+  },
+  pt:{
+    "nav.why":"Por que Bongsu","nav.features":"Recursos","nav.arch":"Arquitetura",
+    "hero.badge":"Auto-hospedado · Sem scanner externo",
+    "hero.tagline":"Uma plataforma auto-hospedada que vigia as vulnerabilidades de pacotes em cada host e contêiner",
+    "hero.desc":"Um agente em cada host e contêiner coleta os pacotes instalados, e o servidor os confronta com uma base de dados CVE de referência. Como as torres de fogo que lhe dão o nome, o Bongsu repassa cada alerta diretamente à pessoa certa.",
+    "hero.cta1":"Ver no GitHub","hero.cta2":"Explorar recursos",
+    "origin.title":"A origem do nome — 烽燧臺",
+    "origin.body":"Bongsu (봉수) recebe o nome das históricas torres de fogo da Coreia (봉수대, 烽燧臺), que repassavam avisos de perigo por todo o país com fogo e fumaça. Quando uma torre detectava uma ameaça, passava o sinal à seguinte, levando o alarme rapidamente a todo o território — uma metáfora perfeita para um sistema que vigia e alerta de imediato.",
+    "why.eyebrow":"Por que Bongsu","why.title":"Menos falsos positivos, sem pontos cegos","why.subtitle":"Resultados precisos a partir de dados de referência, sem depender de um scanner externo — e seus dados nunca saem da sua infraestrutura.",
+    "why.c1.t":"Sem dependência de scanner externo","why.c1.d":"Um scanner nativo em Go puro lê diretamente as bases dpkg, apk e rpm. Funciona sem o binário do Trivy — um design praticamente sem dependências de execução.",
+    "why.c2.t":"Baixa taxa de falsos positivos","why.c2.d":"Algoritmos reais de comparação de versões por distribuição (dpkg, rpmvercmp, apk, semver), tolerância à perda de epoch e correspondência CPE limitada por faixa de versões reduzem ao mínimo os alertas equivocados.",
+    "why.c3.t":"Auto-hospedado e pronto para airgap","why.c3.d":"Seus dados nunca saem da sua infraestrutura. Exporte e importe pacotes de base CVE offline, com rejeição de pacotes obsoletos para manter atualizados os servidores isolados.",
+    "feat.eyebrow":"Recursos","feat.title":"Tudo o que é preciso para manter a vigilância","feat.subtitle":"De pacotes do SO a runtimes instalados fora do gerenciador de pacotes — hosts e contêineres, por um único caminho de coleta.",
+    "feat.native.t":"Scanner nativo","feat.native.d":"Go puro analisa diretamente o status do dpkg e a base installed do apk; o rpm é lido pelo binário rpm do host ou do contêiner. O mesmo ponto de entrada ScanRoot serve a hosts e ao rootfs dos contêineres.",
+    "feat.fp.t":"Poucos falsos positivos","feat.fp.d":"Comparação de versões ciente do ecossistema como um conjunto de regras generalizado: ordenação correta de sufixos de backport do Debian, tolerância à perda de epoch e correspondência CPE da NVD limitada pela faixa de versões afetada.",
+    "feat.runtime.t":"Detecção de runtimes","feat.runtime.d":"Detecta runtimes de linguagem instalados fora do gerenciador de pacotes — Python do pyenv, Node descompactado, JDK e SDK do Go instalados manualmente — apenas pela disposição em disco, sem nunca executar um binário.",
+    "feat.facts.t":"Facts de host / contêiner","feat.facts.d":"Lê diretamente /proc, /sys e /etc para coletar CPU, memória, hardware DMI, virtualização, rede e informações do SO em JSONB, exibidos com transparência no cartão System Facts do painel.",
+    "feat.assignee.t":"Fluxo de responsável","feat.assignee.d":"Atribua e filtre um responsável (담당자) por finding, com atribuição automática conforme o dono do host, para que cada vulnerabilidade chegue a quem é responsável por ela.",
+    "feat.notify.t":"Notificações","feat.notify.d":"Canais de e-mail SMTP, webhook e log, com destinatários por regra e gatilhos scan.completed / scan.failed, para que os alertas cheguem exatamente às pessoas certas.",
+    "feat.airgap.t":"Airgap e auto-hospedado","feat.airgap.d":"Instalações online se atualizam ao iniciar e a cada seis horas, repetindo com backoff exponencial em caso de falha; sites isolados importam pacotes offline verificados por sha256.",
+    "feat.cvedb.t":"Base CVE multifonte","feat.cvedb.d":"Agrega OSV, NVD, EPSS, CISA-KEV e a Trivy DB em uma única base, com contagem de linhas correspondíveis, taxa de mesclagem do EPSS e cobertura de índices exibidas no painel.",
+    "arch.eyebrow":"Arquitetura","arch.title":"Agente → Servidor → Painel","arch.subtitle":"Um pipeline simples de três etapas, totalmente auto-hospedável, apoiado em uma base CVE agregada de fontes de referência.",
+    "arch.agent.t":"Agente","arch.agent.d":"Em cada host e contêiner, coleta nativamente pacotes do SO, dependências de linguagem, runtimes e facts do sistema, e os reporta.",
+    "arch.server.t":"Servidor + base CVE","arch.server.d":"Faz a correspondência de pacotes com CVEs por comparação de versões ciente do ecossistema, e cuida de RBAC, log de auditoria e exportação de SBOM.",
+    "arch.dash.t":"Painel","arch.dash.d":"Um painel em React para triar vulnerabilidades e revisar responsáveis, facts de host e status da base CVE de relance.",
+    "arch.srclabel":"Fontes da base CVE:",
+    "arch.foot":"Armazenado em PostgreSQL · Exportação SBOM CycloneDX 1.5 / SPDX 2.3 · Implantação Docker e airgap",
+    "foot.tag":"Monitoramento auto-hospedado de vulnerabilidades de pacotes, batizado em homenagem às torres de fogo da Coreia.",
+    "foot.readme":"Documentação","foot.issues":"Issues",
+    "foot.copyright":"© 2026 O projeto Bongsu","foot.license":"Licença MIT"
+  }
+};
+
+const LANGS = [
+  {code:"ko",label:"한국어"},
+  {code:"en",label:"English"},
+  {code:"zh",label:"中文"},
+  {code:"ja",label:"日本語"},
+  {code:"fr",label:"Français"},
+  {code:"de",label:"Deutsch"},
+  {code:"es",label:"Español"},
+  {code:"pt",label:"Português"}
+];
+
+function applyLang(code){
+  const dict = I18N[code] || I18N.en;
+  document.documentElement.lang = code;
+  document.querySelectorAll("[data-i18n]").forEach(el=>{
+    const key = el.getAttribute("data-i18n");
+    if(dict[key] !== undefined) el.textContent = dict[key];
+  });
+  document.querySelectorAll(".lang-btn").forEach(b=>{
+    b.classList.toggle("active", b.dataset.code === code);
+  });
+  try{ localStorage.setItem("bongsu-lang", code); }catch(e){}
+}
+
+function detectLang(){
+  try{
+    const saved = localStorage.getItem("bongsu-lang");
+    if(saved && I18N[saved]) return saved;
+  }catch(e){}
+  const nav = (navigator.language || navigator.userLanguage || "").toLowerCase();
+  const base = nav.split("-")[0];
+  if(I18N[base]) return base;
+  if(nav.startsWith("zh")) return "zh";
+  // default Korean per project; fall back English if nav matches nothing known
+  return "ko";
+}
+
+// build switcher
+const sw = document.getElementById("langSwitch");
+LANGS.forEach(l=>{
+  const btn = document.createElement("button");
+  btn.className = "lang-btn";
+  btn.dataset.code = l.code;
+  btn.textContent = l.label;
+  btn.setAttribute("aria-label", l.label);
+  btn.addEventListener("click", ()=>applyLang(l.code));
+  sw.appendChild(btn);
+});
+
+applyLang(detectLang());
+</script>
+</body>
+</html>
