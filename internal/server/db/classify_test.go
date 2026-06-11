@@ -341,10 +341,10 @@ func TestVersionInRangeHonorsInclusiveAndExclusiveRangeEvents(t *testing.T) {
 		{Introduced: "1.0.0"},
 		{LastAffected: "1.5.0"},
 	}
-	if !versionInRange("1.5.0", lastAffected) {
+	if !versionInRange("", "1.5.0", lastAffected) {
 		t.Fatal("last_affected boundary should be inclusive")
 	}
-	if versionInRange("1.5.1", lastAffected) {
+	if versionInRange("", "1.5.1", lastAffected) {
 		t.Fatal("version above last_affected boundary should not match")
 	}
 
@@ -352,10 +352,10 @@ func TestVersionInRangeHonorsInclusiveAndExclusiveRangeEvents(t *testing.T) {
 		{Introduced: "1.0.0"},
 		{Limit: "2.0.0"},
 	}
-	if !versionInRange("1.9.9", limit) {
+	if !versionInRange("", "1.9.9", limit) {
 		t.Fatal("version below limit should match")
 	}
-	if versionInRange("2.0.0", limit) {
+	if versionInRange("", "2.0.0", limit) {
 		t.Fatal("limit boundary should be exclusive")
 	}
 }
@@ -389,7 +389,7 @@ func TestCompareVersionsHonorsNumericEpochs(t *testing.T) {
 		{"1.0", "1:0.1", 1},
 	}
 	for _, tt := range tests {
-		got, ok := compareVersions(tt.a, tt.b)
+		got, ok := compareVersions("debian", tt.a, tt.b)
 		if !ok {
 			t.Fatalf("compareVersions(%q, %q) not comparable", tt.a, tt.b)
 		}
@@ -433,7 +433,7 @@ func TestVersionInRangeHandlesMultipleIntervals(t *testing.T) {
 		{"3.0.0", false},
 	}
 	for _, tt := range tests {
-		if got := versionInRange(tt.version, events); got != tt.want {
+		if got := versionInRange("", tt.version, events); got != tt.want {
 			t.Fatalf("versionInRange(%q) = %v, want %v", tt.version, got, tt.want)
 		}
 	}
@@ -441,20 +441,20 @@ func TestVersionInRangeHandlesMultipleIntervals(t *testing.T) {
 
 func TestCompareVersionsTreatsPrereleaseBelowRelease(t *testing.T) {
 	tests := []struct {
-		a, b string
-		want int
+		eco, a, b string
+		want      int
 	}{
-		{"1.0.0-alpha.1", "1.0.0", -1},
-		{"1.0.0-alpha.1", "1.0.0-beta.1", -1},
-		{"1.0.0-beta.2", "1.0.0-beta.1", 1},
-		{"2.0.0-rc.1", "2.0.0", -1},
-		{"2.0.0~rc1", "2.0.0", -1},
-		{"2.0.0~beta1", "2.0.0~rc1", -1},
-		{"1.0.0", "1.0.0-beta.1", 1},
-		{"1.0.0", "1.0.0", 0},
+		{"npm", "1.0.0-alpha.1", "1.0.0", -1},
+		{"npm", "1.0.0-alpha.1", "1.0.0-beta.1", -1},
+		{"npm", "1.0.0-beta.2", "1.0.0-beta.1", 1},
+		{"npm", "2.0.0-rc.1", "2.0.0", -1},
+		{"debian", "2.0.0~rc1", "2.0.0", -1},
+		{"debian", "2.0.0~beta1", "2.0.0~rc1", -1},
+		{"npm", "1.0.0", "1.0.0-beta.1", 1},
+		{"npm", "1.0.0", "1.0.0", 0},
 	}
 	for _, tt := range tests {
-		got, ok := compareVersions(tt.a, tt.b)
+		got, ok := compareVersions(tt.eco, tt.a, tt.b)
 		if !ok {
 			t.Fatalf("compareVersions(%q, %q) not comparable", tt.a, tt.b)
 		}

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/ziozzang/bongsu/internal/server/vercmp"
 )
 
 func ClassifySecuritySource(source, affectedProducts string) (string, string) {
@@ -157,7 +159,7 @@ func compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installedVersion, cve
 		if len(fixedVersions(p)) == 0 {
 			continue
 		}
-		if !versionIsAffected(installedVersion, p) {
+		if !versionIsAffected(effectiveEco, installedVersion, p) {
 			continue
 		}
 		affectedCat := packageCategory("", effectiveEco)
@@ -176,13 +178,13 @@ func compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installedVersion, cve
 	return affectedProduct{}, false
 }
 
-func versionIsAffected(installed string, p affectedProduct) bool {
+func versionIsAffected(eco, installed string, p affectedProduct) bool {
 	if installed == "" {
 		return false
 	}
 	if len(p.Ranges) > 0 {
 		for _, r := range p.Ranges {
-			if versionInRange(installed, r.Events) {
+			if versionInRange(eco, installed, r.Events) {
 				return true
 			}
 		}
@@ -192,7 +194,7 @@ func versionIsAffected(installed string, p affectedProduct) bool {
 	if len(fixed) != 1 {
 		return false
 	}
-	if less, ok := versionLess(installed, fixed[0]); ok && less {
+	if less, ok := versionLess(eco, installed, fixed[0]); ok && less {
 		return true
 	}
 	return false
@@ -272,13 +274,13 @@ func isSafeFixedVersion(version string) bool {
 	return true
 }
 
-func versionInRange(installed string, events []affectedRangeEvent) bool {
+func versionInRange(eco, installed string, events []affectedRangeEvent) bool {
 	active := false
 	for _, ev := range events {
 		if ev.Introduced != "" {
 			if ev.Introduced == "0" {
 				active = true
-			} else if cmp, ok := compareVersions(installed, ev.Introduced); ok {
+			} else if cmp, ok := compareVersions(eco, installed, ev.Introduced); ok {
 				active = cmp >= 0
 			} else {
 				return false
@@ -288,7 +290,7 @@ func versionInRange(installed string, events []affectedRangeEvent) bool {
 			if !isSafeFixedVersion(ev.Fixed) {
 				return false
 			}
-			if less, ok := versionLess(installed, ev.Fixed); ok {
+			if less, ok := versionLess(eco, installed, ev.Fixed); ok {
 				if less {
 					return true
 				}
@@ -298,7 +300,7 @@ func versionInRange(installed string, events []affectedRangeEvent) bool {
 			}
 		}
 		if active && ev.LastAffected != "" {
-			if cmp, ok := compareVersions(installed, ev.LastAffected); ok {
+			if cmp, ok := compareVersions(eco, installed, ev.LastAffected); ok {
 				if cmp <= 0 {
 					return true
 				}
@@ -308,7 +310,7 @@ func versionInRange(installed string, events []affectedRangeEvent) bool {
 			}
 		}
 		if active && ev.Limit != "" {
-			if less, ok := versionLess(installed, ev.Limit); ok {
+			if less, ok := versionLess(eco, installed, ev.Limit); ok {
 				if less {
 					return true
 				}
@@ -321,137 +323,39 @@ func versionInRange(installed string, events []affectedRangeEvent) bool {
 	return active
 }
 
-func versionLess(a, b string) (bool, bool) {
-	cmp, ok := compareVersions(a, b)
+func versionLess(eco, a, b string) (bool, bool) {
+	cmp, ok := compareVersions(eco, a, b)
 	return cmp < 0, ok
 }
 
-func compareVersions(a, b string) (int, bool) {
-	if ae, aok := numericVersionEpoch(a); aok {
-		be := 0
-		if parsed, bok := numericVersionEpoch(b); bok {
-			be = parsed
-		}
-		if ae < be {
-			return -1, true
-		}
-		if ae > be {
-			return 1, true
-		}
-	}
-	// When `a` (the installed version) carries no epoch we deliberately ignore
-	// `b`'s epoch and fall through to compare upstream segments. Image/container
-	// scanners frequently drop the distro epoch from the installed version, so
-	// trusting the advisory's administrative epoch bump over a clearly-newer
-	// upstream produces large clusters of false positives (e.g. installed
-	// vim 9.1.1230 flagged against a fix of 2:9.0.0135). Epoch downgrades that
-	// reset upstream are rare; favoring upstream comparison here trades that
-	// rare miss for a major reduction in false positives.
-	as := versionSegments(a)
-	bs := versionSegments(b)
-	if len(as) == 0 || len(bs) == 0 {
-		return 0, false
-	}
-	n := len(as)
-	if len(bs) > n {
-		n = len(bs)
-	}
-	for i := 0; i < n; i++ {
-		av, bv := 0, 0
-		if i < len(as) {
-			av = as[i]
-		}
-		if i < len(bs) {
-			bv = bs[i]
-		}
-		if av < bv {
-			return -1, true
-		}
-		if av > bv {
-			return 1, true
+// compareVersions orders two version strings under the rules of the given
+// ecosystem, delegating to the vercmp package which implements the real
+// per-ecosystem algorithms (dpkg, rpmvercmp, apk, semver) — a generic ruleset
+// rather than ad-hoc heuristics.
+//
+// It layers one cross-ecosystem policy on top: epoch-loss tolerance. Image and
+// container scanners routinely drop the distro epoch from the installed version
+// (a). When a carries no epoch but the advisory version (b) does, we strip b's
+// epoch before comparing so an administrative epoch bump can't make a clearly-
+// newer upstream look older — the dominant false-positive source. Epoch
+// downgrades that reset upstream are rare; this trades that rare miss for a
+// major reduction in false positives.
+func compareVersions(eco, a, b string) (int, bool) {
+	if _, aHasEpoch := numericVersionEpoch(a); !aHasEpoch {
+		if be, bHasEpoch := numericVersionEpoch(b); bHasEpoch && be > 0 {
+			b = stripVersionEpoch(b)
 		}
 	}
-	aPre := isPreReleaseVersion(a)
-	bPre := isPreReleaseVersion(b)
-	if aPre && !bPre {
-		return -1, true
-	}
-	if !aPre && bPre {
-		return 1, true
-	}
-	if aPre && bPre {
-		if cmp := comparePreRelease(a, b); cmp != 0 {
-			return cmp, true
-		}
-	}
-	// Tie-break on distro backport suffixes once the base versions are equal:
-	// a Debian/Ubuntu point-release (e.g. 1.0-1+deb12u1, 1.0-1+ubuntu0.1) ships
-	// a fix on top of the base 1.0-1, so it must sort GREATER. This only fires
-	// when everything else compares equal, so it cannot misorder different
-	// bases (no new false positives). semver build metadata (+build123) is not
-	// a recognized distro marker and stays ignored.
-	if cmp := compareBackportSuffix(a, b); cmp != 0 {
-		return cmp, true
-	}
-	return 0, true
+	return vercmp.Compare(eco, a, b)
 }
 
-// compareBackportSuffix orders two versions by their distro backport tail
-// (the part after '+'), recognizing Debian/Ubuntu markers. A version carrying
-// such a suffix outranks one without it; between two suffixes, the trailing
-// numbers decide. Returns 0 when neither side carries a recognized marker.
-func compareBackportSuffix(a, b string) int {
-	aw, aok := backportWeight(a)
-	bw, bok := backportWeight(b)
-	if !aok && !bok {
-		return 0
-	}
-	if aok && !bok {
-		return 1
-	}
-	if !aok && bok {
-		return -1
-	}
-	for i := 0; i < len(aw) || i < len(bw); i++ {
-		av, bv := 0, 0
-		if i < len(aw) {
-			av = aw[i]
-		}
-		if i < len(bw) {
-			bv = bw[i]
-		}
-		if av != bv {
-			if av < bv {
-				return -1
-			}
-			return 1
+func stripVersionEpoch(v string) string {
+	if idx := strings.Index(v, ":"); idx > 0 {
+		if _, err := strconv.Atoi(v[:idx]); err == nil {
+			return v[idx+1:]
 		}
 	}
-	return 0
-}
-
-func backportWeight(v string) ([]int, bool) {
-	idx := strings.Index(v, "+")
-	if idx < 0 || idx == len(v)-1 {
-		return nil, false
-	}
-	suffix := strings.ToLower(v[idx+1:])
-	switch {
-	case strings.HasPrefix(suffix, "deb"),
-		strings.HasPrefix(suffix, "dfsg"),
-		strings.HasPrefix(suffix, "ubuntu"),
-		strings.HasPrefix(suffix, "nmu"),
-		(strings.HasPrefix(suffix, "b") && len(suffix) > 1 && suffix[1] >= '0' && suffix[1] <= '9'):
-	default:
-		return nil, false
-	}
-	nums := []int{}
-	for _, part := range strings.FieldsFunc(suffix, func(r rune) bool { return r < '0' || r > '9' }) {
-		if n, err := strconv.Atoi(part); err == nil {
-			nums = append(nums, n)
-		}
-	}
-	return nums, true
+	return v
 }
 
 func numericVersionEpoch(v string) (int, bool) {
@@ -465,131 +369,6 @@ func numericVersionEpoch(v string) (int, bool) {
 		return 0, false
 	}
 	return epoch, true
-}
-
-func isPreReleaseVersion(v string) bool {
-	v = strings.ToLower(strings.TrimSpace(v))
-	if idx := strings.Index(v, "+"); idx >= 0 {
-		v = v[:idx]
-	}
-	if strings.Contains(v, "~") {
-		return true
-	}
-	for _, marker := range preReleaseMarkers() {
-		if strings.Contains(v, marker) {
-			return true
-		}
-	}
-	return false
-}
-
-func versionSegments(v string) []int {
-	v = stripPreReleaseSuffix(strings.TrimSpace(v))
-	if i := strings.Index(v, ":"); i >= 0 {
-		v = v[i+1:]
-	}
-	parts := strings.FieldsFunc(v, func(r rune) bool {
-		return r < '0' || r > '9'
-	})
-	out := make([]int, 0, len(parts))
-	for _, p := range parts {
-		if p == "" {
-			continue
-		}
-		n, err := strconv.Atoi(p)
-		if err != nil {
-			return nil
-		}
-		out = append(out, n)
-	}
-	return out
-}
-
-func stripPreReleaseSuffix(v string) string {
-	low := strings.ToLower(v)
-	if idx := strings.IndexAny(low, "+~"); idx >= 0 {
-		low = low[:idx]
-		v = v[:idx]
-	}
-	cut := len(v)
-	for _, marker := range preReleaseMarkers() {
-		if idx := strings.Index(low, marker); idx >= 0 && idx < cut {
-			cut = idx
-		}
-	}
-	return strings.TrimRight(v[:cut], "-_.")
-}
-
-func preReleaseMarkers() []string {
-	return []string{"dev", "snapshot", "preview", "pre", "alpha", "beta", "rc"}
-}
-
-func comparePreRelease(a, b string) int {
-	aRank, aNum := preReleaseRank(a)
-	bRank, bNum := preReleaseRank(b)
-	if aRank < bRank {
-		return -1
-	}
-	if aRank > bRank {
-		return 1
-	}
-	if aNum < bNum {
-		return -1
-	}
-	if aNum > bNum {
-		return 1
-	}
-	return 0
-}
-
-func preReleaseRank(v string) (int, int) {
-	v = strings.ToLower(strings.TrimSpace(v))
-	if idx := strings.Index(v, "+"); idx >= 0 {
-		v = v[:idx]
-	}
-	for rank, marker := range preReleaseMarkers() {
-		if strings.Contains(v, marker) {
-			n, _ := preReleaseNumber(v, marker)
-			return rank + 1, n
-		}
-	}
-	if strings.Contains(v, "~") {
-		if n, ok := preReleaseNumber(v, "~"); ok {
-			return 0, n
-		}
-		return 0, 0
-	}
-	return len(preReleaseMarkers()) + 1, 0
-}
-
-func preReleaseNumber(v, marker string) (int, bool) {
-	idx := strings.Index(v, marker)
-	if idx < 0 {
-		return 0, false
-	}
-	rest := v[idx+len(marker):]
-	start := -1
-	end := -1
-	for i, r := range rest {
-		if r >= '0' && r <= '9' {
-			if start < 0 {
-				start = i
-			}
-			end = i + 1
-			continue
-		}
-		if start >= 0 {
-			break
-		}
-	}
-	if start < 0 {
-		return 0, false
-	}
-	n, err := strconv.Atoi(rest[start:end])
-	if err != nil {
-		return 0, false
-	}
-	return n, true
 }
 
 func fixedVersionSQLCondition(alias string) string {
