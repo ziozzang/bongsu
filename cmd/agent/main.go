@@ -429,11 +429,13 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 		log.Printf("Host: %d packages, %d vulnerabilities", len(pkgs), len(vulns))
 	}
 
-	// 4b. Language dependency scan — finds runtimes/libraries installed outside
-	// the OS package manager (pyenv, nvm, app bundles) by walking lockfiles and
-	// installed metadata across the configured language scan roots.
+	// 4b. Language dependency + runtime scan — finds libraries (lockfiles,
+	// installed metadata) AND language runtimes themselves (pyenv-built
+	// pythons, node tarballs, hand-unpacked JDKs) installed outside the OS
+	// package manager, across the configured language scan roots.
 	if scanOpts.nativeScanner() && len(scanOpts.LangScanRoots) > 0 {
 		langSeen := 0
+		runtimeSeen := 0
 		for _, lr := range scanOpts.LangScanRoots {
 			langPkgs := scanner.ScanLanguagePackages(lr, scanOpts.LangScanDepth)
 			for i := range langPkgs {
@@ -442,9 +444,17 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 			}
 			allPkgs = append(allPkgs, langPkgs...)
 			langSeen += len(langPkgs)
+
+			rtPkgs := scanner.ScanRuntimes(lr, scanOpts.LangScanDepth)
+			for i := range rtPkgs {
+				rtPkgs[i].AssetType = "host"
+				rtPkgs[i].AssetID = host.ID
+			}
+			allPkgs = append(allPkgs, rtPkgs...)
+			runtimeSeen += len(rtPkgs)
 		}
-		if langSeen > 0 {
-			log.Printf("Language scan: %d packages across %d root(s)", langSeen, len(scanOpts.LangScanRoots))
+		if langSeen > 0 || runtimeSeen > 0 {
+			log.Printf("Language scan: %d packages, %d runtimes across %d root(s)", langSeen, runtimeSeen, len(scanOpts.LangScanRoots))
 		}
 	}
 

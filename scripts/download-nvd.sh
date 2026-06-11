@@ -119,14 +119,39 @@ for year in years:
                     for c in cve.get("configurations", []):
                         for node in c.get("nodes", []):
                             for match in node.get("cpeMatch", []):
+                                if not match.get("vulnerable", False):
+                                    continue
                                 criteria = match.get("criteria", "")
-                                if criteria:
-                                    parts = criteria.split(":")
-                                    if len(parts) >= 5:
-                                        key = f"{parts[3]}:{parts[4]}"
-                                        if key not in seen_p:
-                                            seen_p.add(key)
-                                            products.append({"vendor": parts[3], "product": parts[4]})
+                                if not criteria:
+                                    continue
+                                parts = criteria.split(":")
+                                if len(parts) < 5:
+                                    continue
+                                vendor = parts[3]
+                                product = parts[4]
+                                version = parts[5] if len(parts) > 5 else ""
+                                if version in ("*", "-"):
+                                    version = ""
+                                vsi = match.get("versionStartIncluding", "")
+                                vse = match.get("versionStartExcluding", "")
+                                vei = match.get("versionEndIncluding", "")
+                                vee = match.get("versionEndExcluding", "")
+                                key = (vendor, product, version, vsi, vse, vei, vee)
+                                if key in seen_p:
+                                    continue
+                                seen_p.add(key)
+                                prod = {"vendor": vendor, "product": product}
+                                if version:
+                                    prod["version"] = version
+                                if vsi:
+                                    prod["version_start_including"] = vsi
+                                if vse:
+                                    prod["version_start_excluding"] = vse
+                                if vei:
+                                    prod["version_end_including"] = vei
+                                if vee:
+                                    prod["version_end_excluding"] = vee
+                                products.append(prod)
 
                     entry = {
                         "vulnerability_id": cve_id,
@@ -139,7 +164,7 @@ for year in years:
                         "description": desc[:4000] if desc else "",
                         "published_date": published,
                         "modified_date": modified,
-                        "affected_products": json.dumps(products[:50]),
+                        "affected_products": json.dumps(products[:100]),
                         "references": json.dumps(refs),
                         "raw_data": json.dumps({"id": cve_id, "severity": severity, "cvss": cvss_score})
                     }
