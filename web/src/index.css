@@ -69,6 +69,18 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--primary);
 }
 
+/* Keyboard focus rings: visible only for keyboard nav, not mouse clicks. */
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  border-color: var(--primary);
+}
+button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 input::placeholder, textarea::placeholder {
   color: var(--text-muted);
 }
@@ -671,6 +683,20 @@ tbody tr:hover td {
 .clickable { cursor: pointer; transition: color var(--transition); }
 .clickable:hover { color: var(--primary); }
 th.clickable { white-space: nowrap; }
+
+/* Sortable column headers: clear clickable affordance + active-sort indicator. */
+.sort-th { cursor: pointer; transition: color var(--transition); }
+.sort-th:hover { color: var(--text); }
+.sort-th.sort-active { color: var(--text); }
+.sort-ind {
+  margin-left: 0.3em;
+  font-size: 0.8em;
+  color: var(--text-muted);
+  opacity: 0.45;
+  transition: opacity var(--transition), color var(--transition);
+}
+.sort-th:hover .sort-ind { opacity: 0.8; }
+.sort-ind.active { color: var(--primary); opacity: 1; }
 
 .host-link {
   color: var(--primary);

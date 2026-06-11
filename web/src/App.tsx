@@ -121,6 +121,28 @@ function EmptyState({ message = 'No results found' }: { message?: string }) {
   return <div className="state-block">{message}</div>;
 }
 
+// SortHeader: a sortable <th> with a clear, clickable affordance. The active
+// column shows a solid ▲/▼ arrow; inactive columns show a dimmed ↕ hint.
+function SortHeader({ col, label, sortBy, sortDesc, onSort }: {
+  col: string; label: React.ReactNode; sortBy: string; sortDesc: boolean; onSort: (col: string) => void;
+}) {
+  const active = sortBy === col;
+  return (
+    <th
+      className={`clickable sort-th${active ? ' sort-active' : ''}`}
+      onClick={() => onSort(col)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col); } }}
+      role="button"
+      tabIndex={0}
+      aria-sort={active ? (sortDesc ? 'descending' : 'ascending') : 'none'}
+      style={{ userSelect: 'none' }}
+    >
+      {label}
+      <span className={`sort-ind${active ? ' active' : ''}`} aria-hidden="true">{active ? (sortDesc ? '▼' : '▲') : '↕'}</span>
+    </th>
+  );
+}
+
 // ── Icon system ──────────────────────────────────────────────────────────────
 // Single stroke-based inline SVG icon component (lucide-style: 1.5px stroke,
 // round caps/joins, currentColor). No external icon dependency.
@@ -520,14 +542,29 @@ function CheckboxField({ label, checked, onChange, title, disabled }: { label: s
 // Modal is the shared dialog shell: consistent backdrop, header with title + X,
 // Escape-to-close, and a scrollable body.
 function Modal({ title, onClose, children, width }: { title: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: string }) {
+  const modalRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Move focus into the dialog on open; restore to the trigger on close.
+    const prevFocus = document.activeElement as HTMLElement | null;
+    modalRef.current?.focus();
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus();
+    };
   }, [onClose]);
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={width ? { width } : undefined}>
+      <div
+        ref={modalRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        style={width ? { width } : undefined}
+      >
         <div className="modal-header">
           <h2>{title}</h2>
           <button type="button" className="modal-close" onClick={onClose} aria-label="Close" title="Close (Esc)">×</button>
@@ -642,6 +679,35 @@ function formatAge(seconds?: number) {
 function dateInputValue(value?: string | null) {
   if (!value) return '';
   return value.slice(0, 10);
+}
+
+// ── Shared formatting helpers ────────────────────────────────────────────────
+// One date/time format used across every view: local "YYYY-MM-DD HH:mm".
+function pad2(n: number): string { return n < 10 ? `0${n}` : `${n}`; }
+function formatDateTime(value?: string | number | null): string {
+  if (value === undefined || value === null || value === '') return '-';
+  const dt = new Date(value);
+  if (isNaN(dt.getTime())) return typeof value === 'string' ? value : '-';
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+}
+// Full precision (with seconds) for hover tooltips.
+function formatDateTimeFull(value?: string | number | null): string {
+  if (value === undefined || value === null || value === '') return '-';
+  const dt = new Date(value);
+  if (isNaN(dt.getTime())) return typeof value === 'string' ? value : '-';
+  return `${formatDateTime(value)}:${pad2(dt.getSeconds())}`;
+}
+// Date-only local "YYYY-MM-DD".
+function formatDateOnly(value?: string | number | null): string {
+  if (value === undefined || value === null || value === '') return '-';
+  const dt = new Date(value);
+  if (isNaN(dt.getTime())) return typeof value === 'string' ? value : '-';
+  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+}
+// Thousands-grouped integer; counts > 999 always get separators.
+function fmtCount(n?: number | null): string {
+  if (n === undefined || n === null || !Number.isFinite(n)) return '0';
+  return n.toLocaleString();
 }
 
 function parseCvssVector(vector: string) {
@@ -915,7 +981,7 @@ function ChangePasswordPanel({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <form onSubmit={submit} style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+    <form onSubmit={submit} onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } }} style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
       <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Change Password</div>
       <input type="password" placeholder="Current password" value={current} onChange={(e) => setCurrent(e.target.value)} autoComplete="current-password" />
       <input type="password" placeholder="New password" value={next} onChange={(e) => setNext(e.target.value)} autoComplete="new-password" />
@@ -2795,9 +2861,9 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
                   <td className="mono" style={{ fontSize: '0.75rem' }}>
                     {h.latest_inventory?.latest_scan_id ? (
                       <>
-                        {h.latest_inventory.latest_package_count || 0} pkgs / {h.latest_inventory.latest_vulnerability_count || 0} vulns / {h.latest_inventory.latest_container_count || 0} ctrs
+                        {fmtCount(h.latest_inventory.latest_package_count)} pkgs / {fmtCount(h.latest_inventory.latest_vulnerability_count)} vulns / {fmtCount(h.latest_inventory.latest_container_count)} ctrs
                         {h.latest_inventory.latest_scan_status === 'degraded' && <span className="badge" style={{ color: 'var(--medium)', marginLeft: 6 }}>degraded</span>}
-                        <div style={{ color: 'var(--text-muted)' }}>{h.latest_inventory.latest_scan_at ? new Date(h.latest_inventory.latest_scan_at).toLocaleString() : '-'}</div>
+                        <div style={{ color: 'var(--text-muted)' }} title={formatDateTimeFull(h.latest_inventory.latest_scan_at)}>{formatDateTime(h.latest_inventory.latest_scan_at)}</div>
                       </>
                     ) : <span style={{ color: 'var(--text-muted)' }}>No completed or degraded scan</span>}
                   </td>
@@ -2805,7 +2871,7 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
                   <td style={{ color: sevColor('HIGH'), fontWeight: 600 }}>{counts.HIGH || 0}</td>
                   <td style={{ color: sevColor('MEDIUM'), fontWeight: 600 }}>{counts.MEDIUM || 0}</td>
                   <td style={{ color: sevColor('LOW'), fontWeight: 600 }}>{counts.LOW || 0}</td>
-                  <td className="mono">{new Date(h.last_seen).toLocaleString()}</td>
+                  <td className="mono" title={formatDateTimeFull(h.last_seen)}>{formatDateTime(h.last_seen)}</td>
                   <td>
                     <div style={{ display: 'flex', gap: '0.375rem' }}>
                       <button
@@ -2845,7 +2911,7 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
                 </tr>
               );
             })}
-            {hosts.length === 0 && <tr className="empty-row"><td colSpan={16}>No hosts registered</td></tr>}
+            {hosts.length === 0 && <tr className="empty-row"><td colSpan={16}>No hosts match — clear the filters above, or register an agent to start reporting inventory.</td></tr>}
           </tbody>
         </table>
         )}
@@ -2871,6 +2937,18 @@ function HostDetailView({ hostId, onBack, onSelectVuln }: { hostId: string; onBa
   const [metadataMsg, setMetadataMsg] = useState('');
   const [agentTokenMsg, setAgentTokenMsg] = useState('');
   const limit = 50;
+
+  // Escape returns to the host list (matches dialog dismissal feel).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      onBack();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onBack]);
 
   useEffect(() => {
     api.host(hostId).then(h => {
@@ -3224,10 +3302,6 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
     load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch, vadv);
   };
 
-  const sortArrow = (col: string) => {
-    if (sortBy !== col) return ' ↕';
-    return sortDesc ? ' ▼' : ' ▲';
-  };
 
   const badgeClass = (sev: string) => `badge badge-${sev.toLowerCase()}`;
   const epssParam = (epss: string) => {
@@ -3607,7 +3681,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
                 <th>Status</th>
                 <th>Source</th>
                 {cols.map(([key, label]) => (
-                  <th key={key} className="clickable" onClick={() => toggleSort(key)} style={{ userSelect: 'none' }}>{label}{sortArrow(key)}</th>
+                  <SortHeader key={key} col={key} label={label} sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
                 ))}
                 <th>Assignee</th>
               </tr>
@@ -3668,8 +3742,8 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
                         : v.fixed_version)
                       : <span style={{ color: 'var(--text-muted)' }}>-</span>}
                   </td>
-                  <td className="mono" style={{ color: v.overdue ? 'var(--critical)' : 'var(--text-muted)' }}>
-                    {v.due_at ? new Date(v.due_at).toLocaleDateString() : '-'}
+                  <td className="mono" style={{ color: v.overdue ? 'var(--critical)' : 'var(--text-muted)' }} title={v.due_at ? `Due ${formatDateOnly(v.due_at)}` : ''}>
+                    {formatDateOnly(v.due_at)}
                   </td>
                   <td onClick={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
                     {editAssigneeId === v.id ? (
@@ -3699,7 +3773,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
                   </td>
                 </tr>
               ))}
-              {vulns.length === 0 && <tr className="empty-row"><td colSpan={19}>No vulnerabilities found</td></tr>}
+              {vulns.length === 0 && <tr className="empty-row"><td colSpan={19}>No vulnerabilities match the current filters — try widening severity, risk, or clearing the search above.</td></tr>}
             </tbody>
           </table>
         )}
@@ -3799,6 +3873,18 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
   const [triageScope, setTriageScope] = useState<'finding' | 'host' | 'global'>('finding');
   const [triageMsg, setTriageMsg] = useState('');
 
+  // Escape returns to the vulnerability list (unless typing in a field).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      onBack();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onBack]);
+
   useEffect(() => {
     api.hosts().then(hs => {
       const m: Record<string, string> = {};
@@ -3889,7 +3975,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         </div>
         <div className="stat-card">
           <div className="label">EPSS</div>
-          <div style={{ fontSize: '0.875rem' }}>{vuln.epss_score ? `${(vuln.epss_score * 100).toFixed(2)}%` : '-'}</div>
+          <div style={{ fontSize: '0.875rem' }}>{vuln.epss_score ? `${(vuln.epss_score * 100).toFixed(1)}%` : '-'}</div>
           {vuln.epss_percentile ? <div className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>p{(vuln.epss_percentile * 100).toFixed(1)}</div> : null}
         </div>
         <div className="stat-card">
@@ -3902,7 +3988,7 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         <div className="stat-card">
           <div className="label">SLA Due</div>
           <div style={{ fontSize: '0.875rem', color: vuln.overdue ? 'var(--critical)' : 'inherit' }}>
-            {vuln.due_at ? new Date(vuln.due_at).toLocaleDateString() : '-'}
+            {formatDateOnly(vuln.due_at)}
           </div>
         </div>
       </div>
@@ -4145,10 +4231,6 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
     load(0, hostId, container, lang, source, query, col, nextDesc, adv);
   };
 
-  const sortArrow = (col: string) => {
-    if (sortBy !== col) return ' ↕';
-    return sortDesc ? ' ▼' : ' ▲';
-  };
 
   const cols: [string, string][] = [
     ['name', 'Name'], ['version', 'Version'], ['pkg_type', 'Type'],
@@ -4270,7 +4352,7 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
               <tr>
                 <th>Host</th>
                 {cols.map(([key, label]) => (
-                  <th key={key} className="clickable" onClick={() => toggleSort(key)} style={{ userSelect: 'none' }}>{label}{sortArrow(key)}</th>
+                  <SortHeader key={key} col={key} label={label} sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
                 ))}
                 <th>Path</th>
                 <th>Scanned</th>
@@ -4288,10 +4370,10 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
                   <td>{p.container || <span style={{ color: 'var(--text-muted)' }}>host</span>}</td>
                   <td>{p.source}</td>
                   <td className="path-cell">{(() => { const fp = p.file_path || (p.target ? "/" + p.target : ""); return fp ? <>{fp.length > 35 ? fp.slice(0, 35) + "..." : fp}<span className="path-tip">{fp}</span></> : "-"; })()}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{p.created_at ? new Date(p.created_at).toLocaleDateString() : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(p.created_at)}>{formatDateOnly(p.created_at)}</td>
                 </tr>
               ))}
-              {pkgs.length === 0 && <tr className="empty-row"><td colSpan={10}>No packages found</td></tr>}
+              {pkgs.length === 0 && <tr className="empty-row"><td colSpan={10}>No packages match — adjust the host, source, or search filters above, or run a scan to collect inventory.</td></tr>}
             </tbody>
           </table>
         )}
@@ -4369,10 +4451,6 @@ function ContainersView() {
     load(0, hostId, runtime, state, image, query, col, nextDesc);
   };
 
-  const sortArrow = (col: string) => {
-    if (sortBy !== col) return ' ↕';
-    return sortDesc ? ' ▼' : ' ▲';
-  };
 
   const runtimes = Array.from(new Set(['docker', 'containerd', 'podman', ...containers.map(c => c.runtime).filter(Boolean)])).sort();
   const states = Array.from(new Set(['running', 'exited', 'created', 'paused', 'restarting', 'dead', ...containers.map(c => c.state).filter(Boolean)])).sort();
@@ -4431,7 +4509,7 @@ function ContainersView() {
               <tr>
                 <th>Host</th>
                 {cols.map(([key, label]) => (
-                  <th key={key} className="clickable" onClick={() => toggleSort(key)} style={{ userSelect: 'none' }}>{label}{sortArrow(key)}</th>
+                  <SortHeader key={key} col={key} label={label} sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
                 ))}
                 <th>Labels</th>
                 <th>Image ID</th>
@@ -4458,12 +4536,12 @@ function ContainersView() {
                   <td className="mono" style={{ color: c.critical_count ? 'var(--critical)' : 'var(--text-muted)', fontWeight: c.critical_count ? 700 : 400 }}>{c.critical_count || 0}</td>
                   <td className="mono" style={{ color: c.high_count ? 'var(--high)' : 'var(--text-muted)', fontWeight: c.high_count ? 700 : 400 }}>{c.high_count || 0}</td>
                   <td className="mono" style={{ color: (c.max_cvss || 0) >= 9 ? 'var(--critical)' : (c.max_cvss || 0) >= 7 ? 'var(--high)' : 'var(--text-muted)' }}>{c.max_cvss ? c.max_cvss.toFixed(1) : '-'}</td>
-                  <td className="mono">{c.package_count || 0}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{c.started_at ? new Date(c.started_at).toLocaleString() : '-'}</td>
+                  <td className="mono">{fmtCount(c.package_count)}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(c.started_at)}>{formatDateTime(c.started_at)}</td>
                   <td className="mono" title={c.labels_redacted ? 'Labels hidden by default; use include_labels=true in the API for raw labels' : ''}>{c.label_count || 0}</td>
                   <td className="mono" title={c.image_id}>{c.image_id ? c.image_id.replace(/^sha256:/, '').slice(0, 18) : '-'}</td>
                   <td className="mono" title={c.latest_scan_id || c.scan_id}>{(c.latest_scan_id || c.scan_id || '').slice(0, 8) || '-'}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{c.created_at ? new Date(c.created_at).toLocaleString() : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(c.created_at)}>{formatDateTime(c.created_at)}</td>
                 </tr>
                 {expandedFacts === c.id && c.facts && (
                   <tr>
@@ -4474,7 +4552,7 @@ function ContainersView() {
                 )}
                 </React.Fragment>
               ))}
-              {containers.length === 0 && <tr className="empty-row"><td colSpan={16}>No containers found</td></tr>}
+              {containers.length === 0 && <tr className="empty-row"><td colSpan={16}>No containers reported yet — agents collect running containers automatically unless started with -skip-containers.</td></tr>}
             </tbody>
           </table>
         )}
@@ -4588,10 +4666,7 @@ function CveSearchView() {
     if (groupKey) loadReferenceGroup(groupKey);
   };
 
-  const formatDate = (d: string | null | undefined) => {
-    if (!d) return "-";
-    try { return new Date(d).toLocaleDateString(); } catch { return "-"; }
-  };
+  const formatDate = (d: string | null | undefined) => formatDateOnly(d);
 
   const toggleSort = (col: string) => {
     const nextDesc = sortBy === col ? !sortDesc : true;
@@ -4600,10 +4675,6 @@ function CveSearchView() {
     doSearch(0, col, nextDesc);
   };
 
-  const sortArrow = (col: string) => {
-    if (sortBy !== col) return ' ↕';
-    return sortDesc ? ' ▼' : ' ▲';
-  };
   const searchReferenceGroup = (key: string) => {
     setReferenceKey(key);
     doSearch(0, sortBy, sortDesc, key);
@@ -4726,14 +4797,14 @@ function CveSearchView() {
           <table>
             <thead>
               <tr>
-                <th className="clickable" onClick={() => toggleSort('vulnerability_id')} style={{ userSelect: 'none' }}>CVE ID{sortArrow('vulnerability_id')}</th>
-                <th className="clickable" onClick={() => toggleSort('severity')} style={{ userSelect: 'none' }}>Severity{sortArrow('severity')}</th>
-                <th className="clickable" onClick={() => toggleSort('cvss_score')} style={{ userSelect: 'none' }}>CVSS{sortArrow('cvss_score')}</th>
-                <th className="clickable" onClick={() => toggleSort('epss_score')} style={{ userSelect: 'none' }}>EPSS{sortArrow('epss_score')}</th>
-                <th className="clickable" onClick={() => toggleSort('source')} style={{ userSelect: 'none' }}>Source{sortArrow('source')}</th>
+                <SortHeader col="vulnerability_id" label="CVE ID" sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
+                <SortHeader col="severity" label="Severity" sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
+                <SortHeader col="cvss_score" label="CVSS" sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
+                <SortHeader col="epss_score" label="EPSS" sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
+                <SortHeader col="source" label="Source" sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
                 <th>Match</th>
-                <th className="clickable" onClick={() => toggleSort('title')} style={{ userSelect: 'none' }}>Title{sortArrow('title')}</th>
-                <th className="clickable" onClick={() => toggleSort('published_date')} style={{ userSelect: 'none' }}>Published{sortArrow('published_date')}</th>
+                <SortHeader col="title" label="Title" sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
+                <SortHeader col="published_date" label="Published" sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
               </tr>
             </thead>
             <tbody>
@@ -5203,7 +5274,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
             <tbody>
               {requests.map(req => (
                 <tr key={req.id}>
-                  <td className="mono">{new Date(req.created_at).toLocaleString()}</td>
+                  <td className="mono" title={formatDateTimeFull(req.created_at)}>{formatDateTime(req.created_at)}</td>
                   <td className="mono" style={{ fontSize: '0.75rem', color: req.request_stale ? 'var(--medium)' : 'var(--text-muted)' }}>{formatAge(req.request_age_seconds)}</td>
                   <td><span className="host-link" title={`IP: ${req.host_id ? hostIPMap[req.host_id] || '' : ''}`}>{req.host_id ? hostMap[req.host_id] || req.host_id : 'All polling agents'}</span></td>
                   <td><span className="host-link" title={`IP: ${req.claimed_by_host_id ? hostIPMap[req.claimed_by_host_id] || '' : ''}`}>{req.claimed_by_host_id ? hostMap[req.claimed_by_host_id] || req.claimed_by_host_id : '-'}</span></td>
@@ -5212,16 +5283,16 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
                   <td>{req.packages_only ? 'packages' : 'full'}</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>{req.security_db_revision || '-'}</td>
                   <td className="path-cell">{req.reason || req.error_message || '-'}{(req.reason || req.error_message) && <span className="path-tip">{req.reason || req.error_message}</span>}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{req.claimed_at ? new Date(req.claimed_at).toLocaleString() : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(req.claimed_at)}>{formatDateTime(req.claimed_at)}</td>
                   <td className="mono" style={{ fontSize: '0.75rem', color: req.claim_stale ? 'var(--medium)' : 'var(--text-muted)' }}>{req.claimed_at ? formatAge(req.claim_age_seconds) : '-'}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{req.completed_at ? new Date(req.completed_at).toLocaleString() : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(req.completed_at)}>{formatDateTime(req.completed_at)}</td>
                   <td>
                     {['pending', 'claimed'].includes(req.status) && <button className="delete-btn" onClick={() => cancelRequest(req.id)}>Cancel</button>}
                     {['failed', 'degraded', 'cancelled'].includes(req.status) && <button className="update-btn" onClick={() => requeueRequest(req)}>Requeue</button>}
                   </td>
                 </tr>
               ))}
-              {requests.length === 0 && <tr className="empty-row"><td colSpan={13}>No scan requests</td></tr>}
+              {requests.length === 0 && <tr className="empty-row"><td colSpan={13}>No scan requests in the queue — requests appear here when you trigger a scan or a schedule fires.</td></tr>}
             </tbody>
           </table>
         )}
@@ -5238,15 +5309,15 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
             <tbody>
               {scans.map(s => (
                 <tr key={s.id}>
-                  <td className="mono">{new Date(s.created_at).toLocaleString()}</td>
+                  <td className="mono" title={formatDateTimeFull(s.created_at)}>{formatDateTime(s.created_at)}</td>
                   <td><span className="host-link" title={`IP: ${hostIPMap[s.host_id] || ''}`}>{hostMap[s.host_id] || s.host_id}</span></td>
                   <td>{s.scan_type}</td>
                   <td style={{ color: statusColor(s.status), fontWeight: 600 }}>{s.status}</td>
                   <td className="path-cell" style={{ maxWidth: '18rem' }}>{s.error_summary || '-'}{s.error_summary && <span className="path-tip">{s.error_summary}</span>}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{s.package_count || 0} pkgs / {s.vulnerability_count || 0} vulns / {s.container_count || 0} ctrs</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }}>{fmtCount(s.package_count)} pkgs / {fmtCount(s.vulnerability_count)} vulns / {fmtCount(s.container_count)} ctrs</td>
                   <td className="mono" style={{ fontSize: '0.75rem' }}>+{s.packages_added || 0} / -{s.packages_removed || 0} / ~{s.packages_changed || 0}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{s.started_at ? new Date(s.started_at).toLocaleString() : '-'}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{s.finished_at ? new Date(s.finished_at).toLocaleString() : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(s.started_at)}>{formatDateTime(s.started_at)}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(s.finished_at)}>{formatDateTime(s.finished_at)}</td>
                   <td><button className="delete-btn" onClick={() => {
                     if (!confirm('Delete this scan and all associated data?')) return;
                     api.deleteScan(s.id).then(() => load(page)).catch(() => {
@@ -5259,7 +5330,7 @@ function ScansView({ initialRequestFilters = {} }: { initialRequestFilters?: Sca
                   }}>Delete</button></td>
                 </tr>
               ))}
-              {scans.length === 0 && <tr className="empty-row"><td colSpan={10}>No scans recorded</td></tr>}
+              {scans.length === 0 && <tr className="empty-row"><td colSpan={10}>No scans recorded yet — completed agent scans appear here. Trigger one from Hosts or a Schedule.</td></tr>}
             </tbody>
           </table>
         )}
@@ -5460,11 +5531,11 @@ function RBACView() {
                     <td><span className="badge">{s.subject_type}</span></td>
                     <td className="mono">{s.external_id}</td>
                     <td>{s.display_name || '-'}</td>
-                    <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(s.updated_at).toLocaleString()}</td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(s.updated_at)}>{formatDateTime(s.updated_at)}</td>
                     <td><button className="delete-btn" onClick={() => deleteSubject(s)}>Revoke</button></td>
                   </tr>
                 ))}
-                {subjects.length === 0 && <tr className="empty-row"><td colSpan={5}>No subjects</td></tr>}
+                {subjects.length === 0 && <tr className="empty-row"><td colSpan={5}>No subjects yet — add a user, group, or token above before granting it policies.</td></tr>}
               </tbody>
             </table>
           )}
@@ -5480,11 +5551,11 @@ function RBACView() {
                     <td>{p.subject_type}<div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{p.subject_external_id}</div></td>
                     <td>{p.resource_type}<div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{p.resource_id || '*'}</div></td>
                     <td><span className="badge">{p.permission}</span></td>
-                    <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(p.created_at).toLocaleString()}</td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(p.created_at)}>{formatDateTime(p.created_at)}</td>
                     <td><button className="delete-btn" onClick={() => deletePolicy(p)}>Revoke</button></td>
                   </tr>
                 ))}
-                {policies.length === 0 && <tr className="empty-row"><td colSpan={5}>No policies</td></tr>}
+                {policies.length === 0 && <tr className="empty-row"><td colSpan={5}>No policies yet — grant a subject a permission on a resource above. With none defined, default role access applies.</td></tr>}
               </tbody>
             </table>
           )}
@@ -5629,7 +5700,7 @@ function AuditLogView() {
             <tbody>
               {items.map(item => (
                 <tr key={item.id}>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(item.created_at).toLocaleString()}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(item.created_at)}>{formatDateTime(item.created_at)}</td>
                   <td>{item.actor_type}<div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{item.actor_id || '-'}</div></td>
                   <td className="mono">{item.action}</td>
                   <td>{item.resource_type}<div className="mono" style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>{item.resource_id || '-'}</div></td>
@@ -5638,7 +5709,7 @@ function AuditLogView() {
                   <td className="path-cell">{JSON.stringify(item.metadata || {})}<span className="path-tip">{JSON.stringify(item.metadata || {}, null, 2)}</span></td>
                 </tr>
               ))}
-              {items.length === 0 && <tr className="empty-row"><td colSpan={7}>No audit events</td></tr>}
+              {items.length === 0 && <tr className="empty-row"><td colSpan={7}>No audit events match — clear the filters above. Privileged actions (auth, RBAC, scans) are recorded here.</td></tr>}
             </tbody>
           </table>
         )}
@@ -5796,12 +5867,12 @@ function SchedulesView() {
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.cron_expr}</td>
                   <td>{s.packages_only ? 'packages_only' : s.scan_type}</td>
                   <td><span className="badge" style={{ color: s.enabled ? 'var(--low)' : 'var(--medium)' }}>{s.enabled ? 'yes' : 'no'}</span></td>
-                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.last_run ? new Date(s.last_run).toLocaleString() : '-'}</td>
-                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{s.next_run ? new Date(s.next_run).toLocaleString() : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }} title={formatDateTimeFull(s.last_run)}>{formatDateTime(s.last_run)}</td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }} title={formatDateTimeFull(s.next_run)}>{formatDateTime(s.next_run)}</td>
                   <td><button className="btn btn-danger btn-sm" onClick={() => handleDelete(s.id)}>Delete</button></td>
                 </tr>
               ))}
-              {items.length === 0 && <tr className="empty-row"><td colSpan={7}>No schedules</td></tr>}
+              {items.length === 0 && <tr className="empty-row"><td colSpan={7}>No scheduled scans yet — use the Create Schedule form above with a cron expression (e.g. 0 2 * * *) to run recurring scans.</td></tr>}
             </tbody>
           </table>
         )}
@@ -5974,7 +6045,7 @@ function AssetGroupsView() {
                 )}
                 </React.Fragment>
               ))}
-              {items.length === 0 && <tr className="empty-row"><td colSpan={7}>No asset groups</td></tr>}
+              {items.length === 0 && <tr className="empty-row"><td colSpan={7}>No asset groups yet — use the form above to create a static group or a dynamic group with a rule expression to organize hosts.</td></tr>}
             </tbody>
           </table>
         )}
@@ -6102,12 +6173,12 @@ function TrendsView() {
                 {rows.map(r => (
                   <tr key={r.date}>
                     <td className="mono" style={{ fontSize: '0.8125rem' }}>{r.date}</td>
-                    <td className="mono">{n(r.total_vulns).toLocaleString()}</td>
-                    <td className="mono" style={{ color: 'var(--critical)', fontWeight: n(r.critical_count) ? 600 : 400 }}>{n(r.critical_count)}</td>
-                    <td className="mono" style={{ color: 'var(--high)', fontWeight: n(r.high_count) ? 600 : 400 }}>{n(r.high_count)}</td>
-                    <td className="mono" style={{ color: 'var(--medium)', fontWeight: n(r.medium_count) ? 600 : 400 }}>{n(r.medium_count)}</td>
-                    <td className="mono" style={{ color: 'var(--low)', fontWeight: n(r.low_count) ? 600 : 400 }}>{n(r.low_count)}</td>
-                    <td className="mono" style={{ color: n(r.exploited_count) ? 'var(--high)' : 'var(--text-muted)', fontWeight: n(r.exploited_count) ? 600 : 400 }}>{n(r.exploited_count)}</td>
+                    <td className="mono">{fmtCount(n(r.total_vulns))}</td>
+                    <td className="mono" style={{ color: 'var(--critical)', fontWeight: n(r.critical_count) ? 600 : 400 }}>{fmtCount(n(r.critical_count))}</td>
+                    <td className="mono" style={{ color: 'var(--high)', fontWeight: n(r.high_count) ? 600 : 400 }}>{fmtCount(n(r.high_count))}</td>
+                    <td className="mono" style={{ color: 'var(--medium)', fontWeight: n(r.medium_count) ? 600 : 400 }}>{fmtCount(n(r.medium_count))}</td>
+                    <td className="mono" style={{ color: 'var(--low)', fontWeight: n(r.low_count) ? 600 : 400 }}>{fmtCount(n(r.low_count))}</td>
+                    <td className="mono" style={{ color: n(r.exploited_count) ? 'var(--high)' : 'var(--text-muted)', fontWeight: n(r.exploited_count) ? 600 : 400 }}>{fmtCount(n(r.exploited_count))}</td>
                   </tr>
                 ))}
                 {rows.length === 0 && <tr className="empty-row"><td colSpan={7}>No trend data</td></tr>}
@@ -6229,8 +6300,8 @@ function ReportsView() {
                   {SEVERITY_ORDER.filter(sev => sev in (sla.by_severity || {})).map(sev => { const stats = sla.by_severity[sev]; return (
                     <tr key={sev}>
                       <td><span className="badge" style={{ color: sevColor(sev) }}>{sev}</span></td>
-                      <td className="mono">{stats.total}</td>
-                      <td className="mono" style={{ color: stats.overdue > 0 ? 'var(--critical)' : 'var(--text-muted)' }}>{stats.overdue}</td>
+                      <td className="mono">{fmtCount(stats.total)}</td>
+                      <td className="mono" style={{ color: stats.overdue > 0 ? 'var(--critical)' : 'var(--text-muted)' }}>{fmtCount(stats.overdue)}</td>
                       <td className="mono">{stats.compliance_percent.toFixed(1)}%</td>
                     </tr>
                   ); })}
@@ -6309,7 +6380,7 @@ function ReportsView() {
                     </td>
                   </tr>
                 ))}
-                {recommendations.length === 0 && <tr className="empty-row"><td colSpan={3}>No recommendations</td></tr>}
+                {recommendations.length === 0 && <tr className="empty-row"><td colSpan={3}>No recommendations right now — this populates once findings accumulate and SLAs are at risk.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -6464,12 +6535,12 @@ function NotificationsView() {
                   <td><span className="badge">{r.min_severity || '-'}</span></td>
                   <td>{r.channel_type}</td>
                   <td><span className="badge" style={{ color: r.enabled ? 'var(--low)' : 'var(--medium)' }}>{r.enabled ? 'yes' : 'no'}</span></td>
-                  <td className="mono" style={{ fontSize: '0.8125rem' }}>{r.last_triggered ? new Date(r.last_triggered).toLocaleString() : '-'}</td>
+                  <td className="mono" style={{ fontSize: '0.8125rem' }} title={formatDateTimeFull(r.last_triggered)}>{formatDateTime(r.last_triggered)}</td>
                   <td><button className="btn btn-secondary btn-sm" onClick={() => handleTest(r.id)}>Test</button></td>
                   <td><button className="btn btn-danger btn-sm" onClick={() => handleDelete(r.id)}>Delete</button></td>
                 </tr>
               ))}
-              {items.length === 0 && <tr className="empty-row"><td colSpan={8}>No notification rules</td></tr>}
+              {items.length === 0 && <tr className="empty-row"><td colSpan={8}>No notification rules yet — use the form above to send new-finding alerts to a webhook, email, or the log.</td></tr>}
             </tbody>
           </table>
         )}
@@ -6487,7 +6558,7 @@ function NotificationsView() {
             <tbody>
               {logEntries.map(e => (
                 <tr key={e.id}>
-                  <td className="mono" style={{ fontSize: '0.75rem' }}>{new Date(e.created_at).toLocaleString()}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(e.created_at)}>{formatDateTime(e.created_at)}</td>
                   <td>{e.rule_name}</td>
                   <td className="mono" style={{ fontSize: '0.8125rem' }}>{e.trigger_event}</td>
                   <td>{e.channel_type}</td>
@@ -6495,7 +6566,7 @@ function NotificationsView() {
                   <td style={{ fontSize: '0.8125rem', color: e.error_message ? 'var(--critical)' : 'var(--text-muted)' }}>{e.error_message || '-'}</td>
                 </tr>
               ))}
-              {logEntries.length === 0 && <tr className="empty-row"><td colSpan={6}>No log entries</td></tr>}
+              {logEntries.length === 0 && <tr className="empty-row"><td colSpan={6}>No notifications sent yet — entries appear here once a rule fires. Use Test on a rule to generate one.</td></tr>}
             </tbody>
           </table>
         </div>
