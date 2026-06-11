@@ -440,6 +440,7 @@ func (db *DB) RebuildCveReferenceKeys(ctx context.Context) (int, error) {
 	} else {
 		log.Printf("cve reference group summary refreshed: %d keys", n)
 	}
+	db.InvalidateCveIndexStatsCache()
 	return count, nil
 }
 
@@ -2064,7 +2065,53 @@ SELECT
 	return out, nil
 }
 
+// cveIndexStatsCache memoizes the expensive reference-key index-stat queries
+// (count(DISTINCT cve_id) and an orphan NOT EXISTS over ~1.8M rows, ~3.5s).
+// These change only when the reference index is rebuilt, so the dashboard's
+// frequent /api/health polls read a cached value instead of re-scanning the
+// whole table every time. TTL is BONGSU_CVE_INDEX_STATS_CACHE_SECONDS (60s).
+type cveIndexStatsCacheEntry struct {
+	value   any
+	expires time.Time
+}
+
+var (
+	cveIndexStatsCacheMu sync.Mutex
+	cveIndexStatsCache   = map[string]cveIndexStatsCacheEntry{}
+)
+
+func cveIndexStatsTTL() time.Duration {
+	return time.Duration(envPositiveInt("BONGSU_CVE_INDEX_STATS_CACHE_SECONDS", 60)) * time.Second
+}
+
+func cveIndexStatsCacheGet(key string) (any, bool) {
+	cveIndexStatsCacheMu.Lock()
+	defer cveIndexStatsCacheMu.Unlock()
+	if e, ok := cveIndexStatsCache[key]; ok && time.Now().Before(e.expires) {
+		return e.value, true
+	}
+	return nil, false
+}
+
+func cveIndexStatsCachePut(key string, value any) {
+	cveIndexStatsCacheMu.Lock()
+	defer cveIndexStatsCacheMu.Unlock()
+	cveIndexStatsCache[key] = cveIndexStatsCacheEntry{value: value, expires: time.Now().Add(cveIndexStatsTTL())}
+}
+
+// InvalidateCveIndexStatsCache clears the memoized index stats; called after a
+// reference-index rebuild so the next read reflects the new data immediately.
+func (db *DB) InvalidateCveIndexStatsCache() {
+	cveIndexStatsCacheMu.Lock()
+	defer cveIndexStatsCacheMu.Unlock()
+	cveIndexStatsCache = map[string]cveIndexStatsCacheEntry{}
+}
+
 func (db *DB) GetCveReferenceKeyIndexStats(ctx context.Context) (*CveReferenceKeyIndexStats, error) {
+	if v, ok := cveIndexStatsCacheGet("refkey_full"); ok {
+		s := *(v.(*CveReferenceKeyIndexStats))
+		return &s, nil
+	}
 	var stats CveReferenceKeyIndexStats
 	err := db.QueryRowContext(ctx, `
 SELECT
@@ -2086,10 +2133,14 @@ SELECT
 		stats.CoveragePercent = math.Round(float64(stats.IndexedCVEs)*1000/float64(stats.TotalCVEs)) / 10
 	}
 	stats.Stale = stats.TotalCVEs > 0 && (stats.LastUpdate == nil || stats.LatestCVEUpdate == nil || stats.LastUpdate.Before(*stats.LatestCVEUpdate))
+	cveIndexStatsCachePut("refkey_full", &stats)
 	return &stats, nil
 }
 
 func (db *DB) GetCveReferenceKeyIndexHealthStats(ctx context.Context) (map[string]any, error) {
+	if v, ok := cveIndexStatsCacheGet("refkey_health"); ok {
+		return v.(map[string]any), nil
+	}
 	var count, indexedCVEs int
 	var lastUpdate *time.Time
 	err := db.QueryRowContext(ctx, `
@@ -2113,6 +2164,7 @@ SELECT
 	if lastUpdate != nil {
 		out["last_update"] = lastUpdate
 	}
+	cveIndexStatsCachePut("refkey_health", out)
 	return out, nil
 }
 

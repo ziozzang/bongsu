@@ -5,9 +5,11 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ziozzang/bongsu/internal/server/db"
+	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -18,13 +20,24 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	scope := s.accessScope(r)
 
-	hosts, _ := s.db.ListHosts(ctx)
-	vulnCounts, _ := s.db.GetVulnCountsByHost(ctx)
-	inventory, err := s.db.GetHostInventorySummaries(ctx)
-	if err != nil {
-		log.Printf("stats inventory summaries: %v", err)
-		inventory = map[string]db.HostInventorySummary{}
-	}
+	// These three reads are independent; run them concurrently so the endpoint
+	// pays the slowest one instead of their sum.
+	var hosts []models.Host
+	var vulnCounts map[string]map[string]int
+	var inventory map[string]db.HostInventorySummary
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() { defer wg.Done(); hosts, _ = s.db.ListHosts(ctx) }()
+	go func() { defer wg.Done(); vulnCounts, _ = s.db.GetVulnCountsByHost(ctx) }()
+	go func() {
+		defer wg.Done()
+		var err error
+		if inventory, err = s.db.GetHostInventorySummaries(ctx); err != nil {
+			log.Printf("stats inventory summaries: %v", err)
+			inventory = map[string]db.HostInventorySummary{}
+		}
+	}()
+	wg.Wait()
 
 	totalVulns := 0
 	sevCounts := map[string]int{}
@@ -75,21 +88,37 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			sevCounts[sev] += cnt
 		}
 	}
-	activeVulnCounts, err := s.db.GetCurrentActionableVulnCountsByHost(ctx, scopeHostFilter(scope, visibleHostIDs))
-	if err != nil {
-		log.Printf("active vuln status counts: %v", err)
-		activeVulnCounts = map[string]map[string]int{}
-	}
-	activeRiskCountsByHost, err := s.db.GetCurrentActionableVulnRiskCountsByHost(ctx, scopeHostFilter(scope, visibleHostIDs))
-	if err != nil {
-		log.Printf("active vuln risk counts: %v", err)
-		activeRiskCountsByHost = map[string]map[string]int{}
-	}
-	overdueRiskCountsByHost, err := s.db.GetCurrentActionableOverdueRiskCountsByHost(ctx, scopeHostFilter(scope, visibleHostIDs))
-	if err != nil {
-		log.Printf("active overdue vuln risk counts: %v", err)
-		overdueRiskCountsByHost = map[string]map[string]int{}
-	}
+	// The three actionable-finding aggregates are independent and equal-cost;
+	// run them concurrently to pay the slowest instead of their sum.
+	hostFilter := scopeHostFilter(scope, visibleHostIDs)
+	var activeVulnCounts, activeRiskCountsByHost, overdueRiskCountsByHost map[string]map[string]int
+	var wgActive sync.WaitGroup
+	wgActive.Add(3)
+	go func() {
+		defer wgActive.Done()
+		var err error
+		if activeVulnCounts, err = s.db.GetCurrentActionableVulnCountsByHost(ctx, hostFilter); err != nil {
+			log.Printf("active vuln status counts: %v", err)
+			activeVulnCounts = map[string]map[string]int{}
+		}
+	}()
+	go func() {
+		defer wgActive.Done()
+		var err error
+		if activeRiskCountsByHost, err = s.db.GetCurrentActionableVulnRiskCountsByHost(ctx, hostFilter); err != nil {
+			log.Printf("active vuln risk counts: %v", err)
+			activeRiskCountsByHost = map[string]map[string]int{}
+		}
+	}()
+	go func() {
+		defer wgActive.Done()
+		var err error
+		if overdueRiskCountsByHost, err = s.db.GetCurrentActionableOverdueRiskCountsByHost(ctx, hostFilter); err != nil {
+			log.Printf("active overdue vuln risk counts: %v", err)
+			overdueRiskCountsByHost = map[string]map[string]int{}
+		}
+	}()
+	wgActive.Wait()
 	activeTotalVulns := 0
 	activeSevCounts := map[string]int{}
 	activeRiskCounts := map[string]int{}
@@ -121,42 +150,70 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 			overdueRiskCounts[riskLevel] += cnt
 		}
 	}
-	scanRequestCounts, err := s.db.CountScanRequestsByStatus(ctx, visibleHostIDs, scope.All)
-	if err != nil {
-		log.Printf("scan request status counts: %v", err)
-		scanRequestCounts = map[string]int{}
-	}
-	staleScanRequestCounts, err := s.db.CountStaleScanRequestsByState(ctx, visibleHostIDs, scope.All, scanRequestClaimTimeoutSeconds())
-	if err != nil {
-		log.Printf("stale scan request counts: %v", err)
-		staleScanRequestCounts = map[string]int{}
-	}
+	// Resolve the revision first (the security-DB rescan queries need it), then
+	// run the remaining independent count queries concurrently — they are all
+	// small but serial round-trips dominated the endpoint's latency.
 	securityDBRevision := ""
-	securityDBRescanCounts := map[string]int{}
-	securityDBRescanStaleCounts := map[string]int{}
-	securityDBRescanProgress := map[string]any{}
-	var securityDBScanCoverage *db.SecurityDBScanCoverage
 	if revision, err := s.db.GetSecurityDBRevision(ctx); err != nil {
 		log.Printf("security db revision stats: %v", err)
 	} else {
 		securityDBRevision = revision
-		if counts, err := s.db.CountSecurityDBRescanRequestsByStatus(ctx, visibleHostIDs, scope.All, revision); err != nil {
-			log.Printf("security db rescan status counts: %v", err)
-		} else {
-			securityDBRescanCounts = counts
-			securityDBRescanProgress = securityDBRescanProgressSummary(revision, counts)
-		}
-		if counts, err := s.db.CountStaleSecurityDBRescanRequestsByState(ctx, visibleHostIDs, scope.All, revision, scanRequestClaimTimeoutSeconds()); err != nil {
-			log.Printf("stale security db rescan counts: %v", err)
-		} else {
-			securityDBRescanStaleCounts = counts
-		}
-		if coverage, err := s.db.GetSecurityDBScanCoverage(ctx, visibleHostIDs, scope.All, revision); err != nil {
-			log.Printf("security db scan coverage: %v", err)
-		} else {
-			securityDBScanCoverage = coverage
-		}
 	}
+	claimTimeout := scanRequestClaimTimeoutSeconds()
+	scanRequestCounts := map[string]int{}
+	staleScanRequestCounts := map[string]int{}
+	securityDBRescanCounts := map[string]int{}
+	securityDBRescanStaleCounts := map[string]int{}
+	securityDBRescanProgress := map[string]any{}
+	var securityDBScanCoverage *db.SecurityDBScanCoverage
+	var wgStats sync.WaitGroup
+	wgStats.Add(2)
+	go func() {
+		defer wgStats.Done()
+		if c, err := s.db.CountScanRequestsByStatus(ctx, visibleHostIDs, scope.All); err != nil {
+			log.Printf("scan request status counts: %v", err)
+		} else {
+			scanRequestCounts = c
+		}
+	}()
+	go func() {
+		defer wgStats.Done()
+		if c, err := s.db.CountStaleScanRequestsByState(ctx, visibleHostIDs, scope.All, claimTimeout); err != nil {
+			log.Printf("stale scan request counts: %v", err)
+		} else {
+			staleScanRequestCounts = c
+		}
+	}()
+	if securityDBRevision != "" {
+		rev := securityDBRevision
+		wgStats.Add(3)
+		go func() {
+			defer wgStats.Done()
+			if c, err := s.db.CountSecurityDBRescanRequestsByStatus(ctx, visibleHostIDs, scope.All, rev); err != nil {
+				log.Printf("security db rescan status counts: %v", err)
+			} else {
+				securityDBRescanCounts = c
+				securityDBRescanProgress = securityDBRescanProgressSummary(rev, c)
+			}
+		}()
+		go func() {
+			defer wgStats.Done()
+			if c, err := s.db.CountStaleSecurityDBRescanRequestsByState(ctx, visibleHostIDs, scope.All, rev, claimTimeout); err != nil {
+				log.Printf("stale security db rescan counts: %v", err)
+			} else {
+				securityDBRescanStaleCounts = c
+			}
+		}()
+		go func() {
+			defer wgStats.Done()
+			if coverage, err := s.db.GetSecurityDBScanCoverage(ctx, visibleHostIDs, scope.All, rev); err != nil {
+				log.Printf("security db scan coverage: %v", err)
+			} else {
+				securityDBScanCoverage = coverage
+			}
+		}()
+	}
+	wgStats.Wait()
 
 	resp := map[string]any{
 		"total_hosts":                       visibleHosts,
