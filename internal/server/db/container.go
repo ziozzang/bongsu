@@ -111,10 +111,14 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 	filteredTail := ""
 	outerLimit := fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", containerSortExpr(f.SortBy, f.SortDesc), n, n+1)
 	if !containerSortNeedsVulnAggregate(f.SortBy) {
-		filteredTail = outerLimit
+		// Inside the filtered CTE the source table is aliased `c`, so the page
+		// ordering must use the `c.` prefix (the outer `f.` alias does not exist
+		// there).
+		inner := strings.Replace(containerSortExpr(f.SortBy, f.SortDesc), "f.", "c.", 1)
+		filteredTail = fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", inner, n, n+1)
 		outerLimit = fmt.Sprintf(" ORDER BY %s", containerSortExpr(f.SortBy, f.SortDesc))
 	}
-	q := `WITH filtered AS (
+	q := `WITH filtered AS MATERIALIZED (
 		SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text AS labels, c.facts::text AS facts, c.started_at, c.created_at ` + baseQ + filteredTail + `
 	),
 	package_counts AS (
@@ -123,16 +127,26 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 		LEFT JOIN packages p ON p.scan_id=f.scan_id AND (p.container_id=f.container_id OR p.container=f.name)
 		GROUP BY f.id
 	),
-	vuln_counts AS (
-		SELECT f.id,
-			count(v.id) FILTER (WHERE ` + currentActionableVulnSQL() + `)::int AS vulnerability_count,
-			count(v.id) FILTER (WHERE v.severity='CRITICAL' AND ` + currentActionableVulnSQL() + `)::int AS critical_count,
-			count(v.id) FILTER (WHERE v.severity='HIGH' AND ` + currentActionableVulnSQL() + `)::int AS high_count,
-			COALESCE(max(v.cvss_score) FILTER (WHERE ` + currentActionableVulnSQL() + `), 0)::float AS max_cvss
+	container_vulns AS (
+		-- Evaluate the (expensive, nested-EXISTS) actionable predicate ONCE per
+		-- container vulnerability rather than four times inside FILTER clauses,
+		-- which otherwise expanded the query to ~26KB and made Postgres
+		-- re-evaluate the cve_affected_packages mismatch subqueries per row per
+		-- aggregate (~3s). The aggregates below then filter on the boolean.
+		SELECT f.id, v.severity, v.cvss_score,
+			(` + currentActionableVulnSQL() + `) AS actionable
 		FROM filtered f
 		LEFT JOIN vulnerabilities v ON v.scan_id=f.scan_id AND v.container=f.name
 		` + vulnTriageJoin + `
-		GROUP BY f.id
+	),
+	vuln_counts AS (
+		SELECT id,
+			count(*) FILTER (WHERE actionable)::int AS vulnerability_count,
+			count(*) FILTER (WHERE actionable AND severity='CRITICAL')::int AS critical_count,
+			count(*) FILTER (WHERE actionable AND severity='HIGH')::int AS high_count,
+			COALESCE(max(cvss_score) FILTER (WHERE actionable), 0)::float AS max_cvss
+		FROM container_vulns
+		GROUP BY id
 	)
 	SELECT f.id, f.scan_id, f.host_id, f.runtime, f.container_id, f.name, f.image_name, f.image_id, f.image_digest, f.state, f.labels, f.facts, f.started_at,
 		COALESCE(pc.package_count, 0)::int AS package_count,
