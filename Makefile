@@ -4,7 +4,7 @@ BONGSU_BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GO_BUILD_FLAGS ?= -trimpath
 LDFLAGS := -s -w -X main.version=$(BONGSU_VERSION) -X main.commit=$(BONGSU_COMMIT) -X main.buildDate=$(BONGSU_BUILD_DATE)
 
-.PHONY: build build-agent build-server tidy dev dev-up dev-down docker docker-agent docker-server package clean
+.PHONY: build build-agent build-server tidy test test-integration test-all dev dev-up dev-down docker docker-agent docker-server package clean
 
 build: build-server build-agent
 
@@ -16,6 +16,16 @@ build-agent:
 
 tidy:
 	go mod tidy
+
+test:
+	go test ./...
+
+# DB-backed integration suite; needs BONGSU_TEST_DB (a *_test database DSN)
+# or a reachable bongsu-postgres dev container. Skips cleanly without one.
+test-integration:
+	./scripts/verify-integration-db.sh
+
+test-all: test test-integration
 
 dev: dev-up
 
