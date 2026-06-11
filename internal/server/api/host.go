@@ -28,6 +28,12 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 	statusFilter := r.URL.Query().Get("agent_status")
 	inventoryStatusFilter := r.URL.Query().Get("inventory_status")
 	agentVersionStateFilter := r.URL.Query().Get("agent_version_state")
+	ownerFilter := strings.TrimSpace(r.URL.Query().Get("owner"))
+	teamFilter := strings.TrimSpace(r.URL.Query().Get("team"))
+	environmentFilter := strings.TrimSpace(r.URL.Query().Get("environment"))
+	criticalityFilter := strings.TrimSpace(r.URL.Query().Get("criticality"))
+	osFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("os")))
+	qFilter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	latestAgentVersion := binaryVersion(agentBinaryPath())
 	inventoryStaleAfter := time.Duration(envInt("BONGSU_INVENTORY_STALE_HOURS", 48)) * time.Hour
 	hosts, err := s.db.ListHosts(ctx)
@@ -68,6 +74,24 @@ func (s *Server) handleListHosts(w http.ResponseWriter, r *http.Request) {
 		}
 		applyAgentStatus(&h, now)
 		if statusFilter != "" && h.AgentStatus != statusFilter {
+			continue
+		}
+		if ownerFilter != "" && !strings.EqualFold(h.Owner, ownerFilter) {
+			continue
+		}
+		if teamFilter != "" && !strings.EqualFold(h.Team, teamFilter) {
+			continue
+		}
+		if environmentFilter != "" && !strings.EqualFold(h.Environment, environmentFilter) {
+			continue
+		}
+		if criticalityFilter != "" && !strings.EqualFold(h.Criticality, criticalityFilter) {
+			continue
+		}
+		if osFilter != "" && !strings.Contains(strings.ToLower(h.OSName+" "+h.OSVersion), osFilter) {
+			continue
+		}
+		if qFilter != "" && !strings.Contains(strings.ToLower(h.Hostname+" "+h.IPAddress+" "+h.OSName), qFilter) {
 			continue
 		}
 		if agentVersionStateFilter != "" && agentVersionState(h.AgentVersion, latestAgentVersion) != agentVersionStateFilter {

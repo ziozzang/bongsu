@@ -3,6 +3,7 @@ package api
 import (
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/ziozzang/bongsu/internal/server/db"
 	"github.com/ziozzang/bongsu/internal/shared/models"
@@ -54,17 +55,28 @@ func (s *Server) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	q := r.URL.Query()
+	minCVSS, _ := strconv.ParseFloat(q.Get("min_cvss"), 64)
 	f := db.PackageFilter{
-		HostID:     hostID,
-		HostIDs:    scope.HostIDs,
-		Container:  r.URL.Query().Get("container"),
-		PkgType:    r.URL.Query().Get("pkg_type"),
-		Source:     r.URL.Query().Get("source"),
-		NameSearch: r.URL.Query().Get("q"),
-		SortBy:     r.URL.Query().Get("sort_by"),
-		SortDesc:   r.URL.Query().Get("sort_order") == "desc",
-		Limit:      limitParam(r, 100),
-		Offset:     offsetParam(r),
+		HostID:      hostID,
+		HostIDs:     scope.HostIDs,
+		Container:   q.Get("container"),
+		PkgType:     q.Get("pkg_type"),
+		Source:      q.Get("source"),
+		NameSearch:  q.Get("q"),
+		NameExact:   q.Get("name"),
+		Version:     q.Get("version"),
+		VersionLike: q.Get("version_like"),
+		Ecosystem:   q.Get("ecosystem"),
+		Arch:        q.Get("arch"),
+		ImageName:   q.Get("image"),
+		AssetType:   q.Get("asset_type"),
+		HasVulns:    q.Get("has_vulns") == "true",
+		MinCVSS:     minCVSS,
+		SortBy:      q.Get("sort_by"),
+		SortDesc:    q.Get("sort_order") == "desc",
+		Limit:       limitParam(r, 100),
+		Offset:      offsetParam(r),
 	}
 
 	pkgs, total, err := s.db.SearchPackages(ctx, f)

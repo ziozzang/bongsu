@@ -280,6 +280,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/vulnerabilities", s.handleListVulnerabilities)
 	s.mux.HandleFunc("GET /api/vulnerabilities/export", s.handleExportVulnerabilities)
 	s.mux.HandleFunc("GET /api/vulnerabilities/filters", s.handleVulnFilters)
+	s.mux.HandleFunc("GET /api/vulnerabilities/affected-assets", s.handleAffectedAssets)
 	s.mux.HandleFunc("POST /api/vulnerabilities/triage", s.handleUpsertVulnerabilityTriage)
 	s.mux.HandleFunc("GET /api/cve-search", s.handleCveSearch)
 	s.mux.HandleFunc("GET /api/vuln-summary", s.handleVulnSummary)

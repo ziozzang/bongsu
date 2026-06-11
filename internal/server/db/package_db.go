@@ -110,16 +110,25 @@ func (db *DB) GetLatestPackagesForSBOM(ctx context.Context, hostID string) ([]mo
 }
 
 type PackageFilter struct {
-	HostID     string
-	HostIDs    []string
-	Container  string
-	PkgType    string
-	Source     string
-	NameSearch string
-	SortBy     string
-	SortDesc   bool
-	Limit      int
-	Offset     int
+	HostID      string
+	HostIDs     []string
+	Container   string
+	PkgType     string
+	Source      string
+	NameSearch  string
+	NameExact   string // exact (case-insensitive) package name match
+	Version     string // exact installed version
+	VersionLike string // substring of installed version
+	Ecosystem   string // normalized/raw ecosystem (e.g. pypi, npm, debian)
+	Arch        string
+	ImageName   string // container image (substring)
+	AssetType   string // "host" or "container"
+	HasVulns    bool   // only packages with at least one actionable finding
+	MinCVSS     float64
+	SortBy      string
+	SortDesc    bool
+	Limit       int
+	Offset      int
 }
 
 func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Package, int, error) {
@@ -163,6 +172,54 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 		baseQ += fmt.Sprintf(" AND p.name ILIKE $%d", n)
 		args = append(args, "%"+f.NameSearch+"%")
 		n++
+	}
+	if f.NameExact != "" {
+		baseQ += fmt.Sprintf(" AND lower(p.name)=lower($%d)", n)
+		args = append(args, f.NameExact)
+		n++
+	}
+	if f.Version != "" {
+		baseQ += fmt.Sprintf(" AND p.version=$%d", n)
+		args = append(args, f.Version)
+		n++
+	}
+	if f.VersionLike != "" {
+		baseQ += fmt.Sprintf(" AND p.version ILIKE $%d", n)
+		args = append(args, "%"+f.VersionLike+"%")
+		n++
+	}
+	if f.Ecosystem != "" {
+		// Match on the raw ecosystem or its normalized family so "debian"
+		// matches "Debian:12" etc.
+		baseQ += fmt.Sprintf(" AND (lower(p.ecosystem)=lower($%d) OR %s=lower($%d))", n, normalizeEcosystemSQL("lower(COALESCE(NULLIF(p.ecosystem,''),NULLIF(p.pkg_type,'')))"), n)
+		args = append(args, f.Ecosystem)
+		n++
+	}
+	if f.Arch != "" {
+		baseQ += fmt.Sprintf(" AND p.arch=$%d", n)
+		args = append(args, f.Arch)
+		n++
+	}
+	if f.ImageName != "" {
+		baseQ += fmt.Sprintf(" AND p.image_name ILIKE $%d", n)
+		args = append(args, "%"+f.ImageName+"%")
+		n++
+	}
+	switch f.AssetType {
+	case "host":
+		baseQ += " AND (p.container='' OR p.container IS NULL)"
+	case "container":
+		baseQ += " AND p.container<>''"
+	}
+	if f.HasVulns || f.MinCVSS > 0 {
+		cond := "EXISTS (SELECT 1 FROM vulnerabilities vh WHERE vh.package_id=p.id"
+		if f.MinCVSS > 0 {
+			cond += fmt.Sprintf(" AND vh.cvss_score >= $%d", n)
+			args = append(args, f.MinCVSS)
+			n++
+		}
+		cond += ")"
+		baseQ += " AND " + cond
 	}
 
 	var total int
