@@ -64,29 +64,39 @@ func (db *DB) GetExecutiveSummary(ctx context.Context, hostIDs []string) (*Execu
 	hostFilter, hostArgs := reportHostFilter(hostIDs, "h", 1)
 	db.QueryRowContext(ctx, `SELECT count(*)::int FROM hosts h WHERE 1=1`+hostFilter, hostArgs...).Scan(&summary.TotalHosts)
 	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL() + hostFilter
-	q := fmt.Sprintf(`SELECT count(*)::int,
-		count(*) FILTER (WHERE v.severity='CRITICAL')::int,
-		count(*) FILTER (WHERE v.severity='HIGH')::int,
-		count(*) FILTER (WHERE v.severity='MEDIUM')::int,
-		count(*) FILTER (WHERE v.severity='LOW')::int,
-		count(*) FILTER (WHERE (%s)='critical')::int,
-		count(*) FILTER (WHERE (%s)='high')::int,
-		count(*) FILTER (WHERE (%s)='medium')::int,
-		count(*) FILTER (WHERE (%s)='low')::int,
-		count(*) FILTER (WHERE %s)::int,
+	// Materialize the per-row risk level and exploited flag once; otherwise the
+	// KEV/EPSS correlated subqueries inside vulnRiskLevelExpr are re-evaluated for
+	// every one of the four risk FILTER buckets (plus the exploited count).
+	q := fmt.Sprintf(`WITH actionable AS MATERIALIZED (
+		SELECT v.severity, v.created_at,
+			COALESCE(vt.status, 'open') AS triage_status,
+			(%s) AS risk_level,
+			(%s) AS exploited
+		%s
+	)
+	SELECT count(*)::int,
+		count(*) FILTER (WHERE severity='CRITICAL')::int,
+		count(*) FILTER (WHERE severity='HIGH')::int,
+		count(*) FILTER (WHERE severity='MEDIUM')::int,
+		count(*) FILTER (WHERE severity='LOW')::int,
+		count(*) FILTER (WHERE risk_level='critical')::int,
+		count(*) FILTER (WHERE risk_level='high')::int,
+		count(*) FILTER (WHERE risk_level='medium')::int,
+		count(*) FILTER (WHERE risk_level='low')::int,
+		count(*) FILTER (WHERE exploited)::int,
 		count(*) FILTER (WHERE
-			COALESCE(vt.status, 'open') IN ('open', 'in_progress') AND (
-				(v.severity='CRITICAL' AND v.created_at < now() - interval '%d days') OR
-				(v.severity='HIGH' AND v.created_at < now() - interval '%d days') OR
-				(v.severity='MEDIUM' AND v.created_at < now() - interval '%d days') OR
-				(v.severity='LOW' AND v.created_at < now() - interval '%d days')
+			triage_status IN ('open', 'in_progress') AND (
+				(severity='CRITICAL' AND created_at < now() - interval '%d days') OR
+				(severity='HIGH' AND created_at < now() - interval '%d days') OR
+				(severity='MEDIUM' AND created_at < now() - interval '%d days') OR
+				(severity='LOW' AND created_at < now() - interval '%d days')
 			)
 		)::int
-		%s`,
-		vulnRiskLevelExpr, vulnRiskLevelExpr, vulnRiskLevelExpr, vulnRiskLevelExpr,
+		FROM actionable`,
+		vulnRiskLevelExpr,
 		vulnExploitedExpr,
-		SLADaysForSeverity("CRITICAL"), SLADaysForSeverity("HIGH"), SLADaysForSeverity("MEDIUM"), SLADaysForSeverity("LOW"),
-		baseQ)
+		baseQ,
+		SLADaysForSeverity("CRITICAL"), SLADaysForSeverity("HIGH"), SLADaysForSeverity("MEDIUM"), SLADaysForSeverity("LOW"))
 	var riskCritical, riskHigh, riskMedium, riskLow int
 	var sevCritical, sevHigh, sevMedium, sevLow int
 	db.QueryRowContext(ctx, q, hostArgs...).Scan(
@@ -209,19 +219,25 @@ func (db *DB) GetRiskBreakdown(ctx context.Context, groupBy string, hostIDs []st
 	}
 	hostFilter, hostArgs := reportHostFilter(hostIDs, "h", 1)
 	baseQ := `FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id JOIN ` + latestScansSub + ` ls ON v.scan_id = ls.id` + vulnTriageJoin + ` WHERE ` + currentActionableVulnSQL() + hostFilter
-	q := fmt.Sprintf(`SELECT %s AS group_value,
+	// Compute the per-row risk level once in a MATERIALIZED CTE so the KEV/EPSS
+	// correlated subqueries don't run four times per row (once per risk bucket).
+	q := fmt.Sprintf(`WITH actionable AS MATERIALIZED (
+		SELECT %s AS group_value, v.severity, (%s) AS risk_level
+		%s
+	)
+	SELECT group_value,
 		count(*)::int,
-		count(*) FILTER (WHERE v.severity='CRITICAL')::int,
-		count(*) FILTER (WHERE v.severity='HIGH')::int,
-		count(*) FILTER (WHERE v.severity='MEDIUM')::int,
-		count(*) FILTER (WHERE v.severity='LOW')::int,
-		count(*) FILTER (WHERE (%s)='critical')::int,
-		count(*) FILTER (WHERE (%s)='high')::int,
-		count(*) FILTER (WHERE (%s)='medium')::int,
-		count(*) FILTER (WHERE (%s)='low')::int
-		%s GROUP BY group_value ORDER BY count(*) DESC`,
+		count(*) FILTER (WHERE severity='CRITICAL')::int,
+		count(*) FILTER (WHERE severity='HIGH')::int,
+		count(*) FILTER (WHERE severity='MEDIUM')::int,
+		count(*) FILTER (WHERE severity='LOW')::int,
+		count(*) FILTER (WHERE risk_level='critical')::int,
+		count(*) FILTER (WHERE risk_level='high')::int,
+		count(*) FILTER (WHERE risk_level='medium')::int,
+		count(*) FILTER (WHERE risk_level='low')::int
+		FROM actionable GROUP BY group_value ORDER BY count(*) DESC`,
 		groupExpr,
-		vulnRiskLevelExpr, vulnRiskLevelExpr, vulnRiskLevelExpr, vulnRiskLevelExpr,
+		vulnRiskLevelExpr,
 		baseQ)
 	rows, err := db.QueryContext(ctx, q, hostArgs...)
 	if err != nil {

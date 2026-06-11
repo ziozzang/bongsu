@@ -4159,7 +4159,7 @@ func TestStatsCanCountCurrentActionableRiskByHost(t *testing.T) {
 		"currentActionableVulnSQL()",
 		"JOIN ` + latestScansSub",
 		"vulnRiskLevelExpr",
-		"GROUP BY v.host_id, risk_level",
+		"GROUP BY host_id, risk_level",
 		"v.host_id = ANY($1)",
 	} {
 		if !strings.Contains(fn, want) {
@@ -4188,7 +4188,7 @@ func TestStatsCanCountCurrentActionableOverdueRiskByHost(t *testing.T) {
 		"overdueSQLCondition()",
 		"JOIN ` + latestScansSub",
 		"vulnRiskLevelExpr",
-		"GROUP BY v.host_id, risk_level",
+		"GROUP BY host_id, risk_level",
 		"v.host_id = ANY($1)",
 	} {
 		if !strings.Contains(fn, want) {

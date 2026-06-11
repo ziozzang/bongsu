@@ -46,37 +46,47 @@ func (db *DB) GetTopAtRiskHosts(ctx context.Context, limit int, hostIDs ...[]str
 		hostFilter = " AND h.id = ANY($1)"
 		args = append(args, pqStringArray(scopedHostIDs))
 	}
-	q := fmt.Sprintf(`SELECT h.id, h.hostname,
-		count(*)::int AS total,
-		count(*) FILTER (WHERE v.severity='CRITICAL')::int AS critical,
-		count(*) FILTER (WHERE v.severity='HIGH')::int AS high,
-		count(*) FILTER (WHERE %s)::int AS exploited,
-		count(*) FILTER (WHERE
-			COALESCE(vt.status, 'open') IN ('open', 'in_progress') AND (
-				(v.severity='CRITICAL' AND v.created_at < now() - interval '%d days') OR
-				(v.severity='HIGH' AND v.created_at < now() - interval '%d days') OR
-				(v.severity='MEDIUM' AND v.created_at < now() - interval '%d days') OR
-				(v.severity='LOW' AND v.created_at < now() - interval '%d days')
-			)
-		)::int AS overdue,
-		MAX(%s)::int AS max_risk
+	// Materialize per-row risk score, exploited flag and triage status once so the
+	// KEV/EPSS correlated subqueries inside vulnRiskScoreExpr/vulnExploitedExpr are
+	// evaluated a single time per row rather than per aggregate reference.
+	q := fmt.Sprintf(`WITH actionable AS MATERIALIZED (
+		SELECT h.id AS host_id, h.hostname, v.severity, v.created_at,
+			COALESCE(vt.status, 'open') AS triage_status,
+			(%s) AS exploited,
+			(%s) AS risk_score
 		FROM vulnerabilities v JOIN hosts h ON h.id = v.host_id
 		JOIN %s ls ON v.scan_id = ls.id%s
 		WHERE %s
 		%s
-		GROUP BY h.id, h.hostname
+	)
+	SELECT host_id, hostname,
+		count(*)::int AS total,
+		count(*) FILTER (WHERE severity='CRITICAL')::int AS critical,
+		count(*) FILTER (WHERE severity='HIGH')::int AS high,
+		count(*) FILTER (WHERE exploited)::int AS exploited,
+		count(*) FILTER (WHERE
+			triage_status IN ('open', 'in_progress') AND (
+				(severity='CRITICAL' AND created_at < now() - interval '%d days') OR
+				(severity='HIGH' AND created_at < now() - interval '%d days') OR
+				(severity='MEDIUM' AND created_at < now() - interval '%d days') OR
+				(severity='LOW' AND created_at < now() - interval '%d days')
+			)
+		)::int AS overdue,
+		MAX(risk_score)::int AS max_risk
+		FROM actionable
+		GROUP BY host_id, hostname
 		ORDER BY critical DESC, high DESC, max_risk DESC, total DESC
 		LIMIT %d`,
 		vulnExploitedExpr,
-		SLADaysForSeverity("CRITICAL"),
-		SLADaysForSeverity("HIGH"),
-		SLADaysForSeverity("MEDIUM"),
-		SLADaysForSeverity("LOW"),
 		vulnRiskScoreExpr,
 		latestScansSub,
 		vulnTriageJoin,
 		currentActionableVulnSQL(),
 		hostFilter,
+		SLADaysForSeverity("CRITICAL"),
+		SLADaysForSeverity("HIGH"),
+		SLADaysForSeverity("MEDIUM"),
+		SLADaysForSeverity("LOW"),
 		limit,
 	)
 	rows, err := db.QueryContext(ctx, q, args...)
