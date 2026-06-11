@@ -27,7 +27,10 @@ import (
 //
 // Run via `make test-integration` or scripts/verify-integration-db.sh.
 
-var integrationChdirOnce sync.Once
+// integrationChdirMu serializes the temporary chdir used while running
+// migrations so concurrent openIntegrationDB calls cannot observe a half-moved
+// working directory.
+var integrationChdirMu sync.Mutex
 
 func openIntegrationDB(t *testing.T) *DB {
 	t.Helper()
@@ -37,16 +40,6 @@ func openIntegrationDB(t *testing.T) *DB {
 	}
 	requireTestDatabaseName(t, dsn)
 
-	integrationChdirOnce.Do(func() {
-		root, err := findRepoRoot()
-		if err != nil {
-			t.Fatalf("locate repo root for migrations: %v", err)
-		}
-		if err := os.Chdir(root); err != nil {
-			t.Fatalf("chdir to repo root: %v", err)
-		}
-	})
-
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	database, err := New(ctx, dsn)
@@ -55,11 +48,42 @@ func openIntegrationDB(t *testing.T) *DB {
 	}
 	t.Cleanup(func() { database.Close() })
 
+	// RunMigrations reads the relative `migrations/` directory, so it must run
+	// from the repo root. Chdir only for the duration of the migration run and
+	// restore the original working directory afterwards: leaving the process in
+	// the repo root would break the package's source-scanning unit tests, which
+	// read files relative to the package directory.
+	runMigrationsFromRepoRoot(t, ctx, database)
+
+	truncateAllDataTables(t, ctx, database)
+	return database
+}
+
+func runMigrationsFromRepoRoot(t *testing.T, ctx context.Context, database *DB) {
+	t.Helper()
+	integrationChdirMu.Lock()
+	defer integrationChdirMu.Unlock()
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	root, err := findRepoRoot()
+	if err != nil {
+		t.Fatalf("locate repo root for migrations: %v", err)
+	}
+	if err := os.Chdir(root); err != nil {
+		t.Fatalf("chdir to repo root: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(orig); err != nil {
+			t.Fatalf("restore working directory: %v", err)
+		}
+	}()
+
 	if err := database.RunMigrations(ctx); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
-	truncateAllDataTables(t, ctx, database)
-	return database
 }
 
 // requireTestDatabaseName guards against pointing the suite at a real

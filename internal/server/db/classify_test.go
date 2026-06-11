@@ -3,7 +3,9 @@ package db
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -12,11 +14,24 @@ import (
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
+// packageSourceDir returns the absolute directory of this package's source.
+// Source-scanning tests must not depend on the process working directory: the
+// integration harness chdir's to the repo root, so a plain os.ReadDir(".")
+// would read the wrong directory when those tests run in the same binary.
+func packageSourceDir() string {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "."
+	}
+	return filepath.Dir(file)
+}
+
 // readAllPackageGoFiles reads all non-test .go files in the package directory
 // and returns their concatenated content. This allows source-level tests to
 // work correctly when the package is split across multiple files.
 func readAllPackageGoFiles() ([]byte, error) {
-	entries, err := os.ReadDir(".")
+	dir := packageSourceDir()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +44,7 @@ func readAllPackageGoFiles() ([]byte, error) {
 	sort.Strings(names)
 	var buf []byte
 	for _, n := range names {
-		data, err := os.ReadFile(n)
+		data, err := os.ReadFile(filepath.Join(dir, n))
 		if err != nil {
 			return nil, err
 		}
