@@ -212,9 +212,13 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 		baseQ += " AND p.container<>''"
 	}
 	if f.HasVulns || f.MinCVSS > 0 {
-		cond := "EXISTS (SELECT 1 FROM vulnerabilities vh WHERE vh.package_id=p.id"
+		// Count only current actionable findings — the same gate the package
+		// vuln-count columns use — so packages whose findings are all fixed,
+		// triaged away, or mismatch-suppressed don't read as vulnerable.
+		cond := "EXISTS (SELECT 1 FROM vulnerabilities v" + vulnTriageJoin +
+			" WHERE v.package_id=p.id AND " + currentActionableVulnSQLForPackage("v", "p")
 		if f.MinCVSS > 0 {
-			cond += fmt.Sprintf(" AND vh.cvss_score >= $%d", n)
+			cond += fmt.Sprintf(" AND v.cvss_score >= $%d", n)
 			args = append(args, f.MinCVSS)
 			n++
 		}

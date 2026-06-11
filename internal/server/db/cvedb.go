@@ -2699,6 +2699,12 @@ WHERE p.pkg_type='runtime' AND p.ecosystem<>''` + scanFilterFor("p", opts.ScanID
 			result.Skipped++
 			continue
 		}
+		// Same flood guard as RematchCVEs: stop once the candidate limit is
+		// reached so one over-broad NVD product can't bury a scan in findings.
+		if result.Matched >= opts.CandidateLimit {
+			result.Limited = true
+			break
+		}
 		result.Matched++
 		primaryURL := ""
 		var refList []struct {
