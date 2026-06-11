@@ -2641,21 +2641,12 @@ func (db *DB) RematchCPE(ctx context.Context, opts RematchOptions) (*RematchResu
 		variants = append(variants, v)
 	}
 
-	// Coarse filter: NVD CVEs whose affected_products contain any of the
-	// products. The @> containment uses the affected_products GIN index.
-	containment := make([]byte, 0, 64)
-	containment = append(containment, '[')
-	for i, v := range variants {
-		if i > 0 {
-			containment = append(containment, ',')
-		}
-		obj, _ := json.Marshal(map[string]string{"product": v})
-		containment = append(containment, obj...)
-	}
-	containment = append(containment, ']')
-
-	// Join runtime packages to candidate NVD CVEs by product (coarse), then gate
-	// precisely in Go with compatibleCPECandidate.
+	// Coarse filter: the cands CTE keeps only NVD CVEs whose affected_products
+	// name one of the runtime products' spelling variants (jsonb-structured
+	// match, not text search — a text ILIKE here would miss variants like
+	// nodejs vs node.js or jdk vs java_se). Every runtime package is then
+	// paired with every candidate CVE and compatibleCPECandidate does the
+	// precise product+version gating in Go; the CTE keeps the pairing small.
 	q := `
 WITH cands AS (
 	SELECT vulnerability_id, severity, cvss_score, cvss_vector, title, description, refs, affected_products::text AS ap
@@ -2670,7 +2661,7 @@ WITH cands AS (
 SELECT p.id, p.name, p.version, p.host_id, p.scan_id, p.container, p.file_path, lower(p.ecosystem),
        c.vulnerability_id, c.severity, c.cvss_score, c.cvss_vector, c.title, c.description, c.refs, c.ap
 FROM packages p
-JOIN cands c ON c.ap ILIKE '%' || lower(p.ecosystem) || '%'
+CROSS JOIN cands c
 WHERE p.pkg_type='runtime' AND p.ecosystem<>''` + scanFilterFor("p", opts.ScanID, "$2")
 
 	args := []any{pq.Array(variants)}
