@@ -147,6 +147,19 @@ async function uploadForm<T>(path: string, form: FormData): Promise<T> {
   return res.json();
 }
 
+// uploadRaw streams a File as the raw POST body (gzip), avoiding multipart so
+// large airgap bundles upload without buffering in the browser or the server.
+async function uploadRaw<T>(path: string, file: File): Promise<T> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/gzip' };
+  if (apiKey) headers['X-API-Key'] = apiKey;
+  const res = await fetch(API_BASE + path, { method: 'POST', headers, body: file });
+  if (res.status === 401) {
+    throw handleUnauthorized();
+  }
+  if (!res.ok) throw await responseError(res);
+  return res.json();
+}
+
 export interface Host {
   id: string;
   hostname: string;
@@ -1234,9 +1247,11 @@ export const api = {
   exportSecurityDBBundle: (includeTrivy = true) =>
     download('/admin/security-db/export', 'bongsu-security-db-bundle.tar.gz', { include_trivy: includeTrivy ? 'true' : 'false' }),
   importSecurityDBBundle: (file: File) => {
-    const form = new FormData();
-    form.append('bundle', file);
-    return uploadForm<{
+    // Stream the file as the raw request body (not FormData/multipart) so the
+    // browser does not buffer the whole ~170MB bundle in memory and the server
+    // does not spill a multipart temp file — the upload streams straight into
+    // the importer.
+    return uploadRaw<{
       status: string;
       imported: number;
       trivy_db_loaded: boolean;
@@ -1245,7 +1260,7 @@ export const api = {
       bundle_source_count?: number;
       bundle_cve_records?: number;
       bundle_trivy_db_included?: boolean;
-    }>('/admin/security-db/import', form);
+    }>('/admin/security-db/import', file);
   },
   rematchCVEs: (body?: { sources?: string[]; min_source_matchable_percent?: number; candidate_limit?: number }) =>
     requestJSON<{matched: number; new_vulns: number; skipped: number; scanned_candidates?: number; candidate_limit: number; limited: boolean; eligible_sources?: number; excluded_sources?: number; source_policy?: Record<string, { eligible?: boolean; reason?: string }>; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),

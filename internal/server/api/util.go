@@ -275,3 +275,21 @@ func sanitizeFilename(s string) string {
 	}
 	return strings.Trim(b.String(), "-.")
 }
+
+// bongsuTempDir returns the directory for large transient export/import work
+// files. It prefers BONGSU_TMPDIR (operators point this at roomy storage)
+// because the security DB bundle's intermediate JSONL can be >1GB and the
+// default /tmp is often a size-limited tmpfs. createBongsuTemp creates a temp
+// file there, creating the directory if needed.
+func bongsuTempDir() string {
+	if d := strings.TrimSpace(os.Getenv("BONGSU_TMPDIR")); d != "" {
+		if err := os.MkdirAll(d, 0o700); err == nil {
+			return d
+		}
+	}
+	return os.TempDir()
+}
+
+func createBongsuTemp(pattern string) (*os.File, error) {
+	return os.CreateTemp(bongsuTempDir(), pattern)
+}

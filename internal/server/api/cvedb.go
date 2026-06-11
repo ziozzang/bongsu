@@ -73,7 +73,7 @@ func (s *Server) handleTrivyDBUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
-	tmpFile, err := os.CreateTemp("", "trivy-db-*.tar.gz")
+	tmpFile, err := createBongsuTemp("trivy-db-*.tar.gz")
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "temp file error")
 		return
@@ -726,7 +726,7 @@ func (s *Server) buildSecurityDBBundleTemp(ctx context.Context, includeTrivy boo
 		return "", 0, false, 0, "", err
 	}
 
-	tmp, err := os.CreateTemp("", "bongsu-security-db-bundle-*.tar.gz")
+	tmp, err := createBongsuTemp("bongsu-security-db-bundle-*.tar.gz")
 	if err != nil {
 		return "", 0, false, 0, "", err
 	}
@@ -781,20 +781,44 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		s.audit(r, "security_db.import", "security_db", "bundle", "error", meta)
 		writeError(w, status, msg)
 	}
+	// A full-DB bundle import streams ~170MB+ and then replaces ~1M CVE rows,
+	// which takes minutes — well past the default 30s read / 900s write HTTP
+	// timeouts. Extend this request's deadlines so a slow airgap upload or a
+	// long DB replace is not cut off mid-stream.
+	importTimeout := time.Duration(envInt("BONGSU_SECURITY_DB_IMPORT_TIMEOUT_SECONDS", 1800)) * time.Second
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetReadDeadline(time.Now().Add(importTimeout))
+		_ = rc.SetWriteDeadline(time.Now().Add(importTimeout))
+	}
+
 	uploadLimit := maxSecurityDBBundleBytes()
 	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
-	if err := r.ParseMultipartForm(maxMultipartMemoryBytes()); err != nil {
-		fail(http.StatusBadRequest, "file too large or invalid form", "parse_form", err)
-		return
-	}
-	file, _, err := r.FormFile("bundle")
-	if err != nil {
-		fail(http.StatusBadRequest, "missing 'bundle' file field", "form_file", err)
-		return
-	}
-	defer file.Close()
 
-	gz, err := gzip.NewReader(file)
+	// Two upload shapes are accepted:
+	//   1. raw gzip body — POST the .tar.gz directly (Content-Type other than
+	//      multipart, e.g. application/gzip). The browser streams the File
+	//      object as the body and curl uses --data-binary @bundle.tar.gz; the
+	//      whole file is never buffered in memory or spilled to a multipart
+	//      temp, which matters for the ~170MB+ bundle.
+	//   2. multipart/form-data with a `bundle` field — the classic form upload.
+	var bundleReader io.Reader
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/") {
+		if err := r.ParseMultipartForm(maxMultipartMemoryBytes()); err != nil {
+			fail(http.StatusBadRequest, "file too large or invalid form", "parse_form", err)
+			return
+		}
+		file, _, err := r.FormFile("bundle")
+		if err != nil {
+			fail(http.StatusBadRequest, "missing 'bundle' file field", "form_file", err)
+			return
+		}
+		defer file.Close()
+		bundleReader = file
+	} else {
+		bundleReader = r.Body
+	}
+
+	gz, err := gzip.NewReader(bundleReader)
 	if err != nil {
 		fail(http.StatusBadRequest, "invalid gzip bundle", "gzip", err)
 		return
@@ -887,19 +911,25 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusInternalServerError, "cve archive read failed", "read_cve", err)
 		return
 	}
-	tx, err := s.db.BeginTx(r.Context(), nil)
+	// The bundle is fully staged to disk now; run the DB replacement under a
+	// detached context bounded only by the import timeout, so a brief client
+	// hiccup after the upload finishes cannot cancel (and roll back) a
+	// multi-minute CVE database replace.
+	importCtx, cancelImport := context.WithTimeout(context.Background(), importTimeout)
+	defer cancelImport()
+	tx, err := s.db.BeginTx(importCtx, nil)
 	if err != nil {
 		cveReader.Close()
 		fail(http.StatusInternalServerError, "cve import transaction failed", "begin_tx", err)
 		return
 	}
-	if _, err := s.db.DeleteAllCveEntriesTx(r.Context(), tx); err != nil {
+	if _, err := s.db.DeleteAllCveEntriesTx(importCtx, tx); err != nil {
 		cveReader.Close()
 		tx.Rollback()
 		fail(http.StatusInternalServerError, "cve import reset failed", "reset_cve", err)
 		return
 	}
-	imported, err = s.importCveJSONLTx(r.Context(), cveReader, "", tx)
+	imported, err = s.importCveJSONLTx(importCtx, cveReader, "", tx)
 	cveReader.Close()
 	if err != nil {
 		tx.Rollback()
@@ -917,22 +947,22 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		fail(http.StatusBadRequest, err.Error(), "validate_cve_count", err)
 		return
 	}
-	if _, err := s.db.SyncEPSSPriorityColumnsTx(r.Context(), tx); err != nil {
+	if _, err := s.db.SyncEPSSPriorityColumnsTx(importCtx, tx); err != nil {
 		tx.Rollback()
 		fail(http.StatusInternalServerError, "cve epss merge failed", "merge_epss", err)
 		return
 	}
-	if _, err := s.db.RefreshCveAffectedPackagesForSourceTx(r.Context(), tx, ""); err != nil {
+	if _, err := s.db.RefreshCveAffectedPackagesForSourceTx(importCtx, tx, ""); err != nil {
 		tx.Rollback()
 		fail(http.StatusInternalServerError, "cve affected package index failed", "index_cve", err)
 		return
 	}
-	if _, err := s.db.RefreshCveReferenceKeysForSourceTx(r.Context(), tx, ""); err != nil {
+	if _, err := s.db.RefreshCveReferenceKeysForSourceTx(importCtx, tx, ""); err != nil {
 		tx.Rollback()
 		fail(http.StatusInternalServerError, "cve reference key index failed", "index_cve_references", err)
 		return
 	}
-	if err := s.db.RefreshSecuritySourceStatusTx(r.Context(), tx, ""); err != nil {
+	if err := s.db.RefreshSecuritySourceStatusTx(importCtx, tx, ""); err != nil {
 		tx.Rollback()
 		fail(http.StatusInternalServerError, "security source status update failed", "source_status", err)
 		return
@@ -999,7 +1029,7 @@ var errNoValidCveEntries = errors.New("no valid cve entries")
 var errInvalidCveSource = errors.New("invalid cve source")
 
 func writeBundleEntryTemp(r io.Reader, pattern string) (string, string, error) {
-	tmp, err := os.CreateTemp("", pattern)
+	tmp, err := createBongsuTemp(pattern)
 	if err != nil {
 		return "", "", err
 	}
@@ -1139,9 +1169,11 @@ func (s *Server) recalculateSecurityFindings(reason string) {
 			if !s.securityRecalcPending {
 				s.securityRecalcRunning = false
 				s.securityRecalcMu.Unlock()
-				// The DB is now stable at a new revision; pre-build the airgap
-				// export bundle so a download streams an existing file.
-				go s.rebuildSecdbBundleCache(currentReason)
+				// Optionally pre-build the airgap export bundle now that the DB
+				// is stable at a new revision (opt-in; default is on-demand).
+				if os.Getenv("BONGSU_SECDB_BUNDLE_PREBUILD") == "true" {
+					go s.rebuildSecdbBundleCache(currentReason)
+				}
 				return
 			}
 			currentReason = s.securityRecalcReason
@@ -2276,7 +2308,7 @@ func (s *Server) writeCveJSONLTemp(ctx context.Context, source string) (string, 
 	if err != nil {
 		return "", 0, "", err
 	}
-	tmp, err := os.CreateTemp("", "bongsu-cve-database-*.jsonl")
+	tmp, err := createBongsuTemp("bongsu-cve-database-*.jsonl")
 	if err != nil {
 		return "", 0, "", err
 	}

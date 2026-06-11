@@ -120,6 +120,15 @@ const (
 )
 
 func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, secMgr *secdb.Manager, info BuildInfo) *Server {
+	// Route all transient large work files (export bundle JSONL, multipart
+	// upload spillover, trivy archives) to BONGSU_TMPDIR when set, so they do
+	// not fill a size-limited /tmp tmpfs. Setting TMPDIR makes os.TempDir(),
+	// the multipart parser, and any os.CreateTemp("") respect it process-wide.
+	if d := strings.TrimSpace(os.Getenv("BONGSU_TMPDIR")); d != "" {
+		if err := os.MkdirAll(d, 0o700); err == nil {
+			os.Setenv("TMPDIR", d)
+		}
+	}
 	apiKey := os.Getenv("BONGSU_API_KEY")
 	if apiKey == "" {
 		apiKey = uuid.New().String()
@@ -176,9 +185,13 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	s.startSessionCleanup()
 	s.startScheduler()
 	s.startVulnTrendSnapshotter()
-	// Pre-build the airgap export bundle in the background so the first
-	// download streams an existing file instead of building it on demand.
-	go s.rebuildSecdbBundleCache("startup")
+	// Optionally pre-build the airgap export bundle so the first download
+	// streams an existing file. Off by default: the bundle is large and most
+	// deployments export rarely, so on-demand build (cached after the first
+	// download) is the better default. Enable with BONGSU_SECDB_BUNDLE_PREBUILD=true.
+	if os.Getenv("BONGSU_SECDB_BUNDLE_PREBUILD") == "true" {
+		go s.rebuildSecdbBundleCache("startup")
+	}
 	return s
 }
 
