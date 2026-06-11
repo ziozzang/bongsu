@@ -613,6 +613,27 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	includeTrivy := r.URL.Query().Get("include_trivy") != "false"
+
+	// Fast path: serve a pre-built bundle that matches the current security DB
+	// revision so the download starts immediately instead of building ~170MB.
+	if currentRev, revErr := s.db.GetSecurityDBRevision(r.Context()); revErr == nil {
+		if cached, ok := s.bundleCache.get(includeTrivy, currentRev); ok {
+			if f, err := os.Open(cached.Path); err == nil {
+				defer f.Close()
+				w.Header().Set("Content-Type", "application/gzip")
+				w.Header().Set("Content-Disposition", "attachment; filename=bongsu-security-db-bundle.tar.gz")
+				w.Header().Set("Content-Length", strconv.FormatInt(cached.Size, 10))
+				w.Header().Set("X-Bongsu-Bundle-Source", "cache")
+				if _, err := io.Copy(w, f); err != nil {
+					log.Printf("security-db cached bundle copy: %v", err)
+				} else {
+					s.recordBundleExportAudit(r, cached.CveRecords, cached.TrivyIncluded, cached.Size, currentRev)
+				}
+				return
+			}
+		}
+	}
+
 	bundleFile, cveCount, trivyIncluded, bundleSize, revision, err := s.buildSecurityDBBundleTemp(r.Context(), includeTrivy)
 	if err != nil {
 		log.Printf("security-db bundle export: %v", err)
@@ -620,6 +641,13 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer os.Remove(bundleFile)
+	// Populate the cache for next time (best-effort) so repeat downloads stream.
+	if metaRev, err := s.db.GetSecurityDBRevision(r.Context()); err == nil {
+		_ = s.bundleCache.store(bundleFile, secdbBundleMeta{
+			Revision: metaRev, IncludeTrivy: includeTrivy, Size: bundleSize,
+			CveRecords: cveCount, TrivyIncluded: trivyIncluded, BuiltAt: time.Now().UTC(),
+		})
+	}
 
 	f, err := os.Open(bundleFile)
 	if err != nil {
@@ -631,10 +659,17 @@ func (s *Server) handleSecurityDbExport(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/gzip")
 	w.Header().Set("Content-Disposition", "attachment; filename=bongsu-security-db-bundle.tar.gz")
 	w.Header().Set("Content-Length", strconv.FormatInt(bundleSize, 10))
+	w.Header().Set("X-Bongsu-Bundle-Source", "built")
 	if _, err := io.Copy(w, f); err != nil {
 		log.Printf("security-db bundle copy: %v", err)
 		return
 	}
+	s.recordBundleExportAudit(r, cveCount, trivyIncluded, bundleSize, revision)
+}
+
+// recordBundleExportAudit marks the source registry exported and writes the
+// export audit row, shared by the cached and freshly-built download paths.
+func (s *Server) recordBundleExportAudit(r *http.Request, cveCount int, trivyIncluded bool, bundleSize int64, revision string) {
 	exportedAt := time.Now().UTC()
 	exportCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := s.db.MarkSecuritySourcesExported(exportCtx, "", exportedAt); err != nil {
@@ -1104,6 +1139,9 @@ func (s *Server) recalculateSecurityFindings(reason string) {
 			if !s.securityRecalcPending {
 				s.securityRecalcRunning = false
 				s.securityRecalcMu.Unlock()
+				// The DB is now stable at a new revision; pre-build the airgap
+				// export bundle so a download streams an existing file.
+				go s.rebuildSecdbBundleCache(currentReason)
 				return
 			}
 			currentReason = s.securityRecalcReason
@@ -2936,6 +2974,12 @@ func (s *Server) handleCveDbSearch(w http.ResponseWriter, r *http.Request) {
 		entries = []models.CveEntry{}
 	}
 
+	// `total` is a BOUNDED count: SearchCveDatabase stops counting once it
+	// reaches BONGSU_CVE_SEARCH_COUNT_CAP (default 10000) so a broad term does
+	// not force a full count of hundreds of thousands of matching rows. When the
+	// match set exceeds the cap, `total` equals the cap (the UI renders it as
+	// e.g. "10000 results", an acceptable upper-bounded display); below the cap
+	// it is exact. The response contract is unchanged.
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": entries,
 		"total": total,

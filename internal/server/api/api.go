@@ -50,6 +50,7 @@ type Server struct {
 	dbMgr        *trivydb.Manager
 	secMgr       *secdb.Manager
 	notifier     *webhookNotifier
+	bundleCache  *secdbBundleCache
 
 	securityRecalcMu      sync.Mutex
 	securityRecalcRunning bool
@@ -146,6 +147,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		dbMgr:        dbMgr,
 		secMgr:       secMgr,
 		notifier:     newWebhookNotifierFromEnv(),
+		bundleCache:  newSecdbBundleCache(),
 	}
 	if s.notifier != nil {
 		s.notifier.onResult = s.auditWebhookResult
@@ -170,6 +172,9 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	s.startSessionCleanup()
 	s.startScheduler()
 	s.startVulnTrendSnapshotter()
+	// Pre-build the airgap export bundle in the background so the first
+	// download streams an existing file instead of building it on demand.
+	go s.rebuildSecdbBundleCache("startup")
 	return s
 }
 
