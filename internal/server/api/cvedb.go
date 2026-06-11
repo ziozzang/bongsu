@@ -1181,6 +1181,15 @@ func (s *Server) runSecurityRecalculation(reason string) {
 			failures = append(failures, "rematch_source_policy: "+err.Error())
 		}
 	}
+	// Re-run CPE/runtime matching so runtime findings (python/node/jdk vs NVD
+	// CPE ranges) stay current after a CVE DB update, not just on fresh scans.
+	if r, err := s.db.RematchCPE(ctx, rematchOptionsFromEnv()); err != nil {
+		log.Printf("security recalculation cpe rematch failed: %v", err)
+		failures = append(failures, "cpe_rematch: "+err.Error())
+	} else if r != nil {
+		log.Printf("security recalculation cpe matched=%d new=%d", r.Matched, r.NewVulns)
+		meta["cpe_rematch_new_vulns"] = r.NewVulns
+	}
 	if n, err := s.db.NormalizeVulnSeverity(ctx); err != nil {
 		log.Printf("security recalculation severity normalization failed: %v", err)
 		failures = append(failures, "severity: "+err.Error())
