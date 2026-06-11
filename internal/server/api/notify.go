@@ -25,6 +25,9 @@ type webhookNotifier struct {
 	maxAttempts       int
 	retryDelay        time.Duration
 	onResult          func(event string, data map[string]any, status string, httpStatus int, errMsg string, attempts int)
+	// sem bounds concurrent deliveries; when full, new events are dropped
+	// (and reported) instead of accumulating goroutines without limit.
+	sem chan struct{}
 }
 
 type webhookPayload struct {
@@ -46,6 +49,7 @@ func newWebhookNotifierFromEnv() *webhookNotifier {
 		minRiskLevel:      webhookRiskLevelFromEnv(),
 		inventoryStatuses: parseInventoryStatuses(os.Getenv("BONGSU_WEBHOOK_INVENTORY_STATUSES")),
 		client:            &http.Client{Timeout: timeout},
+		sem:               make(chan struct{}, envPositiveIntDefault("BONGSU_WEBHOOK_MAX_CONCURRENT", 16)),
 		timeout:           timeout,
 		maxAttempts:       webhookRetryAttemptsFromEnv(),
 		retryDelay:        webhookRetryDelayFromEnv(),
@@ -60,12 +64,26 @@ func (n *webhookNotifier) Send(event string, data map[string]any) {
 	if !n.Enabled() {
 		return
 	}
-	go func() {
-		report := func(status string, httpStatus int, errMsg string, attempts int) {
-			if n.onResult != nil {
-				n.onResult(event, data, status, httpStatus, errMsg, attempts)
-			}
+	report := func(status string, httpStatus int, errMsg string, attempts int) {
+		if n.onResult != nil {
+			n.onResult(event, data, status, httpStatus, errMsg, attempts)
 		}
+	}
+	if n.sem != nil {
+		select {
+		case n.sem <- struct{}{}:
+		default:
+			log.Printf("webhook %s dropped: %d deliveries already in flight", event, cap(n.sem))
+			report("dropped", 0, "delivery concurrency limit reached", 0)
+			return
+		}
+	}
+	go func() {
+		defer func() {
+			if n.sem != nil {
+				<-n.sem
+			}
+		}()
 		payload := webhookPayload{
 			Event:     event,
 			Timestamp: time.Now().UTC().Format(time.RFC3339),

@@ -19,6 +19,11 @@ import (
 
 const sessionTokenBytes = 32
 
+// dummyBcryptHash is a valid bcrypt hash of an unguessable value, compared
+// against when a login names an unknown user so the request costs the same
+// as a wrong password for a real user (no username-existence timing oracle).
+var dummyBcryptHash = []byte("$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy")
+
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
@@ -34,17 +39,37 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ip := clientIP(r)
+	if s.loginLimit != nil && s.loginLimit.blocked(ip, req.Username) {
+		s.audit(r, "auth.login", "local_user", req.Username, "rate_limited", map[string]any{"username": req.Username})
+		writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many failed login attempts; try again later"})
+		return
+	}
+
 	ctx := r.Context()
 	user, err := s.db.GetLocalUserByUsername(ctx, req.Username)
 	if err != nil {
+		// Burn a bcrypt comparison so unknown usernames cost the same as wrong
+		// passwords — otherwise response timing reveals which usernames exist.
+		_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(req.Password))
+		if s.loginLimit != nil {
+			s.loginLimit.fail(ip, req.Username)
+		}
+		s.audit(r, "auth.login", "local_user", req.Username, "denied", map[string]any{"username": req.Username, "reason": "unknown_user"})
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		if s.loginLimit != nil {
+			s.loginLimit.fail(ip, req.Username)
+		}
 		s.audit(r, "auth.login", "local_user", user.ID, "denied", map[string]any{"username": req.Username})
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		return
+	}
+	if s.loginLimit != nil {
+		s.loginLimit.success(ip, req.Username)
 	}
 
 	token, tokenHash, err := generateSessionToken()
@@ -55,7 +80,6 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	maxAge := s.sessionMaxAge
 	expiresAt := time.Now().Add(maxAge)
-	ip := clientIP(r)
 	ua := r.UserAgent()
 	if len(ua) > 512 {
 		ua = ua[:512]
@@ -258,16 +282,18 @@ func (s *Server) startSessionCleanup() {
 	go func() {
 		for {
 			time.Sleep(time.Hour)
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			n, err := s.db.DeleteExpiredSessions(ctx)
-			cancel()
 			if err != nil {
 				log.Printf("session cleanup error: %v", err)
-				continue
-			}
-			if n > 0 {
+			} else if n > 0 {
 				log.Printf("cleaned up %d expired sessions", n)
 			}
+			// Bound notification_log growth on the same housekeeping cadence.
+			if err := s.db.CleanupOldNotificationLogs(ctx); err != nil {
+				log.Printf("notification log cleanup error: %v", err)
+			}
+			cancel()
 		}
 	}()
 }

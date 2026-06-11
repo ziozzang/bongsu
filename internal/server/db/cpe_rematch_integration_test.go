@@ -40,19 +40,19 @@ func TestRematchCPEIntegration(t *testing.T) {
 	entries := []models.CveEntry{
 		{
 			VulnerabilityID: "CVE-9000-0001", Source: "nvd", Severity: "HIGH", CVSSScore: 7.5,
-			Description: "in-range: 3.11.0 <= v < 3.11.9",
+			Description:      "in-range: 3.11.0 <= v < 3.11.9",
 			AffectedProducts: `[{"vendor":"python","product":"python","version_start_including":"3.11.0","version_end_excluding":"3.11.9"}]`,
 			References:       `[]`, RawData: `{}`, Category: "general-cve",
 		},
 		{
 			VulnerabilityID: "CVE-9000-0002", Source: "nvd", Severity: "HIGH", CVSSScore: 9.0,
-			Description: "out-of-range: v < 3.10.0",
+			Description:      "out-of-range: v < 3.10.0",
 			AffectedProducts: `[{"vendor":"python","product":"python","version_end_excluding":"3.10.0"}]`,
 			References:       `[]`, RawData: `{}`, Category: "general-cve",
 		},
 		{
 			VulnerabilityID: "CVE-9000-0003", Source: "nvd", Severity: "CRITICAL", CVSSScore: 9.8,
-			Description: "unbounded product entry must never match (FP guard)",
+			Description:      "unbounded product entry must never match (FP guard)",
 			AffectedProducts: `[{"vendor":"python","product":"python"}]`,
 			References:       `[]`, RawData: `{}`, Category: "general-cve",
 		},

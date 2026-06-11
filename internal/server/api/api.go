@@ -45,6 +45,7 @@ type Server struct {
 	corsOrigins  map[string]bool
 	corsAllowAll bool
 	mux          *http.ServeMux
+	loginLimit   *loginLimiter
 	matcher      *cvematch.Matcher
 	dbMgr        *trivydb.Manager
 	secMgr       *secdb.Manager
@@ -140,6 +141,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		corsOrigins:  parseAllowedOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
 		corsAllowAll: allowsAllOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
 		mux:          http.NewServeMux(),
+		loginLimit:   newLoginLimiter(),
 		matcher:      matcher,
 		dbMgr:        dbMgr,
 		secMgr:       secMgr,

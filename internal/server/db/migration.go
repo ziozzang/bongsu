@@ -8,11 +8,29 @@ import (
 	"os"
 )
 
+// bongsuMigrationLockKey identifies the cluster-wide advisory lock that
+// serializes migration runs across server instances.
+const bongsuMigrationLockKey = 0x626F6E677375 // "bongsu"
+
 func (db *DB) RunMigrations(ctx context.Context) error {
 	files, err := os.ReadDir("migrations")
 	if err != nil {
 		return fmt.Errorf("read migrations dir: %w", err)
 	}
+	// Serialize concurrent migration runs (two server instances starting at
+	// once) with a session-scoped advisory lock held on a dedicated connection
+	// for the whole run.
+	lockConn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("migration lock conn: %w", err)
+	}
+	defer lockConn.Close()
+	if _, err := lockConn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, bongsuMigrationLockKey); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+	defer func() {
+		_, _ = lockConn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, bongsuMigrationLockKey)
+	}()
 	legacyInitialized, err := db.legacySchemaComplete(ctx)
 	if err != nil {
 		return err
