@@ -99,4 +99,3 @@ func pruneOldScansCTE() string {
 		  AND id NOT IN (SELECT DISTINCT ON (host_id) id FROM scans WHERE status IN ('completed','degraded') ORDER BY host_id, created_at DESC)
 	)`
 }
-

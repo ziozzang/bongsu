@@ -10,20 +10,20 @@ import (
 )
 
 type NotificationRule struct {
-	ID           string          `json:"id"`
-	Name         string          `json:"name"`
-	Enabled      bool            `json:"enabled"`
-	TriggerEvent string          `json:"trigger_event"`
-	MinSeverity  string          `json:"min_severity"`
-	MinRiskLevel string          `json:"min_risk_level"`
-	ExploitedOnly bool           `json:"exploited_only"`
-	HostFilter   string          `json:"host_filter"`
-	ChannelType  string          `json:"channel_type"`
+	ID            string          `json:"id"`
+	Name          string          `json:"name"`
+	Enabled       bool            `json:"enabled"`
+	TriggerEvent  string          `json:"trigger_event"`
+	MinSeverity   string          `json:"min_severity"`
+	MinRiskLevel  string          `json:"min_risk_level"`
+	ExploitedOnly bool            `json:"exploited_only"`
+	HostFilter    string          `json:"host_filter"`
+	ChannelType   string          `json:"channel_type"`
 	ChannelConfig json.RawMessage `json:"channel_config"`
-	LastTriggered *time.Time     `json:"last_triggered"`
-	TriggerCount int             `json:"trigger_count"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	LastTriggered *time.Time      `json:"last_triggered"`
+	TriggerCount  int             `json:"trigger_count"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
 }
 
 type NotificationLog struct {

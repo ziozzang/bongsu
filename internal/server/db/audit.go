@@ -141,4 +141,3 @@ func (db *DB) GetLatestAuditLog(ctx context.Context, f AuditLogFilter, excludedS
 	}
 	return &item, nil
 }
-
