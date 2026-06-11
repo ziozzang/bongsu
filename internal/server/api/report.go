@@ -268,6 +268,14 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 	if s.notifier.ShouldSendScan(sevCounts, riskCounts, inventoryStatus) {
 		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, riskCounts, ingestErrors))
 	}
+	if autoAssignByOwnerEnabled() {
+		if n, err := s.autoAssignFindingsToOwner(ctx, report.Host.ID, report.Host.Owner); err != nil {
+			log.Printf("auto-assign findings to owner for host %s: %v", report.Host.ID, err)
+		} else if n > 0 {
+			log.Printf("Auto-assigned %d finding(s) on host %s to owner %q", n, report.Host.ID, report.Host.Owner)
+		}
+	}
+	scanFailed := scanFailedFromStatus(scanStatus, ingestErrors)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -276,6 +284,9 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		}
 		webhookData := reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, riskCounts, ingestErrors)
 		s.ruleNotifier.evaluateAndDispatch(ctx, "scan.completed", webhookData)
+		if scanFailed {
+			s.ruleNotifier.evaluateAndDispatch(ctx, "scan.failed", scanFailedPayload(&report, scanStatus, errorSummary, ingestErrors))
+		}
 	}()
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -536,6 +547,63 @@ func reportInventoryStatus(packageCount int, scanStatus string) string {
 		return "degraded"
 	}
 	return "healthy"
+}
+
+// scanFailedFromStatus reports whether a completed scan should fire the
+// "scan.failed" notification trigger. A scan is considered failed/degraded when
+// it did not complete cleanly (degraded/failed status) or carried ingest errors.
+func scanFailedFromStatus(scanStatus string, ingestErrors []string) bool {
+	switch scanStatus {
+	case "degraded", "failed":
+		return true
+	}
+	return len(ingestErrors) > 0
+}
+
+// scanFailedPayload builds the notification data for the "scan.failed" trigger.
+// It carries host/scan identity, the resulting status and a short error summary
+// so rules (and their channels) can surface the failure to operators.
+func scanFailedPayload(report *models.ScanReport, scanStatus, errorSummary string, ingestErrors []string) map[string]any {
+	return map[string]any{
+		"scan_id":              report.ScanID,
+		"scan_status":          scanStatus,
+		"host_id":              report.Host.ID,
+		"hostname":             report.Host.Hostname,
+		"ip_address":           report.Host.IPAddress,
+		"scan_type":            report.ScanType,
+		"scan_request_id":      report.ScanRequestID,
+		"security_db_revision": report.SecurityDBRevision,
+		"error_summary":        errorSummary,
+		"ingest_errors":        ingestErrors,
+		"ingest_error_count":   len(ingestErrors),
+	}
+}
+
+func autoAssignByOwnerEnabled() bool {
+	return envBool("BONGSU_AUTO_ASSIGN_BY_OWNER", true)
+}
+
+// autoAssignFindingsToOwner defaults the triage assignee of a host's findings to
+// the host owner. It only creates triage rows that do not yet exist (ON CONFLICT
+// DO NOTHING), so a human-set triage/assignee is never overwritten. It is a no-op
+// when the host has no owner. Returns the number of findings auto-assigned.
+func (s *Server) autoAssignFindingsToOwner(ctx context.Context, hostID, owner string) (int64, error) {
+	owner = strings.TrimSpace(owner)
+	if hostID == "" || owner == "" {
+		return 0, nil
+	}
+	res, err := s.db.ExecContext(ctx, `
+INSERT INTO vulnerability_triage
+	(id, vulnerability_id, host_id, pkg_name, status, assignee, updated_by, created_at, updated_at)
+SELECT DISTINCT gen_random_uuid()::text, v.vulnerability_id, v.host_id, v.pkg_name, 'open', $2, 'auto-assign', now(), now()
+FROM vulnerabilities v
+WHERE v.host_id = $1
+ON CONFLICT (vulnerability_id, host_id, pkg_name) DO NOTHING`, hostID, owner)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 func reportWebhookPayload(report *models.ScanReport, scanStatus, inventoryStatus string, insertedVulns, skippedVulns, vulnTotal int, sevCounts, riskCounts map[string]int, ingestErrors []string) map[string]any {

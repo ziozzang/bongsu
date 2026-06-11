@@ -55,6 +55,10 @@ func (s *Server) handleCreateNotificationRule(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trigger_event is required"})
 		return
 	}
+	if !validTriggerEvent(req.TriggerEvent) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trigger_event must be one of: " + strings.Join(supportedTriggerEvents, ", ")})
+		return
+	}
 	channelType := "webhook"
 	if req.ChannelType != "" {
 		channelType = req.ChannelType
@@ -138,6 +142,10 @@ func (s *Server) handleUpdateNotificationRule(w http.ResponseWriter, r *http.Req
 		existing.Enabled = *req.Enabled
 	}
 	if req.TriggerEvent != nil {
+		if !validTriggerEvent(*req.TriggerEvent) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "trigger_event must be one of: " + strings.Join(supportedTriggerEvents, ", ")})
+			return
+		}
 		existing.TriggerEvent = *req.TriggerEvent
 	}
 	if req.MinSeverity != nil {
@@ -230,6 +238,19 @@ func (s *Server) handleListNotificationLog(w http.ResponseWriter, r *http.Reques
 		entries = []db.NotificationLog{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": entries, "total": total})
+}
+
+// supportedTriggerEvents is the taxonomy of notification trigger events that
+// the server fires and that notification_rules may subscribe to.
+var supportedTriggerEvents = []string{"scan.completed", "scan.failed"}
+
+func validTriggerEvent(event string) bool {
+	for _, e := range supportedTriggerEvents {
+		if e == event {
+			return true
+		}
+	}
+	return false
 }
 
 // validateNotificationChannel rejects unknown channel types and ensures the
