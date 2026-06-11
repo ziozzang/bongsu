@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -270,6 +270,44 @@ type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
 type VulnerabilityFilters = { overdueOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
 type HostFilters = { agent_status?: string; inventory_status?: string; agent_version_state?: string };
+
+type AffectedAsset = {
+  host_id: string;
+  hostname: string;
+  owner: string;
+  team: string;
+  environment: string;
+  criticality: string;
+  container: string;
+  image_name: string;
+  asset_type: string;
+  pkg_name: string;
+  pkg_type: string;
+  installed_version: string;
+  fixed_version: string;
+  severity: string;
+  cvss_score: number;
+};
+type AffectedAssetsResponse = {
+  vulnerability_id: string;
+  total: number;
+  assets: AffectedAsset[];
+};
+
+// Direct fetch for the affected-assets endpoint (no api.ts helper exists for it yet).
+async function fetchAffectedAssets(vulnerabilityId: string, limit = 500): Promise<AffectedAssetsResponse> {
+  const url = new URL('/api/vulnerabilities/affected-assets', window.location.origin);
+  url.searchParams.set('vulnerability_id', vulnerabilityId);
+  url.searchParams.set('limit', String(limit));
+  const headers: Record<string, string> = {};
+  const key = getApiKey();
+  const session = getSession();
+  if (key) headers['X-API-Key'] = key;
+  if (session) headers['Authorization'] = `Bearer ${session}`;
+  const res = await fetch(url.toString(), { headers });
+  if (!res.ok) throw new Error(`Failed to load affected assets (${res.status})`);
+  return res.json();
+}
 
 export default function App() {
   const [view, setView] = useState<View>('dashboard');
@@ -1988,14 +2026,33 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
   const [agentStatus, setAgentStatus] = useState(initialFilters.agent_status || '');
   const [inventoryStatus, setInventoryStatus] = useState(initialFilters.inventory_status || '');
   const [agentVersionState, setAgentVersionState] = useState(initialFilters.agent_version_state || '');
-  const reloadHosts = () => load(agentStatus, inventoryStatus, agentVersionState);
-  const load = useCallback((status: string, inventory: string, versionState: string) => {
+  const [query, setQuery] = useState('');
+  const [owner, setOwner] = useState('');
+  const [team, setTeam] = useState('');
+  const [environment, setEnvironment] = useState('');
+  const [criticality, setCriticality] = useState('');
+  const [osFilter, setOsFilter] = useState('');
+  const meta = { q: query, owner, team, environment, criticality, os: osFilter };
+  const reloadHosts = () => load(agentStatus, inventoryStatus, agentVersionState, meta);
+  const load = useCallback((status: string, inventory: string, versionState: string, m: { q: string; owner: string; team: string; environment: string; criticality: string; os: string }) => {
     setLoading(true);
-    api.hosts({ ...(status ? { agent_status: status } : {}), ...(inventory ? { inventory_status: inventory } : {}), ...(versionState ? { agent_version_state: versionState } : {}) })
+    const params: Record<string, string> = {};
+    if (status) params.agent_status = status;
+    if (inventory) params.inventory_status = inventory;
+    if (versionState) params.agent_version_state = versionState;
+    if (m.q) params.q = m.q;
+    if (m.owner) params.owner = m.owner;
+    if (m.team) params.team = m.team;
+    if (m.environment) params.environment = m.environment;
+    if (m.criticality) params.criticality = m.criticality;
+    if (m.os) params.os = m.os;
+    api.hosts(params)
       .then(h => { setHosts(h || []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
-  useEffect(() => { load(agentStatus, inventoryStatus, agentVersionState); }, [load, agentStatus, inventoryStatus, agentVersionState]);
+  useEffect(() => { load(agentStatus, inventoryStatus, agentVersionState, meta); }, [load, agentStatus, inventoryStatus, agentVersionState]);
+  const handleHostSearch = () => load(agentStatus, inventoryStatus, agentVersionState, meta);
+  const handleHostKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleHostSearch(); };
 
   if (loading) return <Loading />;
 
@@ -2043,6 +2100,56 @@ function HostsView({ initialFilters = {}, onSelectHost }: { initialFilters?: Hos
             <option value="outdated">Outdated Agent</option>
             <option value="unknown">Unknown Version</option>
           </select>
+          <input
+            type="text"
+            placeholder="Search hostname / IP / OS..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={handleHostKeyDown}
+            style={{ minWidth: 200 }}
+            title="Substring match on hostname, IP, or OS"
+          />
+          <input
+            type="text"
+            placeholder="Owner..."
+            value={owner}
+            onChange={(e) => setOwner(e.target.value)}
+            onKeyDown={handleHostKeyDown}
+            style={{ minWidth: 120 }}
+          />
+          <input
+            type="text"
+            placeholder="Team..."
+            value={team}
+            onChange={(e) => setTeam(e.target.value)}
+            onKeyDown={handleHostKeyDown}
+            style={{ minWidth: 120 }}
+          />
+          <input
+            type="text"
+            placeholder="Environment..."
+            value={environment}
+            onChange={(e) => setEnvironment(e.target.value)}
+            onKeyDown={handleHostKeyDown}
+            style={{ minWidth: 130 }}
+          />
+          <input
+            type="text"
+            placeholder="Criticality..."
+            value={criticality}
+            onChange={(e) => setCriticality(e.target.value)}
+            onKeyDown={handleHostKeyDown}
+            style={{ minWidth: 120 }}
+          />
+          <input
+            type="text"
+            placeholder="OS (name/version)..."
+            value={osFilter}
+            onChange={(e) => setOsFilter(e.target.value)}
+            onKeyDown={handleHostKeyDown}
+            style={{ minWidth: 150 }}
+          />
+          <button className="filter-btn" onClick={handleHostSearch}>Search</button>
           <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
             Agent status uses last_seen; inventory status uses latest completed or degraded scan
           </span>
@@ -2439,6 +2546,13 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const [overdueOnly, setOverdueOnly] = useState(!!initialFilters?.overdueOnly);
   const [exploitedOnly, setExploitedOnly] = useState(false);
   const [minEpss, setMinEpss] = useState('');
+  const [vulnId, setVulnId] = useState('');
+  const [vEcosystem, setVEcosystem] = useState('');
+  const [vPkgType, setVPkgType] = useState('');
+  const [minCvss, setMinCvss] = useState('');
+  const [maxCvss, setMaxCvss] = useState('');
+  const [hasFix, setHasFix] = useState('');
+  const [affectedFor, setAffectedFor] = useState<string | null>(null);
   const [exportMsg, setExportMsg] = useState('');
   const [loadError, setLoadError] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -2452,11 +2566,17 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
   const loadSeq = useRef(0);
   const limit = 50;
 
-  const load = useCallback((p: number, sev: string, triage: string, asg: string, source: string, risk: string, overdue: boolean, exploited: boolean, epss: string, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean) => {
+  const load = useCallback((p: number, sev: string, triage: string, asg: string, source: string, risk: string, overdue: boolean, exploited: boolean, epss: string, hId: string, cont: string, own: string, tm: string, env: string, crit: string, pq: string, sBy: string, sDesc: boolean, sNoFix: boolean, sMismatch: boolean, adv: { vulnId: string; ecosystem: string; pkgType: string; minCvss: string; maxCvss: string; hasFix: string }) => {
     const seq = ++loadSeq.current;
     setLoading(true);
     setLoadError('');
     const params: Record<string, string> = { limit: String(limit), offset: String(p * limit) };
+    if (adv.vulnId) params.vuln_id = adv.vulnId;
+    if (adv.ecosystem) params.ecosystem = adv.ecosystem;
+    if (adv.pkgType) params.pkg_type = adv.pkgType;
+    if (adv.minCvss) params.min_cvss = adv.minCvss;
+    if (adv.maxCvss) params.max_cvss = adv.maxCvss;
+    if (adv.hasFix) params.has_fix = adv.hasFix;
     if (sev) params.severity = sev;
     if (triage) params.triage_status = triage;
     if (asg) params.assignee = asg;
@@ -2496,16 +2616,18 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
     }).catch(() => {});
   }, []);
 
-  useEffect(() => { load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); }, [load, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch]);
+  const vadv = { vulnId, ecosystem: vEcosystem, pkgType: vPkgType, minCvss, maxCvss, hasFix };
 
-  const handleSearch = () => { load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch); };
+  useEffect(() => { load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch, vadv); }, [load, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, showNoFix, showMismatch, vEcosystem, vPkgType, hasFix]);
+
+  const handleSearch = () => { load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch, vadv); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
     const nextDesc = sortBy === col ? !sortDesc : col === 'risk_score' || col === 'cvss_score' || col === 'severity' || col === 'exploited' || col === 'epss_score' || col === 'epss_percentile';
     setSortBy(col);
     setSortDesc(nextDesc);
-    load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch);
+    load(0, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, col, nextDesc, showNoFix, showMismatch, vadv);
   };
 
   const sortArrow = (col: string) => {
@@ -2572,7 +2694,7 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
       return next;
     });
   };
-  const reloadCurrent = () => load(page, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch);
+  const reloadCurrent = () => load(page, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch, vadv);
   const applyBulkTriage = async () => {
     const targets = vulns.filter(v => selectedIds.has(v.id));
     if (targets.length === 0 || !bulkStatus) return;
@@ -2642,6 +2764,12 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
     setOverdueOnly(false);
     setExploitedOnly(false);
     setMinEpss('');
+    setVulnId('');
+    setVEcosystem('');
+    setVPkgType('');
+    setMinCvss('');
+    setMaxCvss('');
+    setHasFix('');
   };
   const activeFilters = [
     severity && `Severity: ${severity}`,
@@ -2659,6 +2787,13 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
     environment && `Environment: ${environment}`,
     criticality && `Criticality: ${criticality}`,
     pkgQuery && `Package: ${pkgQuery}`,
+    vulnId && `CVE: ${vulnId}`,
+    vEcosystem && `Ecosystem: ${vEcosystem}`,
+    vPkgType && `Pkg Type: ${vPkgType}`,
+    minCvss && `CVSS >= ${minCvss}`,
+    maxCvss && `CVSS <= ${maxCvss}`,
+    hasFix === 'yes' && 'Fix available',
+    hasFix === 'no' && 'No fix available',
     showNoFix && 'No fix info',
     showMismatch && 'Wrong ecosystem',
   ].filter(Boolean) as string[];
@@ -2746,6 +2881,67 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
             onChange={(e) => setPkgQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             style={{ minWidth: 180 }}
+          />
+          <input
+            type="text"
+            placeholder="CVE id (e.g. CVE-2024)"
+            value={vulnId}
+            onChange={(e) => setVulnId(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 170 }}
+            title="Filter by vulnerability id substring, e.g. CVE-2024 or DEBIAN-"
+          />
+          <input
+            type="text"
+            placeholder="Ecosystem..."
+            value={vEcosystem}
+            onChange={(e) => setVEcosystem(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 130 }}
+            title="Ecosystem, e.g. pypi/npm/debian/rhel/alpine"
+            list="vuln-ecosystem-list"
+          />
+          <datalist id="vuln-ecosystem-list">
+            <option value="pypi" /><option value="npm" /><option value="debian" /><option value="rhel" /><option value="alpine" />
+            <option value="go" /><option value="maven" /><option value="cargo" /><option value="gem" /><option value="nuget" />
+          </datalist>
+          <input
+            type="text"
+            placeholder="Pkg type..."
+            value={vPkgType}
+            onChange={(e) => setVPkgType(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 120 }}
+            title="Package type"
+          />
+          <select value={hasFix} onChange={(e) => setHasFix(e.target.value)} title="Fix availability">
+            <option value="">All Fixes</option>
+            <option value="yes">Has fix</option>
+            <option value="no">No fix</option>
+          </select>
+          <input
+            type="number"
+            min="0"
+            max="10"
+            step="0.1"
+            placeholder="Min CVSS"
+            value={minCvss}
+            onChange={(e) => setMinCvss(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ width: 100 }}
+            title="Minimum CVSS score"
+          />
+          <input
+            type="number"
+            min="0"
+            max="10"
+            step="0.1"
+            placeholder="Max CVSS"
+            value={maxCvss}
+            onChange={(e) => setMaxCvss(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ width: 100 }}
+            title="Maximum CVSS score"
           />
           <button className="filter-btn" onClick={handleSearch}>
             Search
@@ -2849,6 +3045,14 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
                   </td>
                   <td className="mono">
                     <span className="host-link" style={{ color: 'var(--primary)' }}>{v.vulnerability_id}</span>
+                    <button
+                      className="filter-btn"
+                      style={{ marginLeft: 6, padding: '1px 6px', fontSize: '0.625rem' }}
+                      title="Show hosts & containers affected by this CVE"
+                      onClick={(e) => { e.stopPropagation(); setAffectedFor(v.vulnerability_id); }}
+                    >
+                      assets
+                    </button>
                   </td>
                   <td><span className={badgeClass(v.severity)}>{v.severity}</span></td>
                   <td className="mono" style={{ color: v.cvss_score >= 9 ? 'var(--critical)' : v.cvss_score >= 7 ? 'var(--high)' : v.cvss_score >= 4 ? 'var(--medium)' : 'inherit', fontWeight: 600 }}>{v.cvss_score > 0 ? v.cvss_score.toFixed(1) : '-'}</td>
@@ -2909,9 +3113,110 @@ function VulnsView({ initialFilters, onSelectVuln }: { initialFilters?: Vulnerab
             </tbody>
           </table>
         )}
-        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch)} />
+        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, severity, triageStatus, assignee, findingSource, riskLevel, overdueOnly, exploitedOnly, minEpss, hostId, container, owner, team, environment, criticality, pkgQuery, sortBy, sortDesc, showNoFix, showMismatch, vadv)} />
       </div>
+      {affectedFor && <AffectedAssetsModal vulnerabilityId={affectedFor} onClose={() => setAffectedFor(null)} />}
     </>
+  );
+}
+
+function AffectedAssetsModal({ vulnerabilityId, onClose }: { vulnerabilityId: string; onClose: () => void }) {
+  const [data, setData] = useState<AffectedAssetsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    fetchAffectedAssets(vulnerabilityId, 500)
+      .then(r => { if (active) { setData(r); setLoading(false); } })
+      .catch(e => { if (active) { setError(e instanceof Error ? e.message : 'Failed to load affected assets'); setLoading(false); } });
+    return () => { active = false; };
+  }, [vulnerabilityId]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const assets = data?.assets || [];
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 2000,
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '4vh 1rem',
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: '#1e2030', border: '1px solid var(--border)', borderRadius: 10,
+          width: 'min(1100px, 96vw)', maxHeight: '88vh', display: 'flex', flexDirection: 'column',
+          boxShadow: '0 16px 48px rgba(0,0,0,0.5)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
+          <h2 style={{ margin: 0, fontSize: '1.05rem' }}>
+            Affected assets — <span className="mono" style={{ color: 'var(--primary)' }}>{vulnerabilityId}</span>
+            {data && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 10, fontSize: '0.8125rem' }}>{data.total} asset{data.total === 1 ? '' : 's'}</span>}
+          </h2>
+          <button type="button" className="filter-clear" onClick={onClose} style={{ padding: '2px 10px' }}>Close</button>
+        </div>
+        <div style={{ overflow: 'auto', padding: '0.5rem 0' }}>
+          {loading ? <Loading /> : error ? (
+            <div style={{ padding: '1.25rem', color: 'var(--critical)' }}>{error}</div>
+          ) : assets.length === 0 ? (
+            <div style={{ padding: '1.25rem', color: 'var(--text-muted)', textAlign: 'center' }}>No affected assets found</div>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  <th>Hostname</th>
+                  <th>Asset</th>
+                  <th>Container / Image</th>
+                  <th>Package</th>
+                  <th>Pkg Type</th>
+                  <th>Installed → Fixed</th>
+                  <th>Severity</th>
+                  <th>CVSS</th>
+                  <th>Owner</th>
+                  <th>Env</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assets.map((a, i) => (
+                  <tr key={`${a.host_id}-${a.container}-${a.pkg_name}-${i}`}>
+                    <td>{a.hostname || a.host_id.slice(0, 8)}</td>
+                    <td><span className="badge">{a.asset_type || (a.container ? 'container' : 'host')}</span></td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }}>
+                      {a.container || a.image_name
+                        ? <>{a.container || '-'}{a.image_name ? <div style={{ color: 'var(--text-muted)' }}>{a.image_name}</div> : null}</>
+                        : <span style={{ color: 'var(--text-muted)' }}>(host)</span>}
+                    </td>
+                    <td className="mono">{a.pkg_name}</td>
+                    <td className="mono">{a.pkg_type || '-'}</td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }}>
+                      {a.installed_version || '-'}
+                      {a.fixed_version
+                        ? <span style={{ color: '#22c55e', fontWeight: 600 }}> → {a.fixed_version}</span>
+                        : <span style={{ color: 'var(--text-muted)' }}> → no fix</span>}
+                    </td>
+                    <td><span className={`badge badge-${(a.severity || 'unknown').toLowerCase()}`}>{a.severity || '-'}</span></td>
+                    <td className="mono" style={{ color: severityColor(a.severity), fontWeight: 600 }}>{a.cvss_score > 0 ? a.cvss_score.toFixed(1) : '-'}</td>
+                    <td>{a.owner || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                    <td>{a.environment || <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3198,6 +3503,12 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
   const [lang, setLang] = useState('');
   const [source, setSource] = useState('');
   const [query, setQuery] = useState('');
+  const [version, setVersion] = useState('');
+  const [ecosystem, setEcosystem] = useState('');
+  const [arch, setArch] = useState('');
+  const [assetType, setAssetType] = useState('');
+  const [hasVulns, setHasVulns] = useState(false);
+  const [minCvss, setMinCvss] = useState('');
   const [sortBy, setSortBy] = useState('');
   const [sortDesc, setSortDesc] = useState(false);
   const limit = 100;
@@ -3213,7 +3524,7 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
     }).catch(() => {});
   }, []);
 
-  const load = useCallback((p: number, hId: string, cont: string, langLabel: string, src: string, q: string, sBy: string, sDesc: boolean) => {
+  const load = useCallback((p: number, hId: string, cont: string, langLabel: string, src: string, q: string, sBy: string, sDesc: boolean, adv: { version: string; ecosystem: string; arch: string; assetType: string; hasVulns: boolean; minCvss: string }) => {
     const seq = ++loadSeq.current;
     setLoading(true);
     const params: Record<string, string> = {
@@ -3224,6 +3535,12 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
     if (cont) params.container = cont;
     if (src) params.source = src;
     if (q) params.q = q;
+    if (adv.version) params.version = adv.version;
+    if (adv.ecosystem) params.ecosystem = adv.ecosystem;
+    if (adv.arch) params.arch = adv.arch;
+    if (adv.assetType) params.asset_type = adv.assetType;
+    if (adv.hasVulns) params.has_vulns = 'true';
+    if (adv.minCvss) params.min_cvss = adv.minCvss;
     if (sBy) { params.sort_by = sBy; params.sort_order = sDesc ? 'desc' : 'asc'; }
 
     const types = resolvePkgTypes(langLabel, filterOpts?.pkg_types || []);
@@ -3245,17 +3562,19 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
       .catch(() => { if (seq === loadSeq.current) setLoading(false); });
   }, [filterOpts]);
 
-  useEffect(() => { if (filterOpts) load(0, hostId, container, lang, source, query, sortBy, sortDesc); }, [filterOpts]);
-  useEffect(() => { if (filterOpts) load(0, hostId, container, lang, source, query, sortBy, sortDesc); }, [hostId, container, lang, source]);
+  const adv = { version, ecosystem, arch, assetType, hasVulns, minCvss };
 
-  const handleSearch = () => { load(0, hostId, container, lang, source, query, sortBy, sortDesc); };
+  useEffect(() => { if (filterOpts) load(0, hostId, container, lang, source, query, sortBy, sortDesc, adv); }, [filterOpts]);
+  useEffect(() => { if (filterOpts) load(0, hostId, container, lang, source, query, sortBy, sortDesc, adv); }, [hostId, container, lang, source, ecosystem, arch, assetType, hasVulns]);
+
+  const handleSearch = () => { load(0, hostId, container, lang, source, query, sortBy, sortDesc, adv); };
   const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
 
   const toggleSort = (col: string) => {
     const nextDesc = sortBy === col ? !sortDesc : false;
     setSortBy(col);
     setSortDesc(nextDesc);
-    load(0, hostId, container, lang, source, query, col, nextDesc);
+    load(0, hostId, container, lang, source, query, col, nextDesc, adv);
   };
 
   const sortArrow = (col: string) => {
@@ -3316,6 +3635,58 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
             onKeyDown={handleKeyDown}
             style={{ minWidth: 200 }}
           />
+          <input
+            type="text"
+            placeholder="Version (exact)..."
+            value={version}
+            onChange={(e) => setVersion(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 140 }}
+            title="Exact installed version"
+          />
+          <input
+            type="text"
+            placeholder="Ecosystem (pypi, npm...)"
+            value={ecosystem}
+            onChange={(e) => setEcosystem(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 150 }}
+            title="Ecosystem, e.g. pypi/npm/debian/rhel/alpine"
+            list="pkg-ecosystem-list"
+          />
+          <datalist id="pkg-ecosystem-list">
+            <option value="pypi" /><option value="npm" /><option value="debian" /><option value="rhel" /><option value="alpine" />
+            <option value="go" /><option value="maven" /><option value="cargo" /><option value="gem" /><option value="nuget" />
+          </datalist>
+          <input
+            type="text"
+            placeholder="Arch..."
+            value={arch}
+            onChange={(e) => setArch(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ minWidth: 90 }}
+            title="Package architecture, e.g. x86_64, amd64, noarch"
+          />
+          <select value={assetType} onChange={(e) => setAssetType(e.target.value)} title="Asset type">
+            <option value="">All Asset Types</option>
+            <option value="host">Host</option>
+            <option value="container">Container</option>
+          </select>
+          <input
+            type="number"
+            min="0"
+            max="10"
+            step="0.1"
+            placeholder="Min CVSS"
+            value={minCvss}
+            onChange={(e) => setMinCvss(e.target.value)}
+            onKeyDown={handleKeyDown}
+            style={{ width: 110 }}
+            title="Minimum CVSS score"
+          />
+          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8125rem', color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            <input type="checkbox" checked={hasVulns} onChange={e => setHasVulns(e.target.checked)} /> Has vulnerabilities
+          </label>
           <button
             className="filter-btn"
             onClick={handleSearch}
@@ -3359,7 +3730,7 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
             </tbody>
           </table>
         )}
-        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, hostId, container, lang, source, query, sortBy, sortDesc)} />
+        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, hostId, container, lang, source, query, sortBy, sortDesc, adv)} />
       </div>
     </>
   );
