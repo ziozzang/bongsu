@@ -32,6 +32,12 @@ func CollectHostInfo() (*models.Host, error) {
 	h.MemoryMB = getMemoryMB()
 	h.IPAddress = getIPAddress()
 
+	if raw, err := json.Marshal(CollectFacts()); err == nil {
+		h.Facts = raw
+		now := time.Now().UTC()
+		h.FactsCollectedAt = &now
+	}
+
 	return h, nil
 }
 

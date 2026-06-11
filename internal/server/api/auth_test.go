@@ -5612,7 +5612,7 @@ func TestDashboardShowsAgentTokenBindingState(t *testing.T) {
 	if !strings.Contains(apiBody, "agent_token_set?: boolean") {
 		t.Fatal("web Host type must expose agent_token_set boolean")
 	}
-	if !strings.Contains(modelBody, "AgentTokenSet bool") || !strings.Contains(modelBody, `json:"agent_token_set,omitempty"`) {
+	if !strings.Contains(modelBody, "AgentTokenSet") || !strings.Contains(modelBody, `json:"agent_token_set,omitempty"`) {
 		t.Fatal("server Host model must expose agent_token_set boolean")
 	}
 }

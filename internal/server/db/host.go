@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"time"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
@@ -13,13 +14,20 @@ func (db *DB) UpsertHost(ctx context.Context, h *models.Host) error {
 }
 
 func (db *DB) UpsertHostWithAgentToken(ctx context.Context, h *models.Host, tokenHash string) error {
-	q := `INSERT INTO hosts (id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, api_key_hash, agent_token_hash, last_seen, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', $12, now(), now(), now())
-ON CONFLICT (id) DO UPDATE SET hostname=$2, ip_address=$3, os_name=$4, os_version=$5, kernel=$6, arch=$7, cpu_model=$8, cpu_cores=$9, memory_mb=$10, agent_version=$11, agent_token_hash=CASE WHEN hosts.agent_token_hash='' THEN $12 ELSE hosts.agent_token_hash END, last_seen=now(), updated_at=now()
+	facts := string(h.Facts)
+	if strings.TrimSpace(facts) == "" {
+		facts = "{}"
+	}
+	q := `INSERT INTO hosts (id, hostname, ip_address, os_name, os_version, kernel, arch, cpu_model, cpu_cores, memory_mb, agent_version, api_key_hash, agent_token_hash, facts, facts_collected_at, last_seen, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, '', $12, $13::jsonb, CASE WHEN $13::jsonb <> '{}'::jsonb THEN now() ELSE NULL END, now(), now(), now())
+ON CONFLICT (id) DO UPDATE SET hostname=$2, ip_address=$3, os_name=$4, os_version=$5, kernel=$6, arch=$7, cpu_model=$8, cpu_cores=$9, memory_mb=$10, agent_version=$11, agent_token_hash=CASE WHEN hosts.agent_token_hash='' THEN $12 ELSE hosts.agent_token_hash END,
+	facts=CASE WHEN $13::jsonb <> '{}'::jsonb THEN $13::jsonb ELSE hosts.facts END,
+	facts_collected_at=CASE WHEN $13::jsonb <> '{}'::jsonb THEN now() ELSE hosts.facts_collected_at END,
+	last_seen=now(), updated_at=now()
 WHERE $12='' OR hosts.agent_token_hash='' OR hosts.agent_token_hash=$12`
 	res, err := db.ExecContext(ctx, q,
 		h.ID, h.Hostname, h.IPAddress, h.OSName, h.OSVersion,
-		h.Kernel, h.Arch, h.CPUModel, h.CPUCores, h.MemoryMB, h.AgentVersion, tokenHash,
+		h.Kernel, h.Arch, h.CPUModel, h.CPUCores, h.MemoryMB, h.AgentVersion, tokenHash, facts,
 	)
 	if err != nil {
 		return err
@@ -162,11 +170,25 @@ func (db *DB) GetHostInventorySummaries(ctx context.Context) (map[string]HostInv
 }
 
 func (db *DB) GetHost(ctx context.Context, id string) (*models.Host, error) {
-	q := `SELECT ` + hostCols + ` FROM hosts WHERE id=$1`
+	// GetHost is the detail path, so it additionally pulls the (potentially
+	// large) facts blob that ListHosts deliberately omits.
+	q := `SELECT ` + hostCols + `, facts::text, facts_collected_at FROM hosts WHERE id=$1`
 	var h models.Host
-	err := scanHost(db.QueryRowContext(ctx, q, id), &h)
-	if err != nil {
+	var facts sql.NullString
+	var factsAt sql.NullTime
+	row := db.QueryRowContext(ctx, q, id)
+	if err := row.Scan(&h.ID, &h.Hostname, &h.IPAddress, &h.OSName, &h.OSVersion,
+		&h.Kernel, &h.Arch, &h.CPUModel, &h.CPUCores, &h.MemoryMB, &h.AgentVersion,
+		&h.AgentTokenSet, &h.Owner, &h.Team, &h.Environment, &h.Criticality, &h.Tags, &h.LastSeen, &h.CreatedAt,
+		&facts, &factsAt); err != nil {
 		return nil, err
+	}
+	if facts.Valid && strings.TrimSpace(facts.String) != "" && facts.String != "{}" {
+		h.Facts = []byte(facts.String)
+	}
+	if factsAt.Valid {
+		t := factsAt.Time
+		h.FactsCollectedAt = &t
 	}
 	return &h, nil
 }

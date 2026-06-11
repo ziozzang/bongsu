@@ -6,27 +6,29 @@ import (
 )
 
 type Host struct {
-	ID            string    `json:"id"`
-	Hostname      string    `json:"hostname"`
-	IPAddress     string    `json:"ip_address"`
-	OSName        string    `json:"os_name"`
-	OSVersion     string    `json:"os_version"`
-	Kernel        string    `json:"kernel"`
-	Arch          string    `json:"arch"`
-	CPUModel      string    `json:"cpu_model"`
-	CPUCores      int       `json:"cpu_cores"`
-	MemoryMB      int64     `json:"memory_mb"`
-	AgentVersion  string    `json:"agent_version"`
-	AgentTokenSet bool      `json:"agent_token_set,omitempty"`
-	Owner         string    `json:"owner,omitempty"`
-	Team          string    `json:"team,omitempty"`
-	Environment   string    `json:"environment,omitempty"`
-	Criticality   string    `json:"criticality,omitempty"`
-	Tags          string    `json:"tags,omitempty"`
-	LastSeen      time.Time `json:"last_seen"`
-	AgentStatus   string    `json:"agent_status,omitempty"`
-	LastSeenAgeS  int64     `json:"last_seen_age_seconds,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
+	ID               string          `json:"id"`
+	Hostname         string          `json:"hostname"`
+	IPAddress        string          `json:"ip_address"`
+	OSName           string          `json:"os_name"`
+	OSVersion        string          `json:"os_version"`
+	Kernel           string          `json:"kernel"`
+	Arch             string          `json:"arch"`
+	CPUModel         string          `json:"cpu_model"`
+	CPUCores         int             `json:"cpu_cores"`
+	MemoryMB         int64           `json:"memory_mb"`
+	AgentVersion     string          `json:"agent_version"`
+	AgentTokenSet    bool            `json:"agent_token_set,omitempty"`
+	Owner            string          `json:"owner,omitempty"`
+	Team             string          `json:"team,omitempty"`
+	Environment      string          `json:"environment,omitempty"`
+	Criticality      string          `json:"criticality,omitempty"`
+	Tags             string          `json:"tags,omitempty"`
+	Facts            json.RawMessage `json:"facts,omitempty"`
+	FactsCollectedAt *time.Time      `json:"facts_collected_at,omitempty"`
+	LastSeen         time.Time       `json:"last_seen"`
+	AgentStatus      string          `json:"agent_status,omitempty"`
+	LastSeenAgeS     int64           `json:"last_seen_age_seconds,omitempty"`
+	CreatedAt        time.Time       `json:"created_at"`
 }
 
 type Scan struct {
@@ -239,27 +241,28 @@ type PortInfo struct {
 }
 
 type ContainerAsset struct {
-	ID                 string     `json:"id"`
-	ScanID             string     `json:"scan_id"`
-	LatestScanID       string     `json:"latest_scan_id,omitempty"`
-	HostID             string     `json:"host_id"`
-	Runtime            string     `json:"runtime"`
-	ContainerID        string     `json:"container_id"`
-	Name               string     `json:"name"`
-	ImageName          string     `json:"image_name"`
-	ImageID            string     `json:"image_id"`
-	ImageDigest        string     `json:"image_digest,omitempty"`
-	State              string     `json:"state"`
-	Labels             string     `json:"labels,omitempty"`
-	LabelCount         int        `json:"label_count"`
-	LabelsRedacted     bool       `json:"labels_redacted,omitempty"`
-	StartedAt          *time.Time `json:"started_at,omitempty"`
-	PackageCount       int        `json:"package_count"`
-	VulnerabilityCount int        `json:"vulnerability_count"`
-	CriticalCount      int        `json:"critical_count"`
-	HighCount          int        `json:"high_count"`
-	MaxCVSS            float64    `json:"max_cvss"`
-	CreatedAt          time.Time  `json:"created_at"`
+	ID                 string          `json:"id"`
+	ScanID             string          `json:"scan_id"`
+	LatestScanID       string          `json:"latest_scan_id,omitempty"`
+	HostID             string          `json:"host_id"`
+	Runtime            string          `json:"runtime"`
+	ContainerID        string          `json:"container_id"`
+	Name               string          `json:"name"`
+	ImageName          string          `json:"image_name"`
+	ImageID            string          `json:"image_id"`
+	ImageDigest        string          `json:"image_digest,omitempty"`
+	State              string          `json:"state"`
+	Labels             string          `json:"labels,omitempty"`
+	LabelCount         int             `json:"label_count"`
+	LabelsRedacted     bool            `json:"labels_redacted,omitempty"`
+	Facts              json.RawMessage `json:"facts,omitempty"`
+	StartedAt          *time.Time      `json:"started_at,omitempty"`
+	PackageCount       int             `json:"package_count"`
+	VulnerabilityCount int             `json:"vulnerability_count"`
+	CriticalCount      int             `json:"critical_count"`
+	HighCount          int             `json:"high_count"`
+	MaxCVSS            float64         `json:"max_cvss"`
+	CreatedAt          time.Time       `json:"created_at"`
 }
 
 type ScanReport struct {
