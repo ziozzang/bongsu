@@ -35,6 +35,17 @@ func TestRPMCompare(t *testing.T) {
 		{"1.0", "1.0^", -1},
 		{"1.0^a", "1.0^a", 0},
 		{"1.0^a", "1.0^b", -1},
+		// Caret is NEWER than the bare version but OLDER than any ordinary
+		// following segment on the other side (rpmvercmp.c caret semantics:
+		// 1.0 < 1.0^git1 < 1.0.1).
+		{"1.0", "1.0^git1", -1},
+		{"1.0^git1", "1.0", 1},
+		{"1.0^git1", "1.0.1", -1},
+		{"1.0.1", "1.0^git1", 1},
+		{"1.0^git1", "1.0^git2", -1},
+		{"1.0^git2", "1.0^git1", 1},
+		{"1.0^git1.1", "1.0^git1", 1},
+		{"1.0^git1", "1.0^git1.1", -1},
 
 		// digit > alpha: numeric segment beats alpha segment.
 		// "1.0a" -> [1][0][a]; "1.0.1" -> [1][0][1]; compare 'a' vs '1' => 1 wins.
@@ -95,6 +106,7 @@ func TestRPMCompare(t *testing.T) {
 func TestRPMAntisymmetry(t *testing.T) {
 	vals := []string{
 		"1.0", "1.1", "1.0.1", "1.0~rc1", "1.0^20240101",
+		"1.0^git1", "1.0^git2", "1.0^git1.1",
 		"1:1.0", "2.34-83.el9", "2.34-83.el9_3", "1.01", "1.0a",
 	}
 	for _, a := range vals {

@@ -110,24 +110,36 @@ func rpmvercmp(a, b string) int {
 			continue
 		}
 
-		// Handle the caret separator (post-release). A caret sorts AFTER the
-		// empty string but BEFORE any following version content. So "1.0^" is
-		// newer than "1.0", but "1.0^1" is older than "1.0.1" content-wise per
-		// rpm's segment-by-segment logic.
+		// Handle the caret separator (post-release). This is a faithful port of
+		// rpm's lib/rpmvercmp.c caret branch:
+		//
+		//	if (*one == '^' || *two == '^') {
+		//	    if (!*one) return -1;        // a exhausted: a is OLDER
+		//	    if (!*two) return 1;         // b exhausted: a is NEWER
+		//	    if (*one != '^') return 1;   // only b at '^': a is NEWER
+		//	    if (*two != '^') return -1;  // only a at '^': a is OLDER
+		//	    one++; two++; continue;      // both at '^': skip and continue
+		//	}
+		//
+		// The order of the checks matters: the string-exhaustion tests come
+		// FIRST. So "1.0" < "1.0^git1" (b's '^' beats a's end), but
+		// "1.0^git1" < "1.0.1" (a's '^' is older than b's ordinary "1"). A
+		// caret is therefore newer than the bare version but older than any
+		// ordinary following segment on the other side.
 		aCaret := i < len(a) && a[i] == '^'
 		bCaret := j < len(b) && b[j] == '^'
 		if aCaret || bCaret {
-			if aCaret && i+1 == len(a) && j >= len(b) {
-				return 1
-			}
-			if bCaret && j+1 == len(b) && i >= len(a) {
+			if i >= len(a) {
 				return -1
+			}
+			if j >= len(b) {
+				return 1
 			}
 			if !aCaret {
-				return -1
+				return 1
 			}
 			if !bCaret {
-				return 1
+				return -1
 			}
 			i++
 			j++

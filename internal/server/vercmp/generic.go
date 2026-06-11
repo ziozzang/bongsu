@@ -1,7 +1,6 @@
 package vercmp
 
 import (
-	"strconv"
 	"strings"
 )
 
@@ -72,8 +71,10 @@ func releaseTier(pre []string) int {
 
 // genericVersion is a parsed semver-leaning version: numeric release segments
 // plus an ordered list of pre-release identifiers. Build metadata is discarded.
+// Release segments are kept as their original digit strings (not ints) so that
+// arbitrarily long numeric segments compare correctly without integer overflow.
 type genericVersion struct {
-	release []int
+	release []string
 	pre     []string
 }
 
@@ -125,29 +126,27 @@ func parseGeneric(v string) (genericVersion, bool) {
 // the leading numeric release segments plus any trailing pre-release identifiers
 // embedded in PEP 440 / Maven style (e.g. "1.2.3rc1" => [1 2 3], ["rc" "1"];
 // "1.2.3.dev1" => [1 2 3], ["dev" "1"]).
-func splitReleaseAndQualifier(v string) ([]int, []string) {
+func splitReleaseAndQualifier(v string) ([]string, []string) {
 	if v == "" {
 		return nil, nil
 	}
 	segs := strings.Split(v, ".")
-	release := make([]int, 0, len(segs))
+	release := make([]string, 0, len(segs))
 	var pre []string
 
 	for idx, seg := range segs {
 		if seg == "" {
 			continue
 		}
-		if n, ok := allDigits(seg); ok {
-			release = append(release, n)
+		if allDigits(seg) {
+			release = append(release, seg)
 			continue
 		}
 		// A mixed segment like "3rc1": pull off the leading digits as a release
 		// number, then treat the rest plus the remaining segments as pre-release.
 		num, rest := leadingDigits(seg)
 		if num != "" {
-			if n, err := strconv.Atoi(num); err == nil {
-				release = append(release, n)
-			}
+			release = append(release, num)
 		}
 		// Everything from `rest` onward is the qualifier / pre-release.
 		tail := []string{}
@@ -201,25 +200,39 @@ func splitAlphaNum(s string) []string {
 }
 
 // compareRelease compares two numeric release segment lists, zero-padding the
-// shorter so 1.2 == 1.2.0.
-func compareRelease(a, b []int) int {
+// shorter so 1.2 == 1.2.0. Segments are digit strings compared via
+// compareNumStr, so arbitrarily long numbers order correctly without overflow.
+func compareRelease(a, b []string) int {
 	n := len(a)
 	if len(b) > n {
 		n = len(b)
 	}
 	for i := 0; i < n; i++ {
-		var ai, bi int
+		ai, bi := "0", "0"
 		if i < len(a) {
 			ai = a[i]
 		}
 		if i < len(b) {
 			bi = b[i]
 		}
-		if ai != bi {
-			return sign(ai - bi)
+		if c := compareNumStr(ai, bi); c != 0 {
+			return c
 		}
 	}
 	return 0
+}
+
+// compareNumStr orders two non-negative integers given as digit strings without
+// converting to a machine integer, so values larger than int64 still compare
+// correctly. It mirrors the technique used by deb.go/rpm.go: strip leading
+// zeros, then the longer remaining string is greater, else compare lexically.
+func compareNumStr(a, b string) int {
+	a = stripLeadingZeros(a)
+	b = stripLeadingZeros(b)
+	if len(a) != len(b) {
+		return sign(len(a) - len(b))
+	}
+	return strings.Compare(a, b)
 }
 
 // comparePre compares two non-empty pre-release identifier lists per semver,
@@ -241,12 +254,14 @@ func comparePre(a, b []string) int {
 
 // comparePreIdent compares a single pair of pre-release identifiers.
 func comparePreIdent(a, b string) int {
-	na, aIsNum := allDigits(a)
-	nb, bIsNum := allDigits(b)
+	aIsNum := allDigits(a)
+	bIsNum := allDigits(b)
 
 	switch {
 	case aIsNum && bIsNum:
-		return sign(na - nb)
+		// Compare as digit strings, not parsed ints, so 30+ digit identifiers
+		// (which would overflow strconv.Atoi) still order correctly.
+		return compareNumStr(a, b)
 	case aIsNum && !bIsNum:
 		// Numeric identifiers always have lower precedence than alphanumeric.
 		return -1
@@ -290,22 +305,19 @@ func qualifierRank(s string) (int, bool) {
 	}
 }
 
-// allDigits reports whether s is a non-empty run of ASCII digits and, if so,
-// returns its integer value.
-func allDigits(s string) (int, bool) {
+// allDigits reports whether s is a non-empty run of ASCII digits. It does not
+// parse the value, so it is safe for arbitrarily long numeric strings; callers
+// order such strings with compareNumStr instead of integer arithmetic.
+func allDigits(s string) bool {
 	if s == "" {
-		return 0, false
+		return false
 	}
 	for i := 0; i < len(s); i++ {
 		if !isDigit(s[i]) {
-			return 0, false
+			return false
 		}
 	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return 0, false
-	}
-	return n, true
+	return true
 }
 
 // leadingDigits splits s into its leading ASCII-digit run and the remainder.

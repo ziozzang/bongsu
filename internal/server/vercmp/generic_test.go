@@ -49,6 +49,13 @@ func TestGenericCompare(t *testing.T) {
 		{"pep dev lt release", "1.2.3.dev1", "1.2.3", -1, true},
 		{"post gt release", "1.2.3.post1", "1.2.3", 1, true},
 
+		// Very long numeric segments must not overflow integer parsing; they
+		// are compared as digit strings, so ordering stays correct and ok=true.
+		{"30-digit release lt", "1.123456789012345678901234567890", "1.123456789012345678901234567891", -1, true},
+		{"30-digit release gt", "1.123456789012345678901234567891", "1.123456789012345678901234567890", 1, true},
+		{"30-digit release eq", "1.123456789012345678901234567890", "1.123456789012345678901234567890", 0, true},
+		{"30-digit pre id", "1.0.0-rc.123456789012345678901234567890", "1.0.0-rc.123456789012345678901234567891", -1, true},
+
 		// Build metadata ignored.
 		{"build ignored vs plain", "1.0.0+build1", "1.0.0", 0, true},
 		{"build differs", "1.0.0+build1", "1.0.0+build2", 0, true},
