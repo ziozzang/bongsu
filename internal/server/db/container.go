@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
@@ -19,8 +20,8 @@ func (db *DB) InsertContainers(ctx context.Context, containers []models.Containe
 	}
 	defer tx.Rollback()
 
-	q := `INSERT INTO container_assets (id, scan_id, host_id, runtime, container_id, name, image_name, image_id, image_digest, state, labels, started_at, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,now())`
+	q := `INSERT INTO container_assets (id, scan_id, host_id, runtime, container_id, name, image_name, image_id, image_digest, state, labels, facts, started_at, created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,now())`
 	stmt, err := tx.PrepareContext(ctx, q)
 	if err != nil {
 		return err
@@ -29,11 +30,15 @@ VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,now())`
 
 	for i := range containers {
 		labels := defaultString(containers[i].Labels, "{}")
+		facts := strings.TrimSpace(string(containers[i].Facts))
+		if facts == "" {
+			facts = "{}"
+		}
 		_, err := stmt.ExecContext(ctx,
 			containers[i].ID, containers[i].ScanID, containers[i].HostID,
 			defaultString(containers[i].Runtime, "docker"), containers[i].ContainerID,
 			containers[i].Name, containers[i].ImageName, containers[i].ImageID,
-			containers[i].ImageDigest, containers[i].State, labels, containers[i].StartedAt,
+			containers[i].ImageDigest, containers[i].State, labels, facts, containers[i].StartedAt,
 		)
 		if err != nil {
 			return err

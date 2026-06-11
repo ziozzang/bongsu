@@ -15,6 +15,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ziozzang/bongsu/internal/agent/scanner"
+	"github.com/ziozzang/bongsu/internal/agent/system"
 	"github.com/ziozzang/bongsu/internal/shared/models"
 	"github.com/ziozzang/bongsu/internal/shared/trivyparse"
 )
@@ -33,6 +35,14 @@ type Collector struct {
 	HostTimeout    time.Duration
 	ImageTimeout   time.Duration
 	CommandTimeout time.Duration
+	// Scanner selects the package inventory engine: "native" (built-in,
+	// dependency-free dpkg/apk/rpm readers) or "trivy" (external binary).
+	// Empty defaults to native.
+	Scanner string
+}
+
+func (c *Collector) useNativeScanner() bool {
+	return strings.ToLower(strings.TrimSpace(c.Scanner)) != "trivy"
 }
 
 func New(workDir string) *Collector {
@@ -108,15 +118,24 @@ func insertTrivyCommandFlags(args []string, flags ...string) []string {
 }
 
 func (c *Collector) CollectHostPackages() ([]models.Package, []models.Vulnerability, error) {
+	scanRoot := strings.TrimSpace(c.HostScanRoot)
+	if scanRoot == "" {
+		scanRoot = "/"
+	}
+	if c.useNativeScanner() {
+		res, err := scanner.ScanRoot(scanRoot)
+		if err != nil {
+			return nil, nil, fmt.Errorf("native scan %s: %w", scanRoot, err)
+		}
+		// Native scanner reports installed packages only; server-side CVE
+		// matching produces the vulnerabilities. No agent-side vulns.
+		return res.Packages, nil, nil
+	}
 	if err := c.ensureTrivy(); err != nil {
 		return nil, nil, err
 	}
 
 	var cmd *exec.Cmd
-	scanRoot := strings.TrimSpace(c.HostScanRoot)
-	if scanRoot == "" {
-		scanRoot = "/"
-	}
 	ctx := context.Background()
 	cancel := func() {}
 	if c.HostTimeout > 0 {
@@ -137,6 +156,88 @@ func (c *Collector) CollectHostPackages() ([]models.Package, []models.Vulnerabil
 	}
 
 	return trivyparse.ExtractPackagesAndVulns(out, "trivy-host", "")
+}
+
+// ContainerScan is the native-scanner result for one container: its installed
+// packages plus the distro-identity facts read from inside its rootfs.
+type ContainerScan struct {
+	Packages []models.Package
+	Facts    json.RawMessage
+}
+
+// ScanContainerNative inventories a running container without trivy by reading
+// its merged rootfs directly. It returns the container's packages and its
+// distro-identity facts. Requires the agent to have read access to the
+// runtime's overlay storage (root); callers should fall back or warn on error.
+func (c *Collector) ScanContainerNative(containerID, runtime string) (*ContainerScan, error) {
+	root, err := c.containerRootfs(containerID, runtime)
+	if err != nil {
+		return nil, err
+	}
+	res, err := scanner.ScanRoot(root)
+	if err != nil {
+		return nil, fmt.Errorf("native container scan: %w", err)
+	}
+	pkgs := res.Packages
+	// RPM databases (sqlite/BerkeleyDB) can't be parsed in pure Go yet; when the
+	// rootfs has one we can't read, run the container's own rpm via the runtime
+	// CLI. The container image always ships a compatible rpm, so this needs no
+	// bundled scanner and avoids host/container rpm version mismatch.
+	if res.Source == "rpmdb-unreadable" {
+		if rpmPkgs, rerr := c.rpmViaExec(containerID, runtime); rerr == nil {
+			pkgs = rpmPkgs
+		}
+	}
+	out := &ContainerScan{Packages: pkgs}
+	if facts := system.CollectContainerFacts(root); len(facts) > 0 {
+		if raw, err := json.Marshal(facts); err == nil {
+			out.Facts = raw
+		}
+	}
+	return out, nil
+}
+
+// rpmViaExec lists packages by running rpm inside the container.
+func (c *Collector) rpmViaExec(containerID, runtime string) ([]models.Package, error) {
+	bin := runtime
+	switch runtime {
+	case "docker", "podman", "nerdctl":
+	default:
+		bin = "docker"
+	}
+	out, err := c.commandOutput(bin, "exec", containerID, "rpm", "-qa", "--qf", scanner.RPMQueryFormat)
+	if err != nil {
+		return nil, fmt.Errorf("%s exec rpm: %w", bin, err)
+	}
+	return scanner.ParseRPMQuery(out), nil
+}
+
+// containerRootfs resolves a running container's merged overlay filesystem via
+// the runtime's inspect output. Docker-compatible runtimes expose
+// GraphDriver.Data.MergedDir.
+func (c *Collector) containerRootfs(containerID, runtime string) (string, error) {
+	bin := runtime
+	switch runtime {
+	case "docker", "podman", "nerdctl":
+	case "cri", "containerd":
+		// crictl/containerd don't expose a stable merged-dir via inspect;
+		// native rootfs scanning isn't wired for CRI yet.
+		return "", fmt.Errorf("native rootfs scan unsupported for runtime %q", runtime)
+	default:
+		bin = "docker"
+	}
+	out, err := c.commandOutput(bin, "inspect", "--format", "{{.GraphDriver.Data.MergedDir}}", containerID)
+	if err != nil {
+		return "", fmt.Errorf("%s inspect rootfs: %w", bin, err)
+	}
+	root := strings.TrimSpace(string(out))
+	if root == "" || root == "<no value>" {
+		return "", fmt.Errorf("no merged rootfs for container %s", containerID)
+	}
+	if st, err := os.Stat(root); err != nil || !st.IsDir() {
+		return "", fmt.Errorf("merged rootfs %s not accessible: %w", root, err)
+	}
+	return root, nil
 }
 
 func (c *Collector) CollectContainerPackages(containerName, imageRef, runtime string) ([]models.Package, []models.Vulnerability, error) {
