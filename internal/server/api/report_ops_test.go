@@ -9,10 +9,10 @@ import (
 
 func TestScanFailedFromStatus(t *testing.T) {
 	cases := []struct {
-		name    string
-		status  string
-		errs    []string
-		want    bool
+		name   string
+		status string
+		errs   []string
+		want   bool
 	}{
 		{"completed clean", "completed", nil, false},
 		{"degraded status", "degraded", nil, true},

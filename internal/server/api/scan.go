@@ -12,7 +12,6 @@ import (
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
-
 func (s *Server) handleListScans(w http.ResponseWriter, r *http.Request) {
 	if !s.authenticateWeb(r) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")

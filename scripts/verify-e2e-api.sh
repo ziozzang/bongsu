@@ -18,7 +18,10 @@ if [ -z "${API_KEY}" ]; then
     exit 2
 fi
 
-BONGSU_E2E_BASE_URL="${SERVER_URL}" BONGSU_E2E_API_KEY="${API_KEY}" \
+BONGSU_E2E_BASE_URL="${SERVER_URL}" \
+    BONGSU_E2E_API_KEY="${API_KEY}" \
+    BONGSU_E2E_VIEWER_KEY="${BONGSU_E2E_VIEWER_KEY:-}" \
+    BONGSU_E2E_SMTP_SINK_LOG="${BONGSU_E2E_SMTP_SINK_LOG:-}" \
     python3 "${ROOT}/tests/e2e/api_e2e.py"
 
 echo "API E2E verification passed"
