@@ -2,6 +2,32 @@
 
 All notable changes to Bongsu are documented in this file.
 
+## [Unreleased] - 2026-06-11
+
+### Scanning
+- Native, dependency-free package scanner (`internal/agent/scanner/`) replacing trivy as the default: pure-Go dpkg/apk readers and rpm via the host/container `rpm` binary
+- Agent `-scanner native|trivy` flag (`BONGSU_AGENT_SCANNER`), defaulting to `native`; the agent no longer requires the trivy binary
+- Language dependency scanning outside the OS package manager (pyenv, nvm, app bundles, vendored deps) via `-lang-scan-roots` (`BONGSU_AGENT_LANG_SCAN_ROOTS`, sentinels `none`/`all`) and `-lang-scan-depth` (`BONGSU_AGENT_LANG_SCAN_DEPTH`)
+- Container rootfs scanned natively through the merged overlay, with per-container facts; the same `ScanRoot` path serves hosts and containers
+- Multi-runtime container enumeration across docker, podman, nerdctl, and crictl with dedup by container ID
+
+### Inventory/Facts
+- Comprehensive host facts collected directly from `/proc`, `/sys`, `/etc` (os-release, kernel, cpu, memory, dmi, virtualization, network, filesystems) into `hosts.facts` (JSONB)
+- Distro-identity container facts into `container_assets.facts`
+- Facts surfaced in the dashboard: host detail "System Facts" card and container row expansion
+
+### Vulnerability Management
+- Per-finding triage assignee (담당자) with `?assignee=` filter and `unassigned` sentinel
+- Distro backport version ordering fix, reducing missed Debian/Ubuntu `+debNuM`/`+ubuntu` findings
+
+### Notifications
+- SMTP email notification channel (`BONGSU_SMTP_HOST/PORT/USERNAME/PASSWORD/FROM/ENCRYPTION`, starttls/tls/none) alongside webhook and log; per-rule recipients via channel_config
+
+### Data freshness
+- Security DB sync exponential-backoff retry (`BONGSU_SECURITY_DB_RETRY_BASE_MINUTES`/`MAX_MINUTES`)
+- Security DB bundle records `exporter_version` and rejects stale bundles on airgap import (`BONGSU_SECURITY_DB_BUNDLE_MAX_AGE_DAYS`, default 30 days)
+- Raw OSV ecosystem freshness tracking and verification improvements
+
 ## [0.1.0] - 2026-06-03
 
 ### Phase 0: Structural Decomposition

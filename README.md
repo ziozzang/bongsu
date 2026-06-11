@@ -24,12 +24,44 @@ curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://your-server:5678/
 ## 아키텍처
 
 ```
-Agent (각 호스트)  →  Server + Trivy + Web  →  PostgreSQL
+Agent (각 호스트)  →  Server + Web  →  PostgreSQL
 ```
 
-- **Agent**: Trivy로 패키지 목록 수집, 서버에 전송
+- **Agent**: 내장 네이티브 스캐너로 패키지 목록 수집, 서버에 전송 (Trivy는 선택)
 - **Server**: CVE 매칭 + 웹 대시보드 제공
 - **Packages-only 모드**: Agent는 패키지 목록만 전송, 서버에서 CVE 매칭
+
+## 네이티브 패키지 스캐너 (Native scanner)
+
+에이전트는 기본적으로 외부 의존성이 없는 **네이티브 스캐너**(`internal/agent/scanner/`)로 패키지를 수집합니다. Trivy 바이너리 없이 설치된 패키지 DB를 직접 읽습니다.
+
+- **dpkg / apk**: 순수 Go로 `var/lib/dpkg/status`, `lib/apk/db/installed`를 직접 파싱 (Debian/Ubuntu, Alpine).
+- **rpm**: 현재 RPM DB(BerkeleyDB/NDB/sqlite)의 순수 Go 파싱이 없어, 대상 root를 가리키는 호스트의 `rpm` 바이너리로 조회합니다. RHEL 계열은 base OS에 `rpm`이 포함되어 있어 별도 스캐너가 필요 없습니다. 컨테이너 rootfs의 RPM DB를 읽을 수 없으면 컨테이너 자신의 `rpm`을 runtime exec로 실행합니다.
+- 같은 `ScanRoot` 진입점이 호스트(root `/`)와 컨테이너(merged rootfs)에 모두 사용되어, 호스트/컨테이너 인벤토리가 하나의 코드 경로를 공유합니다.
+
+스캐너 엔진은 `-scanner` 플래그(`BONGSU_AGENT_SCANNER`)로 전환합니다. 기본값은 `native`이며 `trivy`를 지정하면 기존 Trivy 경로를 사용합니다.
+
+```bash
+/opt/bongsu/bin/bongsu-agent --scanner native   # 기본 (외부 의존성 없음)
+/opt/bongsu/bin/bongsu-agent --scanner trivy     # Trivy 바이너리 사용
+```
+
+## 호스트/컨테이너 facts
+
+에이전트는 외부 바이너리 없이 `/proc`, `/sys`, `/etc`를 직접 읽어 포괄적인 호스트 facts를 수집해 `hosts.facts`(JSONB)에 저장합니다. os-release, kernel, cpu, memory, dmi, virtualization, network, filesystems 등을 포함하며, 각 섹션은 읽기 실패 시 우아하게 생략됩니다. 컨테이너는 distro-identity 위주의 facts(os-release/lsb-release/release files)를 `container_assets.facts`에 저장합니다.
+
+대시보드에서는 호스트 상세의 "System Facts" 카드와 컨테이너 행 확장에서 확인할 수 있습니다.
+
+## 컨테이너 enumeration
+
+컨테이너는 호스트에서 발견되는 모든 runtime CLI로 열거합니다: `docker`, `podman`, `nerdctl`(docker 호환 CLI), `crictl`(CRI/Kubernetes 노드). 동일 containerd를 여러 CLI가 보는 경우 container ID로 중복을 제거합니다. 네이티브 컨테이너 rootfs 스캔은 inspect의 `GraphDriver.Data.MergedDir`를 통해 merged overlay를 읽으므로 에이전트가 runtime overlay 저장소에 대한 read 권한(root)이 필요합니다.
+
+## 언어 의존성 스캔 (Language scanning)
+
+OS 패키지 매니저 바깥에 설치된 언어 런타임/의존성(pyenv `~/.pyenv`, nvm `~/.nvm`, 앱 번들, vendored deps 등)을 manifest/lockfile 기반으로 추가 수집합니다.
+
+- `-lang-scan-roots` (`BONGSU_AGENT_LANG_SCAN_ROOTS`): 탐색할 root를 쉼표로 나열. 기본값 `/opt,/srv,/usr/local,/var/www,/app,/home,/root`. 센티넬 `none`은 비활성화, `all`은 호스트 scan-root 전체를 스캔.
+- `-lang-scan-depth` (`BONGSU_AGENT_LANG_SCAN_DEPTH`): 탐색 최대 디렉터리 깊이, 기본 12. 무거운/무관한 트리는 건너뛰고 깊이를 제한해 전체 파일시스템을 걷지 않습니다.
 
 ## 기능
 
@@ -92,7 +124,7 @@ CVE DB에서 실제 매칭/리스캔에 사용하는 advisory는 affected packag
 curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/install.sh" | sudo bash
 ```
 
-설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다. 설치 스크립트 생성과 바이너리 다운로드 인증은 URL query가 아니라 `X-Install-Token` 헤더로만 처리됩니다. 설치된 에이전트는 admin key가 아니라 `BONGSU_AGENT_API_KEY`를 사용하며, credential이 들어있는 config는 `0600` 권한으로 생성됩니다.
+설치 스크립트는 서버에서 static `bongsu-agent`와 가능한 경우 `trivy` 바이너리를 받아 `/opt/bongsu`에 배치하고, cron 또는 systemd timer로 주기 실행할 수 있습니다. 기본 네이티브 스캐너는 `trivy` 바이너리가 없어도 동작합니다. 설치 스크립트 생성과 바이너리 다운로드 인증은 URL query가 아니라 `X-Install-Token` 헤더로만 처리됩니다. 설치된 에이전트는 admin key가 아니라 `BONGSU_AGENT_API_KEY`를 사용하며, credential이 들어있는 config는 `0600` 권한으로 생성됩니다.
 
 Force scan 요청을 즉시 받아 처리하는 상주 모드는 다음처럼 실행할 수 있습니다.
 
@@ -100,12 +132,50 @@ Force scan 요청을 즉시 받아 처리하는 상주 모드는 다음처럼 �
 /opt/bongsu/bin/bongsu-agent --config /opt/bongsu/config.yaml --daemon --poll-interval 60s
 ```
 
+### Agent configuration 참조
+
+| Flag | Env | 기본값 | 설명 |
+| --- | --- | --- | --- |
+| `-scanner` | `BONGSU_AGENT_SCANNER` | `native` | 패키지 스캐너 엔진: `native`(내장, 외부 의존성 없음) 또는 `trivy` |
+| `-lang-scan-roots` | `BONGSU_AGENT_LANG_SCAN_ROOTS` | `/opt,/srv,/usr/local,/var/www,/app,/home,/root` | OS 패키지 매니저 밖 언어 의존성을 탐색할 root (쉼표 구분). `none` 비활성화, `all` 호스트 scan-root 전체 |
+| `-lang-scan-depth` | `BONGSU_AGENT_LANG_SCAN_DEPTH` | `12` | 언어 의존성 탐색 최대 디렉터리 깊이 |
+| `-scan-root` | `BONGSU_AGENT_SCAN_ROOT` | `/` | 스캔 대상 호스트 파일시스템 root |
+| `-skip-containers` | `BONGSU_AGENT_SKIP_CONTAINERS` | `false` | 컨테이너 탐지/스캔 건너뛰기 |
+| `-max-containers` | `BONGSU_AGENT_MAX_CONTAINERS` | `0` | run당 스캔할 최대 실행 컨테이너 수 (0 = 무제한) |
+| `-host-id` | `BONGSU_AGENT_HOST_ID` | (자동) | clone/컨테이너 환경용 host identity override |
+| `-trivy-timeout` | `BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS` | `1800` | 호스트 Trivy fs 스캔 timeout |
+| `-container-timeout` | `BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS` | `600` | 컨테이너 이미지 Trivy 스캔 timeout |
+| `-command-timeout` | `BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS` | `30` | docker inspect, ps, uname 등 helper 명령 timeout |
+| `-api-key` | `BONGSU_AGENT_API_KEY` | — | 에이전트 API key |
+| (config) | `BONGSU_AGENT_TOKEN` | (자동 생성) | host 바인딩용 agent token. 미설정 시 work-dir에 생성 |
+
+> Trivy 관련 timeout 플래그는 `-scanner trivy`일 때만 의미가 있습니다.
+
+### Server 환경변수 (이번 주기 추가)
+
+| Env | 기본값 | 설명 |
+| --- | --- | --- |
+| `BONGSU_SMTP_HOST` | — | SMTP 알림 호스트 (설정 시 email 채널 활성화) |
+| `BONGSU_SMTP_PORT` | `587`(starttls) / `465`(tls) | SMTP 포트 |
+| `BONGSU_SMTP_USERNAME` / `BONGSU_SMTP_PASSWORD` | — | SMTP 인증 정보 |
+| `BONGSU_SMTP_FROM` | — | 발신 주소 (필수) |
+| `BONGSU_SMTP_ENCRYPTION` | `starttls` | `starttls`, `tls`, `none` |
+| `BONGSU_SMTP_TIMEOUT_SECONDS` | `30` | SMTP 전송 timeout |
+| `BONGSU_SECURITY_DB_RETRY_BASE_MINUTES` | `5` | 보안 DB 동기화 실패 시 재시도 base 지연 (지수 backoff) |
+| `BONGSU_SECURITY_DB_RETRY_MAX_MINUTES` | `60` | 재시도 최대 지연 (sync interval로도 상한) |
+| `BONGSU_SECURITY_DB_BUNDLE_MAX_AGE_DAYS` | `30` | airgap import 시 stale bundle 거부 임계값 (0 = 비활성화) |
+
+알림 채널: 기존 `webhook`/`log`에 더해 `email` 채널을 지원합니다. 규칙별 channel_config는 `{"to": "a@x,b@y", "subject_prefix"?: "..."}` 형식이며 서버 전역 `BONGSU_SMTP_*` 설정을 사용합니다.
+
+per-finding triage 담당자(assignee)를 지정/필터할 수 있습니다. 취약점 목록은 `?assignee=` 쿼리로 필터하며, 센티넬 `unassigned`로 미지정 항목만 조회합니다.
+
 ## 상세 문서
 
 - [배포 가이드](deploy/README.md)
 - [아키텍처와 구현 상태](docs/architecture.md)
 - [요구사항 감사표](docs/requirements-audit.md)
 - [운영 Runbook](docs/operations-runbook.md)
+- [Operator Runbook (agent/native scanner)](docs/operator-runbook.md)
 - [환경변수 참조](deploy/.env.example)
 
 ## 라이선스
