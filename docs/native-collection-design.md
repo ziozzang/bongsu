@@ -1,6 +1,6 @@
 # 네이티브 통합 수집 에이전트 설계
 
-> 상태: 설계 + 1차 구현 진행 중. trivy 외부 의존성 제거 + 스캐너·메타정보 통합.
+> 상태: 출하됨. 네이티브 스캐너가 에이전트 기본값(trivy 외부 의존성 제거), 호스트·컨테이너 facts 수집, 언어 라이브러리/런타임 탐지까지 구현 완료. 아래 "단계"의 대부분이 완료 상태다.
 
 ## 핵심 원칙
 
@@ -62,14 +62,14 @@ trivy의 `image` 스캔 대신, 실행 중인 컨테이너의 **머지된 rootfs
 
 ## 단계
 
-1. [완료] 호스트 facts 네이티브 수집 → `hosts.facts`
+1. [완료] 호스트 facts 네이티브 수집 → `hosts.facts` (migration 055)
 2. [완료] 멀티런타임 컨테이너 열거 (docker/podman/nerdctl/crictl)
-3. [진행] dpkg/apk 네이티브 패키지 리더 (`ScanRoot(root)`)
-4. facts를 root 파라미터화 → 컨테이너 rootfs에 재사용
-5. 컨테이너 rootfs 경로 해석 + 컨테이너별 facts → `container_assets.facts`
-6. rpm sqlite 네이티브 리더 + 바이너리 폴백
-7. 에이전트 스캐너 모드 선택 (`--scanner native|trivy`), 기본 native
-8. 언어 생태계 lockfile 스캐너 (npm/pypi/go/cargo/...)
+3. [완료] dpkg/apk 네이티브 패키지 리더 (`ScanRoot(root)`)
+4. [완료] facts를 root 파라미터화 → 컨테이너 rootfs에 재사용
+5. [완료] 컨테이너 rootfs 경로 해석 + 컨테이너별 facts → `container_assets.facts` (migration 056)
+6. [완료] rpm 네이티브 리더(sqlite) + `rpm` 바이너리 폴백(호스트/컨테이너 `<runtime> exec`)
+7. [완료] 에이전트 스캐너 모드 선택 (`-scanner native|trivy`, `BONGSU_AGENT_SCANNER`), 기본 native
+8. [완료] 언어 LIBRARY 스캐너 (`ScanLanguagePackages`) + 언어 RUNTIME 탐지 (`ScanRuntimes`, CPE-product)
 
 ## 호환성
 
@@ -77,3 +77,69 @@ trivy의 `image` 스캔 대신, 실행 중인 컨테이너의 **머지된 rootfs
 trivyparse의 `ecosystemForType` 매핑과 **동일한 pkg_type/ecosystem 값**을 채운다
 (debian/ubuntu/alpine/rhel ↔ Debian/Ubuntu/Alpine/RHEL). 이로써 trivy 출력과
 네이티브 출력이 매칭 측면에서 구별되지 않는다.
+
+---
+
+## Runtime detection (shipped) — `internal/agent/scanner/runtime.go`
+
+OS package DB 스캔(`ScanRoot`)과 언어 LIBRARY 스캔(`ScanLanguagePackages`,
+lockfile/dist-info만 읽음)은 **언어 런타임 인터프리터/VM 자체**를 놓친다. pyenv로
+컴파일한 CPython, `/opt`에 풀어둔 Node tarball, 수동 설치한 JDK, Go SDK 트리 등은
+자체 CVE(CPython, Node, JVM)를 갖지만 두 패스 어디에도 안 잡힌다. `ScanRuntimes`가
+이 공백을 메운다.
+
+### Filesystem-only 원칙
+
+런타임 탐지는 **파일시스템만** 본다 — 절대 바이너리를 실행하지 않는다
+(`python --version`은 호스트 스캔에서 위험하고 느리다). 대신 각 배포 형태의 잘
+알려진 on-disk 레이아웃에서 버전을 추론하고, 구체적인 `X.Y` 또는 `X.Y.Z`를 얻을 수
+있을 때만 패키지를 emit한다(버전 없으면 skip → 노이즈 방지). `ScanLanguagePackages`와
+동일한 bounded `WalkDir` + `skipDir`/depth 가지치기를 재사용하므로 두 패스가 같은
+트리를 prune한다.
+
+트리거는 항상 `bin/` 안의 launcher 바이너리(또는 Go SDK의 `VERSION` 파일)다.
+launcher 경로에 앵커링하면 `FilePath`가 실제 인터프리터를 가리켜 CPE 매칭에 적합하다.
+
+| 런타임 | 탐지 신호 (on-disk) |
+|---|---|
+| CPython | `.../versions/<X.Y.Z>/bin/python*` (pyenv/python-build), `lib/python<X.Y>/` 형제 디렉터리(minor), 또는 `python_version`/`version` 파일 |
+| Node.js | 경로 내 `node-vX.Y.Z` 컴포넌트(공식 tarball), 인접 `node_version`/`VERSION` 파일, 또는 번들된 npm 존재 + tarball 이름 |
+| JDK/JRE | 설치 prefix의 `release` 파일(`JAVA_VERSION`/`IMPLEMENTOR` key=value); implementor로 vendor 구분 |
+| Go SDK | `<goroot>/VERSION` 첫 줄(`go1.22.1`), 토큰 그대로 보존 |
+| Ruby | `lib/ruby/<X.Y.Z>/` (rbenv/ruby-build/소스 설치 공통 레이아웃) |
+| PHP | 인접 `php_version`/`VERSION` 파일(보수적) |
+
+### CPE-product ecosystem 값
+
+런타임 패키지는 `PkgType="runtime"`, 그리고 `Ecosystem`에 **CPE PRODUCT 이름**
+(`python` / `nodejs` / `jdk` / `golang` / `ruby` / `php`)을 채운다 — SBOM ecosystem
+(PyPI / npm / Maven)이 **아니다**. 런타임 CVE는 NVD CPE product
+(`cpe:2.3:a:python:python`, `:nodejs:node.js`, `:oracle:jdk` /
+`:eclipse:temurin`)에 매칭되지, 라이브러리 레지스트리 ecosystem에 매칭되지 않기
+때문이다. JDK는 `release`의 `IMPLEMENTOR`로 product를 고른다: Oracle → `jdk`,
+Adoptium/Temurin/Eclipse → `openjdk`, 기타 → `openjdk`.
+
+이 값은 서버의 `RematchCPE`/`compatibleCPECandidate`가 그대로 소비한다. `pkg_type`이
+`runtime`으로 구별되므로 라이브러리 매처(OSV name+ecosystem)에는 절대 들어가지
+않고, CPE 매처만 version-range gate로 처리한다. 매칭 규칙 전문은
+[vulnerability-matching-rules.md](vulnerability-matching-rules.md) 참조.
+
+심볼릭 링크된 launcher(python → python3 → python3.12가 한 bin/에)는
+`dedupeRuntimes`가 `(name, version, path)` 기준으로 접는다.
+
+---
+
+## Facts collection (shipped) — 요약
+
+facts와 패키지는 한 대상에 대한 한 번의 수집의 두 산출물이라는 원칙이 출하되었다:
+
+- **호스트 facts** → `hosts.facts` JSONB (migration `055_host_facts.sql`),
+  `hosts.facts_collected_at` 타임스탬프. `GET /api/hosts/{id}`가 `facts`로 반환하고
+  대시보드의 "System Facts" 카드에 표시한다.
+- **컨테이너 facts** → `container_assets.facts` JSONB
+  (migration `056_container_facts.sql`), 컨테이너 행 확장에 표시.
+
+수집 항목: os-release, kernel, cpu, memory, dmi, virtualization, network,
+filesystems. `/proc`, `/sys`, `/etc`에서 순수 Go로 읽으며 별도 튜닝이 필요 없다.
+컨테이너는 머지된 rootfs(`GraphDriver.Data.MergedDir`)를 root 파라미터로 같은 코드를
+재사용한다.

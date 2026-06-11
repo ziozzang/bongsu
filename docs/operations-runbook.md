@@ -1,8 +1,8 @@
 # Bongsu Operations Runbook
 
-Updated: 2026-06-05 09:29:11 KST
+Updated: 2026-06-11 KST
 
-This runbook is for operators running Bongsu in connected or air-gapped environments. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu.
+This is the **canonical** operations runbook for running Bongsu in connected or air-gapped environments: production readiness, install, agent deployment and the native scanner, email/notification alerting, upgrade, backup/restore, security DB operations, monitoring, incident response, and routine maintenance. It assumes the API listens on `5677`, the web UI listens on `5678`, and Caddy or any external reverse proxy is managed outside Bongsu. (The legacy [operator-runbook.md](operator-runbook.md) is now a thin pointer into this document to eliminate divergence.)
 
 ## Production Readiness Checklist
 
@@ -366,6 +366,133 @@ curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server:5678/api/i
   sudo BONGSU_INSTALL_MODE=systemd BONGSU_FORCE_SCAN_DAEMON=true bash
 ```
 
+## Agent Deployment And Native Scanner
+
+The agent defaults to the **native scanner** (pure-Go dpkg/apk readers plus rpm
+via the host's own `rpm` binary), so the `trivy` binary is not required. Choose
+the engine with the `-scanner` flag or `BONGSU_AGENT_SCANNER` env var.
+
+| Mode | Flag / Env | Notes |
+| --- | --- | --- |
+| Native (default) | `-scanner native` / `BONGSU_AGENT_SCANNER=native` | No external binary. dpkg/apk parsed in pure Go; rpm uses the host's `rpm`, with a `<runtime> exec` fallback for containers. |
+| Trivy | `-scanner trivy` / `BONGSU_AGENT_SCANNER=trivy` | Falls back to the trivy binary; only then do `-trivy-timeout` / `-container-timeout` apply. |
+
+```bash
+# Native is the default
+/opt/bongsu/bin/bongsu-agent --config /opt/bongsu/config.yaml
+# Resident mode for force-scan requests
+/opt/bongsu/bin/bongsu-agent --config /opt/bongsu/config.yaml --daemon --poll-interval 60s
+```
+
+**Native runtime + language scanning.** Alongside OS packages, the agent
+inventories language **runtimes** (pyenv-compiled CPython, Node tarballs,
+hand-unpacked JDKs, Go SDKs) and **libraries** installed outside the OS package
+manager. Runtimes are emitted as `pkg_type=runtime` keyed by CPE product and
+matched against NVD CPE advisories (version-gated); see
+[vulnerability-matching-rules.md](vulnerability-matching-rules.md).
+
+| Flag | Env | Default |
+| --- | --- | --- |
+| `-scanner` | `BONGSU_AGENT_SCANNER` | `native` |
+| `-lang-scan-roots` | `BONGSU_AGENT_LANG_SCAN_ROOTS` | `/opt,/srv,/usr/local,/var/www,/app,/home,/root` |
+| `-lang-scan-depth` | `BONGSU_AGENT_LANG_SCAN_DEPTH` | `12` |
+| `-skip-containers` | `BONGSU_AGENT_SKIP_CONTAINERS` | `false` |
+| `-max-containers` | `BONGSU_AGENT_MAX_CONTAINERS` | `0` (unlimited) |
+
+- `-lang-scan-roots` sentinels: `none` disables language/runtime scanning;
+  `all` walks the whole host scan-root. Narrow the roots and lower
+  `-lang-scan-depth` on busy hosts. The walk already prunes `/proc`, `/sys`,
+  `/dev`, `/run` and heavy/irrelevant trees.
+
+```bash
+# Only scan application bundles, shallower walk
+/opt/bongsu/bin/bongsu-agent --lang-scan-roots /opt/app,/srv/app --lang-scan-depth 8
+# Disable language/runtime scanning
+BONGSU_AGENT_LANG_SCAN_ROOTS=none /opt/bongsu/bin/bongsu-agent
+```
+
+**Container coverage and facts.** Containers are enumerated across docker,
+podman, nerdctl, and crictl (deduped by container ID). Native container scanning
+reads the merged overlay (`GraphDriver.Data.MergedDir`), which requires **root**.
+Host and container **facts** (os-release, kernel, cpu, memory, dmi,
+virtualization, network, filesystems) are collected from `/proc`, `/sys`, `/etc`
+and persisted to `hosts.facts` (migration 055) and `container_assets.facts`
+(migration 056); host facts are returned by `GET /api/hosts/{id}` and shown in
+the dashboard. No tuning required.
+
+**Auto-assign findings to the host owner.** When a host has an `owner`, new
+findings are defaulted (triage `assignee`) to that owner via an
+`ON CONFLICT DO NOTHING` insert that never overwrites a human-set assignee.
+Toggle with `BONGSU_AUTO_ASSIGN_BY_OWNER` (default `true`). Filter the
+vulnerability list by `?assignee=<name>` or `?assignee=unassigned` to triage by
+owner.
+
+## Email Alerts (SMTP)
+
+Email is a notification channel alongside `webhook` and `log`. Set the
+server-wide SMTP config (server/compose env), then add a notification rule with
+the `email` channel. The notification handler validates that SMTP is configured
+before accepting an `email` rule.
+
+| Env | Default | Notes |
+| --- | --- | --- |
+| `BONGSU_SMTP_HOST` | — | Required to enable email |
+| `BONGSU_SMTP_FROM` | — | Required (sender address) |
+| `BONGSU_SMTP_PORT` | `587` (starttls) / `465` (tls) | Override as needed |
+| `BONGSU_SMTP_USERNAME` / `BONGSU_SMTP_PASSWORD` | — | Auth credentials |
+| `BONGSU_SMTP_ENCRYPTION` | `starttls` | `starttls`, `tls`, or `none` (lab only) |
+| `BONGSU_SMTP_TIMEOUT_SECONDS` | `30` | Connect/send timeout |
+
+Per-rule recipients go in the rule's `channel_config`:
+
+```json
+{ "to": "secops@example.com,oncall@example.com", "subject_prefix": "[Bongsu]" }
+```
+
+Recipients without an `@` are dropped. If `BONGSU_SMTP_HOST` / `BONGSU_SMTP_FROM`
+are unset, the email channel returns a configuration error — check the
+notification send status / audit log.
+
+### Notification trigger events
+
+Notification rules subscribe to a `trigger_event` from this taxonomy (enforced by
+the `notification_rules` CHECK constraint, migration 057 added `scan.failed`):
+
+`scan.completed`, `scan.failed`, `vuln.new_critical`, `vuln.new_high`,
+`sla.breach`, `security_db.updated`, `schedule.daily`.
+
+`scan.failed` fires when an ingested scan finishes **degraded/failed** or with
+ingest errors — wire it to your on-call channel so a host that stops reporting
+usable inventory is not silently missed.
+
+Channel types are `webhook` (requires `channel_config.url`), `email` (requires
+`channel_config.to` and server SMTP config), and `log`.
+
+### Agent troubleshooting
+
+- **Agent token / host binding mismatch** — Each agent binds to its host via an
+  agent token (`X-Bongsu-Agent-Token`; config `agent_token` or
+  `BONGSU_AGENT_TOKEN`, auto-generated in the work-dir if unset). Reports return
+  `403 agent token does not match host binding` when a different token reports
+  for an already-bound host (expected after cloning a VM): set a distinct
+  `-host-id` (`BONGSU_AGENT_HOST_ID`) for cloned/containerized agents, or reset
+  the binding via `/api/hosts/{id}/agent-token/reset`.
+- **Container rootfs scan fails / containers missing packages** — Native
+  container scanning reads the runtime's overlay storage, which requires
+  **root**. Run the agent as root. Without overlay read access the container
+  scan errors and falls back.
+- **RPM containers report no packages** — For a container whose RPM DB the agent
+  can't read in pure Go, it runs the container's own `rpm` via
+  `<runtime> exec`. This needs `rpm` present in the image and a
+  docker/podman/nerdctl runtime (crictl rootfs scanning is not wired). Minimal
+  distroless RPM images without `rpm` can't be enumerated.
+- **No container runtime found** — The agent errors with
+  `no container runtime CLI found (docker, podman, nerdctl, crictl)`; install one
+  or pass `-skip-containers`.
+- **Email not delivered** — Confirm `BONGSU_SMTP_HOST` / `BONGSU_SMTP_FROM` are
+  set on the server, encryption matches the port, and rule recipients contain
+  `@`. Check the notification send status / audit log for the SMTP error.
+
 ## Upgrade
 
 1. Export a current security DB bundle and take a PostgreSQL backup before replacing services.
@@ -466,7 +593,11 @@ If only NVD is stale, refresh it without running OSV or Trivy extraction:
 ./scripts/sync-nvd-cvedb.sh http://localhost:5677 "$BONGSU_API_KEY"
 ```
 
-The NVD-only refresh downloads the configured NVD year range into one JSONL file and replaces the `nvd` source once, so yearly chunks cannot overwrite each other. Use `BONGSU_NVD_YEARS=2023,2024,2025,2026` or `BONGSU_NVD_YEAR_WINDOW=5` to tune the retained publication-year range.
+The NVD-only refresh downloads the configured NVD year range into one JSONL file and replaces the `nvd` source once, so yearly chunks cannot overwrite each other. Use `BONGSU_NVD_YEARS=2023,2024,2025,2026` or `BONGSU_NVD_YEAR_WINDOW=5` to tune the retained publication-year range. `scripts/download-nvd.sh` now captures **CPE version ranges** from each vulnerable `cpeMatch` (`version_start_including`, `version_start_excluding`, `version_end_including`, `version_end_excluding`, and any exact pinned `version`) into `affected_products[]`. These bounds are what the CPE/runtime matcher (`RematchCPE` / `compatibleCPECandidate`) uses to flag detected runtimes (python/node/jdk/go) only when their installed version actually falls in an affected range — an NVD entry that names a product without any version bound never matches. Re-running the NVD sync after upgrading to a build with this change is required before runtime CVEs will populate.
+
+Connected servers sync the security DB on start and on a fixed interval; a failed sync retries with **exponential backoff** (`base * 2^(streak-1)`) instead of waiting a full interval. Tune with `BONGSU_SECURITY_DB_RETRY_BASE_MINUTES` (default `5`), `BONGSU_SECURITY_DB_RETRY_MAX_MINUTES` (default `60`, also capped at the sync interval), `BONGSU_SECURITY_DB_SYNC_ON_START`, and `BONGSU_SECURITY_DB_INTERVAL_HOURS` (default `6`). A rising `consecutive failures: N` in the server log means the sync command/source is unhealthy. On bundle import, Bongsu rejects bundles older than `BONGSU_SECURITY_DB_BUNDLE_MAX_AGE_DAYS` (default `30`; set `0` to disable) to prevent stale/replayed imports, and verifies the CVE/trivy DB SHA-256 checksums recorded in the manifest.
+
+Security recalculation (`POST /api/admin/security-db/recalculate`, also queued automatically after a CVE DB update) now runs, in order: EPSS priority-column merge, CVSS recalc, finding enrichment, **stale-rematch cleanup**, OSV rematch (`RematchCVEs`), **CPE/runtime rematch (`RematchCPE`)**, severity normalization, and package-vulnerability summary rebuild. The CPE rematch was added to the recalc pipeline so runtime findings (python/node/jdk/go vs NVD CPE ranges) stay current after a CVE DB update, not only on fresh scans. The stale-rematch cleanup re-validates every `finding_source='cve-db'` finding and deletes ones that no longer match; runtime findings are re-checked through the CPE matcher so valid runtime CVEs are not deleted as stale. Tune its keyset batch size with `BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE` (default `10000`, capped at `100000`). The job records `stale_rematch_{removed,scanned,batches,batch_size}` in audit metadata and `bongsu_security_recalculation_last_stale_rematch_*` gauges.
 
 Air-gapped environments should disable online sync and import signed transfer bundles:
 
@@ -521,6 +652,8 @@ BONGSU_NOTIFICATION_RETRY_DELAY_MS=1000
 ```
 
 For notification rules created in the Notifications UI, use the `webhook` channel with a per-rule `url` and `secret`. Bongsu signs each rule webhook with `X-Bongsu-Signature-256`, retries network failures, HTTP 429, and HTTP 5xx responses, does not retry HTTP 4xx receiver errors, and records the final delivery status plus attempt count in Notification Log. `./scripts/verify-operator-workflow.sh` runs a local webhook receiver during live verification and proves this signed retry path before release promotion.
+
+Notification rules can also target the `email` and `log` channels and subscribe to the `scan.failed` trigger (added in migration 057) so degraded/failed scans page on-call. See [Email Alerts (SMTP)](#email-alerts-smtp) and [Notification trigger events](#notification-trigger-events) for the channel config and full trigger taxonomy.
 
 ## Incident Response
 

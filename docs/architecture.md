@@ -211,6 +211,10 @@ Migrations are SQL files in `migrations/` numbered 001–057. Applied once at st
 
 **Air-gapped**: export a bundle in the connected environment, transfer it, import via `/api/admin/security-db/import` or the dashboard. Bundle age is validated against `BONGSU_SECURITY_DB_BUNDLE_MAX_AGE_DAYS` (default 30). The `exporter_version` field is recorded and checked on import.
 
+**Provenance and audit**: export and import audit metadata records the manifest security DB revision, bundle creation timestamp, source count, CVE record count, and Trivy inclusion state, so offline transfer logs can be correlated with the automatic rescan revision. Import verifies manifest SHA-256 checksums and the record count before mutating the CVE database, replaces the database inside one transaction, and only then activates a staged Trivy DB.
+
+**Freshness health**: `/api/health` exposes `security_db_freshness.latest_source`, `latest_last_update`, and `latest_age_seconds` from persisted CVE source rows, so a server restart cannot make operators confuse a reset in-memory sync status with an empty or failed CVE database; the dashboard falls back to these fields while heavier CVE stats load.
+
 ## Dashboard
 
 React single-page app served by a static web server on port 5678, proxying API calls to port 5677. Built with Vite. Key views: Hosts (with System Facts), Containers, Packages, Vulnerabilities (with CVE-to-assets modal and detailed filters), Scan History, CVE Search, Trends, Reports, Notifications, Schedules, Asset Groups, RBAC, Audit Log.

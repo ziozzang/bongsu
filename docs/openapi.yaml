@@ -226,6 +226,36 @@ paths:
             type: string
             enum: [current, outdated, unknown]
           description: Filter by agent version drift state
+        - name: owner
+          in: query
+          schema:
+            type: string
+          description: Filter by host owner (case-insensitive exact match)
+        - name: team
+          in: query
+          schema:
+            type: string
+          description: Filter by host team (case-insensitive exact match)
+        - name: environment
+          in: query
+          schema:
+            type: string
+          description: Filter by host environment (case-insensitive exact match)
+        - name: criticality
+          in: query
+          schema:
+            type: string
+          description: Filter by host criticality (case-insensitive exact match)
+        - name: os
+          in: query
+          schema:
+            type: string
+          description: Filter by OS (case-insensitive substring of os_name + os_version)
+        - name: q
+          in: query
+          schema:
+            type: string
+          description: Free-text filter (case-insensitive substring of hostname, IP address, os_name)
       responses:
         "200":
           description: List of hosts with vulnerability counts
@@ -243,6 +273,7 @@ paths:
       operationId: getHost
       tags: [hosts]
       summary: Get host details
+      description: Returns the host record including its collected system facts (os-release, kernel, cpu, memory, dmi, virtualization, network, filesystems) in the `facts` JSON object.
       security:
         - AdminKey: []
         - ViewerKey: []
@@ -250,7 +281,7 @@ paths:
         - $ref: "#/components/parameters/HostID"
       responses:
         "200":
-          description: Host details
+          description: Host details (with system facts)
           content:
             application/json:
               schema:
@@ -567,6 +598,40 @@ paths:
           schema:
             type: number
             format: double
+            default: 0.1
+          description: Minimum CVSS score (defaults to 0.1, filtering out unscored findings)
+        - name: max_cvss
+          in: query
+          schema:
+            type: number
+            format: double
+          description: Maximum CVSS score
+        - name: ecosystem
+          in: query
+          schema:
+            type: string
+          description: Filter by package ecosystem (e.g. pypi, npm, debian)
+        - name: pkg_type
+          in: query
+          schema:
+            type: string
+          description: Filter by package type (e.g. debian, alpine, runtime, npm)
+        - name: vuln_id
+          in: query
+          schema:
+            type: string
+          description: Substring/LIKE match on the vulnerability identifier (e.g. CVE-2024)
+        - name: has_fix
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+          description: Filter by whether a fixed version is available
+        - name: assignee
+          in: query
+          schema:
+            type: string
+          description: Filter by triage assignee; use "unassigned" for findings with no assignee
         - name: show_no_fix
           in: query
           schema:
@@ -655,6 +720,48 @@ paths:
           schema:
             type: number
             format: double
+        - name: max_cvss
+          in: query
+          schema:
+            type: number
+            format: double
+        - name: ecosystem
+          in: query
+          schema:
+            type: string
+        - name: pkg_type
+          in: query
+          schema:
+            type: string
+        - name: vuln_id
+          in: query
+          schema:
+            type: string
+        - name: has_fix
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+        - name: assignee
+          in: query
+          schema:
+            type: string
+        - name: owner
+          in: query
+          schema:
+            type: string
+        - name: team
+          in: query
+          schema:
+            type: string
+        - name: environment
+          in: query
+          schema:
+            type: string
+        - name: criticality
+          in: query
+          schema:
+            type: string
         - name: sort_by
           in: query
           schema:
@@ -693,6 +800,45 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/FilterOptions"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/vulnerabilities/affected-assets:
+    get:
+      operationId: getAffectedAssets
+      tags: [vulnerabilities]
+      summary: CVE → assets reverse lookup
+      description: >-
+        Returns the current (latest-scan) hosts and containers affected by a
+        given vulnerability_id, scoped to the caller's accessible hosts and
+        ordered with production environments and higher CVSS first. Answers
+        "which assets are vulnerable to CVE-X?".
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: vulnerability_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The vulnerability / CVE identifier to look up (e.g. CVE-2024-1234)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 500
+            maximum: 2000
+          description: Maximum number of affected asset rows to return (capped at 2000)
+      responses:
+        "200":
+          description: Affected assets for the vulnerability
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AffectedAssetsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -842,6 +988,53 @@ paths:
           in: query
           schema:
             type: string
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Exact package name match
+        - name: version
+          in: query
+          schema:
+            type: string
+          description: Exact installed version match
+        - name: version_like
+          in: query
+          schema:
+            type: string
+          description: Substring/LIKE match on the installed version
+        - name: ecosystem
+          in: query
+          schema:
+            type: string
+          description: Filter by package ecosystem (e.g. pypi, npm, debian)
+        - name: arch
+          in: query
+          schema:
+            type: string
+          description: Filter by package architecture
+        - name: image
+          in: query
+          schema:
+            type: string
+          description: Filter by container image name
+        - name: asset_type
+          in: query
+          schema:
+            type: string
+            enum: [host, container]
+          description: Filter by asset type (host or container)
+        - name: has_vulns
+          in: query
+          schema:
+            type: boolean
+          description: Only return packages that have at least one vulnerability
+        - name: min_cvss
+          in: query
+          schema:
+            type: number
+            format: double
+          description: Only return packages with a vulnerability at or above this CVSS score
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/Offset"
         - name: sort_by
@@ -3937,6 +4130,12 @@ components:
         last_seen_age_seconds:
           type: integer
           format: int64
+        facts:
+          type: object
+          description: Collected system facts (os-release, kernel, cpu, memory, dmi, virtualization, network, filesystems). Present on GET /api/hosts/{id}.
+        facts_collected_at:
+          type: string
+          format: date-time
         created_at:
           type: string
           format: date-time
@@ -4791,6 +4990,56 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Vulnerability"
+        total:
+          type: integer
+
+    AffectedAsset:
+      type: object
+      description: One host/container occurrence currently affected by a vulnerability.
+      properties:
+        host_id:
+          type: string
+        hostname:
+          type: string
+        owner:
+          type: string
+        team:
+          type: string
+        environment:
+          type: string
+        criticality:
+          type: string
+        container:
+          type: string
+          description: Container name; empty for host-level findings
+        image_name:
+          type: string
+        asset_type:
+          type: string
+          enum: [host, container]
+        pkg_name:
+          type: string
+        pkg_type:
+          type: string
+        installed_version:
+          type: string
+        fixed_version:
+          type: string
+        severity:
+          type: string
+        cvss_score:
+          type: number
+          format: double
+
+    AffectedAssetsResponse:
+      type: object
+      properties:
+        vulnerability_id:
+          type: string
+        assets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AffectedAsset"
         total:
           type: integer
 
