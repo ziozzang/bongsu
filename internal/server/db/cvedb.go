@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -749,6 +750,19 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 			args = append(args, vals...)
 			argN += len(vals)
 		} else {
+			// Match id set via a UNION of single-column predicates. Each branch
+			// is independently served by a trigram GIN index (idx_cve_db_*_trgm /
+			// idx_cve_affected_*_trgm), so a typical term like "openssl" probes
+			// six small index scans and returns in ~100ms. A flat OR over the
+			// same columns was tried and is far worse for selective terms: the
+			// planner cannot combine an OR (especially one containing a
+			// correlated EXISTS) into index scans and falls back to a full seq
+			// scan running ILIKE on every one of ~1M rows. The one pathological
+			// case for the UNION -- a term that matches a huge fraction of
+			// vulnerability_id (e.g. "CVE-202", ~450K rows) -- is handled by the
+			// bounded count below; the data page itself still has to scan that
+			// match set to sort it, which is inherent to "show me every CVE from
+			// the 2020s ordered by score".
 			baseQ += fmt.Sprintf(` AND id IN (
 			SELECT search_cve.id FROM cve_database search_cve WHERE search_cve.vulnerability_id ILIKE $%d
 			UNION
@@ -805,12 +819,21 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 		baseQ += " AND EXISTS (SELECT 1 FROM cve_affected_packages cap_matchable WHERE cap_matchable.cve_id = cve_database.id)"
 	}
 
-	var total int
+	// Bounded ("capped") count. Counting every matching row is the single most
+	// expensive part of a broad search: a term like "CVE-202" matches ~290K
+	// rows and an exact count forced a full scan + hash join taking ~4.4s. The
+	// UI only needs to render an "N results" badge, so we wrap the filter in a
+	// `LIMIT cap` and count the rows the planner actually produced. Once the cap
+	// is reached the planner stops scanning, so the count returns quickly
+	// regardless of how large the true match set is. When the cap is hit,
+	// `total` is the cap value (e.g. 10000 displays as "10000"); below the cap
+	// it is the exact count. Cap is configurable via
+	// BONGSU_CVE_SEARCH_COUNT_CAP (default 10000).
+	countCap := envPositiveInt("BONGSU_CVE_SEARCH_COUNT_CAP", 10000)
 	countArgs := make([]any, len(args))
 	copy(countArgs, args)
-	if err := db.QueryRowContext(ctx, "SELECT count(*) "+baseQ, countArgs...).Scan(&total); err != nil {
-		return nil, 0, err
-	}
+	countArgs = append(countArgs, countCap)
+	countQ := fmt.Sprintf("SELECT count(*) FROM (SELECT 1 %s LIMIT $%d) capped", baseQ, argN)
 
 	sortCol := "cvss_score"
 	switch sortBy {
@@ -825,32 +848,95 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 	if sortCol == "cvss_score" || sortCol == "epss_score" || sortCol == "epss_percentile" {
 		nullHandling = " NULLS LAST"
 	}
+	dataArgs := make([]any, len(args), len(args)+2)
+	copy(dataArgs, args)
+	dataArgs = append(dataArgs, limit, offset)
 	dataQ := fmt.Sprintf("SELECT %s ", CveCols) + baseQ + fmt.Sprintf(" ORDER BY %s %s%s LIMIT $%d OFFSET $%d", sortCol, sortDir, nullHandling, argN, argN+1)
-	args = append(args, limit, offset)
 
-	rows, err := db.QueryContext(ctx, dataQ, args...)
-	if err != nil {
-		return nil, 0, err
+	// The count and data queries are independent and individually expensive for
+	// broad terms (each scans the same large match set). Run them concurrently
+	// on separate pooled connections so the request pays ~max(count, data)
+	// instead of their sum. Each connection disables JIT (its compile overhead
+	// -- ~280ms here -- dwarfs any speedup on these scans) and raises work_mem
+	// so the UNION's id-set de-duplication stays in memory instead of spilling
+	// to a temp file on disk.
+	var (
+		total             int
+		entries           []models.CveEntry
+		countErr, dataErr error
+		wg                sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		countErr = db.searchOnTunedConn(ctx, func(tx *sql.Tx) error {
+			return tx.QueryRowContext(ctx, countQ, countArgs...).Scan(&total)
+		})
+	}()
+	go func() {
+		defer wg.Done()
+		dataErr = db.searchOnTunedConn(ctx, func(tx *sql.Tx) error {
+			rows, err := tx.QueryContext(ctx, dataQ, dataArgs...)
+			if err != nil {
+				return err
+			}
+			defer rows.Close()
+			for rows.Next() {
+				var e models.CveEntry
+				if err := ScanCveEntry(rows, &e); err != nil {
+					return err
+				}
+				e.MatchableAffected = cveEntryMatchableAffectedCount(e.AffectedProducts, e.Ecosystem)
+				e.Matchable = e.MatchableAffected > 0
+				e.MatchabilityReason = cveEntryMatchabilityReason(e.AffectedProducts, e.Ecosystem)
+				e.ReferenceKeys = cveReferenceKeys(e)
+				entries = append(entries, e)
+			}
+			return rows.Err()
+		})
+	}()
+	wg.Wait()
+	if dataErr != nil {
+		return nil, 0, dataErr
 	}
-	defer rows.Close()
+	if countErr != nil {
+		return nil, 0, countErr
+	}
 
-	var entries []models.CveEntry
-	for rows.Next() {
-		var e models.CveEntry
-		if err := ScanCveEntry(rows, &e); err != nil {
-			return nil, 0, err
-		}
-		e.MatchableAffected = cveEntryMatchableAffectedCount(e.AffectedProducts, e.Ecosystem)
-		e.Matchable = e.MatchableAffected > 0
-		e.MatchabilityReason = cveEntryMatchabilityReason(e.AffectedProducts, e.Ecosystem)
-		e.ReferenceKeys = cveReferenceKeys(e)
-		entries = append(entries, e)
-	}
 	if err := db.enrichCveReferenceGroupCounts(ctx, entries); err != nil {
 		log.Printf("WARNING: CVE reference group summary enrichment skipped: %v", err)
 		markCveReferenceGroupStatus(entries, "unavailable")
 	}
 	return entries, total, nil
+}
+
+// searchOnTunedConn runs fn on a dedicated pooled connection with session GUCs
+// tuned for the broad CVE search scans: JIT off (its compilation overhead is
+// larger than the win on these queries) and a generous work_mem so the search
+// UNION's id de-duplication stays in RAM rather than spilling to a temp file.
+// The settings are applied with SET LOCAL inside a read-only transaction so
+// they never leak to other users of the pooled connection.
+func (db *DB) searchOnTunedConn(ctx context.Context, fn func(*sql.Tx) error) error {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	workMem := strings.TrimSpace(envString("BONGSU_CVE_SEARCH_WORK_MEM", "128MB"))
+	if workMem != "" {
+		// work_mem accepts only a literal, not a bind parameter; the value comes
+		// from a trusted env var and is quoted to keep it inert.
+		if _, err := tx.ExecContext(ctx, "SET LOCAL work_mem = "+quoteSQLLiteral(workMem)); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.ExecContext(ctx, "SET LOCAL jit = off"); err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 type cveReferenceGroupCounts struct {

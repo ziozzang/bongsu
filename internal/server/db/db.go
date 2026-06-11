@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -123,6 +124,20 @@ func envPositiveInt(key string, def int) int {
 		return def
 	}
 	return n
+}
+
+func envString(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+// quoteSQLLiteral wraps a string as a single-quoted SQL literal, doubling any
+// embedded quotes. Used for the rare GUC value (work_mem) that cannot be passed
+// as a bind parameter.
+func quoteSQLLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 const latestScansSub = `(SELECT DISTINCT ON (host_id) id FROM scans WHERE status IN ('completed','degraded') ORDER BY host_id, created_at DESC)`
