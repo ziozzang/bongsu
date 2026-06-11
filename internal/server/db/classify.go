@@ -44,6 +44,17 @@ type affectedProduct struct {
 	Ecosystem string          `json:"ecosystem"`
 	Fixed     []string        `json:"fixed"`
 	Ranges    []affectedRange `json:"ranges"`
+	// CPE fields (NVD): present on NVD advisories. Vendor/Product identify the
+	// software via its CPE 2.3 components; the version bounds gate matching so a
+	// runtime is only flagged when its version actually falls in the affected
+	// range — never on vendor+product alone.
+	Vendor                string `json:"vendor"`
+	Product               string `json:"product"`
+	Version               string `json:"version"`
+	VersionStartIncluding string `json:"version_start_including"`
+	VersionStartExcluding string `json:"version_start_excluding"`
+	VersionEndIncluding   string `json:"version_end_including"`
+	VersionEndExcluding   string `json:"version_end_excluding"`
 }
 
 type affectedRange struct {
@@ -176,6 +187,111 @@ func compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installedVersion, cve
 		return p, true
 	}
 	return affectedProduct{}, false
+}
+
+// compatibleCPECandidate matches a software component (typically a language
+// runtime detected outside the OS package manager) against NVD CPE advisories.
+// It is deliberately conservative to avoid the false-positive explosion of
+// matching on vendor+product alone: a candidate matches only when the CPE
+// product equals the package's CPE product AND the installed version falls
+// inside an explicit version constraint (range bounds or an exact version).
+// An NVD entry that names the product but carries no version constraint never
+// matches here.
+//
+// cpeProduct is the package's CPE product (e.g. "python", "nodejs", "jdk").
+// installedVersion is compared with the generic/semver comparator since runtime
+// versions are not distro-versioned.
+func compatibleCPECandidate(cpeProduct, installedVersion, affectedProducts string) (affectedProduct, bool) {
+	cpeProduct = strings.ToLower(strings.TrimSpace(cpeProduct))
+	installedVersion = strings.TrimSpace(installedVersion)
+	if cpeProduct == "" || installedVersion == "" || affectedProducts == "" {
+		return affectedProduct{}, false
+	}
+	var products []affectedProduct
+	if json.Unmarshal([]byte(affectedProducts), &products) != nil {
+		return affectedProduct{}, false
+	}
+	for _, p := range products {
+		if !cpeProductMatches(cpeProduct, strings.ToLower(strings.TrimSpace(p.Product))) {
+			continue
+		}
+		if cpeVersionAffected(installedVersion, p) {
+			return p, true
+		}
+	}
+	return affectedProduct{}, false
+}
+
+// cpeProductMatches accepts the package product and the advisory product as
+// equal modulo the common spelling variants between detector output and CPE
+// product names (e.g. nodejs vs node.js, jdk vs jre).
+func cpeProductMatches(pkgProduct, advProduct string) bool {
+	if pkgProduct == advProduct {
+		return true
+	}
+	norm := func(s string) string {
+		s = strings.ReplaceAll(s, ".", "")
+		s = strings.ReplaceAll(s, "_", "")
+		s = strings.ReplaceAll(s, "-", "")
+		switch s {
+		case "nodejs", "node":
+			return "nodejs"
+		case "jdk", "jre", "openjdk", "java", "javase", "javasedevelopmentkit":
+			return "jdk"
+		case "go", "golang":
+			return "go"
+		}
+		return s
+	}
+	return norm(pkgProduct) == norm(advProduct)
+}
+
+// cpeVersionAffected reports whether installed falls within the CPE version
+// constraint. It requires at least one bound (start/end) or an exact version —
+// a product entry with no version information returns false (no match), which
+// is what keeps CPE matching from flagging every version of a product.
+func cpeVersionAffected(installed string, p affectedProduct) bool {
+	startIncl := strings.TrimSpace(p.VersionStartIncluding)
+	startExcl := strings.TrimSpace(p.VersionStartExcluding)
+	endIncl := strings.TrimSpace(p.VersionEndIncluding)
+	endExcl := strings.TrimSpace(p.VersionEndExcluding)
+	exact := strings.TrimSpace(p.Version)
+
+	hasBound := startIncl != "" || startExcl != "" || endIncl != "" || endExcl != ""
+	if !hasBound {
+		// Only an exact pinned version is actionable without bounds.
+		if exact == "" || exact == "*" || exact == "-" {
+			return false
+		}
+		cmp, ok := vercmpGeneric(installed, exact)
+		return ok && cmp == 0
+	}
+
+	if startIncl != "" {
+		if cmp, ok := vercmpGeneric(installed, startIncl); !ok || cmp < 0 {
+			return false
+		}
+	}
+	if startExcl != "" {
+		if cmp, ok := vercmpGeneric(installed, startExcl); !ok || cmp <= 0 {
+			return false
+		}
+	}
+	if endIncl != "" {
+		if cmp, ok := vercmpGeneric(installed, endIncl); !ok || cmp > 0 {
+			return false
+		}
+	}
+	if endExcl != "" {
+		if cmp, ok := vercmpGeneric(installed, endExcl); !ok || cmp >= 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func vercmpGeneric(a, b string) (int, bool) {
+	return vercmp.Compare("", a, b)
 }
 
 func versionIsAffected(eco, installed string, p affectedProduct) bool {

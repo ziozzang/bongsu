@@ -2583,6 +2583,227 @@ func rematchVulnerabilityKey(v models.Vulnerability) string {
 	return v.PackageID + "\x00" + v.ScanID + "\x00" + v.VulnerabilityID
 }
 
+// cpeProductVariants expands a CPE product to the spelling variants seen in NVD
+// data, so the coarse SQL containment filter doesn't miss e.g. node.js vs nodejs
+// or jre vs jdk. The Go matcher (compatibleCPECandidate) does the precise,
+// version-gated decision afterward.
+func cpeProductVariants(product string) []string {
+	switch strings.ToLower(strings.TrimSpace(product)) {
+	case "nodejs", "node", "node.js":
+		return []string{"nodejs", "node.js", "node"}
+	case "jdk", "jre", "openjdk", "java":
+		return []string{"jdk", "jre", "openjdk", "java", "java_se"}
+	case "go", "golang":
+		return []string{"go", "golang"}
+	default:
+		return []string{strings.ToLower(strings.TrimSpace(product))}
+	}
+}
+
+// RematchCPE matches detected runtimes (pkg_type='runtime', keyed by CPE
+// product) against NVD CPE advisories, gated by version range so a runtime is
+// flagged only when its version falls inside an affected range — never on
+// vendor+product alone. Scoped to opts.ScanID when set, else the latest scans.
+func (db *DB) RematchCPE(ctx context.Context, opts RematchOptions) (*RematchResult, error) {
+	if opts.CandidateLimit <= 0 {
+		opts.CandidateLimit = DefaultRematchCandidateLimit
+	}
+	// Pull the distinct runtime products present so we only scan NVD for those.
+	scanFilter := ""
+	prodArgs := []any{}
+	if opts.ScanID != "" {
+		scanFilter = " AND p.scan_id = $1"
+		prodArgs = append(prodArgs, opts.ScanID)
+	} else {
+		scanFilter = fmt.Sprintf(" AND p.scan_id IN (SELECT id FROM %s)", latestScansSub)
+	}
+	prodRows, err := db.QueryContext(ctx, `SELECT DISTINCT lower(ecosystem) FROM packages p
+		WHERE p.pkg_type='runtime' AND ecosystem<>''`+scanFilter, prodArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("cpe product scan: %w", err)
+	}
+	productSet := map[string]bool{}
+	for prodRows.Next() {
+		var prod string
+		if prodRows.Scan(&prod) == nil && prod != "" {
+			for _, v := range cpeProductVariants(prod) {
+				productSet[v] = true
+			}
+		}
+	}
+	prodRows.Close()
+	result := &RematchResult{CandidateLimit: opts.CandidateLimit}
+	if len(productSet) == 0 {
+		return result, nil
+	}
+	variants := make([]string, 0, len(productSet))
+	for v := range productSet {
+		variants = append(variants, v)
+	}
+
+	// Coarse filter: NVD CVEs whose affected_products contain any of the
+	// products. The @> containment uses the affected_products GIN index.
+	containment := make([]byte, 0, 64)
+	containment = append(containment, '[')
+	for i, v := range variants {
+		if i > 0 {
+			containment = append(containment, ',')
+		}
+		obj, _ := json.Marshal(map[string]string{"product": v})
+		containment = append(containment, obj...)
+	}
+	containment = append(containment, ']')
+
+	// Join runtime packages to candidate NVD CVEs by product (coarse), then gate
+	// precisely in Go with compatibleCPECandidate.
+	q := `
+WITH cands AS (
+	SELECT vulnerability_id, severity, cvss_score, cvss_vector, title, description, refs, affected_products::text AS ap
+	FROM cve_database
+	WHERE source='nvd'
+	  AND jsonb_typeof(affected_products)='array'
+	  AND EXISTS (
+		SELECT 1 FROM jsonb_array_elements(affected_products) e
+		WHERE lower(e->>'product') = ANY($1)
+	  )
+)
+SELECT p.id, p.name, p.version, p.host_id, p.scan_id, p.container, p.file_path, lower(p.ecosystem),
+       c.vulnerability_id, c.severity, c.cvss_score, c.cvss_vector, c.title, c.description, c.refs, c.ap
+FROM packages p
+JOIN cands c ON c.ap ILIKE '%' || lower(p.ecosystem) || '%'
+WHERE p.pkg_type='runtime' AND p.ecosystem<>''` + scanFilterFor("p", opts.ScanID, "$2")
+
+	args := []any{pq.Array(variants)}
+	if opts.ScanID != "" {
+		args = append(args, opts.ScanID)
+	}
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("cpe match query: %w", err)
+	}
+	defer rows.Close()
+
+	type match struct {
+		pkgID, pkgName, version, hostID, scanID, container, filePath, product string
+		vulnID, severity, title, description, refs, ap                        string
+		cvssScore                                                             float64
+		cvssVector                                                            string
+	}
+	var matches []match
+	for rows.Next() {
+		var m match
+		if err := rows.Scan(&m.pkgID, &m.pkgName, &m.version, &m.hostID, &m.scanID, &m.container, &m.filePath, &m.product,
+			&m.vulnID, &m.severity, &m.cvssScore, &m.cvssVector, &m.title, &m.description, &m.refs, &m.ap); err != nil {
+			continue
+		}
+		matches = append(matches, m)
+	}
+	result.ScannedCandidates = len(matches)
+
+	var newVulns []models.Vulnerability
+	pending := map[string]int{}
+	for _, m := range matches {
+		affected, ok := compatibleCPECandidate(m.product, m.version, m.ap)
+		if !ok {
+			result.Skipped++
+			continue
+		}
+		result.Matched++
+		primaryURL := ""
+		var refList []struct {
+			URL string `json:"url"`
+		}
+		if json.Unmarshal([]byte(m.refs), &refList) == nil {
+			for _, r := range refList {
+				if r.URL != "" {
+					primaryURL = r.URL
+					break
+				}
+			}
+		}
+		sev := m.severity
+		if m.cvssScore >= 9.0 {
+			sev = "CRITICAL"
+		} else if m.cvssScore >= 7.0 {
+			sev = "HIGH"
+		} else if m.cvssScore >= 4.0 {
+			sev = "MEDIUM"
+		} else if m.cvssScore > 0 {
+			sev = "LOW"
+		}
+		fixed := cpeFixedVersion(affected)
+		v := models.Vulnerability{
+			ID: uuid.New().String(), PackageID: m.pkgID, ScanID: m.scanID, HostID: m.hostID,
+			VulnerabilityID: m.vulnID, Severity: sev, Title: truncate(m.title, 500),
+			Description: truncate(m.description, 2000), PkgName: m.pkgName, PkgPath: m.filePath,
+			InstalledVer: m.version, FixedVersion: fixed, CVSSScore: m.cvssScore, CVSSVector: m.cvssVector,
+			PrimaryURL: primaryURL, Container: m.container, FindingSource: "cve-db",
+		}
+		key := rematchVulnerabilityKey(v)
+		if _, ok := pending[key]; ok {
+			result.Skipped++
+			continue
+		}
+		pending[key] = len(newVulns)
+		newVulns = append(newVulns, v)
+	}
+
+	if len(newVulns) > 0 {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback()
+		stmt, err := tx.PrepareContext(ctx, `INSERT INTO vulnerabilities
+(id, package_id, scan_id, host_id, vulnerability_id, severity, title, description,
+ pkg_name, pkg_path, installed_version, fixed_version, cvss_score, cvss_vector,
+ primary_url, container, layer_id, finding_source, created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
+ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`)
+		if err != nil {
+			return nil, fmt.Errorf("prepare: %w", err)
+		}
+		defer stmt.Close()
+		for _, v := range newVulns {
+			res, err := stmt.ExecContext(ctx, v.ID, v.PackageID, v.ScanID, v.HostID,
+				v.VulnerabilityID, v.Severity, v.Title, v.Description,
+				v.PkgName, v.PkgPath, v.InstalledVer, v.FixedVersion,
+				v.CVSSScore, v.CVSSVector, v.PrimaryURL, v.Container, "", v.FindingSource)
+			if err != nil {
+				continue
+			}
+			if affected, _ := res.RowsAffected(); affected > 0 {
+				result.NewVulns++
+			} else {
+				result.Skipped++
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+// cpeFixedVersion picks the most informative "fixed" hint from a CPE range: the
+// exclusive upper bound is the first unaffected version, i.e. the fix.
+func cpeFixedVersion(p affectedProduct) string {
+	if v := strings.TrimSpace(p.VersionEndExcluding); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(p.VersionEndIncluding); v != "" {
+		return v
+	}
+	return ""
+}
+
+func scanFilterFor(alias, scanID, placeholder string) string {
+	if scanID != "" {
+		return fmt.Sprintf(" AND %s.scan_id = %s", alias, placeholder)
+	}
+	return fmt.Sprintf(" AND %s.scan_id IN (SELECT id FROM %s)", alias, latestScansSub)
+}
+
 func betterRematchVulnerability(candidate, current models.Vulnerability) bool {
 	if candidate.CVSSScore != current.CVSSScore {
 		return candidate.CVSSScore > current.CVSSScore

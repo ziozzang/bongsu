@@ -185,6 +185,15 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 				insertedVulns += result.NewVulns
 			}
 		}
+		// CPE/runtime matching: flag detected runtimes (python/node/jdk) against
+		// NVD CPE advisories, version-gated to avoid false positives.
+		if result, err := s.db.RematchCPE(ctx, opts); err != nil {
+			log.Printf("scan CPE rematch failed: %v", err)
+			ingestErrors = append(ingestErrors, "cpe_rematch: "+err.Error())
+		} else if result.NewVulns > 0 {
+			log.Printf("CPE matched %d runtime vulnerabilities for scan %s", result.NewVulns, report.ScanID)
+			insertedVulns += result.NewVulns
+		}
 	}
 
 	for i := range report.Users {

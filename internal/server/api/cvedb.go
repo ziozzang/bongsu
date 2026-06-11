@@ -1765,6 +1765,12 @@ func (s *Server) handleCveDbRematch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "rematch failed")
 		return
 	}
+	if cpeRes, err := s.db.RematchCPE(r.Context(), opts); err != nil {
+		log.Printf("cve-db cpe rematch: %v", err)
+	} else if cpeRes != nil {
+		result.Matched += cpeRes.Matched
+		result.NewVulns += cpeRes.NewVulns
+	}
 	if opts.ScanID != "" {
 		if _, err := s.db.RebuildPackageVulnerabilitySummariesForScan(r.Context(), opts.ScanID); err != nil {
 			log.Printf("cve-db rematch package vulnerability summary rebuild: %v", err)
