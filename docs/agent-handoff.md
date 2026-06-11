@@ -131,7 +131,7 @@ BONGSU_RELEASE_READINESS_SKIP_HEAVY=true ./scripts/verify-release-readiness.sh
 # Build
 commit=$(git rev-parse --short=12 HEAD)
 build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-go build -trimpath -ldflags "-s -w -X main.version=0.1.0 -X main.commit=${commit} -X main.buildDate=${build_date}" \
+go build -trimpath -ldflags "-s -w -X main.version=0.2.0 -X main.commit=${commit} -X main.buildDate=${build_date}" \
   -o /tmp/bongsu-server ./cmd/server
 
 # Run (env vars from file or inline)

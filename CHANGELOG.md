@@ -2,7 +2,17 @@
 
 All notable changes to Bongsu are documented in this file.
 
-## [Unreleased] - 2026-06-11
+## [0.2.0] - 2026-06-11
+
+### Release Hardening
+
+- Login brute-force throttling: 5 failures per client IP or username within a 15-minute window return HTTP 429 (`BONGSU_LOGIN_MAX_FAILURES`, `BONGSU_LOGIN_LOCKOUT_MINUTES`); unknown-username denials are audited and a constant-cost bcrypt comparison removes the username-existence timing oracle.
+- Migrations take a cluster-wide Postgres advisory lock so concurrently starting server instances cannot race schema changes.
+- The agent spools unsent scan reports to `<work-dir>/spool/` and replays them on the next run, so a server outage no longer loses completed scans (`BONGSU_AGENT_SPOOL_MAX`, default 20).
+- Legacy webhook deliveries are bounded (`BONGSU_WEBHOOK_MAX_CONCURRENT`, default 16) and `notification_log` is pruned by the hourly housekeeping loop.
+- The `has_vulns`/`min_cvss` package filters count only current actionable findings; `RematchCPE` gains the same candidate-limit flood guard as `RematchCVEs`.
+- Dashboard design system unified across all 14 views (filter bars, buttons, modals, empty/loading/error states).
+- CI runs gofmt/vet, the unit suite, a live-Postgres DB integration job, web build + Playwright smoke, compose validation, and all doc/spec verifiers in parallel; the Python e2e suite covers 66 scenarios and the Go integration suite pins matching invariants against a real database.
 
 ### Native Scanner GA
 

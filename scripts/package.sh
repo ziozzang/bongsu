@@ -7,7 +7,7 @@ set -euo pipefail
 # trivy-db is managed via docker-compose init container.
 # For air-gapped: use scripts/download-trivy-db.sh + scripts/update-trivy-db.sh
 
-VERSION="${1:-${BONGSU_VERSION:-0.1.0}}"
+VERSION="${1:-${BONGSU_VERSION:-0.2.0}}"
 COMMIT="${BONGSU_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
 BUILD_DATE="${BONGSU_BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 PACKAGE_NAME="bongsu-${VERSION}"

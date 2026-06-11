@@ -114,9 +114,9 @@ The build context is the **repo root** (`context: ..`) with the Dockerfiles unde
 
 ```bash
 # from the repo root
-docker build -f deploy/Dockerfile.server -t bongsu-server:0.1.0 .
-docker build -f deploy/Dockerfile.agent  -t bongsu-agent:0.1.0  .
-docker build -f deploy/Dockerfile.web    -t bongsu-web:0.1.0    .   # optional
+docker build -f deploy/Dockerfile.server -t bongsu-server:0.2.0 .
+docker build -f deploy/Dockerfile.agent  -t bongsu-agent:0.2.0  .
+docker build -f deploy/Dockerfile.web    -t bongsu-web:0.2.0    .   # optional
 ```
 
 Service ordering and health are handled for you:
@@ -202,7 +202,7 @@ docker run --rm \
   --network bongsu-stack_bongsu-net \
   -v /:/host:ro \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  bongsu-agent:0.1.0 \
+  bongsu-agent:0.2.0 \
   -server http://server:5677 \
   -api-key <BONGSU_AGENT_API_KEY> \
   -scanner native \
@@ -243,7 +243,7 @@ scripts/export-security-db-bundle.sh http://localhost:5677 ./bongsu-secdb.tar.gz
 Also `docker save` the images so they can be loaded offline:
 
 ```bash
-docker save bongsu-server:0.1.0 bongsu-web:0.1.0 postgres:16-alpine \
+docker save bongsu-server:0.2.0 bongsu-web:0.2.0 postgres:16-alpine \
   -o bongsu-images.tar
 ```
 

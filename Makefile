@@ -1,4 +1,4 @@
-BONGSU_VERSION ?= 0.1.0
+BONGSU_VERSION ?= 0.2.0
 BONGSU_COMMIT ?= $(shell git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
 BONGSU_BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 GO_BUILD_FLAGS ?= -trimpath

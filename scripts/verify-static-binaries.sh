@@ -15,7 +15,7 @@ trap cleanup EXIT
 mkdir -p "$OUT_DIR"
 cd "$ROOT"
 
-VERSION="${BONGSU_VERSION:-0.1.0-static-verify}"
+VERSION="${BONGSU_VERSION:-0.2.0-static-verify}"
 COMMIT="${BONGSU_COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
 BUILD_DATE="${BONGSU_BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildDate=${BUILD_DATE}"

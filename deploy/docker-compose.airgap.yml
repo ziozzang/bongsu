@@ -25,7 +25,7 @@ services:
       - bongsu-net
 
   server:
-    image: bongsu-server:${BONGSU_VERSION:-0.1.0}
+    image: bongsu-server:${BONGSU_VERSION:-0.2.0}
     ports:
       - "${BONGSU_API_PORT:-5677}:5677"
     environment:
@@ -135,7 +135,7 @@ services:
       start_period: 30s
 
   web:
-    image: bongsu-web:${BONGSU_VERSION:-0.1.0}
+    image: bongsu-web:${BONGSU_VERSION:-0.2.0}
     ports:
       - "${BONGSU_WEB_PORT:-5678}:80"
     depends_on:

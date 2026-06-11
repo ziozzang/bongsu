@@ -1,7 +1,7 @@
 openapi: "3.0.3"
 info:
   title: Bongsu Vulnerability Management API
-  version: 0.1.0
+  version: 0.2.0
   description: >
     Vulnerability management and SBOM platform API. Provides host inventory,
     vulnerability scanning, CVE database management, RBAC, and installer

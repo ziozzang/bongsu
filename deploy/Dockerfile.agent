@@ -1,4 +1,4 @@
-ARG BONGSU_VERSION=0.1.0
+ARG BONGSU_VERSION=0.2.0
 
 # ---- Builder ----
 FROM golang:1.25-alpine AS builder

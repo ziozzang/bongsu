@@ -32,7 +32,7 @@ services:
   # Remove BONGSU_SYNC_REQUIRE_TRIVY_SOURCE / drop "trivy" from required sources to
   # run fully without it.
   trivy-db:
-    image: bongsu-server:${BONGSU_VERSION:-0.1.0}
+    image: bongsu-server:${BONGSU_VERSION:-0.2.0}
     restart: "no"
     volumes:
       - trivy-cache:/cache
@@ -55,8 +55,8 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.server
       args:
-        BONGSU_VERSION: ${BONGSU_VERSION:-0.1.0}
-    image: bongsu-server:${BONGSU_VERSION:-0.1.0}
+        BONGSU_VERSION: ${BONGSU_VERSION:-0.2.0}
+    image: bongsu-server:${BONGSU_VERSION:-0.2.0}
     ports:
       - "${BONGSU_API_PORT:-5677}:5677"
     environment:
@@ -202,7 +202,7 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.web
-    image: bongsu-web:${BONGSU_VERSION:-0.1.0}
+    image: bongsu-web:${BONGSU_VERSION:-0.2.0}
     ports:
       - "${BONGSU_WEB_PORT:-5678}:80"
     depends_on:
@@ -224,8 +224,8 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile.agent
       args:
-        BONGSU_VERSION: ${BONGSU_VERSION:-0.1.0}
-    image: bongsu-agent:${BONGSU_VERSION:-0.1.0}
+        BONGSU_VERSION: ${BONGSU_VERSION:-0.2.0}
+    image: bongsu-agent:${BONGSU_VERSION:-0.2.0}
     # daemon mode polls the server for force-scan requests; a one-shot scan runs
     # immediately on start and the container exits.
     command:

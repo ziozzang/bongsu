@@ -55,7 +55,7 @@ for pattern in \
     'BONGSU_RELEASE_READINESS_LIVE=true' \
     'BONGSU_RELEASE_READINESS_REPORT' \
     'BONGSU_RELEASE_READINESS_REQUIRE_DB=false' \
-    'BONGSU_RELEASE_ARCHIVE=bongsu-0\.1\.0\.tar\.gz' \
+    'BONGSU_RELEASE_ARCHIVE=bongsu-0\.2\.0\.tar\.gz' \
     '\./scripts/verify-operations-runbook\.sh' \
     '\./scripts/verify-operator-workflow\.sh' \
     '\./scripts/verify-agent-binary-workflow\.sh' \
@@ -229,7 +229,7 @@ require_text "$RELEASE" 'BONGSU_DB_DSN is required for live release readiness' "
 require_text "$RUNBOOK" 'BONGSU_VULNERABILITY_EXPORT_TIMEOUT_SECONDS' "runbook must document vulnerability export timeout tuning"
 require_text "$RUNBOOK" '504 vulnerability export timeout' "runbook must document vulnerability export timeout behavior"
 require_text "$RUNBOOK" 'publishes the final bundle filename plus `\.sha256` sidecar only after that verifier passes' "runbook must document safe security DB bundle publication"
-require_text "$RUNBOOK" 'bongsu-0\.1\.0\.tar\.gz\.sha256' "runbook must require transferring the airgap release archive checksum sidecar"
+require_text "$RUNBOOK" 'bongsu-0\.2\.0\.tar\.gz\.sha256' "runbook must require transferring the airgap release archive checksum sidecar"
 require_text "$RUNBOOK" 'BONGSU_SECURITY_DB_REVISION_TIMEOUT_SECONDS' "runbook must document security DB revision timeout tuning"
 require_text "$RUNBOOK" 'OIDC bearer token authentication' "runbook must document OIDC bearer token authentication"
 require_text "$RUNBOOK" 'BONGSU_OIDC_ISSUER' "runbook must document OIDC issuer configuration"

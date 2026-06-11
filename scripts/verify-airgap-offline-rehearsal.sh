@@ -119,7 +119,7 @@ if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>
     exit 1
 fi
 cat > "$TMP_DIR/airgap.env" << 'EOF'
-BONGSU_VERSION=0.1.0
+BONGSU_VERSION=0.2.0
 BONGSU_DB_PASSWORD=rehearsal-db-password-0123456789
 BONGSU_API_KEY=rehearsal-admin-key-0123456789
 BONGSU_AGENT_API_KEY=rehearsal-agent-key-0123456789

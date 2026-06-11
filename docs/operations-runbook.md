@@ -26,7 +26,7 @@ The consolidated release gate runs the non-live test, documentation, packaging, 
 
 ```bash
 BONGSU_RELEASE_READINESS_REPORT=/tmp/bongsu-release-readiness.json ./scripts/verify-release-readiness.sh
-BONGSU_RELEASE_ARCHIVE=bongsu-0.1.0.tar.gz ./scripts/verify-release-readiness.sh
+BONGSU_RELEASE_ARCHIVE=bongsu-0.2.0.tar.gz ./scripts/verify-release-readiness.sh
 BONGSU_DB_DSN="$BONGSU_DB_DSN" BONGSU_RELEASE_READINESS_LIVE=true ./scripts/verify-release-readiness.sh
 ```
 
@@ -239,13 +239,13 @@ Air-gapped deployment:
 
 ```bash
 ./scripts/verify-airgap-package-smoke.sh
-./scripts/package.sh 0.1.0
-sha256sum -c bongsu-0.1.0.tar.gz.sha256
-./scripts/verify-airgap-release-archive.sh bongsu-0.1.0.tar.gz
-./scripts/verify-airgap-offline-rehearsal.sh bongsu-0.1.0.tar.gz
-# Transfer bongsu-0.1.0.tar.gz, bongsu-0.1.0.tar.gz.sha256, and a security DB bundle into the offline network.
-tar xzf bongsu-0.1.0.tar.gz
-cd bongsu-0.1.0
+./scripts/package.sh 0.2.0
+sha256sum -c bongsu-0.2.0.tar.gz.sha256
+./scripts/verify-airgap-release-archive.sh bongsu-0.2.0.tar.gz
+./scripts/verify-airgap-offline-rehearsal.sh bongsu-0.2.0.tar.gz
+# Transfer bongsu-0.2.0.tar.gz, bongsu-0.2.0.tar.gz.sha256, and a security DB bundle into the offline network.
+tar xzf bongsu-0.2.0.tar.gz
+cd bongsu-0.2.0
 sha256sum -c SHA256SUMS
 ./scripts/verify-security-db-bundle-file.sh ../bongsu-security-db-bundle.tar.gz
 ./load-images.sh
