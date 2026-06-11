@@ -24,6 +24,13 @@ services:
     networks:
       - bongsu-net
 
+  # OPTIONAL init container. The agent's default "native" scanner needs NO Trivy DB.
+  # This one-shot container pre-seeds the Trivy vulnerability DB into the shared
+  # trivy-cache volume so the server can populate the optional "trivy" CVE source
+  # (see BONGSU_SECURITY_DB_REQUIRED_SOURCES / BONGSU_SYNC_REQUIRE_TRIVY_SOURCE).
+  # It exits 0 even when the download fails (air-gapped), so it never blocks startup.
+  # Remove BONGSU_SYNC_REQUIRE_TRIVY_SOURCE / drop "trivy" from required sources to
+  # run fully without it.
   trivy-db:
     image: bongsu-server:${BONGSU_VERSION:-0.1.0}
     restart: "no"
@@ -163,6 +170,17 @@ services:
       BONGSU_NOTIFICATION_TIMEOUT_SECONDS: ${BONGSU_NOTIFICATION_TIMEOUT_SECONDS:-15}
       BONGSU_NOTIFICATION_LOG_RETENTION_DAYS: ${BONGSU_NOTIFICATION_LOG_RETENTION_DAYS:-30}
       BONGSU_REPORT_MAX_EXPORT_ROWS: ${BONGSU_REPORT_MAX_EXPORT_ROWS:-100000}
+      # --- Auto-assign findings to the inventory owner. Default: ON (true). ---
+      # (autoAssignByOwnerEnabled() in internal/server/api/report.go defaults to true)
+      BONGSU_AUTO_ASSIGN_BY_OWNER: ${BONGSU_AUTO_ASSIGN_BY_OWNER:-true}
+      # --- Optional: SMTP email notifications. Uncomment and set in .env to enable. ---
+      # Email is sent only when BONGSU_SMTP_HOST and BONGSU_SMTP_FROM are both set.
+      # BONGSU_SMTP_HOST: ${BONGSU_SMTP_HOST:-}
+      # BONGSU_SMTP_PORT: ${BONGSU_SMTP_PORT:-587}
+      # BONGSU_SMTP_FROM: ${BONGSU_SMTP_FROM:-}
+      # BONGSU_SMTP_USERNAME: ${BONGSU_SMTP_USERNAME:-}
+      # BONGSU_SMTP_PASSWORD: ${BONGSU_SMTP_PASSWORD:-}
+      # BONGSU_SMTP_ENCRYPTION: ${BONGSU_SMTP_ENCRYPTION:-starttls} # starttls | tls | none
     volumes:
       - trivy-cache:/app/trivy-cache
     depends_on:
@@ -194,6 +212,46 @@ services:
     networks:
       - bongsu-net
 
+  # OPTIONAL: run the Bongsu agent as a container to scan THIS docker host.
+  # It mounts the host root filesystem read-only at /host (for OS + language package
+  # discovery) and the docker socket (for running-container image detection).
+  # The default scanner is "native" — no Trivy binary required on the agent.
+  #
+  # Enable with:  docker compose --profile agent up -d agent
+  agent:
+    profiles: ["agent"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.agent
+      args:
+        BONGSU_VERSION: ${BONGSU_VERSION:-0.1.0}
+    image: bongsu-agent:${BONGSU_VERSION:-0.1.0}
+    # daemon mode polls the server for force-scan requests; a one-shot scan runs
+    # immediately on start and the container exits.
+    command:
+      - -server
+      - http://server:5677
+      - -api-key
+      - ${BONGSU_AGENT_API_KEY:?Set BONGSU_AGENT_API_KEY in .env}
+      - -scanner
+      - ${BONGSU_AGENT_SCANNER:-native}
+      - -scan-root
+      - /host
+      - -packages-only
+      - -daemon
+    environment:
+      BONGSU_AGENT_SCANNER: ${BONGSU_AGENT_SCANNER:-native}
+    volumes:
+      - /:/host:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - agent-state:/opt/bongsu
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - bongsu-net
+
 networks:
   bongsu-net:
     driver: bridge
@@ -201,3 +259,4 @@ networks:
 volumes:
   pgdata:
   trivy-cache:
+  agent-state:

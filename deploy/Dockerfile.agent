@@ -1,5 +1,6 @@
 ARG BONGSU_VERSION=0.1.0
 
+# ---- Builder ----
 FROM golang:1.25-alpine AS builder
 ARG BONGSU_VERSION
 ARG BONGSU_COMMIT=unknown
@@ -10,12 +11,38 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${BONGSU_VERSION} -X main.commit=${BONGSU_COMMIT} -X main.buildDate=${BONGSU_BUILD_DATE}" -o bongsu-agent ./cmd/agent
 
+# ---- Runtime ----
 FROM alpine:3.20
-RUN apk --no-cache add ca-certificates tzdata
+
+# The agent's default scanner is "native" (-scanner native, the built-in package
+# reader) which needs no external scan engine. Trivy is therefore NOT installed by
+# default. Set INSTALL_TRIVY=true at build time only if you intend to run the agent
+# with -scanner trivy.
+#
+#   docker build -f deploy/Dockerfile.agent --build-arg INSTALL_TRIVY=true \
+#     -t bongsu-agent:trivy ..
+#
+# The docker CLI is included so container-image detection (docker inspect / image
+# listing) works when /var/run/docker.sock is mounted into the agent container.
+RUN apk --no-cache add ca-certificates tzdata docker-cli
+
+ARG INSTALL_TRIVY=false
+ARG TRIVY_VERSION=0.70.0
+RUN if [ "$INSTALL_TRIVY" = "true" ]; then \
+      apk --no-cache add curl && \
+      curl -sL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" | \
+        tar -xzf - -C /usr/local/bin trivy && \
+      apk del curl ; \
+    fi
+
 RUN addgroup -g 1000 -S bongsu && \
     adduser -u 1000 -S bongsu -G bongsu -H -D
 COPY --from=builder /build/bongsu-agent /usr/local/bin/bongsu-agent
 RUN mkdir -p /opt/bongsu && chown bongsu:bongsu /opt/bongsu
-USER bongsu
+
+# Run as root by default: host filesystem scanning (-scan-root /host) and the
+# docker socket typically require elevated access. Override with `user:` in compose
+# or `--user` if your environment grants the unprivileged bongsu user (uid 1000)
+# read access to the mounted host rootfs and docker socket.
 WORKDIR /opt/bongsu
 ENTRYPOINT ["bongsu-agent"]

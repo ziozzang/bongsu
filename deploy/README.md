@@ -1,440 +1,327 @@
-# Bongsu (봉수) — Package Vulnerability Monitor
+# Bongsu (봉수) — Operator Deployment Guide
 
-Self-hosted package vulnerability monitoring system with server-side CVE matching. Bongsu means "봉수대", a watchtower that carries signals from the edge to a central place.
+Bongsu is a package vulnerability monitor: lightweight agents inventory the OS and
+language packages on your hosts, the server matches them against aggregated CVE
+sources (OSV, NVD, CISA KEV, EPSS, and optionally the Trivy DB), and a web UI
+presents findings, triage, SLAs, and exports. ("봉수대" is a watchtower that relays
+signals from the edge to a central place.)
+
+This directory contains everything needed to run a production-grade containerized
+deployment. You do **not** need a checkout of the source tree to operate it — only
+this `deploy/` directory plus pre-built images (or a single source checkout to build
+them once).
+
+---
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌──────────┐
-│  Agent      │────▶│  Server          │────▶│ PostgreSQL│
-│  (per host) │     │  + Trivy         │     │          │
-└─────────────┘     │  + Web Dashboard │     └──────────┘
-                    └──────────────────┘
+                 ┌────────────┐        ┌──────────────┐
+   agents ─────▶ │  server    │ ─────▶ │  postgres    │
+ (host/container)│ (API + web)│        │  (inventory, │
+                 │  :5677     │ ◀───── │   CVE data)  │
+                 └─────┬──────┘        └──────────────┘
+                       │  serves embedded web UI at /
+                       ▼
+                  operators / browsers
 ```
 
-- **Agent**: Collects packages from hosts/containers via Trivy. Sends package list to server.
-- **Server**: Server-side CVE matching via Trivy SBOM scan. Web dashboard for browsing.
-- **trivy-db init container**: Downloads vulnerability DB from `ghcr.io/aquasecurity/trivy-db` on first start. Stored in shared volume.
-- **Packages-only mode**: Agent sends only package lists. Server handles all CVE matching.
+| Component  | Image                 | Purpose                                              |
+|------------|-----------------------|------------------------------------------------------|
+| `postgres` | `postgres:16-alpine`  | Inventory + CVE storage. Persisted to the `pgdata` volume. |
+| `server`   | `bongsu-server`       | REST API, CVE matching engine, scheduler, embedded web UI (`web/dist` is baked into the image). Runs DB migrations on start. |
+| `trivy-db` | `bongsu-server` (init)| **Optional** one-shot. Pre-seeds the Trivy vulnerability DB for the optional `trivy` CVE source. Exits 0 even if the download fails. |
+| `web`      | `bongsu-web` (nginx)  | **Optional.** The server already serves the UI; this is only useful if you want a separate nginx front-end. |
+| `agent`    | `bongsu-agent`        | **Optional** (compose profile `agent`). Scans the docker host from a container. Agents usually run as a bare binary on each target host instead. |
 
-## Quick Start (Connected Environment)
+The default agent scanner is **`native`** — a built-in package reader that needs **no
+external scan engine** (no Trivy binary). Trivy remains available as an optional CVE
+source on the server and as an optional agent scanner (`-scanner trivy`).
+
+---
+
+## Prerequisites
+
+- Docker Engine 24+ and the Docker Compose v2 plugin (`docker compose ...`).
+- For building images from source: a checkout of the Bongsu repo. The Go 1.25 and
+  Node 22 toolchains are pulled automatically inside the multi-stage builds — you do
+  **not** need them installed on the host.
+- ~1 GB RAM and a few GB of disk for Postgres + CVE data to start; more as inventory
+  grows.
+- Outbound HTTPS for connected installs (to fetch CVE feeds). Air-gapped installs are
+  fully supported — see [Air-Gapped Deployment](#air-gapped-deployment).
+
+---
+
+## 1. Configure `.env`
+
+Copy the template and fill in the secrets:
 
 ```bash
-# 1. Configure
 cp deploy/.env.example deploy/.env
-# Edit deploy/.env — set BONGSU_API_KEY, BONGSU_AGENT_API_KEY, BONGSU_INSTALL_TOKEN, and BONGSU_DB_PASSWORD
-
-# 2. Build and start
-cd deploy && docker compose up -d --build
-
-# 3. Check health
-curl http://localhost:5677/api/health
-
-# Web UI
-open http://localhost:5678/
-
-# 4. Install agent on target host
-curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://your-server:5678/api/install.sh" | sudo bash
 ```
+
+**Required** values (the stack refuses to start without strong, distinct secrets):
+
+| Variable                | What it is                                                        |
+|-------------------------|-------------------------------------------------------------------|
+| `BONGSU_DB_PASSWORD`    | Postgres password.                                                |
+| `BONGSU_API_KEY`        | Admin/operator API key (also the web admin key).                  |
+| `BONGSU_AGENT_API_KEY`  | Agent ingest key. **Must differ** from `BONGSU_API_KEY`.          |
+| `BONGSU_INSTALL_TOKEN`  | Gates `/api/install.sh` and binary downloads.                     |
+
+Secret rules (enforced at startup unless `BONGSU_ALLOW_WEAK_SECRETS=true`):
+- At least **16 characters**.
+- Must not contain placeholder substrings (`change-me`, `your-`, `password`,
+  `admin-key`, `agent-key`, `install-token`, `example`, ...).
+- `BONGSU_AGENT_API_KEY` must be distinct from `BONGSU_API_KEY`.
+
+Generate strong values:
+
+```bash
+openssl rand -hex 24   # run once per secret
+```
+
+**Recommended** for first login (creates the initial admin when no users exist):
+
+```ini
+BONGSU_ADMIN_USERNAME=admin
+BONGSU_ADMIN_PASSWORD=<at-least-16-chars>
+```
+
+**Optional** features (see `.env.example` and the compose file for the full list):
+- Email notifications: `BONGSU_SMTP_HOST`, `BONGSU_SMTP_PORT`, `BONGSU_SMTP_FROM`,
+  `BONGSU_SMTP_USERNAME`, `BONGSU_SMTP_PASSWORD`, `BONGSU_SMTP_ENCRYPTION`
+  (`starttls` | `tls` | `none`). Email is sent only when both `BONGSU_SMTP_HOST` and
+  `BONGSU_SMTP_FROM` are set.
+- `BONGSU_AUTO_ASSIGN_BY_OWNER` — auto-assign findings to the inventory owner.
+  **Default: `true`** (on). Set to `false` to disable.
+- Reverse-proxy SSO via trusted identity headers
+  (`BONGSU_TRUSTED_IDENTITY_HEADER`, `BONGSU_TRUSTED_ADMIN_GROUPS`, ...).
+
+---
+
+## 2. Bring up the stack
+
+Build the images once and start everything:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --build
+```
+
+The build context is the **repo root** (`context: ..`) with the Dockerfiles under
+`deploy/`. To build images by hand:
+
+```bash
+# from the repo root
+docker build -f deploy/Dockerfile.server -t bongsu-server:0.1.0 .
+docker build -f deploy/Dockerfile.agent  -t bongsu-agent:0.1.0  .
+docker build -f deploy/Dockerfile.web    -t bongsu-web:0.1.0    .   # optional
+```
+
+Service ordering and health are handled for you:
+- `server` waits for `postgres` to be **healthy** and for the optional `trivy-db`
+  init container to **complete**.
+- The server applies database migrations automatically on start
+  (`BONGSU_AUTO_MIGRATE=true`; look for `Database migrations applied` in the logs).
+- Compose health probes hit `/api/ready` (server) and `pg_isready` (postgres).
+
+Check it is up:
+
+```bash
+curl -sf http://localhost:${BONGSU_API_PORT:-5677}/api/health
+docker compose -f deploy/docker-compose.yml logs -f server   # watch startup
+```
+
+Ports (override in `.env`):
+
+| Variable           | Default | Service           |
+|--------------------|---------|-------------------|
+| `BONGSU_API_PORT`  | `5677`  | server API + UI   |
+| `BONGSU_WEB_PORT`  | `5678`  | optional nginx UI |
+
+---
+
+## 3. First login / admin bootstrap
+
+- Open `http://<host>:${BONGSU_API_PORT}/` in a browser.
+- Log in with `BONGSU_ADMIN_USERNAME` / `BONGSU_ADMIN_PASSWORD` set in step 1.
+  The admin user is created automatically **only on first start, only when the user
+  table is empty** (idempotent — changing the env later does not reset an existing
+  admin). Watch for `Bootstrapped initial admin user: <name>` in the server log.
+- If you skip the admin env vars, set `BONGSU_WEB_AUTH=false` for a private-lab,
+  no-login mode (not recommended on shared networks), or create users via the API
+  using `BONGSU_API_KEY`.
+
+API access for automation uses the `X-API-Key` header:
+
+```bash
+curl -H "X-API-Key: $BONGSU_API_KEY" http://localhost:5677/api/hosts
+```
+
+---
+
+## 4. Deploy the agent
+
+The agent reports to the server using the **agent** key (`-api-key
+$BONGSU_AGENT_API_KEY`). The default scanner is `native`; add `-packages-only` to let
+the server do CVE matching (recommended).
+
+### 4a. Bare binary (recommended for most hosts)
+
+Download the agent from the running server (gated by `BONGSU_INSTALL_TOKEN`) or copy
+`bongsu-agent` + `scripts/install-agent.sh` onto the host, then:
+
+```bash
+# one-shot scan
+sudo bongsu-agent \
+  -server http://<server-host>:5677 \
+  -api-key <BONGSU_AGENT_API_KEY> \
+  -scanner native \
+  -packages-only
+
+# or install as a cron/daemon via the installer
+sudo BONGSU_SERVER_URL=http://<server-host>:5677 \
+     BONGSU_AGENT_API_KEY=<BONGSU_AGENT_API_KEY> \
+     BONGSU_PACKAGES_ONLY=true \
+     ./install-agent.sh
+```
+
+The installer creates/reuses `/opt/bongsu/agent.token` to bind the agent to its host
+identity (`BONGSU_AGENT_HOST_BINDING=true` on the server). Keep that token stable
+across reinstalls; for cloned VMs/images use `-host-id <unique-id>`.
+
+### 4b. Container mode (scan the docker host itself)
+
+Run the agent as a container with the host root filesystem mounted read-only at
+`/host` (for package discovery) and the docker socket mounted (for running-container
+image detection):
+
+```bash
+docker run --rm \
+  --network bongsu-stack_bongsu-net \
+  -v /:/host:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock:ro \
+  bongsu-agent:0.1.0 \
+  -server http://server:5677 \
+  -api-key <BONGSU_AGENT_API_KEY> \
+  -scanner native \
+  -scan-root /host \
+  -packages-only
+```
+
+Or enable the bundled agent service (one-shot + force-scan daemon) from compose:
+
+```bash
+docker compose -f deploy/docker-compose.yml --profile agent up -d agent
+```
+
+The compose `agent` service already wires `/:/host:ro`, the docker socket,
+`-scan-root /host`, `-scanner native`, and `-packages-only`. The agent image ships a
+`docker` CLI so running-container image detection works.
+
+> Native container *image* scanning needs access to the live overlay2 layers. When
+> those are not reachable the agent logs a warning and continues — host OS/language
+> package ingestion is unaffected. Build the agent image with
+> `--build-arg INSTALL_TRIVY=true` and run `-scanner trivy` if you require deep
+> container image scanning.
+
+---
 
 ## Air-Gapped Deployment
 
-### On Internet-Connected Machine
+Air-gapped installs use a separate compose file that disables all online jobs
+(`deploy/docker-compose.airgap.yml`: no Trivy download, no CVE sync on start).
+
+**On a connected machine** — export the CVE/security DB bundle from a running server:
 
 ```bash
-# 1. Build package
-./scripts/package.sh 0.1.0
-# Creates: bongsu-0.1.0.tar.gz
-
-# 2. Download trivy-db (for air-gapped import)
-./scripts/download-trivy-db.sh trivy-db.tar.gz
+scripts/export-security-db-bundle.sh http://localhost:5677 ./bongsu-secdb.tar.gz
+# (authenticate with BONGSU_API_KEY as the script documents)
 ```
 
-### Transfer to Air-Gapped Network
+Also `docker save` the images so they can be loaded offline:
 
 ```bash
-# Copy bongsu-0.1.0.tar.gz and trivy-db.tar.gz via USB/sneakernet
+docker save bongsu-server:0.1.0 bongsu-web:0.1.0 postgres:16-alpine \
+  -o bongsu-images.tar
 ```
 
-### On Air-Gapped Machine
+**Transfer** `bongsu-images.tar`, `bongsu-secdb.tar.gz`, and `deploy/` via your
+approved sneakernet path.
+
+**On the air-gapped machine:**
 
 ```bash
-# 1. Extract
-tar xzf bongsu-0.1.0.tar.gz
-cd bongsu-0.1.0
+docker load -i bongsu-images.tar
+cp deploy/.env.example deploy/.env   # fill in secrets; online jobs are already off
+docker compose -f deploy/docker-compose.airgap.yml up -d
 
-# 2. Load Docker images
-./load-images.sh
-
-# 3. Configure
-cp deploy/.env.example deploy/.env
-# Edit deploy/.env:
-#   BONGSU_API_KEY=your-admin-secret-key
-#   BONGSU_AGENT_API_KEY=your-agent-secret-key
-#   BONGSU_INSTALL_TOKEN=your-install-token
-#   BONGSU_DB_PASSWORD=secure-password
-#   BONGSU_TRIVY_DB_INTERVAL_HOURS=0
-
-# 4. Start services without online build/update jobs
-cd deploy && docker compose -f docker-compose.airgap.yml up -d
-
-# 5. Import security DB bundle
-./scripts/import-security-db-bundle.sh http://localhost:5677 your-secret-key ../bongsu-security-db-bundle.tar.gz
-
-# 6. Install agents on target hosts
-curl -fsSL -H "X-Install-Token: $BONGSU_INSTALL_TOKEN" "http://server-host:5678/api/install.sh" | sudo bash
+# import the security DB bundle
+scripts/import-security-db-bundle.sh http://localhost:5677 ./bongsu-secdb.tar.gz
 ```
 
-## Updating Vulnerability Database (CVSS Data)
+The airgap compose sets `BONGSU_SECURITY_DB_SYNC_ON_START=false`,
+`BONGSU_TRIVY_DB_INTERVAL_HOURS=0`, and `BONGSU_SYNC_REQUIRE_TRIVY_SOURCE=false` so the
+server never reaches the internet. Refresh CVE data later by re-running the export on a
+connected machine and re-importing the bundle.
 
-### Connected Environment
+---
 
-trivy-db is managed by docker-compose. The init container downloads the DB on first start and stores it in a shared volume; the server then refreshes Trivy DB and the merged OSV/NVD/Trivy CVE sources every 6 hours by default, runs the source sync once after the HTTP listener starts, and queues automatic rescans after each successful DB update.
+## Upgrade path
 
-**Update to latest:**
-```bash
-docker compose run --rm trivy-db sh -c "rm -rf /cache/db/* && trivy image --download-db-only --cache-dir /cache"
-docker compose restart server
-```
-
-**Override auto-update** (optional `.env`):
-```
-BONGSU_TRIVY_DB_INTERVAL_HOURS=6
-BONGSU_SECURITY_DB_SYNC_CMD=/app/scripts/sync-all-cvedb.sh http://localhost:5677
-BONGSU_SECURITY_DB_INTERVAL_HOURS=6
-BONGSU_SECURITY_DB_SYNC_ON_START=true
-BONGSU_AUTO_RESCAN_ON_DB_UPDATE=true
-BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS=720
-```
-
-After a Trivy DB upload/update, CVE JSONL import, manual or periodic security DB sync, or air-gapped bundle import, bongsu recalculates CVSS/enrichment/rematches in the background and queues package-only scan requests for recently seen hosts. Recalculation is serialized and coalesced, so a multi-source sync that imports CISA KEV, FIRST EPSS, OSV, NVD, and Trivy data does not run overlapping recalculation jobs. CVE JSONL imports are committed as a single transaction; malformed JSONL or row-level insert failures reject the whole payload and record a failed audit event. Failed manual or periodic security DB sync commands also write `status=error` audit rows with the bounded command error captured by the sync manager. Pending automatic rescan requests are deduplicated per host in the database, so overlapping DB update hooks do not create duplicate pending work. Auto-rescan audit metadata records eligible, queued, and already-pending counts so operators can distinguish no eligible agents from a pending backlog. Dashboard stats show pending, claimed, degraded, and failed automatic rescan requests for the current `security_db_revision` separately from manual or daily scan requests; each count opens Scan History with the matching status/type/revision filters, where request age and claim age highlight stuck work using server-side stale flags, and failed/degraded/cancelled rows can be requeued individually or in bulk after confirming the active filters without losing revision provenance. If a new CVE DB update lands while a previous automatic rescan is already claimed, bongsu still leaves a follow-up pending rescan for the newer DB contents. Stale claim requeue also reports `cancelled_duplicates` when old duplicate security DB rescan rows are cancelled behind a newer request. Agents running in daemon mode pick those requests up through the normal force-scan polling path; claimed scan requests record the claiming host and can only be completed by that same host.
-
-### Air-Gapped Environment
+Migrations run automatically on every server start, so upgrades are:
 
 ```bash
-# On connected machine:
-./scripts/export-security-db-bundle.sh http://connected-server:5677 your-api-key bongsu-security-db-bundle.tar.gz
+# 1. Pull / load the new images (set BONGSU_VERSION in .env or pass the tag)
+docker compose -f deploy/docker-compose.yml pull          # or: docker load -i ...
 
-# Transfer to air-gapped, then:
-./scripts/import-security-db-bundle.sh http://server:5677 your-api-key bongsu-security-db-bundle.tar.gz
+# 2. Recreate; postgres data persists in the pgdata volume
+docker compose -f deploy/docker-compose.yml up -d
+
+# 3. Confirm
+curl -sf http://localhost:5677/api/health
+docker compose -f deploy/docker-compose.yml logs server | grep -i 'migrations applied'
 ```
 
-Bundle import verifies manifest SHA-256 checksums for `cve-database.jsonl` and optional `trivy-db.tar.gz` before applying any database or cache changes. The manifest also carries `security_db_revision`, and export/import audit rows record it so operators can correlate an offline bundle with the automatic rescans it triggers. `/health` and the dashboard show the current merged revision and source freshness, with revision lookup and freshness errors limited to admin health responses. The dashboard CVE source table marks stale sources and shows their age next to matchability and rematch policy state. Direct CVE JSONL import responses and CVE import/export audit rows also include the resulting revision. A corrupt or tampered bundle is rejected, the full CVE database is replaced inside one database transaction, and Trivy DB archives are staged before replacing the active cache so bad rows or invalid archives do not leave partially committed CVE/cache data. Direct source imports replace existing rows for that source in the same transaction, so advisories removed upstream do not remain as stale matches.
+Take a `pg_dump`/volume snapshot before major upgrades. Migrations are forward-only;
+do not downgrade the server image against a migrated database.
 
-## CVE DB Status and Matching Quality
+---
 
-The dashboard shows CVE DB status on the first page. Treat that card as the operator-facing gate for whether a database is safe to use for rematch/rescan:
-
-- `status=ok` means no temporary placeholder IDs, no empty vulnerability IDs/sources, current affected-package and reference-key indexes, and enough local EPSS enrichment coverage.
-- `matchable` means the row has affected package name, ecosystem/package type, and package fixed-version evidence. A fixed version may come from a direct fixed field or a fixed event inside an affected range. Hash-only fixed evidence, such as git commit hashes, is not treated as a package version and is not eligible for rematch.
-- `TEMP-*` and `CVD-*` IDs are rejected during import and removed by migration. They are placeholders, not usable vulnerability identities.
-- Priority-only feeds such as CISA KEV and FIRST EPSS enrich existing CVE rows but do not create package-name matches by themselves. EPSS is merged onto matching CVE rows as `epss_score` and `epss_percentile`.
-- Reference groups intentionally keep vendor/category context while grouping related advisories under canonical keys such as `cve:CVE-...`, so Debian/Ubuntu/RHEL/OSV/NVD evidence can be audited together without losing ecosystem boundaries.
-
-Useful checks:
+## Operations cheatsheet
 
 ```bash
-curl -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/stats?refresh=true"
-curl -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/cve-db/search?q=CVE-2026-48840&matchable=true"
+# status / logs
+docker compose -f deploy/docker-compose.yml ps
+docker compose -f deploy/docker-compose.yml logs -f server
+
+# refresh the optional Trivy DB (connected)
+docker compose -f deploy/docker-compose.yml run --rm trivy-db \
+  sh -c "rm -rf /cache/db/* && trivy image --download-db-only --cache-dir /cache"
+docker compose -f deploy/docker-compose.yml restart server
+
+# back up postgres
+docker compose -f deploy/docker-compose.yml exec postgres \
+  pg_dump -U "$BONGSU_DB_USER" "$BONGSU_DB_NAME" > bongsu-backup.sql
+
+# tear down (KEEPS data)        # tear down (DELETES volumes)
+docker compose -f deploy/docker-compose.yml down
+docker compose -f deploy/docker-compose.yml down -v
 ```
 
-If the CVE DB status reports a stale or missing derived index after a manual DB repair, rebuild it asynchronously:
-
-```bash
-curl -X POST -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/cve-db/affected-index/rebuild?async=true"
-curl -X POST -H "X-API-Key: $BONGSU_API_KEY" "http://localhost:5677/api/admin/cve-db/reference-index/rebuild?async=true"
-```
-
-Progress is visible in admin `/api/health`, `/api/cve-db/stats`, metrics, and the dashboard rebuild cards.
-
-## Release Binary Verification
-
-Air-gapped packages and one-line installers depend on static Linux binaries. Before packaging a release, verify both server and agent binaries:
-
-```bash
-./scripts/verify-static-binaries.sh
-```
-
-The release archive produced by `scripts/package.sh` includes static server and agent binaries, connected-source sync scripts, import/export tools, Docker images, migrations, web assets, and a `SHA256SUMS` manifest. After unpacking an archive in the target environment, run:
-
-```bash
-sha256sum -c SHA256SUMS
-```
-
-## Agent Installation
-
-### On Bare-Metal/VM Host
-
-```bash
-# Copy bongsu-agent binary and install-agent.sh to target host.
-# The installer creates/reuses /opt/bongsu/agent.token unless BONGSU_AGENT_TOKEN is supplied.
-./install-agent.sh http://server:5677 your-api-key
-```
-
-The script:
-- Installs agent binary to `/opt/bongsu/bin/`
-- Creates credential-bearing config at `/opt/bongsu/config.yaml` with `0600` permissions
-- Sets up daily cron job at 03:00
-- Runs first scan immediately
-
-### On Kubernetes (as CronJob)
-
-```yaml
-apiVersion: batch/v1
-kind: CronJob
-metadata:
-  name: bongsu-agent
-spec:
-  schedule: "0 3 * * *"
-  jobTemplate:
-    spec:
-      template:
-        spec:
-          containers:
-          - name: agent
-            image: bongsu-agent:0.1.0
-            args:
-              - --server
-              - http://bongsu-server:5677
-              - --api-key
-              - $(BONGSU_API_KEY)
-              - --packages-only
-          restartPolicy: OnFailure
-```
-
-## Environment Variables
-
-### Server
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `BONGSU_API_KEY` | *required* | API key for authentication |
-| `BONGSU_AGENT_API_KEY` | *required* | Agent-only report upload and force-scan polling key; keep it distinct from the admin key |
-| `BONGSU_INSTALL_TOKEN` | *required for installer* | Token required for `/api/install.sh`; binary downloads accept this token or an admin API key header |
-| `BONGSU_ALLOW_WEAK_SECRETS` | `false` | Development-only override for missing, placeholder, short, or duplicate server secrets; keep `false` in production |
-| `BONGSU_AGENT_HOST_BINDING` | `true` | Require each agent to present a persistent per-host token in addition to `BONGSU_AGENT_API_KEY` |
-| `BONGSU_ACCESS_LOG` | `true` | Emit request-scoped access logs with method, path, status, bytes, duration, IP, and `X-Request-ID` |
-| `BONGSU_ACCESS_LOG_HEALTH` | `false` | Include `/api/health` in access logs when enabled |
-| `BONGSU_HTTP_READ_HEADER_TIMEOUT_SECONDS` | `10` | Maximum seconds allowed to read request headers before closing the connection |
-| `BONGSU_HTTP_READ_TIMEOUT_SECONDS` | `30` | Maximum seconds allowed to read a full request, including upload body |
-| `BONGSU_HTTP_WRITE_TIMEOUT_SECONDS` | `900` | Maximum seconds allowed to write a response |
-| `BONGSU_HTTP_IDLE_TIMEOUT_SECONDS` | `120` | Maximum keep-alive idle seconds per connection |
-| `BONGSU_HTTP_MAX_HEADER_BYTES` | `1048576` | Maximum accepted HTTP request header size |
-| `BONGSU_VIEWER_API_KEYS` | empty | Comma-separated `key:subject` viewer keys scoped by RBAC; use `key:user:alice` or `key:group:platform` when user and group IDs may overlap |
-| `BONGSU_TRUSTED_IDENTITY_HEADER` | empty | Optional trusted reverse-proxy user header such as `X-Forwarded-User`; the value becomes RBAC subject `user:<value>` |
-| `BONGSU_TRUSTED_GROUPS_HEADER` | empty | Optional trusted reverse-proxy groups header; comma or semicolon separated values become RBAC subjects `group:<value>` |
-| `BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS` | loopback when trusted headers are enabled | Comma-separated proxy CIDRs allowed to supply trusted identity headers |
-| `BONGSU_TRUSTED_ADMIN_USERS` | empty | Comma-separated trusted identity users that may access admin APIs |
-| `BONGSU_TRUSTED_ADMIN_GROUPS` | empty | Comma-separated trusted identity groups that may access admin APIs |
-| `BONGSU_OIDC_ISSUER` | empty | Optional OIDC issuer for direct `Authorization: Bearer` JWT authentication |
-| `BONGSU_OIDC_CLIENT_ID` | empty | Required audience/client ID when OIDC bearer authentication is enabled |
-| `BONGSU_OIDC_JWKS_URL` | `${BONGSU_OIDC_ISSUER}/.well-known/jwks.json` | JWKS endpoint for RS256 token verification |
-| `BONGSU_OIDC_SUBJECT_CLAIM` | `sub` | JWT claim mapped to RBAC subject `user:<value>` |
-| `BONGSU_OIDC_GROUPS_CLAIM` | `groups` | JWT claim mapped to RBAC subjects `group:<value>` |
-| `BONGSU_OIDC_ADMIN_USERS` | empty | Comma-separated OIDC users that may access admin APIs |
-| `BONGSU_OIDC_ADMIN_GROUPS` | empty | Comma-separated OIDC groups that may access admin APIs |
-| `BONGSU_CORS_ALLOWED_ORIGINS` | empty | Comma-separated browser origins allowed to call the API; empty keeps same-origin only, `*` explicitly allows all |
-| `BONGSU_API_PORT` | `5677` | Host port for the Bongsu API server |
-| `BONGSU_WEB_PORT` | `5678` | Host port for the Bongsu web UI |
-| `BONGSU_DB_DSN` | `postgres://bongsu:...` | PostgreSQL connection string |
-| `BONGSU_DB_MAX_OPEN_CONNS` | `25` | Maximum open PostgreSQL connections from the server |
-| `BONGSU_DB_MAX_IDLE_CONNS` | `5` | Maximum idle PostgreSQL connections retained |
-| `BONGSU_DB_CONN_MAX_LIFETIME_MINUTES` | `5` | Maximum lifetime for pooled PostgreSQL connections |
-| `BONGSU_DB_CONNECT_TIMEOUT_SECONDS` | `30` | Startup timeout for the initial PostgreSQL connection |
-| `BONGSU_DB_MIGRATION_TIMEOUT_SECONDS` | `600` | Startup timeout for checksum-tracked migrations, including large CVE DB indexes |
-| `BONGSU_AUTO_MIGRATE` | `true` | Run checksum-tracked DB migrations on startup |
-| `BONGSU_TRIVY_PATH` | `trivy` | Trivy binary path |
-| `BONGSU_TRIVY_CACHE_DIR` | `/app/trivy-cache` | Trivy cache directory |
-| `BONGSU_TRIVY_DB_REPO` | `ghcr.io/aquasecurity/trivy-db` | Trivy DB registry |
-| `BONGSU_TRIVY_DB_INTERVAL_HOURS` | `6` connected, `0` airgap | DB update interval (`0`=disabled) |
-| `BONGSU_SECURITY_DB_SYNC_CMD` | `/app/scripts/sync-all-cvedb.sh http://localhost:5677` connected, empty airgap | Command for OSV/NVD/Trivy source sync; the bundled script reads `BONGSU_API_KEY` from the container environment |
-| `BONGSU_SECURITY_DB_INTERVAL_HOURS` | `6` | Security source sync interval |
-| `BONGSU_SECURITY_DB_SYNC_ON_START` | `true` | Run the configured security source sync once on server startup before waiting for the periodic interval |
-| `BONGSU_SECURITY_DB_SYNC_OUTPUT_MAX_BYTES` | `8192` | Tail bytes of the most recent source sync output retained in admin-authenticated health checks and failed update responses |
-| `BONGSU_SECURITY_DB_REQUIRED_SOURCES` | `cisa-kev,epss,osv,nvd,trivy` | Required merged CVE sources; health and dashboard mark the DB degraded if any are missing |
-| `BONGSU_SECURITY_DB_MAX_SOURCE_AGE_HOURS` | `30` | Mark merged security DB source freshness as stale when any source has not updated within this many hours (`0` disables age-based staleness) |
-| `BONGSU_SYNC_REQUIRE_TRIVY_SOURCE` | `true` connected, `false` airgap | Fail the bundled source sync if Trivy CVE extraction is missing or empty instead of silently producing a partial source set. The sync script searches `TRIVY_BIN`, `BONGSU_TRIVY_PATH`, `/opt/bongsu/bin/trivy`, and bundled `bin/trivy` paths before declaring Trivy unavailable. |
-| `BONGSU_AUTO_RESCAN_ON_DB_UPDATE` | `true` | Queue background rescans after security DB changes |
-| `BONGSU_AUTO_RESCAN_LAST_SEEN_HOURS` | `720` | Only auto-rescan hosts seen within this many hours (`0`=all hosts) |
-| `BONGSU_CVE_MATCH_SOURCES` | empty | Optional comma-separated CVE source allowlist for automatic rematch |
-| `BONGSU_CVE_MATCH_MIN_SOURCE_MATCHABLE_PERCENT` | `0` | Skip CVE sources below this matchable-record percentage during automatic rematch; matchable records require name, ecosystem, and fixed-version data |
-| `BONGSU_CVE_MATCH_CANDIDATE_LIMIT` | `50000` | Maximum candidate package/advisory pairs evaluated per rematch pass, clamped at 1000000; responses and audit logs mark `limited=true` when reached |
-| `BONGSU_CVE_STATS_CACHE_SECONDS` | `15` | Short in-process cache TTL for `/api/cve-db/stats`; use `refresh=true` to bypass |
-| `BONGSU_CVE_STATS_STALE_SECONDS` | `300` | Serve an expired CVE DB stats cache immediately while one background refresh rebuilds the cache (`0` disables stale responses) |
-| `BONGSU_CVE_STATS_BACKGROUND_TIMEOUT_SECONDS` | `30` | Timeout for background CVE DB stats refreshes triggered by stale-cache responses |
-| `BONGSU_CVE_SEARCH_TIMEOUT_SECONDS` | `15` | Maximum runtime for one CVE Search request before returning `504 search timeout` |
-| `BONGSU_CVE_REFERENCE_GROUP_TIMEOUT_SECONDS` | `10` | Maximum runtime for one expanded CVE reference-group lookup before returning `504 reference group timeout` |
-| `BONGSU_CVE_AFFECTED_PACKAGES_TIMEOUT_SECONDS` | `10` | Maximum runtime for one indexed affected-package evidence lookup before returning `504 affected packages timeout` |
-| `BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS` | `1500` | Best-effort timeout for CVE Search reference-group summary enrichment |
-| `BONGSU_CVE_AFFECTED_INDEX_TIMEOUT_SECONDS` | `5` | Health timeout for affected-package index detail before falling back to lightweight status |
-| `BONGSU_CVE_AFFECTED_INDEX_REBUILD_TIMEOUT_SECONDS` | `900` | Startup/admin timeout for rebuilding the derived affected-package index after migrations or manual repair; startup timeout queues async rebuild instead of preventing the API listener from starting |
-| `BONGSU_CVE_REFERENCE_INDEX_TIMEOUT_SECONDS` | `5` | Health timeout for reference-key index detail before falling back to lightweight status |
-| `BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS` | `900` | Startup/admin timeout for rebuilding the materialized CVE reference-key index after migrations or source imports |
-| `BONGSU_HEALTH_DB_TIMEOUT_SECONDS` | `2` | Shared DB timeout for optional health details |
-| `BONGSU_SECURITY_DB_STATUS_TIMEOUT_SECONDS` | `15` | Maximum DB time for one admin `/api/admin/security-db/status` request; keep above health timeout for large OSV snapshots |
-| `BONGSU_SECURITY_DB_REVISION_TIMEOUT_SECONDS` | `30` | Bounded DB time for one shared `security_db_revision` calculation; the in-flight calculation is not cancelled by short health/export callers |
-| `BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS` | `30` | Maximum DB time for one `/api/admin/metrics` scrape; increase for very large CVE DB snapshots if `*_metrics_error` gauges appear |
-| `BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS` | `120` | Startup timeout for CVSS recalculation, vulnerability enrichment, and severity normalization after index preparation |
-| `BONGSU_STALE_REMATCH_CLEANUP_BATCH_SIZE` | `10000` | Batch size for validating and deleting stale `cve-db` findings during security DB recalculation; clamped at 100000 |
-| `BONGSU_AGENT_REPORT_MAX_BYTES` | `536870912` | Maximum accepted agent report body size |
-| `BONGSU_TRIVY_DB_UPLOAD_MAX_BYTES` | `2147483648` | Maximum accepted direct Trivy DB upload size |
-| `BONGSU_CVE_DB_IMPORT_MAX_BYTES` | `2147483648` | Maximum accepted CVE JSONL import size |
-| `BONGSU_SECURITY_DB_BUNDLE_MAX_BYTES` | `4294967296` | Maximum accepted air-gap security DB bundle import size |
-| `BONGSU_MULTIPART_MEMORY_MAX_BYTES` | `33554432` | Multipart form memory threshold before large upload parts spill to temporary files |
-| `BONGSU_JSON_BODY_MAX_BYTES` | `1048576` | Maximum accepted JSON body size for control-plane API requests |
-| `BONGSU_API_MAX_PAGE_LIMIT` | `1000` | Maximum `limit` accepted by paginated API endpoints |
-| `BONGSU_API_MAX_PAGE_OFFSET` | `1000000` | Maximum `offset` accepted by paginated API endpoints |
-| `BONGSU_VULNERABILITY_LIST_TIMEOUT_SECONDS` | `15` | Maximum runtime for one interactive vulnerability list request before returning `504 vulnerability list timeout` |
-| `BONGSU_VULNERABILITY_EXPORT_TIMEOUT_SECONDS` | `60` | Maximum DB/runtime budget for one vulnerability export before returning `504 vulnerability export timeout`; clamped to 300 seconds |
-| `BONGSU_VULN_EXPORT_MAX_ROWS` | `100000` | Maximum vulnerability rows per report export |
-| `BONGSU_WEBHOOK_URL` | empty | Optional outbound webhook URL for scan/security DB events |
-| `BONGSU_WEBHOOK_SECRET` | empty | Optional HMAC-SHA256 signing secret for webhooks |
-| `BONGSU_WEBHOOK_MIN_SEVERITY` | `HIGH` | Minimum scan severity that triggers `scan.completed` webhook |
-| `BONGSU_WEBHOOK_MIN_RISK_LEVEL` | `high` | Minimum computed risk level that triggers `scan.completed` webhook (`critical`,`high`,`medium`,`low`; use `off` to disable) |
-| `BONGSU_WEBHOOK_INVENTORY_STATUSES` | `empty` | Comma-separated inventory states that trigger `scan.completed` webhook (`healthy`,`degraded`,`stale`,`empty`,`none`) |
-| `BONGSU_WEBHOOK_RETRY_ATTEMPTS` | `3` | Webhook delivery attempts for network errors, HTTP 429, and HTTP 5xx responses; clamped to 1-10 |
-| `BONGSU_WEBHOOK_RETRY_DELAY_MS` | `1000` | Delay between retryable webhook attempts in milliseconds; non-positive values use 1000 and values above 60000 clamp to 60000 |
-| `BONGSU_WEBHOOK_TIMEOUT_SECONDS` | `15` | Per-attempt webhook request timeout; non-positive values use 15 and values above 300 clamp to 300 |
-| `BONGSU_SLA_CRITICAL_DAYS` | `7` | Remediation SLA days for critical findings |
-| `BONGSU_SLA_HIGH_DAYS` | `30` | Remediation SLA days for high findings |
-| `BONGSU_SLA_MEDIUM_DAYS` | `90` | Remediation SLA days for medium findings |
-| `BONGSU_SLA_LOW_DAYS` | `180` | Remediation SLA days for low findings |
-| `BONGSU_TRIAGE_EXPIRING_SOON_DAYS` | `14` | Window for Prometheus metrics that count triage decisions expiring soon |
-| `BONGSU_AGENT_ONLINE_MINUTES` | `1560` | Last-seen age treated as online (26h default for daily scans) |
-| `BONGSU_AGENT_OFFLINE_MINUTES` | `4320` | Last-seen age treated as offline after this threshold |
-| `BONGSU_INVENTORY_STALE_HOURS` | `48` | Latest completed inventory older than this is `stale` in host filters |
-| `BONGSU_RETENTION_SCAN_DAYS` | `180` | Default scan history retention for admin prune action |
-| `BONGSU_RETENTION_SCAN_REQUEST_DAYS` | `90` | Default completed/degraded/failed/cancelled scan request retention |
-| `BONGSU_RETENTION_AUDIT_DAYS` | `365` | Default audit log retention for admin prune action |
-| `BONGSU_SCAN_REQUEST_CLAIM_TIMEOUT_MINUTES` | `60` | Requeue claimed force-scan requests after this age |
-| `BONGSU_WEB_AUTH` | `true` | Web UI authentication (`true`=API key required, `false`=no login for private lab networks only) |
-
-### Agent
-
-| Variable | Flag | Description |
-|----------|------|-------------|
-| `BONGSU_SERVER_URL` | `--server` | Server URL |
-| `BONGSU_API_KEY` | `--api-key` | Agent API key, preferably `BONGSU_AGENT_API_KEY` from server config |
-| `BONGSU_AGENT_TOKEN` | config `agent_token` | Optional persistent per-host token; generated automatically by one-line and packaged installers if omitted |
-| - | `--work-dir` | Working directory (default: `/opt/bongsu`) |
-| - | `--packages-only` | Server-side CVE matching |
-| - | `--type` | Scan type: `daily` or `manual` |
-| `BONGSU_AGENT_SCAN_ROOT` | `--scan-root` | Host path used for Trivy `fs` scans; default `/` |
-| `BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS` | `--trivy-timeout` | Host Trivy scan timeout; default 1800 seconds |
-| `BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS` | `--container-timeout` | Per-container image scan timeout; default 600 seconds |
-| `BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS` | `--command-timeout` | Docker, osquery, ps, hostname, and uname helper command timeout; default 30 seconds |
-| `BONGSU_AGENT_SKIP_CONTAINERS` | `--skip-containers` | Skip container detection and image scans for constrained hosts |
-| `BONGSU_AGENT_MAX_CONTAINERS` | `--max-containers` | Limit running containers scanned per agent run; `0` means unlimited |
-
-One-line installer and binary download authentication is header-only. Use `X-Install-Token`; token-bearing query strings are rejected so install credentials do not land in URL logs.
-
-## API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/report` | Agent scan report submission, including bounded optional `errors[]` collection failures that mark scans degraded |
-| `GET` | `/api/stats` | Dashboard totals, raw vulnerability rows, active remediation finding/risk-level counts, SBOM coverage/freshness, and scan request backlog counts |
-| `GET` | `/api/hosts` | List hosts with `agent_status` and `inventory_status` filters (`healthy`,`degraded`,`stale`,`empty`,`none`), RBAC scope, raw and active vulnerability counts, and latest inventory summary |
-| `POST` | `/api/hosts/{id}/metadata` | Update host owner/team/environment/criticality/tags |
-| `POST` | `/api/hosts/{id}/agent-token/reset` | Admin-only reset of a host's bound agent token for reinstall or token-loss recovery |
-| `GET` | `/api/hosts/{id}/sbom` | Export latest host SBOM as CycloneDX JSON with stable `bom-ref` dependencies or SPDX JSON with `format=spdx` |
-| `GET` | `/api/vulnerabilities` | List latest-scan CVEs with risk score/level, host/container/owner/team/environment/finding-source/CISA-KEV/EPSS filters, advisory source provenance, and package type/ecosystem context |
-| `GET` | `/api/vulnerabilities/filters` | List vulnerability filter options scoped to the caller's latest-scan RBAC visibility |
-| `GET` | `/api/vulnerabilities/export` | Export filtered vulnerability report as CSV or JSON with host metadata and advisory source provenance |
-| `GET` | `/api/vuln-summary?group_by=owner` | Group active remediation findings and risk-level counts by owner/team/environment/criticality |
-| `POST` | `/api/vulnerabilities/triage` | Set persistent vulnerability triage status/scope/expiry |
-| `GET` | `/api/packages` | List latest-scan packages with active finding `max_cvss`/`vuln_count` (supports `sort_by`, `q`, filters, pagination) |
-| `GET` | `/api/packages/filters` | List package filter options scoped to the caller's latest-scan RBAC visibility |
-| `GET` | `/api/packages/{id}/vulnerabilities` | Latest-scan active package vulnerability details |
-| `GET` | `/api/containers` | List latest container/image assets with host-scoped RBAC |
-| `GET` | `/api/scans` | Scan history with inventory counts, package delta, and degraded scan error summaries |
-| `DELETE` | `/api/scans/{id}` | Delete scan and associated data |
-| `POST` | `/api/admin/trivy-db` | Upload trivy-db (air-gapped update) |
-| `POST` | `/api/admin/security-db/update` | Run configured source sync command |
-| `GET` | `/api/admin/security-db/export` | Export CVE DB + optional Trivy DB bundle |
-| `POST` | `/api/admin/security-db/import` | Import exported security DB bundle |
-| `POST` | `/api/admin/security-db/recalculate` | Queue full security DB recalculation, enrichment, rematch, stale cleanup, and automatic package-only rescans |
-| `GET` | `/api/cve-db/stats` | Source counts, matchable percentage, quality counters for matchable/fixed/range/CVSS data, affected-index freshness, and EPSS merge coverage |
-| `GET` | `/api/admin/cve-db/export` | Export merged CVE database as JSONL |
-| `POST` | `/api/admin/cve-db/import` | Import merged CVE database JSONL atomically |
-| `POST` | `/api/admin/cve-db/rematch` | Rematch packages, optionally with `sources`, `min_source_matchable_percent`, `candidate_limit`, and `scan_id` JSON filters; response includes compatible `matched`, raw `scanned_candidates`, and source policy eligibility counts |
-| `POST` | `/api/admin/cve-db/affected-index/rebuild` | Rebuild the materialized affected-package index used by rematch; `?async=true` queues it in the background |
-| `POST` | `/api/admin/cve-db/reference-index/rebuild` | Rebuild the materialized reference-key index used by CVE Search grouping; `?async=true` queues it in the background |
-| `GET` | `/api/admin/metrics` | Admin-only Prometheus text metrics for DB pool health, agent status/version coverage, agent fleet degraded/warning/outdated state, SBOM inventory quality, installer binary readiness, security recalculation state, latest rematch candidate-limit status, Trivy readiness, security source freshness/quality, affected-package index coverage/staleness, OSV ecosystem affected-index freshness, EPSS merge coverage, active risk-level backlog, and automatic rescan backlog |
-| `POST` | `/api/admin/retention/prune` | Dry-run or prune old scans, completed scan requests, and audit logs; responses include effective cutoff timestamps and affected row counts |
-| `GET` | `/api/admin/rbac/subjects` | List RBAC subjects for admin UI/API |
-| `POST` | `/api/admin/rbac/subjects` | Create or update RBAC subject |
-| `DELETE` | `/api/admin/rbac/subjects/{id}` | Delete RBAC subject and its policies |
-| `GET` | `/api/admin/rbac/policies` | List RBAC policies, optionally filtered by `subject_external_id` such as `user:alice` or `group:platform` |
-| `POST` | `/api/admin/rbac/policies` | Create RBAC policy by `subject_id` or `subject_external_id` |
-| `DELETE` | `/api/admin/rbac/policies/{id}` | Delete RBAC policy |
-| `GET` | `/api/admin/audit-logs` | Query audit log events by actor/action/resource/status/time range; Audit Log UI includes security/export/agent-token action presets |
-| `POST` | `/api/scan-requests` | Request force scan for host/all |
-| `GET` | `/api/scan-requests` | List force scan requests with host-scoped RBAC; filter by `status`, `scan_type`, and `security_db_revision` |
-| `POST` | `/api/scan-requests/{id}/cancel` | Cancel pending or claimed force scan request |
-| `POST` | `/api/scan-requests/{id}/requeue` | Requeue failed, degraded, or cancelled force scan request |
-| `POST` | `/api/scan-requests/requeue-filtered` | Bulk requeue failed/degraded/cancelled force scan requests matching at least one filter |
-| `POST` | `/api/scan-requests/requeue-stale` | Requeue claimed force-scan requests older than timeout and report cancelled duplicate security DB rescans |
-| `POST` | `/api/agent/scan-requests/claim` | Agent claims a pending force scan |
-| `POST` | `/api/agent/scan-requests/{id}/complete` | Agent completes/fails a force scan |
-| `GET` | `/api/health` | Health check with Trivy readiness, merged security DB revision, and source freshness |
-
-## RBAC Quick Start
-
-```bash
-# Map a viewer API key to user subject "alice"
-echo 'BONGSU_VIEWER_API_KEYS=viewer-secret:user:alice' >> deploy/.env
-
-# Or verify direct OIDC bearer JWTs from an IdP.
-cat >> deploy/.env <<'EOF'
-BONGSU_OIDC_ISSUER=https://idp.example.com/realms/security
-BONGSU_OIDC_CLIENT_ID=bongsu
-BONGSU_OIDC_GROUPS_CLAIM=groups
-BONGSU_OIDC_ADMIN_GROUPS=security-admins
-EOF
-
-# Or trust an OIDC/auth proxy that injects identity headers from loopback.
-# Requests from other remote addresses ignore these headers.
-cat >> deploy/.env <<'EOF'
-BONGSU_TRUSTED_IDENTITY_HEADER=X-Forwarded-User
-BONGSU_TRUSTED_GROUPS_HEADER=X-Forwarded-Groups
-BONGSU_TRUSTED_IDENTITY_PROXY_CIDRS=127.0.0.1/32,::1/128
-BONGSU_TRUSTED_ADMIN_GROUPS=security-admins
-EOF
-
-# Create subject and grant read access to one host
-curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
-  -d '{"subject_type":"user","external_id":"alice","display_name":"Alice"}' \
-  http://localhost:5677/api/admin/rbac/subjects
-
-curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
-  -d '{"subject_external_id":"user:alice","resource_type":"host","resource_id":"HOST_ID","permission":"read"}' \
-  http://localhost:5677/api/admin/rbac/policies
-
-# Grant export permission separately for SBOM/vulnerability report downloads
-curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
-  -d '{"subject_external_id":"user:alice","resource_type":"host","resource_id":"HOST_ID","permission":"export"}' \
-  http://localhost:5677/api/admin/rbac/policies
-
-# Container and image policies resolve through the latest container inventory
-curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
-  -d '{"subject_external_id":"user:alice","resource_type":"image","resource_id":"registry.local/app/api:2026.06","permission":"read"}' \
-  http://localhost:5677/api/admin/rbac/policies
-
-# Asset group policies resolve through current host metadata
-curl -X POST -H "X-API-Key: $BONGSU_API_KEY" -H "Content-Type: application/json" \
-  -d '{"subject_external_id":"user:alice","resource_type":"asset_group","resource_id":"team:platform","permission":"read"}' \
-  http://localhost:5677/api/admin/rbac/policies
-```
+---
 
 ## Troubleshooting
 
-**"trivy-db not found" on startup**: Expected on first start in air-gapped environments. Use `scripts/update-trivy-db.sh` to import, or the init container downloads it automatically in connected environments.
+| Symptom | Cause / fix |
+|---------|-------------|
+| `... API_KEY is missing, too short, or still uses a placeholder value` | Secret is `<16` chars or contains a banned placeholder word. Regenerate with `openssl rand -hex 24`. |
+| `BONGSU_AGENT_API_KEY must be distinct from BONGSU_API_KEY` | Use two different random secrets. |
+| Server stuck `Restarting` | Check `docker compose logs server`. Usually a secret/DSN problem or postgres not ready. |
+| `/api/health` shows `"status":"degraded"` | Normal before the first CVE sync completes (no security DB yet). Package inventory still works. Import/sync a security DB to clear it. |
+| Agent: `agent token does not match host binding` | The host already bound a different `/opt/bongsu/agent.token`. Reuse the original token, reset it via the host's API, or pass a unique `-host-id`. |
+| Agent: `trivy not found` warnings during container scans | Expected with the default native scanner when container overlay layers aren't reachable; host package ingestion is unaffected. Build the agent with `--build-arg INSTALL_TRIVY=true` and use `-scanner trivy` for deep image scans. |
 
-**API key mismatch**: Web/admin calls use `BONGSU_API_KEY`; agents should use `BONGSU_AGENT_API_KEY`.
-
-**Agent connection failures**: Verify network connectivity and that `BONGSU_SERVER_URL` points to the correct address.
-
-**Empty scan results**: Ensure `--packages-only` flag is used. The agent needs Trivy installed at `<work-dir>/bin/trivy` for scanning.
-
-**Large host scans take too long**: Set `BONGSU_AGENT_TRIVY_TIMEOUT_SECONDS`, `BONGSU_AGENT_CONTAINER_TIMEOUT_SECONDS`, `BONGSU_AGENT_COMMAND_TIMEOUT_SECONDS`, `BONGSU_AGENT_MAX_CONTAINERS`, or `BONGSU_AGENT_SKIP_CONTAINERS=true` during install. These values are written into `config.yaml` so cron and systemd daemon scans use the same limits.
+For the full list of server/agent environment variables, see `deploy/.env.example`
+and the inline comments in `deploy/docker-compose.yml`.

@@ -23,10 +23,15 @@ RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${BONGSU_VERSION} -X 
 
 # ---- Runtime ----
 FROM alpine:3.20
+# bash/curl/python3/unzip back the security-DB sync scripts (scripts/sync-all-cvedb.sh).
 RUN apk --no-cache add ca-certificates tzdata bash curl python3 unzip
 
+# Trivy is bundled in the SERVER image because it feeds the optional "trivy" CVE
+# source (BONGSU_SECURITY_DB_REQUIRED_SOURCES) and the trivy-db init container reuses
+# this same image to download the Trivy vulnerability DB. The agent's native scanner
+# does NOT need it. Pin/override with --build-arg TRIVY_VERSION=...
 ARG TRIVY_VERSION=0.70.0
-RUN curl -sL https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz | \
+RUN curl -sL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" | \
     tar -xzf - -C /usr/local/bin trivy
 
 RUN addgroup -g 1000 -S bongsu && \
