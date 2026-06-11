@@ -269,10 +269,26 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		s.notifier.Send("scan.completed", reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, riskCounts, ingestErrors))
 	}
 	if autoAssignByOwnerEnabled() {
-		if n, err := s.autoAssignFindingsToOwner(ctx, report.Host.ID, report.Host.Owner); err != nil {
-			log.Printf("auto-assign findings to owner for host %s: %v", report.Host.ID, err)
-		} else if n > 0 {
-			log.Printf("Auto-assigned %d finding(s) on host %s to owner %q", n, report.Host.ID, report.Host.Owner)
+		// The owner is managed via the admin metadata API and stored on the host
+		// row; agents do not send it in their reports, so report.Host.Owner is
+		// typically empty. Resolve the authoritative owner from the DB (falling
+		// back to any value the report did carry). Auto-assign runs here, after
+		// the synchronous CVE matching / vulnerability insert path above, so the
+		// scan's vulnerability rows already exist when we assign them.
+		owner := strings.TrimSpace(report.Host.Owner)
+		if owner == "" {
+			if host, err := s.db.GetHost(ctx, report.Host.ID); err != nil {
+				log.Printf("auto-assign: resolve owner for host %s: %v", report.Host.ID, err)
+			} else {
+				owner = strings.TrimSpace(host.Owner)
+			}
+		}
+		if owner != "" {
+			if n, err := s.autoAssignFindingsToOwner(ctx, report.Host.ID, owner); err != nil {
+				log.Printf("auto-assign findings to owner for host %s: %v", report.Host.ID, err)
+			} else if n > 0 {
+				log.Printf("Auto-assigned %d finding(s) on host %s to owner %q", n, report.Host.ID, owner)
+			}
 		}
 	}
 	scanFailed := scanFailedFromStatus(scanStatus, ingestErrors)
