@@ -279,6 +279,79 @@ class TestCveDb(Base):
         self.assertGreater(size, 1 << 20, 'bundle should be at least 1MB')
 
 
+class TestSearchSurface(Base):
+    """Detailed search filters + reverse lookups added for commercial-grade search."""
+
+    def test_package_filters_combine(self):
+        body = api('GET', '/api/packages', expect=200,
+                   params={'asset_type': 'host', 'limit': '5'}).json()
+        self.assertIn('items', body)
+        for p in body['items']:
+            self.assertFalse(p.get('container'), 'asset_type=host must exclude container rows')
+        # exact-name + version reverse lookup: pick a real package then re-find it
+        seed = api('GET', '/api/packages', expect=200, params={'limit': '1'}).json()
+        if seed['items']:
+            name = seed['items'][0]['name']
+            ver = seed['items'][0]['version']
+            body = api('GET', '/api/packages', expect=200,
+                       params={'name': name, 'version': ver, 'limit': '10'}).json()
+            self.assertGreaterEqual(body['total'], 1)
+            for p in body['items']:
+                self.assertEqual(p['name'].lower(), name.lower())
+                self.assertEqual(p['version'], ver)
+
+    def test_package_has_vulns_filter(self):
+        body = api('GET', '/api/packages', expect=200,
+                   params={'has_vulns': 'true', 'limit': '5'}).json()
+        self.assertIn('total', body)
+
+    def test_vuln_id_pattern_filter(self):
+        body = api('GET', '/api/vulnerabilities', expect=200,
+                   params={'vuln_id': 'CVE-', 'limit': '5'}).json()
+        items = body.get('items', body if isinstance(body, list) else [])
+        for v in items:
+            self.assertIn('CVE-', v['vulnerability_id'].upper())
+
+    def test_vuln_has_fix_filter(self):
+        with_fix = api('GET', '/api/vulnerabilities', expect=200,
+                       params={'has_fix': 'yes', 'limit': '5'}).json()
+        items = with_fix.get('items', with_fix if isinstance(with_fix, list) else [])
+        for v in items:
+            self.assertTrue(v.get('fixed_version'),
+                            'has_fix=yes must only return findings with a fix')
+
+    def test_host_metadata_filters(self):
+        hosts = api('GET', '/api/hosts', expect=200).json()
+        if hosts:
+            env = next((h.get('environment') for h in hosts if h.get('environment')), None)
+            if env:
+                filtered = api('GET', '/api/hosts', expect=200,
+                               params={'environment': env}).json()
+                self.assertGreaterEqual(len(filtered), 1)
+                for h in filtered:
+                    self.assertEqual(h.get('environment', '').lower(), env.lower())
+        # q filter never errors even with no match
+        api('GET', '/api/hosts', expect=200, params={'q': 'zz-no-such-host-zz'})
+
+    def test_affected_assets_reverse_lookup(self):
+        body = api('GET', '/api/vulnerabilities', expect=200, params={'limit': '1'}).json()
+        items = body.get('items', body if isinstance(body, list) else [])
+        if not items:
+            self.skipTest('no vulnerabilities in dataset')
+        cve = items[0]['vulnerability_id']
+        res = api('GET', '/api/vulnerabilities/affected-assets', expect=200,
+                  params={'vulnerability_id': cve, 'limit': '10'}).json()
+        self.assertEqual(res['vulnerability_id'], cve)
+        self.assertIn('assets', res)
+        self.assertGreaterEqual(res['total'], 1, 'a listed vuln must have at least one affected asset')
+        a = res['assets'][0]
+        for field in ('host_id', 'hostname', 'asset_type', 'pkg_name', 'installed_version', 'severity'):
+            self.assertIn(field, a)
+
+    def test_affected_assets_requires_id(self):
+        api('GET', '/api/vulnerabilities/affected-assets', expect=400)
+
+
 def main():
     if not API_KEY:
         print('BONGSU_E2E_API_KEY is required', file=sys.stderr)
