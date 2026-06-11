@@ -23,6 +23,11 @@ import (
 const (
 	maxCollectionErrors     = 32
 	maxCollectionErrorBytes = 2048
+	// defaultLangScanRoots enables language dependency scanning out of the box
+	// in the locations where apps/runtimes are typically installed outside the
+	// OS package manager (pyenv/nvm under home, service trees under /opt,/srv).
+	// Operators can set 'none' to disable or 'all' to walk the whole scan-root.
+	defaultLangScanRoots = "/opt,/srv,/usr/local,/var/www,/app,/home,/root"
 )
 
 var (
@@ -51,7 +56,7 @@ func main() {
 	skipContainers := flag.Bool("skip-containers", envBool("BONGSU_AGENT_SKIP_CONTAINERS", false), "Skip container detection and image scans")
 	maxContainers := flag.Int("max-containers", envInt("BONGSU_AGENT_MAX_CONTAINERS", 0), "Maximum running containers to scan per run; 0 means unlimited")
 	scannerMode := flag.String("scanner", envString("BONGSU_AGENT_SCANNER", "native"), "Package scanner engine: native (built-in, no external dependency) or trivy")
-	langScanRoots := flag.String("lang-scan-roots", envString("BONGSU_AGENT_LANG_SCAN_ROOTS", ""), "Comma-separated roots to walk for language deps installed outside the OS package manager (e.g. /opt,/home,/srv); empty disables")
+	langScanRoots := flag.String("lang-scan-roots", envString("BONGSU_AGENT_LANG_SCAN_ROOTS", defaultLangScanRoots), "Comma-separated roots to walk for language deps installed outside the OS package manager; 'none' disables, 'all' scans the host scan-root")
 	langScanDepth := flag.Int("lang-scan-depth", envInt("BONGSU_AGENT_LANG_SCAN_DEPTH", 12), "Max directory depth for the language dependency walk")
 	configFile := flag.String("config", "", "Config file path (YAML)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
@@ -141,7 +146,7 @@ func main() {
 		SkipContainers:   *skipContainers,
 		MaxContainers:    *maxContainers,
 		Scanner:          *scannerMode,
-		LangScanRoots:    splitCSVRoots(*langScanRoots),
+		LangScanRoots:    resolveLangScanRoots(*langScanRoots, *scanRoot),
 		LangScanDepth:    *langScanDepth,
 	}
 	applyAgentCommandTimeout(scanOpts.CommandTimeout)
@@ -174,6 +179,29 @@ func splitCSVRoots(s string) []string {
 	var out []string
 	for _, part := range strings.Split(s, ",") {
 		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// resolveLangScanRoots maps the lang-scan-roots flag to concrete paths,
+// honoring the 'none' (disable) and 'all' (whole scan-root) sentinels, and
+// dropping configured roots that don't exist so a host without /var/www
+// doesn't log spurious walk failures.
+func resolveLangScanRoots(spec, scanRoot string) []string {
+	switch strings.ToLower(strings.TrimSpace(spec)) {
+	case "", "none", "off", "disabled":
+		return nil
+	case "all":
+		if scanRoot == "" {
+			scanRoot = "/"
+		}
+		return []string{scanRoot}
+	}
+	var out []string
+	for _, p := range splitCSVRoots(spec) {
+		if st, err := os.Stat(p); err == nil && st.IsDir() {
 			out = append(out, p)
 		}
 	}

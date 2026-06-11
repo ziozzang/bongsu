@@ -380,7 +380,74 @@ func compareVersions(a, b string) (int, bool) {
 			return cmp, true
 		}
 	}
+	// Tie-break on distro backport suffixes once the base versions are equal:
+	// a Debian/Ubuntu point-release (e.g. 1.0-1+deb12u1, 1.0-1+ubuntu0.1) ships
+	// a fix on top of the base 1.0-1, so it must sort GREATER. This only fires
+	// when everything else compares equal, so it cannot misorder different
+	// bases (no new false positives). semver build metadata (+build123) is not
+	// a recognized distro marker and stays ignored.
+	if cmp := compareBackportSuffix(a, b); cmp != 0 {
+		return cmp, true
+	}
 	return 0, true
+}
+
+// compareBackportSuffix orders two versions by their distro backport tail
+// (the part after '+'), recognizing Debian/Ubuntu markers. A version carrying
+// such a suffix outranks one without it; between two suffixes, the trailing
+// numbers decide. Returns 0 when neither side carries a recognized marker.
+func compareBackportSuffix(a, b string) int {
+	aw, aok := backportWeight(a)
+	bw, bok := backportWeight(b)
+	if !aok && !bok {
+		return 0
+	}
+	if aok && !bok {
+		return 1
+	}
+	if !aok && bok {
+		return -1
+	}
+	for i := 0; i < len(aw) || i < len(bw); i++ {
+		av, bv := 0, 0
+		if i < len(aw) {
+			av = aw[i]
+		}
+		if i < len(bw) {
+			bv = bw[i]
+		}
+		if av != bv {
+			if av < bv {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
+}
+
+func backportWeight(v string) ([]int, bool) {
+	idx := strings.Index(v, "+")
+	if idx < 0 || idx == len(v)-1 {
+		return nil, false
+	}
+	suffix := strings.ToLower(v[idx+1:])
+	switch {
+	case strings.HasPrefix(suffix, "deb"),
+		strings.HasPrefix(suffix, "dfsg"),
+		strings.HasPrefix(suffix, "ubuntu"),
+		strings.HasPrefix(suffix, "nmu"),
+		(strings.HasPrefix(suffix, "b") && len(suffix) > 1 && suffix[1] >= '0' && suffix[1] <= '9'):
+	default:
+		return nil, false
+	}
+	nums := []int{}
+	for _, part := range strings.FieldsFunc(suffix, func(r rune) bool { return r < '0' || r > '9' }) {
+		if n, err := strconv.Atoi(part); err == nil {
+			nums = append(nums, n)
+		}
+	}
+	return nums, true
 }
 
 func numericVersionEpoch(v string) (int, bool) {
