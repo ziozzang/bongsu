@@ -1253,14 +1253,15 @@ export const api = {
     // the importer.
     return uploadRaw<{
       status: string;
-      imported: number;
-      trivy_db_loaded: boolean;
+      message?: string;
+      imported?: number;
+      trivy_db_loaded?: boolean;
       security_db_revision?: string;
       bundle_created_at?: string;
       bundle_source_count?: number;
       bundle_cve_records?: number;
       bundle_trivy_db_included?: boolean;
-    }>('/admin/security-db/import', file);
+    }>('/admin/security-db/import?async=true', file);
   },
   rematchCVEs: (body?: { sources?: string[]; min_source_matchable_percent?: number; candidate_limit?: number }) =>
     requestJSON<{matched: number; new_vulns: number; skipped: number; scanned_candidates?: number; candidate_limit: number; limited: boolean; eligible_sources?: number; excluded_sources?: number; source_policy?: Record<string, { eligible?: boolean; reason?: string }>; security_db_revision?: string; security_db_revision_error?: string}>('/admin/cve-db/rematch', body || {}),

@@ -3935,9 +3935,10 @@ func TestCveDbImportRefreshesSecuritySourceRegistry(t *testing.T) {
 	body := string(out)
 	for _, want := range []string{
 		"RefreshSecuritySourceStatusTx(ctx, tx, source)",
-		// The bundle import refreshes the registry under the detached import
-		// context (decoupled from the client connection) rather than r.Context().
-		`RefreshSecuritySourceStatusTx(importCtx, tx, "")`,
+		// The bundle import refreshes the registry inside applySecurityDBBundle,
+		// which runs under a detached import context (decoupled from the client
+		// connection) shared by the sync and async paths.
+		`RefreshSecuritySourceStatusTx(ctx, tx, "")`,
 		`"security source status update failed"`,
 		`"source_status"`,
 	} {

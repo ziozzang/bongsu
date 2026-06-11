@@ -906,79 +906,59 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 	}
-	cveReader, err := os.Open(cveFile)
-	if err != nil {
-		fail(http.StatusInternalServerError, "cve archive read failed", "read_cve", err)
+	// The bundle is fully staged and validated on disk now. Replacing ~1M CVE
+	// rows and rebuilding the affected-package/reference-key indexes inside one
+	// transaction takes minutes, so async mode (?async=true, used by the
+	// dashboard) hands the work to a background worker and returns immediately;
+	// operators poll /api/admin/security-db/status for the result. Sync mode
+	// (default) keeps the original blocking behavior for scripts and tests.
+	if r.URL.Query().Get("async") == "true" {
+		bgCve, bgTrivy, bgManifest := cveFile, trivyArchive, manifest
+		cveFile, trivyArchive = "", "" // hand ownership to the worker; skip the defer cleanup
+		s.audit(r, "security_db.import", "security_db", "bundle", "started", securityDBBundleImportMeta(bgManifest))
+		go func() {
+			defer os.Remove(bgCve)
+			defer func() {
+				if bgTrivy != "" {
+					os.Remove(bgTrivy)
+				}
+			}()
+			ctx, cancel := context.WithTimeout(context.Background(), importTimeout)
+			defer cancel()
+			imported, trivyLoaded, _, err := s.applySecurityDBBundle(ctx, bgCve, bgTrivy, bgManifest)
+			meta := securityDBBundleImportMeta(bgManifest)
+			if err != nil {
+				meta["error"] = err.Error()
+				log.Printf("security-db bundle async import failed: %v", err)
+				s.auditSystem("security_db.import", "security_db", "bundle", "error", meta)
+				return
+			}
+			meta["imported"] = imported
+			meta["trivy_db_loaded"] = trivyLoaded
+			s.auditSystem("security_db.import", "security_db", "bundle", "ok", meta)
+			s.SecurityDatabaseUpdated("security-db bundle import")
+			s.clearCveStatsCache()
+		}()
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"status":               "started",
+			"message":              "bundle import started; poll /api/admin/security-db/status for the result",
+			"bundle_cve_records":   manifest.CveRecords,
+			"security_db_revision": manifest.SecurityDBRevision,
+			"bundle_created_at":    manifest.CreatedAt,
+		})
 		return
 	}
-	// The bundle is fully staged to disk now; run the DB replacement under a
-	// detached context bounded only by the import timeout, so a brief client
-	// hiccup after the upload finishes cannot cancel (and roll back) a
-	// multi-minute CVE database replace.
+
 	importCtx, cancelImport := context.WithTimeout(context.Background(), importTimeout)
 	defer cancelImport()
-	tx, err := s.db.BeginTx(importCtx, nil)
+	imported, trivyLoaded, stage, err := s.applySecurityDBBundle(importCtx, cveFile, trivyArchive, manifest)
 	if err != nil {
-		cveReader.Close()
-		fail(http.StatusInternalServerError, "cve import transaction failed", "begin_tx", err)
-		return
-	}
-	if _, err := s.db.DeleteAllCveEntriesTx(importCtx, tx); err != nil {
-		cveReader.Close()
-		tx.Rollback()
-		fail(http.StatusInternalServerError, "cve import reset failed", "reset_cve", err)
-		return
-	}
-	imported, err = s.importCveJSONLTx(importCtx, cveReader, "", tx)
-	cveReader.Close()
-	if err != nil {
-		tx.Rollback()
-		log.Printf("security-db bundle cve import: %v", err)
-		fail(cveImportErrorStatus(err), cveImportErrorMessage(err), "import_cve", err)
-		return
-	}
-	if imported == 0 {
-		tx.Rollback()
-		fail(http.StatusBadRequest, "no valid cve entries found", "import_cve", errNoValidCveEntries)
-		return
-	}
-	if err := validateSecurityDBBundleImportedCount(manifest, imported); err != nil {
-		tx.Rollback()
-		fail(http.StatusBadRequest, err.Error(), "validate_cve_count", err)
-		return
-	}
-	if _, err := s.db.SyncEPSSPriorityColumnsTx(importCtx, tx); err != nil {
-		tx.Rollback()
-		fail(http.StatusInternalServerError, "cve epss merge failed", "merge_epss", err)
-		return
-	}
-	if _, err := s.db.RefreshCveAffectedPackagesForSourceTx(importCtx, tx, ""); err != nil {
-		tx.Rollback()
-		fail(http.StatusInternalServerError, "cve affected package index failed", "index_cve", err)
-		return
-	}
-	if _, err := s.db.RefreshCveReferenceKeysForSourceTx(importCtx, tx, ""); err != nil {
-		tx.Rollback()
-		fail(http.StatusInternalServerError, "cve reference key index failed", "index_cve_references", err)
-		return
-	}
-	if err := s.db.RefreshSecuritySourceStatusTx(importCtx, tx, ""); err != nil {
-		tx.Rollback()
-		fail(http.StatusInternalServerError, "security source status update failed", "source_status", err)
-		return
-	}
-	if err := tx.Commit(); err != nil {
-		fail(http.StatusInternalServerError, "cve import commit failed", "commit_cve", err)
-		return
-	}
-	trivyLoaded := false
-	if trivyArchive != "" {
-		if err := s.dbMgr.LoadFromFile(trivyArchive); err != nil {
-			log.Printf("security-db bundle trivy import: %v", err)
-			fail(http.StatusInternalServerError, "trivy db import failed after cve commit", "import_trivy", err)
-			return
+		msg := securityDBBundleImportMessage(stage)
+		if stage == "import_cve" && err != errNoValidCveEntries {
+			msg = cveImportErrorMessage(err)
 		}
-		trivyLoaded = true
+		fail(securityDBBundleImportStatus(stage, err), msg, stage, err)
+		return
 	}
 	importMeta := securityDBBundleImportMeta(manifest)
 	importMeta["imported"] = imported
@@ -996,6 +976,113 @@ func (s *Server) handleSecurityDbImport(w http.ResponseWriter, r *http.Request) 
 		"bundle_cve_records":       manifest.CveRecords,
 		"bundle_trivy_db_included": manifest.TrivyDBIncluded,
 	})
+}
+
+// applySecurityDBBundle performs the transactional CVE database replacement,
+// index rebuilds, and Trivy DB load from already-staged bundle files. It does
+// not write an HTTP response, so it is shared by the synchronous and background
+// (async) import paths. The returned stage names the failed step for error
+// reporting; it never deletes the staged files (the caller owns them).
+func (s *Server) applySecurityDBBundle(ctx context.Context, cveFile, trivyArchive string, manifest *securityDBBundleManifest) (imported int, trivyLoaded bool, stage string, err error) {
+	cveReader, err := os.Open(cveFile)
+	if err != nil {
+		return 0, false, "read_cve", err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		cveReader.Close()
+		return 0, false, "begin_tx", err
+	}
+	if _, err := s.db.DeleteAllCveEntriesTx(ctx, tx); err != nil {
+		cveReader.Close()
+		tx.Rollback()
+		return 0, false, "reset_cve", err
+	}
+	imported, err = s.importCveJSONLTx(ctx, cveReader, "", tx)
+	cveReader.Close()
+	if err != nil {
+		tx.Rollback()
+		return 0, false, "import_cve", err
+	}
+	if imported == 0 {
+		tx.Rollback()
+		return 0, false, "import_cve", errNoValidCveEntries
+	}
+	if err := validateSecurityDBBundleImportedCount(manifest, imported); err != nil {
+		tx.Rollback()
+		return 0, false, "validate_cve_count", err
+	}
+	if _, err := s.db.SyncEPSSPriorityColumnsTx(ctx, tx); err != nil {
+		tx.Rollback()
+		return 0, false, "merge_epss", err
+	}
+	if _, err := s.db.RefreshCveAffectedPackagesForSourceTx(ctx, tx, ""); err != nil {
+		tx.Rollback()
+		return 0, false, "index_cve", err
+	}
+	if _, err := s.db.RefreshCveReferenceKeysForSourceTx(ctx, tx, ""); err != nil {
+		tx.Rollback()
+		return 0, false, "index_cve_references", err
+	}
+	if err := s.db.RefreshSecuritySourceStatusTx(ctx, tx, ""); err != nil {
+		tx.Rollback()
+		return 0, false, "source_status", err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, false, "commit_cve", err
+	}
+	if trivyArchive != "" {
+		if err := s.dbMgr.LoadFromFile(trivyArchive); err != nil {
+			return imported, false, "import_trivy", err
+		}
+		trivyLoaded = true
+	}
+	return imported, trivyLoaded, "", nil
+}
+
+// securityDBBundleImportStatus maps an import failure stage+error to an HTTP
+// status for the synchronous response.
+func securityDBBundleImportStatus(stage string, err error) int {
+	switch stage {
+	case "import_cve":
+		if err == errNoValidCveEntries {
+			return http.StatusBadRequest
+		}
+		return cveImportErrorStatus(err)
+	case "validate_cve_count":
+		return http.StatusBadRequest
+	default:
+		return http.StatusInternalServerError
+	}
+}
+
+func securityDBBundleImportMessage(stage string) string {
+	switch stage {
+	case "read_cve":
+		return "cve archive read failed"
+	case "begin_tx":
+		return "cve import transaction failed"
+	case "reset_cve":
+		return "cve import reset failed"
+	case "import_cve":
+		return "cve import failed"
+	case "validate_cve_count":
+		return "cve record count mismatch"
+	case "merge_epss":
+		return "cve epss merge failed"
+	case "index_cve":
+		return "cve affected package index failed"
+	case "index_cve_references":
+		return "cve reference key index failed"
+	case "source_status":
+		return "security source status update failed"
+	case "commit_cve":
+		return "cve import commit failed"
+	case "import_trivy":
+		return "trivy db import failed after cve commit"
+	default:
+		return "import failed"
+	}
 }
 
 type securityDBBundleManifest struct {

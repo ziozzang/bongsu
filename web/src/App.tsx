@@ -1618,24 +1618,41 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
   const handleSecurityBundleImport = async (file?: File) => {
     if (!file) return;
     setSecurityBundleBusy(true);
-    setSecurityBundleMsg(`Importing ${file.name}...`);
+    setSecurityBundleMsg(`Uploading ${file.name}…`);
     try {
       const r = await api.importSecurityDBBundle(file);
-      const revisionMsg = r.security_db_revision ? `, rev ${r.security_db_revision}` : '';
-      const createdMsg = r.bundle_created_at ? `, bundle ${new Date(r.bundle_created_at).toLocaleString()}` : '';
-      const sourceMsg = typeof r.bundle_source_count === 'number' ? `, ${r.bundle_source_count} sources` : '';
-      setSecurityBundleMsg(`Imported ${r.imported.toLocaleString()} CVE records${r.trivy_db_loaded ? ' and Trivy DB' : ''}${revisionMsg}${createdMsg}${sourceMsg}; recalculation started`);
-      api.rawHealth().then(h => {
-        setHealth(h);
-        setSecurityDbConfigured(!!h.security_db?.configured);
-      }).catch(() => {});
-      api.cveDbStats().then(applyCveStats).catch(() => {});
-      api.stats().then(setStats).catch(() => {});
-      refreshSecurityDbStatus();
+      // The import runs in the background (the upload streams ~170MB and the DB
+      // replace + index rebuild take several minutes), so the upload returns a
+      // "started" acknowledgement and we poll the security DB status for the
+      // result instead of holding the request open.
+      const records = typeof r.bundle_cve_records === 'number' ? `~${r.bundle_cve_records.toLocaleString()} CVE records` : 'the bundle';
+      setSecurityBundleMsg(`Import started in the background (${records}). This takes several minutes; the dashboard updates automatically when it completes.`);
+      const startedAt = Date.now();
+      const poll = setInterval(() => {
+        if (Date.now() - startedAt > 30 * 60 * 1000) { clearInterval(poll); setSecurityBundleBusy(false); return; }
+        api.securityDbStatus().then(st => {
+          const last = st?.security_db_bundle_import?.last_result;
+          const status = last?.status;
+          if (status === 'ok') {
+            clearInterval(poll);
+            const imp = typeof last?.imported === 'number' ? last.imported.toLocaleString() : '';
+            setSecurityBundleMsg(`Imported ${imp} CVE records${last?.trivy_db_loaded ? ' and Trivy DB' : ''}; recalculation started`);
+            api.rawHealth().then(h => { setHealth(h); setSecurityDbConfigured(!!h.security_db?.configured); }).catch(() => {});
+            api.cveDbStats().then(applyCveStats).catch(() => {});
+            api.stats().then(setStats).catch(() => {});
+            refreshSecurityDbStatus();
+            setSecurityBundleBusy(false);
+          } else if (status === 'error') {
+            clearInterval(poll);
+            setSecurityBundleMsg(`Bundle import failed: ${last?.message || last?.error || 'see audit log'}`);
+            setSecurityBundleBusy(false);
+          }
+        }).catch(() => {});
+      }, 5000);
     } catch {
       setSecurityBundleMsg('Security DB bundle import failed or requires admin API key');
+      setSecurityBundleBusy(false);
     }
-    setSecurityBundleBusy(false);
   };
 
   // ── Ops console derived data ────────────────────────────────────────────────
