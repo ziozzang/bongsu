@@ -13,6 +13,16 @@ import (
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	isAdmin := s.authenticateAdmin(r)
 	includeOperationalDetails := isAdmin
+	// The admin operational health block runs ~10 aggregate/index-stat queries
+	// over large tables and the dashboard polls it constantly; serve it from a
+	// short TTL cache so polling is a map lookup. Non-admin liveness is cheap
+	// and always computed fresh.
+	if includeOperationalDetails {
+		if cached, ok := s.healthCache.get("admin"); ok {
+			writeJSON(w, http.StatusOK, cached)
+			return
+		}
+	}
 	healthTimeout := envInt("BONGSU_HEALTH_DB_TIMEOUT_SECONDS", 2)
 	if healthTimeout < 1 {
 		healthTimeout = 1
@@ -155,6 +165,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		if freshness, ok := resp["security_db_freshness"].(map[string]any); ok {
 			enrichSecurityDBManagerStatus(resp["security_db"], freshness)
 		}
+	}
+	if includeOperationalDetails {
+		s.healthCache.put("admin", resp)
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

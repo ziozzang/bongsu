@@ -299,8 +299,8 @@ func TestSearchPackagesHasVulnsAddsExists(t *testing.T) {
 	}
 	cnt := countQuery(t, state)
 	// HasVulns gates on a current-actionable EXISTS subquery over vulnerabilities.
-	mustContain(t, cnt.query, "EXISTS (SELECT 1 FROM vulnerabilities v", "HasVulns")
-	mustContain(t, cnt.query, "WHERE v.package_id=p.id AND", "HasVulns actionable gate")
+	mustContain(t, cnt.query, "EXISTS (SELECT 1 FROM package_vulnerability_summaries pvs", "HasVulns summary EXISTS")
+	mustContain(t, cnt.query, "pvs.vuln_count > 0", "HasVulns summary gate")
 	mustNotContain(t, cnt.query, "v.cvss_score >=", "HasVulns alone must not add a CVSS bound")
 	if len(cnt.args) != 0 {
 		t.Fatalf("HasVulns alone should add no args, got %#v", cnt.args)
@@ -313,8 +313,8 @@ func TestSearchPackagesMinCVSSBindsInExists(t *testing.T) {
 		t.Fatalf("SearchPackages: %v", err)
 	}
 	cnt := countQuery(t, state)
-	mustContain(t, cnt.query, "EXISTS (SELECT 1 FROM vulnerabilities v", "MinCVSS EXISTS")
-	mustContain(t, cnt.query, "AND v.cvss_score >= $1)", "MinCVSS bound")
+	mustContain(t, cnt.query, "EXISTS (SELECT 1 FROM package_vulnerability_summaries pvs", "MinCVSS summary EXISTS")
+	mustContain(t, cnt.query, "AND pvs.max_cvss >= $1)", "MinCVSS bound")
 	if len(cnt.args) != 1 || cnt.args[0] != 7.5 {
 		t.Fatalf("MinCVSS args = %#v, want [7.5]", cnt.args)
 	}
@@ -340,7 +340,7 @@ func TestSearchPackagesCombinedFiltersOrderArgs(t *testing.T) {
 	mustContain(t, cnt.query, "lower(p.name)=lower($2)", "combined name")
 	mustContain(t, cnt.query, "p.version=$3", "combined version")
 	mustContain(t, cnt.query, "lower(p.ecosystem)=lower($4)", "combined ecosystem")
-	mustContain(t, cnt.query, "AND v.cvss_score >= $5)", "combined cvss")
+	mustContain(t, cnt.query, "AND pvs.max_cvss >= $5)", "combined cvss")
 	wantArgs := []driver.Value{"host-1", "openssl", "1.1.1", "debian", 9.0}
 	if len(cnt.args) != len(wantArgs) {
 		t.Fatalf("combined count args = %#v, want %#v", cnt.args, wantArgs)

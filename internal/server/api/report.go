@@ -245,6 +245,10 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		ingestErrors = append(ingestErrors, "complete_scan: "+err.Error())
 		errorSummary = scanErrorSummary(ingestErrors)
 	}
+	// A new scan changes the dashboard aggregates; drop the cached stats/health
+	// responses so the next poll reflects this ingest immediately.
+	s.statsCache.invalidate()
+	s.healthCache.invalidate()
 	sevCounts, vulnTotal, err := s.db.GetVulnCountsByScan(ctx, report.ScanID)
 	if err != nil {
 		log.Printf("scan vuln counts: %v", err)

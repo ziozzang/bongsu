@@ -212,18 +212,22 @@ func (db *DB) SearchPackages(ctx context.Context, f PackageFilter) ([]models.Pac
 		baseQ += " AND p.container<>''"
 	}
 	if f.HasVulns || f.MinCVSS > 0 {
-		// Count only current actionable findings — the same gate the package
-		// vuln-count columns use — so packages whose findings are all fixed,
-		// triaged away, or mismatch-suppressed don't read as vulnerable.
-		cond := "EXISTS (SELECT 1 FROM vulnerabilities v" + vulnTriageJoin +
-			" WHERE v.package_id=p.id AND " + currentActionableVulnSQLForPackage("v", "p")
+		// Filter on the precomputed package_vulnerability_summaries table rather
+		// than re-evaluating the current-actionable gate live. That table is
+		// (re)built per scan with the EXACT same currentActionableVulnSQLForPackage
+		// predicate, holding one row per package with an actionable finding, so
+		// an inner join on it is semantically identical to "has actionable vulns"
+		// but is an indexed lookup over ~15k rows instead of a per-package scan
+		// over the whole vulnerabilities table (which ran ~9.5s).
+		cond := " AND EXISTS (SELECT 1 FROM package_vulnerability_summaries pvs" +
+			" WHERE pvs.package_id = p.id AND pvs.scan_id = p.scan_id AND pvs.vuln_count > 0"
 		if f.MinCVSS > 0 {
-			cond += fmt.Sprintf(" AND v.cvss_score >= $%d", n)
+			cond += fmt.Sprintf(" AND pvs.max_cvss >= $%d", n)
 			args = append(args, f.MinCVSS)
 			n++
 		}
 		cond += ")"
-		baseQ += " AND " + cond
+		baseQ += cond
 	}
 
 	var total int

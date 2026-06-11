@@ -103,8 +103,19 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 		return nil, 0, err
 	}
 
+	// When the sort column is a plain container field (not a per-container vuln/
+	// package aggregate), limit the filtered set to the requested page BEFORE
+	// computing the expensive actionable-vuln counts, so those run over ~20
+	// containers instead of every container in scope. Aggregate sorts still need
+	// all rows counted before ordering.
+	filteredTail := ""
+	outerLimit := fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", containerSortExpr(f.SortBy, f.SortDesc), n, n+1)
+	if !containerSortNeedsVulnAggregate(f.SortBy) {
+		filteredTail = outerLimit
+		outerLimit = fmt.Sprintf(" ORDER BY %s", containerSortExpr(f.SortBy, f.SortDesc))
+	}
 	q := `WITH filtered AS (
-		SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text AS labels, c.facts::text AS facts, c.started_at, c.created_at ` + baseQ + `
+		SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text AS labels, c.facts::text AS facts, c.started_at, c.created_at ` + baseQ + filteredTail + `
 	),
 	package_counts AS (
 		SELECT f.id, count(p.id)::int AS package_count
@@ -132,8 +143,7 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 		f.created_at
 	FROM filtered f
 	LEFT JOIN package_counts pc ON pc.id=f.id
-	LEFT JOIN vuln_counts vc ON vc.id=f.id` +
-		fmt.Sprintf(" ORDER BY %s LIMIT $%d OFFSET $%d", containerSortExpr(f.SortBy, f.SortDesc), n, n+1)
+	LEFT JOIN vuln_counts vc ON vc.id=f.id` + outerLimit
 	args = append(args, f.Limit, f.Offset)
 
 	rows, err := db.QueryContext(ctx, q, args...)
@@ -184,6 +194,18 @@ func containerLabelCount(labels string) int {
 		return 0
 	}
 	return len(m)
+}
+
+// containerSortNeedsVulnAggregate reports whether the sort column is a
+// per-container package/vuln aggregate computed in the CTEs (so the page cannot
+// be limited before those counts run).
+func containerSortNeedsVulnAggregate(col string) bool {
+	switch col {
+	case "package_count", "vulnerability_count", "critical_count", "high_count", "max_cvss":
+		return true
+	default:
+		return false
+	}
 }
 
 func containerSortExpr(col string, desc bool) string {

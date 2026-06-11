@@ -51,6 +51,8 @@ type Server struct {
 	secMgr       *secdb.Manager
 	notifier     *webhookNotifier
 	bundleCache  *secdbBundleCache
+	statsCache   *responseCache
+	healthCache  *responseCache
 
 	securityRecalcMu      sync.Mutex
 	securityRecalcRunning bool
@@ -148,6 +150,8 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		secMgr:       secMgr,
 		notifier:     newWebhookNotifierFromEnv(),
 		bundleCache:  newSecdbBundleCache(),
+		statsCache:   newResponseCache("BONGSU_STATS_CACHE_SECONDS", 10),
+		healthCache:  newResponseCache("BONGSU_HEALTH_CACHE_SECONDS", 8),
 	}
 	if s.notifier != nil {
 		s.notifier.onResult = s.auditWebhookResult

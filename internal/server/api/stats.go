@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -19,6 +20,16 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	scope := s.accessScope(r)
+
+	// The dashboard polls this endpoint every few seconds while its ~14
+	// aggregate sub-queries change on scan/recalc cadence; serve a short-TTL
+	// cached response keyed by the caller's scope (and admin visibility, which
+	// adds triage sections) so polling costs one map lookup.
+	cacheKey := statsCacheKey(scope, s.authenticateAdmin(r) || !s.webAuth)
+	if cached, ok := s.statsCache.get(cacheKey); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
 
 	// These three reads are independent; run them concurrently so the endpoint
 	// pays the slowest one instead of their sum.
@@ -273,5 +284,24 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		resp["triage_expiring_soon_counts"] = triageExpiringSoonCounts
 		resp["triage_expiring_soon_days"] = triageExpiringSoonDays
 	}
+	s.statsCache.put(cacheKey, resp)
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// statsCacheKey distinguishes cached responses by RBAC scope and by whether
+// the admin-only triage sections are included, so no caller ever receives a
+// response computed for a broader scope.
+func statsCacheKey(scope db.AccessScope, adminSections bool) string {
+	key := "scope:"
+	if scope.All {
+		key += "all"
+	} else {
+		ids := append([]string(nil), scope.HostIDs...)
+		sort.Strings(ids)
+		key += strings.Join(ids, ",")
+	}
+	if adminSections {
+		key += "|admin"
+	}
+	return key
 }
