@@ -2,6 +2,7 @@ package api
 
 import (
 	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
@@ -2260,7 +2261,10 @@ func (s *Server) writeCveJSONLTemp(ctx context.Context, source string) (string, 
 	defer rows.Close()
 
 	hash := sha256.New()
-	writer := io.MultiWriter(tmp, hash)
+	// Buffer the temp-file writes: the dump emits one JSON line per CVE row
+	// (800k+), and unbuffered MultiWriter turned each into its own syscall.
+	buf := bufio.NewWriterSize(tmp, 1<<20)
+	writer := io.MultiWriter(buf, hash)
 	encoder := json.NewEncoder(writer)
 	count := 0
 	for rows.Next() {
@@ -2276,6 +2280,10 @@ func (s *Server) writeCveJSONLTemp(ctx context.Context, source string) (string, 
 		count++
 	}
 	if err := rows.Err(); err != nil {
+		os.Remove(path)
+		return "", 0, "", err
+	}
+	if err := buf.Flush(); err != nil {
 		os.Remove(path)
 		return "", 0, "", err
 	}

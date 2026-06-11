@@ -434,6 +434,11 @@ func (db *DB) RebuildCveReferenceKeys(ctx context.Context) (int, error) {
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
+	if n, err := db.RefreshCveReferenceGroupSummary(ctx); err != nil {
+		log.Printf("WARNING: cve reference group summary refresh failed: %v", err)
+	} else {
+		log.Printf("cve reference group summary refreshed: %d keys", n)
+	}
 	return count, nil
 }
 
@@ -854,6 +859,63 @@ type cveReferenceGroupCounts struct {
 	Sources   int
 }
 
+// RefreshCveReferenceGroupSummary recomputes the materialized per-key group
+// counts in one SQL aggregation. Called after the reference-key index is
+// rebuilt so CVE search reads summaries with PK lookups instead of joining
+// cve_reference_keys live per page.
+func (db *DB) RefreshCveReferenceGroupSummary(ctx context.Context) (int, error) {
+	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `DELETE FROM cve_reference_group_summary`); err != nil {
+		return 0, err
+	}
+	res, err := tx.ExecContext(ctx, fmt.Sprintf(`
+INSERT INTO cve_reference_group_summary (reference_key, total, matchable, sources, updated_at)
+SELECT crk.reference_key,
+	count(c.id),
+	count(c.id) FILTER (WHERE %s),
+	count(DISTINCT NULLIF(c.source, '')),
+	now()
+FROM cve_reference_keys crk
+JOIN cve_database c ON c.id = crk.cve_id
+GROUP BY crk.reference_key`, matchablePredicate))
+	if err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// readCveReferenceGroupSummary fetches materialized counts for the given keys.
+// Missing keys (summary stale or never built) simply aren't in the map; the
+// caller falls back to the live join for those.
+func (db *DB) readCveReferenceGroupSummary(ctx context.Context, keys []string) (map[string]cveReferenceGroupCounts, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT reference_key, total, matchable, sources FROM cve_reference_group_summary WHERE reference_key = ANY($1)`,
+		pq.Array(keys))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]cveReferenceGroupCounts{}
+	for rows.Next() {
+		var key string
+		var c cveReferenceGroupCounts
+		if err := rows.Scan(&key, &c.Total, &c.Matchable, &c.Sources); err != nil {
+			return nil, err
+		}
+		out[key] = c
+	}
+	return out, rows.Err()
+}
+
 func (db *DB) enrichCveReferenceGroupCounts(ctx context.Context, entries []models.CveEntry) error {
 	entryKeys := make([]string, len(entries))
 	keys := []string{}
@@ -870,6 +932,22 @@ func (db *DB) enrichCveReferenceGroupCounts(ctx context.Context, entries []model
 	timeout := time.Duration(envPositiveInt("BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS", 3000)) * time.Millisecond
 	groupCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	// Fast path: the materialized summary table (PK lookups). Keys missing
+	// from it (summary not yet refreshed for new CVEs) fall through to the
+	// bounded live join below.
+	if mat, err := db.readCveReferenceGroupSummary(groupCtx, keys); err == nil && len(mat) > 0 {
+		remaining := keys[:0]
+		for _, k := range keys {
+			if _, ok := mat[k]; !ok {
+				remaining = append(remaining, k)
+			}
+		}
+		applyCveReferenceGroupCounts(entries, entryKeys, mat)
+		if len(remaining) == 0 {
+			return nil
+		}
+		keys = remaining
+	}
 	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")
 	// Defense in depth: a single oversized reference key (a distro/source
 	// bucket of tens of thousands of CVEs) would dominate the per-row jsonb
@@ -911,6 +989,11 @@ GROUP BY s.reference_key`, matchablePredicate), pq.Array(keys), maxMembers)
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	applyCveReferenceGroupCounts(entries, entryKeys, counts)
+	return nil
+}
+
+func applyCveReferenceGroupCounts(entries []models.CveEntry, entryKeys []string, counts map[string]cveReferenceGroupCounts) {
 	for i := range entries {
 		c, ok := counts[entryKeys[i]]
 		if !ok {
@@ -922,7 +1005,6 @@ GROUP BY s.reference_key`, matchablePredicate), pq.Array(keys), maxMembers)
 		entries[i].ReferenceGroupSources = c.Sources
 		entries[i].ReferenceGroupStatus = "ok"
 	}
-	return nil
 }
 
 // preferredReferenceGroupKey picks the most specific identifier to group a CVE
