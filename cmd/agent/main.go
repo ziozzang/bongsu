@@ -344,7 +344,11 @@ func runDaemon(serverURL, apiKey, agentToken, workDir, hostIDOverride string, po
 		result, err := run(serverURL, apiKey, agentToken, workDir, hostIDOverride, req.ScanType, reqOpts, req.ID, req.SecurityDBRevision)
 		if err != nil {
 			log.Printf("scan request %s failed: %v", req.ID, err)
-			_ = rep.CompleteScanRequest(req.ID, host.ID, "failed", err.Error())
+			// The report (if one was produced) is already spooled by run() on a
+			// send failure. Mark the claimed request failed so it does not go
+			// stale on the server; retry a couple of times in case the server is
+			// only briefly unreachable.
+			completeScanRequestWithRetry(rep, req.ID, host.ID, "failed", err.Error())
 			continue
 		}
 		status, message := scanRequestCompletionFromReport(result)
@@ -354,6 +358,28 @@ func runDaemon(serverURL, apiKey, agentToken, workDir, hostIDOverride string, po
 	}
 }
 
+// completeScanRequestWithRetry marks a claimed scan request complete, retrying a
+// couple of times with a short backoff so a briefly-unreachable server does not
+// leave the request stuck in the "claimed" state. Reporter.Send already applies
+// its own HTTP retry budget per call; this adds a small number of outer
+// attempts spaced by a short fixed backoff.
+var completeScanRequestBackoff = 2 * time.Second
+
+func completeScanRequestWithRetry(rep *reporter.Reporter, id, hostID, status, message string) {
+	const attempts = 3
+	for i := 0; i < attempts; i++ {
+		if i > 0 {
+			time.Sleep(completeScanRequestBackoff)
+		}
+		if err := rep.CompleteScanRequest(id, hostID, status, message); err != nil {
+			log.Printf("complete scan request %s failed (attempt %d/%d): %v", id, i+1, attempts, err)
+			continue
+		}
+		return
+	}
+	log.Printf("complete scan request %s gave up after %d attempts", id, attempts)
+}
+
 func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string, scanOpts agentScanOptions, scanRequestID, securityDBRevision string) (*reporter.ReportResult, error) {
 	log.Println("=== Bongsu Agent Starting ===")
 	log.Printf("Server: %s", serverURL)
@@ -361,6 +387,14 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 	applyAgentCommandTimeout(scanOpts.CommandTimeout)
 
 	os.MkdirAll(filepath.Join(workDir, "bin"), 0755)
+
+	// Replay any reports spooled by an earlier run that failed to reach the
+	// server. This runs before the new scan and never blocks it: on the first
+	// replay failure we stop and proceed with the fresh scan regardless.
+	replayRep := reporter.New(serverURL, apiKey, agentToken)
+	if n := replayRep.ReplaySpool(workDir); n > 0 {
+		log.Printf("Replayed %d spooled report(s)", n)
+	}
 
 	scanID := uuid.New().String()
 	now := time.Now()
@@ -575,6 +609,14 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 	rep := reporter.New(serverURL, apiKey, agentToken)
 	result, err := rep.Send(report)
 	if err != nil {
+		// Server is (briefly) unreachable: persist the completed report to the
+		// on-disk spool so the inventory is not lost. It is replayed at the
+		// start of a later run once the server is back.
+		if path, spoolErr := reporter.SpoolReport(workDir, report); spoolErr != nil {
+			log.Printf("send report failed and spooling failed: send=%v spool=%v", err, spoolErr)
+		} else {
+			log.Printf("Send failed (%v); spooled report to %s for later delivery", err, path)
+		}
 		return nil, fmt.Errorf("send report: %w", err)
 	}
 

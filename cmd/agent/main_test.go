@@ -2,10 +2,14 @@ package main
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/ziozzang/bongsu/internal/agent/reporter"
@@ -307,6 +311,31 @@ func TestApplyHostIDOverride(t *testing.T) {
 	applyHostIDOverride(host, " ")
 	if host.ID != "explicit-host" {
 		t.Fatalf("blank override changed host id to %q", host.ID)
+	}
+}
+
+func TestCompleteScanRequestWithRetrySucceedsAfterFailure(t *testing.T) {
+	t.Setenv("BONGSU_AGENT_RETRY_ATTEMPTS", "1")
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Fail the first outer attempt, succeed on the second.
+		if atomic.AddInt32(&calls, 1) == 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	rep := reporter.New(srv.URL, "api-key")
+	// Avoid the real 2s backoff between outer attempts.
+	oldBackoff := completeScanRequestBackoff
+	completeScanRequestBackoff = time.Millisecond
+	t.Cleanup(func() { completeScanRequestBackoff = oldBackoff })
+
+	completeScanRequestWithRetry(rep, "req-1", "host-1", "failed", "boom")
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Fatalf("server calls = %d, want 2", got)
 	}
 }
 
