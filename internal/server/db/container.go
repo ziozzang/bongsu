@@ -104,7 +104,7 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 	}
 
 	q := `WITH filtered AS (
-		SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text AS labels, c.started_at, c.created_at ` + baseQ + `
+		SELECT c.id, c.scan_id, c.host_id, c.runtime, c.container_id, c.name, c.image_name, c.image_id, c.image_digest, c.state, c.labels::text AS labels, c.facts::text AS facts, c.started_at, c.created_at ` + baseQ + `
 	),
 	package_counts AS (
 		SELECT f.id, count(p.id)::int AS package_count
@@ -123,7 +123,7 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 		` + vulnTriageJoin + `
 		GROUP BY f.id
 	)
-	SELECT f.id, f.scan_id, f.host_id, f.runtime, f.container_id, f.name, f.image_name, f.image_id, f.image_digest, f.state, f.labels, f.started_at,
+	SELECT f.id, f.scan_id, f.host_id, f.runtime, f.container_id, f.name, f.image_name, f.image_id, f.image_digest, f.state, f.labels, f.facts, f.started_at,
 		COALESCE(pc.package_count, 0)::int AS package_count,
 		COALESCE(vc.vulnerability_count, 0)::int AS vulnerability_count,
 		COALESCE(vc.critical_count, 0)::int AS critical_count,
@@ -147,11 +147,15 @@ func (db *DB) SearchContainers(ctx context.Context, f ContainerFilter) ([]models
 		var c models.ContainerAsset
 		var started sql.NullTime
 		var labels string
+		var facts sql.NullString
 		if err := rows.Scan(
-			&c.ID, &c.ScanID, &c.HostID, &c.Runtime, &c.ContainerID, &c.Name, &c.ImageName, &c.ImageID, &c.ImageDigest, &c.State, &labels, &started,
+			&c.ID, &c.ScanID, &c.HostID, &c.Runtime, &c.ContainerID, &c.Name, &c.ImageName, &c.ImageID, &c.ImageDigest, &c.State, &labels, &facts, &started,
 			&c.PackageCount, &c.VulnerabilityCount, &c.CriticalCount, &c.HighCount, &c.MaxCVSS, &c.CreatedAt,
 		); err != nil {
 			return nil, 0, err
+		}
+		if facts.Valid && strings.TrimSpace(facts.String) != "" && facts.String != "{}" {
+			c.Facts = []byte(facts.String)
 		}
 		c.LabelCount = containerLabelCount(labels)
 		if f.IncludeLabels {

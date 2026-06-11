@@ -178,6 +178,8 @@ export interface Host {
     latest_vulnerability_count: number;
     latest_container_count: number;
   };
+  facts?: Record<string, unknown>;
+  facts_collected_at?: string | null;
 }
 
 export interface UserAccount {
@@ -302,6 +304,7 @@ export interface ContainerAsset {
   labels?: string;
   label_count: number;
   labels_redacted?: boolean;
+  facts?: Record<string, unknown>;
   started_at?: string | null;
   package_count: number;
   vulnerability_count: number;
