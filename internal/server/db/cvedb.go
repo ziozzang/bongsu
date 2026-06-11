@@ -867,20 +867,34 @@ func (db *DB) enrichCveReferenceGroupCounts(ctx context.Context, entries []model
 	if len(keys) == 0 {
 		return nil
 	}
-	timeout := time.Duration(envPositiveInt("BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS", 1500)) * time.Millisecond
+	timeout := time.Duration(envPositiveInt("BONGSU_CVE_GROUP_SUMMARY_TIMEOUT_MS", 3000)) * time.Millisecond
 	groupCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	matchablePredicate := cveSourceMatchablePredicateSQL("CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END", "c.ecosystem")
+	// Defense in depth: a single oversized reference key (a distro/source
+	// bucket of tens of thousands of CVEs) would dominate the per-row jsonb
+	// matchable scan and time out the whole page. The keyed CTE excludes any
+	// key with more members than the cap so one pathological key cannot make
+	// every row report "group summary unavailable"; such groups are simply not
+	// summarized inline (the dedicated group endpoint still serves them).
+	maxMembers := envPositiveInt("BONGSU_CVE_GROUP_SUMMARY_MAX_MEMBERS", 5000)
 	rows, err := db.QueryContext(groupCtx, fmt.Sprintf(`
-WITH keys AS (SELECT unnest($1::text[]) AS reference_key)
-SELECT k.reference_key,
+WITH keys AS (SELECT unnest($1::text[]) AS reference_key),
+sized AS (
+	SELECT k.reference_key
+	FROM keys k
+	JOIN cve_reference_keys crk ON crk.reference_key = k.reference_key
+	GROUP BY k.reference_key
+	HAVING count(*) <= $2
+)
+SELECT s.reference_key,
 	count(c.id),
 	count(c.id) FILTER (WHERE %s),
 	count(DISTINCT NULLIF(c.source, ''))
-FROM keys k
-JOIN cve_reference_keys crk ON crk.reference_key = k.reference_key
+FROM sized s
+JOIN cve_reference_keys crk ON crk.reference_key = s.reference_key
 JOIN cve_database c ON c.id = crk.cve_id
-GROUP BY k.reference_key`, matchablePredicate), pq.Array(keys))
+GROUP BY s.reference_key`, matchablePredicate), pq.Array(keys), maxMembers)
 	if err != nil {
 		return err
 	}
@@ -911,8 +925,14 @@ GROUP BY k.reference_key`, matchablePredicate), pq.Array(keys))
 	return nil
 }
 
+// preferredReferenceGroupKey picks the most specific identifier to group a CVE
+// by across sources. The `vendor:*` keys (vendor:debian/ubuntu/redhat) are
+// deliberately excluded: each is a distro-wide bucket of tens of thousands of
+// CVEs, not a meaningful advisory cluster, and joining one would scan the whole
+// table and time out the page's group-summary enrichment (making every row show
+// "group summary unavailable").
 func preferredReferenceGroupKey(keys []string) string {
-	for _, prefix := range []string{"cve:", "debian:", "ghsa:", "rustsec:", "pysec:", "go:", "mal:", "alma:", "suse:", "drupal:", "dtsa:", "osv:", "gsd:", "repo:", "vendor:"} {
+	for _, prefix := range []string{"cve:", "debian:", "ghsa:", "rustsec:", "pysec:", "go:", "mal:", "alma:", "suse:", "drupal:", "dtsa:", "osv:", "gsd:", "repo:"} {
 		for _, key := range keys {
 			if strings.HasPrefix(key, prefix) {
 				return key
