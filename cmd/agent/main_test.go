@@ -133,7 +133,7 @@ func TestContainerScanAnnotatesPackagesWithRuntimeIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(data)
-	start := strings.Index(body, "for _, c := range containers")
+	start := strings.Index(body, "for idx := range containers")
 	if start < 0 {
 		t.Fatal("container scan loop not found")
 	}

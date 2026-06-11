@@ -15,6 +15,7 @@ import (
 
 	"github.com/ziozzang/bongsu/internal/agent/collector"
 	"github.com/ziozzang/bongsu/internal/agent/reporter"
+	"github.com/ziozzang/bongsu/internal/agent/scanner"
 	"github.com/ziozzang/bongsu/internal/agent/system"
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
@@ -49,6 +50,9 @@ func main() {
 	commandTimeout := flag.Duration("command-timeout", defaultCommandTimeout, "Timeout for agent helper commands such as docker inspect, osquery, ps, and uname")
 	skipContainers := flag.Bool("skip-containers", envBool("BONGSU_AGENT_SKIP_CONTAINERS", false), "Skip container detection and image scans")
 	maxContainers := flag.Int("max-containers", envInt("BONGSU_AGENT_MAX_CONTAINERS", 0), "Maximum running containers to scan per run; 0 means unlimited")
+	scannerMode := flag.String("scanner", envString("BONGSU_AGENT_SCANNER", "native"), "Package scanner engine: native (built-in, no external dependency) or trivy")
+	langScanRoots := flag.String("lang-scan-roots", envString("BONGSU_AGENT_LANG_SCAN_ROOTS", ""), "Comma-separated roots to walk for language deps installed outside the OS package manager (e.g. /opt,/home,/srv); empty disables")
+	langScanDepth := flag.Int("lang-scan-depth", envInt("BONGSU_AGENT_LANG_SCAN_DEPTH", 12), "Max directory depth for the language dependency walk")
 	configFile := flag.String("config", "", "Config file path (YAML)")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
@@ -136,6 +140,9 @@ func main() {
 		CommandTimeout:   *commandTimeout,
 		SkipContainers:   *skipContainers,
 		MaxContainers:    *maxContainers,
+		Scanner:          *scannerMode,
+		LangScanRoots:    splitCSVRoots(*langScanRoots),
+		LangScanDepth:    *langScanDepth,
 	}
 	applyAgentCommandTimeout(scanOpts.CommandTimeout)
 	if *daemon {
@@ -158,6 +165,23 @@ type agentScanOptions struct {
 	CommandTimeout   time.Duration
 	SkipContainers   bool
 	MaxContainers    int
+	Scanner          string
+	LangScanRoots    []string
+	LangScanDepth    int
+}
+
+func splitCSVRoots(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func (o agentScanOptions) nativeScanner() bool {
+	return strings.ToLower(strings.TrimSpace(o.Scanner)) != "trivy"
 }
 
 type config struct {
@@ -349,17 +373,23 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 	coll.HostTimeout = scanOpts.TrivyTimeout
 	coll.ImageTimeout = scanOpts.ContainerTimeout
 	coll.CommandTimeout = scanOpts.CommandTimeout
+	coll.Scanner = scanOpts.Scanner
 	if scanOpts.PackagesOnly {
 		log.Println("Packages-only mode: server will handle CVE matching")
 	}
 	var allPkgs []models.Package
 	var allVulns []models.Vulnerability
 
-	log.Println("Running Trivy host scan...")
+	hostScanLabel := "Trivy"
+	if scanOpts.nativeScanner() {
+		hostScanLabel = "native"
+	}
+	log.Printf("Running %s host scan...", hostScanLabel)
+	nativeHostPackages := 0
 	pkgs, vulns, err := coll.CollectHostPackages()
 	if err != nil {
-		log.Printf("Warning: Trivy host scan failed: %v", err)
-		collectionErrors = appendCollectionError(collectionErrors, "trivy_host", err)
+		log.Printf("Warning: %s host scan failed: %v", hostScanLabel, err)
+		collectionErrors = appendCollectionError(collectionErrors, "host_packages", err)
 	} else {
 		for i := range pkgs {
 			pkgs[i].AssetType = "host"
@@ -367,7 +397,27 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 		}
 		allPkgs = append(allPkgs, pkgs...)
 		allVulns = append(allVulns, vulns...)
+		nativeHostPackages = len(pkgs)
 		log.Printf("Host: %d packages, %d vulnerabilities", len(pkgs), len(vulns))
+	}
+
+	// 4b. Language dependency scan — finds runtimes/libraries installed outside
+	// the OS package manager (pyenv, nvm, app bundles) by walking lockfiles and
+	// installed metadata across the configured language scan roots.
+	if scanOpts.nativeScanner() && len(scanOpts.LangScanRoots) > 0 {
+		langSeen := 0
+		for _, lr := range scanOpts.LangScanRoots {
+			langPkgs := scanner.ScanLanguagePackages(lr, scanOpts.LangScanDepth)
+			for i := range langPkgs {
+				langPkgs[i].AssetType = "host"
+				langPkgs[i].AssetID = host.ID
+			}
+			allPkgs = append(allPkgs, langPkgs...)
+			langSeen += len(langPkgs)
+		}
+		if langSeen > 0 {
+			log.Printf("Language scan: %d packages across %d root(s)", langSeen, len(scanOpts.LangScanRoots))
+		}
 	}
 
 	// 5. Trivy - container scans
@@ -388,9 +438,27 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 			collectionErrors = appendCollectionError(collectionErrors, "containers", msg)
 			containers = containers[:scanOpts.MaxContainers]
 		}
-		for _, c := range containers {
-			log.Printf("Running Trivy scan for container: %s (%s)", c.Name, c.ImageName)
-			pkgs, vulns, err := coll.CollectContainerPackages(c.Name, c.ImageName, c.Runtime)
+		for idx := range containers {
+			c := &containers[idx]
+			var pkgs []models.Package
+			var vulns []models.Vulnerability
+			var err error
+			if scanOpts.nativeScanner() {
+				var scan *collector.ContainerScan
+				scan, err = coll.ScanContainerNative(c.ContainerID, c.Runtime)
+				if err == nil {
+					pkgs = scan.Packages
+					c.Facts = scan.Facts
+				} else {
+					// Native rootfs unreadable (e.g. CRI runtime, permissions):
+					// fall back to trivy if it is available.
+					log.Printf("Native container scan for %s failed (%v); trying trivy fallback", c.Name, err)
+					pkgs, vulns, err = coll.CollectContainerPackages(c.Name, c.ImageName, c.Runtime)
+				}
+			} else {
+				log.Printf("Running Trivy scan for container: %s (%s)", c.Name, c.ImageName)
+				pkgs, vulns, err = coll.CollectContainerPackages(c.Name, c.ImageName, c.Runtime)
+			}
 			if err != nil {
 				log.Printf("Warning: container %s scan failed: %v", c.Name, err)
 				collectionErrors = appendCollectionError(collectionErrors, "container "+c.Name, err)
@@ -414,19 +482,23 @@ func run(serverURL, apiKey, agentToken, workDir, hostIDOverride, scanType string
 		}
 	}
 
-	// 6. OSQuery packages
-	log.Println("Running OSQuery package scan...")
-	osqPkgs, err := coll.CollectOSQueryPackages()
-	if err != nil {
-		log.Printf("Warning: OSQuery scan failed: %v", err)
-		collectionErrors = appendCollectionError(collectionErrors, "osquery_packages", err)
-	} else {
-		for i := range osqPkgs {
-			osqPkgs[i].AssetType = "host"
-			osqPkgs[i].AssetID = host.ID
+	// 6. OSQuery packages — only as a supplementary OS-package source when the
+	// native scanner found nothing (it already reads the same dpkg/apk/rpm DBs,
+	// so running both would double-count host packages).
+	if !scanOpts.nativeScanner() || nativeHostPackages == 0 {
+		log.Println("Running OSQuery package scan...")
+		osqPkgs, err := coll.CollectOSQueryPackages()
+		if err != nil {
+			log.Printf("Warning: OSQuery scan failed: %v", err)
+			collectionErrors = appendCollectionError(collectionErrors, "osquery_packages", err)
+		} else {
+			for i := range osqPkgs {
+				osqPkgs[i].AssetType = "host"
+				osqPkgs[i].AssetID = host.ID
+			}
+			allPkgs = append(allPkgs, osqPkgs...)
+			log.Printf("OSQuery: %d packages", len(osqPkgs))
 		}
-		allPkgs = append(allPkgs, osqPkgs...)
-		log.Printf("OSQuery: %d packages", len(osqPkgs))
 	}
 
 	// 7. OSQuery listening ports
