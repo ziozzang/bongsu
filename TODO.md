@@ -85,7 +85,9 @@ This file tracks remaining work items. Items marked **DONE** are implemented and
 - [x] **DONE** Materialize CVE reference-group counts into `cve_reference_group_summary` (migration 058), refreshed at the end of every reference-index rebuild; CVE search reads it with PK lookups, removing the "group summary unavailable" failure mode.
 - [x] **DONE** Query-optimization pass on the hot paths: CVE search bounded count + parallel count/data + work_mem (8.25s -> 2.3s); dashboard aggregates pinned in MATERIALIZED CTEs (vuln-summary 2168ms -> 140ms, executive-summary ~2s -> 154ms); migration 059 `vulnerabilities(host_id, severity)` and migration 060 `vulnerabilities(scan_id, cvss_score DESC)` (cvss-sorted list 3.3s -> 0.1s).
 - [x] **DONE** Pre-built, revision-keyed airgap export bundle cache (export TTFB ~28s -> ~2s).
+- [x] **DONE** Cache the CVE reference-key index stats (`count(DISTINCT cve_id)` over 1.8M rows, ~3.5s) with a 60s TTL invalidated on index rebuild, so admin `/api/health` polling no longer re-scans the whole table.
 - [ ] **REMAINING** `GET /api/packages?has_vulns=true` (~9.5s): a behavior-identical reshape to force the nested-loop semi-join (verified ~476ms) — the actionable-finding EXISTS is correlated to the package row, so it is a planner cost-estimate problem, not a missing index.
+- [ ] **REMAINING** Admin `/api/health` and `/api/stats` still ~2s: cost is distributed across ~10–14 small operational/aggregate sub-queries (no single one is slow). Profile with pprof and add a short-TTL, scope-keyed response cache for the operational/aggregate sections, since the dashboard polls both frequently and the data changes slowly.
 - [ ] **REMAINING** Background `VACUUM`/`ANALYZE` and bloat monitoring guidance for long-running deployments with frequent rematch churn.
 
 ## Infrastructure and Deployment
