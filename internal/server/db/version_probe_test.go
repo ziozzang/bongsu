@@ -12,9 +12,12 @@ func TestCompareVersionsRealWorldDistroStrings(t *testing.T) {
 		want int
 		ok   bool
 	}{
-		// Debian epoch
+		// Debian epoch: an installed version that carries the epoch is ordered
+		// by it; an installed version WITHOUT an epoch ignores the advisory's
+		// epoch (epoch-loss tolerance) and compares upstream, so same-upstream
+		// compares equal.
 		{"1:2.3.4-1", "2.3.4-1", 1, true},
-		{"2.3.4-1", "1:2.3.4-1", -1, true},
+		{"2.3.4-1", "1:2.3.4-1", 0, true},
 		// Debian revisions
 		{"1.2.3-1", "1.2.3-2", -1, true},
 		{"1.2.3-1", "1.2.3-1", 0, true},
@@ -40,6 +43,16 @@ func TestCompareVersionsRealWorldDistroStrings(t *testing.T) {
 		{"1.0.0-rc.1", "1.0.0", -1, true},
 		// numeric ordering, multi-digit
 		{"1.9", "1.10", -1, true},
+		// Epoch-loss false positives: when the installed version was collected
+		// WITHOUT the distro epoch (common with image/container scanners), a
+		// clearly-newer upstream must not be declared older just because the
+		// fixed version carries an administrative epoch bump.
+		{"9.1.1230", "2:9.0.0135-1", 1, true},            // vim: installed upstream newer → not affected
+		{"6.9.11.60+dfsg", "8:6.9.9.34+dfsg-3", 1, true}, // imagemagick: newer upstream
+		{"9.0.0100", "2:9.0.0135-1", -1, true},           // genuinely older upstream → still affected
+		// When installed DOES carry an epoch, trust both epochs normally.
+		{"1:1.0", "2:1.0", -1, true},
+		{"2:1.0", "1:9.9", 1, true},
 	}
 	for _, c := range cases {
 		got, ok := compareVersions(c.a, c.b)

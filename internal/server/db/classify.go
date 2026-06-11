@@ -338,11 +338,15 @@ func compareVersions(a, b string) (int, bool) {
 		if ae > be {
 			return 1, true
 		}
-	} else if be, bok := numericVersionEpoch(b); bok {
-		if be > 0 {
-			return -1, true
-		}
 	}
+	// When `a` (the installed version) carries no epoch we deliberately ignore
+	// `b`'s epoch and fall through to compare upstream segments. Image/container
+	// scanners frequently drop the distro epoch from the installed version, so
+	// trusting the advisory's administrative epoch bump over a clearly-newer
+	// upstream produces large clusters of false positives (e.g. installed
+	// vim 9.1.1230 flagged against a fix of 2:9.0.0135). Epoch downgrades that
+	// reset upstream are rare; favoring upstream comparison here trades that
+	// rare miss for a major reduction in false positives.
 	as := versionSegments(a)
 	bs := versionSegments(b)
 	if len(as) == 0 || len(bs) == 0 {

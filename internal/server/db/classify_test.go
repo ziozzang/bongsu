@@ -381,7 +381,12 @@ func TestCompareVersionsHonorsNumericEpochs(t *testing.T) {
 		{"1:1.0", "2:0.1", -1},
 		{"1:2.0.0-1", "1:2.0.0-2", -1},
 		{"1:2.0.0-2", "1:2.0.0-2", 0},
-		{"1.0", "1:0.1", -1},
+		// When the installed version has no epoch we ignore the advisory's
+		// epoch and compare upstream (installed 1.0 > fixed 0.1). This avoids
+		// the epoch-loss false positives from scanners that drop the distro
+		// epoch from the installed version; both-epoch comparisons above still
+		// honor the epoch.
+		{"1.0", "1:0.1", 1},
 	}
 	for _, tt := range tests {
 		got, ok := compareVersions(tt.a, tt.b)
