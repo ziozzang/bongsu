@@ -2,7 +2,6 @@ package scanner
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 )
@@ -80,7 +79,7 @@ func purlForPackage(pkgType, name, version, arch string) string {
 // distroIDFromRoot reads the lowercased os-release ID under root (e.g. "debian",
 // "ubuntu", "alpine", "rhel"). Returns "" when os-release is absent.
 func distroIDFromRoot(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, "etc/os-release"))
+	data, err := readFileWithinRoot(root, filepath.Join(root, "etc/os-release"))
 	if err != nil {
 		return ""
 	}

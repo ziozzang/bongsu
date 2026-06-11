@@ -31,7 +31,7 @@ Version: 2.38-1
 	if err := os.WriteFile(p, []byte(status), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	pkgs, err := parseDpkgStatus(p, "debian")
+	pkgs, err := parseDpkgStatus(dir, p, "debian")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ Version: 1:34.0.5-12
 	dir := t.TempDir()
 	p := filepath.Join(dir, "status")
 	os.WriteFile(p, []byte(status), 0o644)
-	pkgs, _ := parseDpkgStatus(p, "ubuntu")
+	pkgs, _ := parseDpkgStatus(dir, p, "ubuntu")
 	if len(pkgs) != 1 {
 		t.Fatalf("want 1 pkg, got %d", len(pkgs))
 	}
@@ -93,7 +93,7 @@ o:busybox
 	dir := t.TempDir()
 	p := filepath.Join(dir, "installed")
 	os.WriteFile(p, []byte(installed), 0o644)
-	pkgs, err := parseApkInstalled(p)
+	pkgs, err := parseApkInstalled(dir, p)
 	if err != nil {
 		t.Fatal(err)
 	}

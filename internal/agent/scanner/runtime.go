@@ -60,7 +60,7 @@ func ScanRuntimes(root string, maxDepth int) []models.Package {
 			}
 			return nil
 		}
-		if found := detectRuntime(path, d.Name()); len(found) > 0 {
+		if found := detectRuntime(root, path, d.Name()); len(found) > 0 {
 			pkgs = append(pkgs, found...)
 		}
 		return nil
@@ -74,27 +74,27 @@ func ScanRuntimes(root string, maxDepth int) []models.Package {
 // bin/ruby, bin/php) or the Go SDK's VERSION file. Anchoring on the binary's
 // path keeps FilePath pointing at the actual interpreter, which is what CPE
 // matching wants.
-func detectRuntime(path, name string) []models.Package {
+func detectRuntime(root, path, name string) []models.Package {
 	dir := filepath.Dir(path)            // .../bin
 	parent := filepath.Dir(dir)          // the install prefix (.../3.12.1, .../node-v20...)
 	inBin := filepath.Base(dir) == "bin" // launcher lives under bin/
 
 	switch {
-	case name == "VERSION" && goSDKVersion(path) != "":
+	case name == "VERSION" && goSDKVersion(root, path) != "":
 		// Go SDK tree: <goroot>/VERSION holds e.g. "go1.22.1".
-		if v := goSDKVersion(path); v != "" {
+		if v := goSDKVersion(root, path); v != "" {
 			return runtimePkg("go", v, "golang", path)
 		}
 	case inBin && isPythonBinary(name):
-		if v := detectPythonVersion(path, parent); v != "" {
+		if v := detectPythonVersion(root, path, parent); v != "" {
 			return runtimePkg("python", v, "python", path)
 		}
 	case inBin && name == "node":
-		if v := detectNodeVersion(path, parent); v != "" {
+		if v := detectNodeVersion(root, path, parent); v != "" {
 			return runtimePkg("node.js", v, "nodejs", path)
 		}
 	case inBin && name == "java":
-		if vname, v := detectJavaVersion(parent); v != "" {
+		if vname, v := detectJavaVersion(root, parent); v != "" {
 			return runtimePkg(vname, v, "jdk", path)
 		}
 	case inBin && name == "ruby":
@@ -102,7 +102,7 @@ func detectRuntime(path, name string) []models.Package {
 			return runtimePkg("ruby", v, "ruby", path)
 		}
 	case inBin && name == "php":
-		if v := detectPHPVersion(parent); v != "" {
+		if v := detectPHPVersion(root, parent); v != "" {
 			return runtimePkg("php", v, "php", path)
 		}
 	}
@@ -158,7 +158,7 @@ func isPythonBinary(name string) bool {
 //   - a "python_version" file (pyenv writes these) recording X.Y.Z.
 //
 // Full X.Y.Z is preferred; we fall back to X.Y only when that's all we have.
-func detectPythonVersion(binPath, prefix string) string {
+func detectPythonVersion(root, binPath, prefix string) string {
 	// pyenv layout: parent of bin/ is the version directory, and its parent
 	// is literally named "versions".
 	base := filepath.Base(prefix)
@@ -181,7 +181,7 @@ func detectPythonVersion(binPath, prefix string) string {
 		filepath.Join(prefix, "python_version"),
 		filepath.Join(prefix, "version"),
 	} {
-		if data, err := os.ReadFile(cand); err == nil {
+		if data, err := readFileWithinRoot(root, cand); err == nil {
 			if m := semverRe.FindString(string(data)); m != "" {
 				return m
 			}
@@ -217,7 +217,7 @@ func pythonLibMinor(libDir string) string {
 //
 // Node ships no on-disk file naming its OWN version, so the tarball directory
 // name is the primary signal. As a fallback we honor an adjacent version file.
-func detectNodeVersion(binPath, prefix string) string {
+func detectNodeVersion(root, binPath, prefix string) string {
 	// Walk the full path for a node-vX.Y.Z component.
 	if m := nodeTarballRe.FindStringSubmatch(binPath); m != nil {
 		return m[1]
@@ -227,7 +227,7 @@ func detectNodeVersion(binPath, prefix string) string {
 		filepath.Join(prefix, "node_version"),
 		filepath.Join(prefix, "VERSION"),
 	} {
-		if data, err := os.ReadFile(cand); err == nil {
+		if data, err := readFileWithinRoot(root, cand); err == nil {
 			s := strings.TrimSpace(string(data))
 			s = strings.TrimPrefix(s, "v")
 			if m := semverRe.FindString(s); m != "" {
@@ -249,8 +249,8 @@ func detectNodeVersion(binPath, prefix string) string {
 // to bin/ (i.e. at the install prefix). It is a key="value" file containing
 // JAVA_VERSION and IMPLEMENTOR; the implementor distinguishes the CPE vendor
 // (Eclipse Adoptium/Temurin vs Oracle vs OpenJDK) and selects the product name.
-func detectJavaVersion(prefix string) (name, version string) {
-	data, err := os.ReadFile(filepath.Join(prefix, "release"))
+func detectJavaVersion(root, prefix string) (name, version string) {
+	data, err := readFileWithinRoot(root, filepath.Join(prefix, "release"))
 	if err != nil {
 		return "", ""
 	}
@@ -313,12 +313,12 @@ func detectRubyVersion(prefix string) string {
 
 // detectPHPVersion honors an adjacent version file; PHP has no canonical
 // on-disk version marker, so this stays conservative.
-func detectPHPVersion(prefix string) string {
+func detectPHPVersion(root, prefix string) string {
 	for _, cand := range []string{
 		filepath.Join(prefix, "php_version"),
 		filepath.Join(prefix, "VERSION"),
 	} {
-		if data, err := os.ReadFile(cand); err == nil {
+		if data, err := readFileWithinRoot(root, cand); err == nil {
 			if m := semverRe.FindString(string(data)); m != "" {
 				return m
 			}
@@ -330,8 +330,8 @@ func detectPHPVersion(prefix string) string {
 // goSDKVersion reads a Go SDK's VERSION file, whose first line is e.g.
 // "go1.22.1". Returns that token verbatim (including the "go" prefix) so it
 // matches the Go release naming the Go CVE feeds use.
-func goSDKVersion(path string) string {
-	data, err := os.ReadFile(path)
+func goSDKVersion(root, path string) string {
+	data, err := readFileWithinRoot(root, path)
 	if err != nil {
 		return ""
 	}

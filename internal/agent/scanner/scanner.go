@@ -39,7 +39,7 @@ func ScanRoot(root string) (*Result, error) {
 		if pkgType != "ubuntu" {
 			pkgType = "debian"
 		}
-		pkgs, err := parseDpkgStatus(path, pkgType)
+		pkgs, err := parseDpkgStatus(root, path, pkgType)
 		if err != nil {
 			return nil, err
 		}
@@ -48,7 +48,7 @@ func ScanRoot(root string) (*Result, error) {
 	if path := firstExisting(root,
 		"lib/apk/db/installed",
 	); path != "" {
-		pkgs, err := parseApkInstalled(path)
+		pkgs, err := parseApkInstalled(root, path)
 		if err != nil {
 			return nil, err
 		}

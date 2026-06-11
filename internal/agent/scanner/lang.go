@@ -53,7 +53,7 @@ func ScanLanguagePackages(root string, maxDepth int) []models.Package {
 			}
 			return nil
 		}
-		if found := parseManifest(path, d.Name()); len(found) > 0 {
+		if found := parseManifest(root, path, d.Name()); len(found) > 0 {
 			pkgs = append(pkgs, found...)
 		}
 		return nil
@@ -85,24 +85,24 @@ func systemPseudoDir(name string) bool {
 	return false
 }
 
-func parseManifest(path, name string) []models.Package {
+func parseManifest(root, path, name string) []models.Package {
 	switch name {
 	case "package-lock.json":
-		return parseNpmLock(path)
+		return parseNpmLock(root, path)
 	case "package.json":
-		return parsePackageJSON(path)
+		return parsePackageJSON(root, path)
 	case "requirements.txt":
-		return parseRequirementsTxt(path)
+		return parseRequirementsTxt(root, path)
 	case "go.mod":
-		return parseGoMod(path)
+		return parseGoMod(root, path)
 	case "Cargo.lock":
-		return parseCargoLock(path)
+		return parseCargoLock(root, path)
 	case "Gemfile.lock":
-		return parseGemfileLock(path)
+		return parseGemfileLock(root, path)
 	}
 	// PEP 503 installed metadata: .../site-packages/<pkg>-<ver>.dist-info/METADATA
 	if name == "METADATA" && strings.Contains(path, ".dist-info") {
-		return parsePythonDistInfo(path)
+		return parsePythonDistInfo(root, path)
 	}
 	return nil
 }
@@ -125,8 +125,8 @@ func newLangPkg(name, version, pkgType, path string) models.Package {
 	}
 }
 
-func parsePackageJSON(path string) []models.Package {
-	data, err := os.ReadFile(path)
+func parsePackageJSON(root, path string) []models.Package {
+	data, err := readFileWithinRoot(root, path)
 	if err != nil {
 		return nil
 	}
@@ -145,8 +145,8 @@ func parsePackageJSON(path string) []models.Package {
 	return nil
 }
 
-func parseNpmLock(path string) []models.Package {
-	data, err := os.ReadFile(path)
+func parseNpmLock(root, path string) []models.Package {
+	data, err := readFileWithinRoot(root, path)
 	if err != nil {
 		return nil
 	}
@@ -183,8 +183,8 @@ func parseNpmLock(path string) []models.Package {
 	return out
 }
 
-func parseRequirementsTxt(path string) []models.Package {
-	f, err := os.Open(path)
+func parseRequirementsTxt(root, path string) []models.Package {
+	f, err := openWithinRoot(root, path)
 	if err != nil {
 		return nil
 	}
@@ -211,8 +211,8 @@ func parseRequirementsTxt(path string) []models.Package {
 	return out
 }
 
-func parsePythonDistInfo(path string) []models.Package {
-	f, err := os.Open(path)
+func parsePythonDistInfo(root, path string) []models.Package {
+	f, err := openWithinRoot(root, path)
 	if err != nil {
 		return nil
 	}
@@ -236,8 +236,8 @@ func parsePythonDistInfo(path string) []models.Package {
 	return nil
 }
 
-func parseGoMod(path string) []models.Package {
-	f, err := os.Open(path)
+func parseGoMod(root, path string) []models.Package {
+	f, err := openWithinRoot(root, path)
 	if err != nil {
 		return nil
 	}
@@ -269,8 +269,8 @@ func parseGoMod(path string) []models.Package {
 	return out
 }
 
-func parseCargoLock(path string) []models.Package {
-	f, err := os.Open(path)
+func parseCargoLock(root, path string) []models.Package {
+	f, err := openWithinRoot(root, path)
 	if err != nil {
 		return nil
 	}
@@ -296,8 +296,8 @@ func parseCargoLock(path string) []models.Package {
 	return out
 }
 
-func parseGemfileLock(path string) []models.Package {
-	f, err := os.Open(path)
+func parseGemfileLock(root, path string) []models.Package {
+	f, err := openWithinRoot(root, path)
 	if err != nil {
 		return nil
 	}

@@ -2,7 +2,8 @@ package scanner
 
 import (
 	"bufio"
-	"os"
+	"errors"
+	"log"
 	"strings"
 
 	"github.com/google/uuid"
@@ -14,8 +15,8 @@ import (
 // returns one Package per installed entry. Only packages whose Status is
 // "install ok installed" are reported — half-configured/removed entries are
 // skipped, matching what dpkg-query -W would show.
-func parseDpkgStatus(path, pkgType string) ([]models.Package, error) {
-	f, err := os.Open(path)
+func parseDpkgStatus(root, path, pkgType string) ([]models.Package, error) {
+	f, err := openWithinRoot(root, path)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +69,20 @@ func parseDpkgStatus(path, pkgType string) ([]models.Package, error) {
 		cur[lastKey] = strings.TrimSpace(line[idx+1:])
 	}
 	flush()
-	return pkgs, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		// A single status-file line over bufio.Scanner's 4MiB cap (ErrTooLong)
+		// must NOT sink the whole scan: a giant Description or a hostile/corrupt
+		// status file shouldn't drop every package. Log-and-degrade — return the
+		// packages parsed up to the offending line, with no error. This mirrors
+		// ScanRoot's convention of reporting partial inventory rather than total
+		// failure. Any other scan error keeps the existing fail-the-scan behavior.
+		if errors.Is(err, bufio.ErrTooLong) {
+			log.Printf("scanner: dpkg status %s has an oversized line; returning %d packages parsed before it", path, len(pkgs))
+			return pkgs, nil
+		}
+		return pkgs, err
+	}
+	return pkgs, nil
 }
 
 // dpkgSourceName extracts the source package name from a dpkg `Source` field,

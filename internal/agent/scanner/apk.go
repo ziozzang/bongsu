@@ -2,7 +2,6 @@ package scanner
 
 import (
 	"bufio"
-	"os"
 
 	"github.com/google/uuid"
 
@@ -16,8 +15,8 @@ import (
 //	V:3.4.3-r2            (version)
 //	A:x86_64             (architecture)
 //	o:alpine-baselayout   (origin / source package)
-func parseApkInstalled(path string) ([]models.Package, error) {
-	f, err := os.Open(path)
+func parseApkInstalled(root, path string) ([]models.Package, error) {
+	f, err := openWithinRoot(root, path)
 	if err != nil {
 		return nil, err
 	}
