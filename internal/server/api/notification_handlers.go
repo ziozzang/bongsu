@@ -241,10 +241,22 @@ func (s *Server) handleListNotificationLog(w http.ResponseWriter, r *http.Reques
 }
 
 // supportedTriggerEvents is the taxonomy of notification trigger events that
-// the server fires and that notification_rules may subscribe to.
-var supportedTriggerEvents = []string{"scan.completed", "scan.failed"}
+// notification_rules may subscribe to. It must stay in sync with the
+// trigger_event CHECK constraint on the notification_rules table.
+var supportedTriggerEvents = []string{
+	"scan.completed",
+	"scan.failed",
+	"vuln.new_critical",
+	"vuln.new_high",
+	"sla.breach",
+	"security_db.updated",
+	"schedule.daily",
+}
 
 func validTriggerEvent(event string) bool {
+	if strings.TrimSpace(event) == "" {
+		return false
+	}
 	for _, e := range supportedTriggerEvents {
 		if e == event {
 			return true
