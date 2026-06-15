@@ -53,6 +53,7 @@ type Server struct {
 	bundleCache  *secdbBundleCache
 	statsCache   *responseCache
 	healthCache  *responseCache
+	graphCache   *responseCache
 
 	securityRecalcMu      sync.Mutex
 	securityRecalcRunning bool
@@ -161,6 +162,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		bundleCache:  newSecdbBundleCache(),
 		statsCache:   newResponseCache("BONGSU_STATS_CACHE_SECONDS", 10),
 		healthCache:  newResponseCache("BONGSU_HEALTH_CACHE_SECONDS", 8),
+		graphCache:   newResponseCache("BONGSU_GRAPH_CACHE_SECONDS", 15),
 	}
 	if s.notifier != nil {
 		s.notifier.onResult = s.auditWebhookResult

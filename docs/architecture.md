@@ -230,7 +230,7 @@ Endpoints (all `GET`, RBAC host-scoped via `AccessScope`, served read-only to ad
 - `/api/graph/remediation` highest-leverage package upgrades — how many CVEs across how many hosts one upgrade clears.
 - `/api/graph/cve/{id}` exploit signals (KEV/EPSS) + alias identifiers.
 
-The dashboard's **Topology** view renders these as an interactive node-link diagram plus Attack-Surface, Images, Remediation, Ownership, and CVE blast-radius sections. Every query is bounded (node/host caps with `truncated` flags) and constrained to the caller's visible hosts.
+The dashboard's **Topology** view renders these as an interactive node-link diagram plus Attack-Surface, Images, Remediation, Ownership, and CVE blast-radius sections. Every query is bounded (node/host caps with `truncated` flags) and constrained to the caller's visible hosts. For scale: the overview is a single round-trip over a `MATERIALIZED` latest-scan CTE; KEV membership is a semijoin against a small `WITH kev` CTE (not a per-row `EXISTS`); supporting indexes are in migration 061; and the scope-only read endpoints (overview/exposure/images/org/remediation) are served from a short-TTL cache (`BONGSU_GRAPH_CACHE_SECONDS`, default 15) keyed by a SHA-256 of the RBAC scope, so the polling dashboard hits the database only on cache miss.
 
 ## Migrations
 

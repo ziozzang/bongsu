@@ -26,9 +26,11 @@ const (
 	RelSameAs        GraphRel = "same_as"        // cve -> cve (alias)
 )
 
-// vulnExploitedExpr-style KEV check, reused here. A CVE is "known exploited" when
-// CISA KEV lists it.
-const graphKEVExistsExpr = `EXISTS(SELECT 1 FROM cve_database kev WHERE kev.source='cisa-kev' AND kev.vulnerability_id=%s)`
+// kevCTE materializes the small set of known-exploited (CISA KEV) vulnerability
+// IDs once per query so KEV membership becomes a hash semijoin (LEFT JOIN kev ...
+// kev.vulnerability_id IS NOT NULL) instead of a correlated EXISTS evaluated per
+// row. Backed by the partial index idx_cve_database_kev_vuln.
+const kevCTE = `kev AS (SELECT DISTINCT vulnerability_id FROM cve_database WHERE source='cisa-kev')`
 
 // CVESignal is the per-CVE exploit/risk enrichment.
 type CVESignal struct {
@@ -126,7 +128,8 @@ func (db *DB) ExposedServices(ctx context.Context, scope AccessScope, limit int)
 	args := []any{}
 	clause, args := scopeClause(scope, "pi.host_id", args)
 	q := `
-WITH exposed AS (
+WITH ` + kevCTE + `,
+exposed AS (
   SELECT pi.host_id, pi.address, pi.port, pi.protocol, pi.name AS service_name, pi.pid
   FROM port_info pi
   JOIN ` + latestScansSub + ` ls ON pi.scan_id=ls.id
@@ -136,9 +139,10 @@ WITH exposed AS (
 hostrisk AS (
   SELECT v.host_id,
          count(DISTINCT v.vulnerability_id) FILTER (WHERE upper(COALESCE(v.severity,'')) IN ('CRITICAL','HIGH')) AS crit_high,
-         bool_or(` + fmt.Sprintf(graphKEVExistsExpr, "v.vulnerability_id") + `) AS kev
+         bool_or(kev.vulnerability_id IS NOT NULL) AS kev
   FROM vulnerabilities v
   JOIN ` + latestScansSub + ` ls ON v.scan_id=ls.id
+  LEFT JOIN kev ON kev.vulnerability_id=v.vulnerability_id
   WHERE v.host_id IN (SELECT DISTINCT host_id FROM exposed)
   GROUP BY v.host_id
 )
@@ -209,7 +213,8 @@ func (db *DB) Images(ctx context.Context, scope AccessScope, limit int) ([]Image
 	//    FK), not the free-text v.container, so counts can't pull rows from other
 	//    hosts/images. Everything descends from the scoped cimgs CTE, so no leak.
 	q := `
-WITH cimgs AS (
+WITH ` + kevCTE + `,
+cimgs AS (
   SELECT c.host_id, c.scan_id, c.container_id, c.id AS container_row_id,
          COALESCE(NULLIF(c.image_digest,''), c.image_name) AS digest, c.image_name
   FROM container_assets c
@@ -224,10 +229,12 @@ cpkgs AS (
    AND p.container_id <> '' AND p.container_id=ci.container_id
 ),
 cvuln AS (
-  SELECT cp.digest, v.vulnerability_id, v.severity, COALESCE(v.cvss_score,0) AS cvss_score
+  SELECT cp.digest, v.vulnerability_id, v.severity, COALESCE(v.cvss_score,0) AS cvss_score,
+         (kev.vulnerability_id IS NOT NULL) AS is_kev
   FROM cpkgs cp
   JOIN vulnerabilities v ON v.package_id=cp.package_id
   JOIN ` + latestScansSub + ` ls ON v.scan_id=ls.id
+  LEFT JOIN kev ON kev.vulnerability_id=v.vulnerability_id
 )
 SELECT g.digest, COALESCE(g.image_name,''), g.host_count, g.container_count,
        COALESCE(pc.package_count,0), COALESCE(vc.cve_count,0), COALESCE(vc.crit_high,0),
@@ -243,7 +250,7 @@ LEFT JOIN (
   SELECT digest, count(DISTINCT vulnerability_id) AS cve_count,
          count(DISTINCT vulnerability_id) FILTER (WHERE upper(COALESCE(severity,'')) IN ('CRITICAL','HIGH')) AS crit_high,
          MAX(cvss_score) AS max_cvss,
-         bool_or(` + fmt.Sprintf(graphKEVExistsExpr, "cvuln.vulnerability_id") + `) AS kev
+         bool_or(is_kev) AS kev
   FROM cvuln GROUP BY digest
 ) vc ON vc.digest=g.digest
 ORDER BY COALESCE(vc.kev,false) DESC, COALESCE(vc.crit_high,0) DESC, COALESCE(vc.max_cvss,0) DESC, g.host_count DESC
@@ -298,11 +305,13 @@ func (db *DB) OrgExposure(ctx context.Context, scope AccessScope) (*OrgExposure,
 		args := []any{}
 		clause, args := scopeClause(scope, "h.id", args)
 		q := `
-WITH hostrisk AS (
+WITH ` + kevCTE + `,
+hostrisk AS (
   SELECT v.host_id,
          count(DISTINCT v.vulnerability_id) FILTER (WHERE upper(COALESCE(v.severity,'')) IN ('CRITICAL','HIGH')) AS crit_high,
-         bool_or(` + fmt.Sprintf(graphKEVExistsExpr, "v.vulnerability_id") + `) AS kev
+         bool_or(kev.vulnerability_id IS NOT NULL) AS kev
   FROM vulnerabilities v JOIN ` + latestScansSub + ` ls ON v.scan_id=ls.id
+  LEFT JOIN kev ON kev.vulnerability_id=v.vulnerability_id
   GROUP BY v.host_id
 )
 SELECT ` + d.col + ` AS k, count(*) AS hosts,
@@ -358,6 +367,7 @@ func (db *DB) Remediation(ctx context.Context, scope AccessScope, limit int) ([]
 	args := []any{}
 	clause, args := scopeClause(scope, "v.host_id", args)
 	q := `
+WITH ` + kevCTE + `
 SELECT COALESCE(v.pkg_name,'') AS pkg,
        COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id=v.package_id),'') AS eco,
        v.fixed_version,
@@ -365,9 +375,10 @@ SELECT COALESCE(v.pkg_name,'') AS pkg,
        count(DISTINCT v.host_id) AS host_count,
        count(DISTINCT v.vulnerability_id) FILTER (WHERE upper(COALESCE(v.severity,'')) IN ('CRITICAL','HIGH')) AS crit_high,
        MAX(COALESCE(v.cvss_score,0)) AS max_cvss,
-       bool_or(` + fmt.Sprintf(graphKEVExistsExpr, "v.vulnerability_id") + `) AS kev
+       bool_or(kev.vulnerability_id IS NOT NULL) AS kev
 FROM vulnerabilities v
 JOIN ` + latestScansSub + ` ls ON v.scan_id=ls.id
+LEFT JOIN kev ON kev.vulnerability_id=v.vulnerability_id
 WHERE COALESCE(v.fixed_version,'') <> '' AND COALESCE(v.pkg_name,'') <> ''` + clause + `
 GROUP BY v.pkg_name, eco, v.fixed_version
 ORDER BY kev DESC, crit_high DESC, cve_count DESC, host_count DESC

@@ -61,6 +61,31 @@ func TestGraphHandlersAuthAndScope(t *testing.T) {
 	}
 }
 
+func TestGraphReadEndpointsCached(t *testing.T) {
+	body := readAllPackageGoFiles(t)
+	if !strings.Contains(body, "graphCache   *responseCache") {
+		t.Fatal("Server should hold a graphCache responseCache")
+	}
+	if !strings.Contains(body, `newResponseCache("BONGSU_GRAPH_CACHE_SECONDS"`) {
+		t.Fatal("graphCache should be initialized with a configurable TTL")
+	}
+	// The expensive scope-only read endpoints must consult the cache.
+	for _, fn := range []string{"handleGraphOverview", "handleGraphExposure", "handleGraphImages", "handleGraphOrg", "handleGraphRemediation"} {
+		start := strings.Index(body, "func (s *Server) "+fn+"(")
+		if start < 0 {
+			t.Fatalf("handler %s not found", fn)
+		}
+		end := strings.Index(body[start+1:], "\nfunc ")
+		seg := body[start : start+1+end]
+		if !strings.Contains(seg, "s.graphCache.get(") || !strings.Contains(seg, "s.graphCache.put(") {
+			t.Fatalf("%s must read+write s.graphCache", fn)
+		}
+		if !strings.Contains(seg, "graphScopeKey(scope") {
+			t.Fatalf("%s must key the cache by RBAC scope", fn)
+		}
+	}
+}
+
 func TestGraphOntologyContract(t *testing.T) {
 	// node types and relations the UI legend depends on.
 	wantNodes := map[string]bool{"host": false, "container": false, "package": false, "service": false, "cve": false, "group": false}

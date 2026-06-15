@@ -1,12 +1,35 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/ziozzang/bongsu/internal/server/db"
 )
+
+// graphScopeKey builds a stable, bounded cache key for a read result that depends
+// only on the caller's RBAC scope (plus an endpoint suffix). The sorted host IDs
+// are NUL-joined (NUL cannot appear in an ID) and SHA-256 hashed — collision
+// resistance is required here because a key collision would serve one scope's
+// graph data to another, crossing the RBAC boundary.
+func graphScopeKey(scope db.AccessScope, suffix string) string {
+	if scope.All {
+		return "all|" + suffix
+	}
+	ids := append([]string(nil), scope.HostIDs...)
+	sort.Strings(ids)
+	h := sha256.New()
+	for _, id := range ids {
+		_, _ = h.Write([]byte(id))
+		_, _ = h.Write([]byte{0})
+	}
+	return "s" + hex.EncodeToString(h.Sum(nil)) + "|" + suffix
+}
 
 // Asset knowledge graph API.
 //
@@ -65,12 +88,19 @@ func (s *Server) handleGraphOverview(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	ov, err := s.db.GraphOverviewForScope(r.Context(), s.accessScope(r))
+	scope := s.accessScope(r)
+	key := graphScopeKey(scope, "overview")
+	if cached, ok := s.graphCache.get(key); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+	ov, err := s.db.GraphOverviewForScope(r.Context(), scope)
 	if err != nil {
 		log.Printf("graph overview: %v", err)
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	s.graphCache.put(key, ov)
 	writeJSON(w, http.StatusOK, ov)
 }
 
@@ -203,13 +233,22 @@ func (s *Server) handleGraphExposure(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	rows, err := s.db.ExposedServices(r.Context(), s.accessScope(r), limitParam(r, 200))
+	scope := s.accessScope(r)
+	limit := limitParam(r, 200)
+	key := graphScopeKey(scope, fmt.Sprintf("exposure:%d", limit))
+	if cached, ok := s.graphCache.get(key); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+	rows, err := s.db.ExposedServices(r.Context(), scope, limit)
 	if err != nil {
 		log.Printf("graph exposure: %v", err)
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"services": rows, "total": len(rows)})
+	resp := map[string]any{"services": rows, "total": len(rows)}
+	s.graphCache.put(key, resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGraphImages(w http.ResponseWriter, r *http.Request) {
@@ -217,13 +256,22 @@ func (s *Server) handleGraphImages(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	rows, err := s.db.Images(r.Context(), s.accessScope(r), limitParam(r, 200))
+	scope := s.accessScope(r)
+	limit := limitParam(r, 200)
+	key := graphScopeKey(scope, fmt.Sprintf("images:%d", limit))
+	if cached, ok := s.graphCache.get(key); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+	rows, err := s.db.Images(r.Context(), scope, limit)
 	if err != nil {
 		log.Printf("graph images: %v", err)
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"images": rows, "total": len(rows)})
+	resp := map[string]any{"images": rows, "total": len(rows)}
+	s.graphCache.put(key, resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGraphOrg(w http.ResponseWriter, r *http.Request) {
@@ -231,12 +279,19 @@ func (s *Server) handleGraphOrg(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	org, err := s.db.OrgExposure(r.Context(), s.accessScope(r))
+	scope := s.accessScope(r)
+	key := graphScopeKey(scope, "org")
+	if cached, ok := s.graphCache.get(key); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+	org, err := s.db.OrgExposure(r.Context(), scope)
 	if err != nil {
 		log.Printf("graph org: %v", err)
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	s.graphCache.put(key, org)
 	writeJSON(w, http.StatusOK, org)
 }
 
@@ -245,13 +300,22 @@ func (s *Server) handleGraphRemediation(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	rows, err := s.db.Remediation(r.Context(), s.accessScope(r), limitParam(r, 100))
+	scope := s.accessScope(r)
+	limit := limitParam(r, 100)
+	key := graphScopeKey(scope, fmt.Sprintf("remediation:%d", limit))
+	if cached, ok := s.graphCache.get(key); ok {
+		writeJSON(w, http.StatusOK, cached)
+		return
+	}
+	rows, err := s.db.Remediation(r.Context(), scope, limit)
 	if err != nil {
 		log.Printf("graph remediation: %v", err)
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"remediations": rows, "total": len(rows)})
+	resp := map[string]any{"remediations": rows, "total": len(rows)}
+	s.graphCache.put(key, resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGraphCVE(w http.ResponseWriter, r *http.Request) {

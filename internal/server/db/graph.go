@@ -103,57 +103,57 @@ func clampLimit(limit, def, max int) int {
 	return limit
 }
 
-// GraphOverviewForScope returns node and edge counts for the visible inventory.
+// GraphOverviewForScope returns node and edge counts for the visible inventory in
+// a SINGLE round-trip. The per-host latest scan is computed once in a MATERIALIZED
+// CTE and reused by every counting subquery (instead of re-evaluating
+// latestScansSub per count and per query). runs == container count and exposes ==
+// service count, so those edges are filled in Go without extra subqueries.
 func (db *DB) GraphOverviewForScope(ctx context.Context, scope AccessScope) (GraphOverview, error) {
 	ov := GraphOverview{Nodes: map[GraphNodeType]int{}, Edges: map[GraphRel]int{}}
 	if scope.Empty() {
 		return ov, nil
 	}
-
-	// Each entity is constrained to the latest scan per host so historical scans
-	// don't inflate counts.
-	type countQuery struct {
-		key GraphNodeType
-		rel GraphRel
-		sql string
-		col string // scope column
+	// One bound array param ($1) reused by every column predicate when scoped.
+	var args []any
+	pred := func(col string) string { return "" }
+	if !scope.All {
+		args = []any{pqStringArray(scope.HostIDs)}
+		pred = func(col string) string { return " AND " + col + " = ANY($1)" }
 	}
-	nodeQueries := []countQuery{
-		{key: NodeHost, sql: `SELECT count(*) FROM hosts h WHERE 1=1`, col: "h.id"},
-		{key: NodeContainer, sql: `SELECT count(*) FROM container_assets c JOIN ` + latestScansSub + ` ls ON c.scan_id=ls.id WHERE 1=1`, col: "c.host_id"},
-		{key: NodePackage, sql: `SELECT count(*) FROM packages p JOIN ` + latestScansSub + ` ls ON p.scan_id=ls.id WHERE 1=1`, col: "p.host_id"},
-		{key: NodeService, sql: `SELECT count(*) FROM port_info pi JOIN ` + latestScansSub + ` ls ON pi.scan_id=ls.id WHERE 1=1`, col: "pi.host_id"},
-		{key: NodeCVE, sql: `SELECT count(DISTINCT v.vulnerability_id) FROM vulnerabilities v JOIN ` + latestScansSub + ` ls ON v.scan_id=ls.id WHERE 1=1`, col: "v.host_id"},
-		{key: NodeGroup, sql: `SELECT count(DISTINCT agm.group_id) FROM asset_group_members agm WHERE 1=1`, col: "agm.host_id"},
+	q := `
+WITH ls AS MATERIALIZED ` + latestScansSub + `
+SELECT
+  (SELECT count(*) FROM hosts h WHERE true` + pred("h.id") + `),
+  (SELECT count(*) FROM container_assets c JOIN ls ON c.scan_id=ls.id WHERE true` + pred("c.host_id") + `),
+  (SELECT count(*) FROM packages p JOIN ls ON p.scan_id=ls.id WHERE true` + pred("p.host_id") + `),
+  (SELECT count(*) FROM port_info pi JOIN ls ON pi.scan_id=ls.id WHERE true` + pred("pi.host_id") + `),
+  (SELECT count(DISTINCT v.vulnerability_id) FROM vulnerabilities v JOIN ls ON v.scan_id=ls.id WHERE true` + pred("v.host_id") + `),
+  (SELECT count(DISTINCT agm.group_id) FROM asset_group_members agm WHERE true` + pred("agm.host_id") + `),
+  (SELECT count(*) FROM packages p JOIN ls ON p.scan_id=ls.id WHERE p.asset_type='host'` + pred("p.host_id") + `),
+  (SELECT count(*) FROM packages p JOIN ls ON p.scan_id=ls.id WHERE p.asset_type='container'` + pred("p.host_id") + `),
+  (SELECT count(*) FROM asset_group_members agm WHERE true` + pred("agm.host_id") + `),
+  (SELECT count(*) FROM vulnerabilities v JOIN ls ON v.scan_id=ls.id WHERE true` + pred("v.host_id") + `),
+  (SELECT count(DISTINCT (v.host_id, v.vulnerability_id)) FROM vulnerabilities v JOIN ls ON v.scan_id=ls.id WHERE true` + pred("v.host_id") + `)`
+	var hostN, contN, pkgN, svcN, cveN, grpN, installs, contains, memberOf, affectedBy, exposedTo int
+	if err := db.QueryRowContext(ctx, q, args...).Scan(
+		&hostN, &contN, &pkgN, &svcN, &cveN, &grpN,
+		&installs, &contains, &memberOf, &affectedBy, &exposedTo,
+	); err != nil {
+		return ov, fmt.Errorf("graph overview: %w", err)
 	}
-	for _, q := range nodeQueries {
-		args := []any{}
-		clause, args := scopeClause(scope, q.col, args)
-		var n int
-		if err := db.QueryRowContext(ctx, q.sql+clause, args...).Scan(&n); err != nil {
-			return ov, fmt.Errorf("graph overview node %s: %w", q.key, err)
-		}
-		ov.Nodes[q.key] = n
-	}
-
-	edgeQueries := []countQuery{
-		{rel: RelRuns, sql: `SELECT count(*) FROM container_assets c JOIN ` + latestScansSub + ` ls ON c.scan_id=ls.id WHERE 1=1`, col: "c.host_id"},
-		{rel: RelInstalls, sql: `SELECT count(*) FROM packages p JOIN ` + latestScansSub + ` ls ON p.scan_id=ls.id WHERE p.asset_type='host'`, col: "p.host_id"},
-		{rel: RelContains, sql: `SELECT count(*) FROM packages p JOIN ` + latestScansSub + ` ls ON p.scan_id=ls.id WHERE p.asset_type='container'`, col: "p.host_id"},
-		{rel: RelExposes, sql: `SELECT count(*) FROM port_info pi JOIN ` + latestScansSub + ` ls ON pi.scan_id=ls.id WHERE 1=1`, col: "pi.host_id"},
-		{rel: RelMemberOf, sql: `SELECT count(*) FROM asset_group_members agm WHERE 1=1`, col: "agm.host_id"},
-		{rel: RelAffectedBy, sql: `SELECT count(*) FROM vulnerabilities v JOIN ` + latestScansSub + ` ls ON v.scan_id=ls.id WHERE 1=1`, col: "v.host_id"},
-		{rel: RelExposedTo, sql: `SELECT count(DISTINCT (v.host_id, v.vulnerability_id)) FROM vulnerabilities v JOIN ` + latestScansSub + ` ls ON v.scan_id=ls.id WHERE 1=1`, col: "v.host_id"},
-	}
-	for _, q := range edgeQueries {
-		args := []any{}
-		clause, args := scopeClause(scope, q.col, args)
-		var n int
-		if err := db.QueryRowContext(ctx, q.sql+clause, args...).Scan(&n); err != nil {
-			return ov, fmt.Errorf("graph overview edge %s: %w", q.rel, err)
-		}
-		ov.Edges[q.rel] = n
-	}
+	ov.Nodes[NodeHost] = hostN
+	ov.Nodes[NodeContainer] = contN
+	ov.Nodes[NodePackage] = pkgN
+	ov.Nodes[NodeService] = svcN
+	ov.Nodes[NodeCVE] = cveN
+	ov.Nodes[NodeGroup] = grpN
+	ov.Edges[RelRuns] = contN   // one container = one runs edge
+	ov.Edges[RelExposes] = svcN // one service = one exposes edge
+	ov.Edges[RelInstalls] = installs
+	ov.Edges[RelContains] = contains
+	ov.Edges[RelMemberOf] = memberOf
+	ov.Edges[RelAffectedBy] = affectedBy
+	ov.Edges[RelExposedTo] = exposedTo
 	return ov, nil
 }
 

@@ -78,3 +78,26 @@ func TestGraphExtMethodsAndInvariants(t *testing.T) {
 		}
 	}
 }
+
+func TestGraphPerformanceShape(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	// Overview must compute the latest-scan set once (MATERIALIZED CTE) and run in
+	// a single round-trip, not re-evaluate latestScansSub per count.
+	if !strings.Contains(body, "WITH ls AS MATERIALIZED ` + latestScansSub") {
+		t.Fatal("GraphOverviewForScope should use a MATERIALIZED latest-scan CTE")
+	}
+	// KEV membership must be a semijoin against a small CTE, not a per-row EXISTS.
+	if !strings.Contains(body, "kev AS (SELECT DISTINCT vulnerability_id FROM cve_database WHERE source='cisa-kev')") {
+		t.Fatal("KEV checks should use the kev semijoin CTE")
+	}
+	if strings.Contains(body, "graphKEVExistsExpr") {
+		t.Fatal("the per-row KEV EXISTS expr should be fully replaced by the kev semijoin")
+	}
+	if n := strings.Count(body, "LEFT JOIN kev ON kev.vulnerability_id="); n < 4 {
+		t.Fatalf("expected >=4 kev semijoins (exposure/images/org/remediation), found %d", n)
+	}
+}
