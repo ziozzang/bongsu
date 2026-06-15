@@ -1,13 +1,19 @@
 #!/bin/bash
 # Download OSV.dev vulnerability data and convert to Bongsu import format (JSONL)
-# Usage: ./download-osv.sh [output_file] [ecosystems]
+# Usage: ./download-osv.sh [output_file] [ecosystems] [since_rfc3339]
 # Example: ./download-osv.sh osv-all.jsonl
 # Ecosystems with spaces: "Red Hat", "Rocky Linux", "Oracle Linux"
+#
+# OSV.dev only offers full per-ecosystem all.zip bulk dumps (no delta endpoint),
+# so the download is always full, but when a third "since" argument (RFC3339 UTC)
+# is provided only entries with modified >= since are written to the output. The
+# expensive part (import + index rebuild + recalc) then processes the delta only.
 
 set -euo pipefail
 
 OUTPUT="${1:-osv-cve.jsonl}"
 ECOSYSTEMS="${2:-${BONGSU_OSV_ECOSYSTEMS:-PyPI,npm,Go,Maven,crates.io,NuGet,RubyGems,Packagist,Hex,Pub,SwiftURL,Hackage,CRAN,opam,VSCode,GitHub Actions,Alpine,Debian,Ubuntu,SUSE,openSUSE,AlmaLinux,Red Hat,Rocky Linux,Azure Linux,Wolfi,Chainguard,openEuler,Mageia,Android}}"
+OSV_SINCE="${3:-}"
 OUTPUT_TMP="${OUTPUT}.tmp.$$"
 
 TMP_PARENT="${BONGSU_TMPDIR:-${TMPDIR:-/tmp}}"
@@ -102,10 +108,26 @@ for eco in "${ECO_ARRAY[@]}"; do
 
     RESULT=$(python3 << PYEOF
 import json, os, glob, re
+import datetime as dt
 
 eco_dir = "${WORKDIR}/${eco}"
 count = 0
 skipped_cga = 0
+skipped_stale = 0
+
+since_raw = "${OSV_SINCE}".strip()
+def parse_ts(value):
+    value = (value or "").strip()
+    if not value:
+        return None
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        return dt.datetime.fromisoformat(value).astimezone(dt.timezone.utc)
+    except Exception:
+        return None
+since_dt = parse_ts(since_raw)
+
 with open("${OUTPUT_TMP}", "a") as out:
     for f in sorted(glob.glob(os.path.join(eco_dir, "*.json"))):
         try:
@@ -116,6 +138,14 @@ with open("${OUTPUT_TMP}", "a") as out:
         vuln_id = data.get("id", "")
         if not vuln_id:
             continue
+
+        # Incremental: skip entries unchanged since the watermark. Entries with an
+        # unparseable/missing modified timestamp are kept (fail safe = re-import).
+        if since_dt is not None:
+            mod_dt = parse_ts(data.get("modified", ""))
+            if mod_dt is not None and mod_dt < since_dt:
+                skipped_stale += 1
+                continue
 
         aliases = data.get("aliases", [])
         cve_id = ""
@@ -229,7 +259,9 @@ PYEOF
     fi
     TOTAL=$((TOTAL + COUNT))
     SKIPPED_CGA_TOTAL=$((SKIPPED_CGA_TOTAL + SKIPPED_CGA))
-    if [ "${COUNT}" -eq 0 ]; then
+    # In incremental mode 0 importable entries means "nothing changed since the
+    # watermark" for this ecosystem, which is normal — not a download failure.
+    if [ "${COUNT}" -eq 0 ] && [ -z "${OSV_SINCE}" ]; then
         FAILED_ECOSYSTEMS+=("${eco}:no-entries")
     fi
 done
@@ -238,9 +270,12 @@ if [ "${#FAILED_ECOSYSTEMS[@]}" -gt 0 ]; then
     echo "ERROR: incomplete OSV download: ${FAILED_ECOSYSTEMS[*]}" >&2
     exit 1
 fi
-if [ "${TOTAL}" -eq 0 ]; then
+if [ "${TOTAL}" -eq 0 ] && [ -z "${OSV_SINCE}" ]; then
     echo "ERROR: OSV download produced no CVE entries" >&2
     exit 1
+fi
+if [ "${TOTAL}" -eq 0 ]; then
+    echo "  (incremental: no OSV entries modified since the watermark)" >&2
 fi
 
 mv "${OUTPUT_TMP}" "${OUTPUT}"

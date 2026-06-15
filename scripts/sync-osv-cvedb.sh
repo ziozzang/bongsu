@@ -124,8 +124,11 @@ print(data.get("status", ""))
     echo "  ${label} rebuild ${status}."
 
     deadline=$(( $(date +%s) + INDEX_REBUILD_WAIT_SECONDS ))
+    local empty_status_polls=0
     while true; do
-        if ! curl -fsS -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/health" > "${response_file}"; then
+        # fresh=true bypasses the server's short-TTL health cache so a just-queued
+        # rebuild is never misread as not-running from a stale cached snapshot.
+        if ! curl -fsS -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/health?fresh=true" > "${response_file}"; then
             echo "ERROR: failed to poll ${label} rebuild status" >&2
             return 1
         fi
@@ -152,9 +155,18 @@ print("|".join([
                 echo "  ${label} rebuild complete: indexed=${indexed}, duration_ms=${duration_ms}"
                 return 0
             fi
+            # Tolerate a few polls where the async job has not registered its
+            # result yet (no prior last_result) before declaring an error.
+            if [ -z "${status}" ] && [ "${empty_status_polls}" -lt 6 ] && [ "$(date +%s)" -lt "${deadline}" ]; then
+                empty_status_polls=$((empty_status_polls + 1))
+                echo "  ${label} rebuild status not yet registered (poll ${empty_status_polls})..."
+                sleep "${INDEX_REBUILD_POLL_SECONDS}"
+                continue
+            fi
             echo "ERROR: ${label} rebuild finished with status '${status:-unknown}' ${error_msg}" >&2
             return 1
         fi
+        empty_status_polls=0
         if [ "$(date +%s)" -ge "${deadline}" ]; then
             echo "ERROR: timed out waiting for ${label} rebuild after ${INDEX_REBUILD_WAIT_SECONDS}s" >&2
             return 1
@@ -167,8 +179,11 @@ print("|".join([
 finalize_osv_imports() {
     if [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then
         echo "  Pruning stale OSV rows older than ${OSV_PRUNE_BEFORE}..."
+        # finalize=false: defer the recalc to the explicit recalculation below so
+        # the prune does not start a redundant background recalc that overlaps the
+        # index rebuilds and the final recalc.
         curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
-            "${SERVER_URL}/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}" >/dev/null
+            "${SERVER_URL}/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}&finalize=false" >/dev/null
     else
         echo "  Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override."
         echo "  Run a full OSV sync with the default ecosystem list to prune upstream removals safely."

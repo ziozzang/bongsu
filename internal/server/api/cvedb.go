@@ -1551,6 +1551,11 @@ func (s *Server) handleCveDbPruneStaleSource(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "invalid before timestamp")
 		return
 	}
+	// finalize=false defers the heavy background recalculation so a full sync can
+	// prune stale OSV rows mid-run without starting a 2h recalc that would race
+	// (and deadlock) the subsequent NVD/Trivy import transactions. The single
+	// deferred finalization pass at the end of the sync runs the recalc once.
+	finalize := !strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("finalize")), "false")
 
 	tx, err := s.db.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -1590,7 +1595,7 @@ func (s *Server) handleCveDbPruneStaleSource(w http.ResponseWriter, r *http.Requ
 		auditMeta[k] = v
 	}
 	s.audit(r, "cve_db.prune_stale_source", "cve_db", source, "ok", auditMeta)
-	if pruned > 0 {
+	if pruned > 0 && finalize {
 		s.SecurityDatabaseUpdated("cve-db stale source prune")
 	}
 }
@@ -1636,7 +1641,84 @@ func (s *Server) handleCveDbRefreshSourceStatus(w http.ResponseWriter, r *http.R
 	s.audit(r, "cve_db.refresh_source_status", "cve_db", source, "ok", auditMeta)
 }
 
+// handleCveDbSourceWatermark returns the incremental-sync cursor for a source:
+// the newest upstream modified_date already ingested. The sync scripts pass this
+// back as a "since" bound (NVD lastModStartDate, OSV/EPSS client-side filtering)
+// to fetch only what changed, avoiding a full re-download each run. When the
+// source has no rows the watermark is empty and the caller falls back to a full
+// download.
+func (s *Server) handleCveDbSourceWatermark(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateAdmin(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	source, err := normalizeCveSource(r.PathValue("source"), "")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid source")
+		return
+	}
+	wm, err := s.db.GetCveSourceWatermark(r.Context(), source)
+	if err != nil {
+		log.Printf("cve-db source watermark: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	out := map[string]any{
+		"status": "ok",
+		"source": source,
+		"count":  wm.Count,
+	}
+	if wm.MaxModified.Valid {
+		out["watermark"] = wm.MaxModified.Time.UTC().Format(time.RFC3339)
+	} else {
+		out["watermark"] = ""
+	}
+	if wm.MaxUpdatedAt.Valid {
+		out["last_ingested_at"] = wm.MaxUpdatedAt.Time.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// importCveJSONL imports a JSONL stream within a single transaction, retrying
+// the whole transaction on transient PostgreSQL concurrency failures (deadlock
+// / serialization). The deadlock typically arises when a per-source import
+// races the background security recalculation over overlapping cve_database /
+// cve_affected_packages rows. Retries require a replayable input, so they are
+// only attempted when reader is seekable (multipart.File and *os.File both are);
+// for a non-seekable stream we make a single attempt.
 func (s *Server) importCveJSONL(ctx context.Context, reader io.Reader, source string, replace, finalize bool) (int, error) {
+	const maxAttempts = 5
+	seeker, _ := reader.(io.Seeker)
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 {
+			if seeker == nil {
+				return 0, lastErr
+			}
+			if _, err := seeker.Seek(0, io.SeekStart); err != nil {
+				return 0, lastErr
+			}
+		}
+		count, err := s.importCveJSONLOnce(ctx, reader, source, replace, finalize)
+		if err == nil {
+			return count, nil
+		}
+		if ctx.Err() != nil || !db.IsRetryableError(err) {
+			return count, err
+		}
+		lastErr = err
+		log.Printf("cve-db import: retryable DB error (attempt %d/%d, source=%q): %v", attempt, maxAttempts, source, err)
+		backoff := time.Duration(attempt) * 300 * time.Millisecond
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-time.After(backoff):
+		}
+	}
+	return 0, lastErr
+}
+
+func (s *Server) importCveJSONLOnce(ctx context.Context, reader io.Reader, source string, replace, finalize bool) (int, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err

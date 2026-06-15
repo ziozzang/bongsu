@@ -2741,6 +2741,8 @@ func TestHealthOnlyShowsDetailedDBStatusToAdmins(t *testing.T) {
 	for _, want := range []string{
 		"isAdmin := s.authenticateAdmin(r)",
 		"includeOperationalDetails := isAdmin",
+		`fresh := isAdmin && r.URL.Query().Get("fresh") == "true"`,
+		"if includeOperationalDetails && !fresh {",
 		"s.dbMgr.Status()",
 		"s.dbMgr.PublicStatus()",
 		"s.secMgr.Status()",
@@ -3814,9 +3816,8 @@ func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
 		`-F "file=@${file}" -F "source=${source}" -F "replace=${replace}" -F "finalize=${finalize}"`,
 		`import_cve_file "${OSV_ECO_FILE}" "osv" "false" "false"`,
 		`if [ "${OSV_TOTAL}" -gt 0 ]; then`,
-		`OSV_REFRESH_SOURCE=""`,
-		`OSV_REFRESH_SOURCE="osv"`,
-		`finalize_deferred_cve_imports "osv chunk import" "${OSV_REFRESH_SOURCE}"`,
+		`DEFERRED_SOURCES+=("osv")`,
+		`finalize_deferred_cve_imports "full cvedb sync" "${DEFERRED_SOURCES[@]}"`,
 		`"${REFRESH_SOURCE_STATUS_URL}/${source}/refresh-status"`,
 		`"${AFFECTED_INDEX_REBUILD_URL}"`,
 		`"${REFERENCE_INDEX_REBUILD_URL}"`,
@@ -3825,6 +3826,22 @@ func TestSecurityDBSyncScriptAppendsOSVEcosystemChunks(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-all-cvedb must append OSV ecosystem chunks and finalize once, missing %q", want)
 		}
+	}
+	// Every per-source import must defer finalization (finalize=false) so no
+	// background recalculation overlaps a later import transaction. There must
+	// be exactly one finalize_deferred_cve_imports invocation for the whole sync.
+	for _, want := range []string{
+		`import_cve_file "${CISA_KEV_FILE}" "cisa-kev" "true" "false"`,
+		`import_cve_file "${EPSS_FILE}" "epss" "true" "false"`,
+		`import_cve_file "${NVD_FILE}" "nvd" "${NVD_REPLACE}" "false"`,
+		`import_cve_file "${TRIVY_FILE}" "trivy" "true" "false"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-all-cvedb must defer finalization for every source, missing %q", want)
+		}
+	}
+	if got := strings.Count(body, "finalize_deferred_cve_imports \""); got != 1 {
+		t.Fatalf("sync-all-cvedb must finalize deferred imports exactly once, found %d invocations", got)
 	}
 }
 
@@ -3842,7 +3859,7 @@ func TestSecurityDBSyncScriptsFinalizeDeferredImportsAsynchronously(t *testing.T
 			"queue_index_rebuild()",
 			`"${url}?async=true"`,
 			`[ "${http_code}" != "202" ] && [ "${http_code}" != "409" ]`,
-			`"${SERVER_URL}/api/health"`,
+			`"${SERVER_URL}/api/health?fresh=true"`,
 			"cve_affected_index_rebuild",
 			"cve_reference_index_rebuild",
 			"BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS",
@@ -3964,7 +3981,7 @@ func TestSecurityDBSyncScriptPrunesStaleOSVAfterSuccessfulChunks(t *testing.T) {
 		`Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override.`,
 		`Keeping aggregate OSV source freshness unchanged after partial sync.`,
 		`if [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then`,
-		`OSV_REFRESH_SOURCE="osv"`,
+		`DEFERRED_SOURCES+=("osv")`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("sync-all-cvedb must prune stale OSV rows only after successful chunks, missing %q", want)
@@ -6560,6 +6577,81 @@ func TestDeferredCveJSONLImportDoesNotRefreshSourceStatus(t *testing.T) {
 	}
 	if refreshPos < finalizeStart {
 		t.Fatalf("deferred cve jsonl import must not refresh security source status before finalize: %s", fn)
+	}
+}
+
+func TestSecurityDBSyncScriptIncrementalMode(t *testing.T) {
+	out, err := os.ReadFile("../../../scripts/sync-all-cvedb.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, want := range []string{
+		// mode selection + periodic full sync
+		`determine_sync_mode()`,
+		`SYNC_MODE="$(determine_sync_mode)"`,
+		`BONGSU_SYNC_FULL`,
+		`FULL_SYNC_INTERVAL_DAYS`,
+		`FULL_SYNC_MARKER`,
+		// watermark-driven "since" computation
+		`get_watermark()`,
+		`since_for()`,
+		`/watermark`,
+		`SYNC_OVERLAP_HOURS`,
+		// NVD true increment: lastMod since + UPSERT (replace=false) in incremental
+		`NVD_SINCE="$(since_for nvd)"`,
+		`NVD_REPLACE="false"`,
+		`"${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${NVD_YEARS}" "${NVD_SINCE}"`,
+		// OSV delta filter + prune is full-only
+		`OSV_SINCE="$(since_for osv)"`,
+		`"${SCRIPT_DIR}/download-osv.sh" "${OSV_ECO_FILE}" "${eco}" "${OSV_SINCE}"`,
+		`[ "${SYNC_MODE}" = "full" ] && [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]`,
+		// EPSS skip when already current
+		`EPSS_WM_DATE=`,
+		`skipping download and import`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("sync-all-cvedb incremental mode missing %q", want)
+		}
+	}
+	// KEV must NOT be skipped (freshness derives from row updated_at).
+	if strings.Contains(body, "CISA KEV unchanged since last sync") {
+		t.Fatal("CISA KEV must not be skipped in incremental mode (would break freshness)")
+	}
+}
+
+func TestSecurityDBSyncDownloadersSupportSince(t *testing.T) {
+	nvd, err := os.ReadFile("../../../scripts/download-nvd.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`SINCE="${3:-}"`, "lastModStartDate", "lastModEndDate", "incremental"} {
+		if !strings.Contains(string(nvd), want) {
+			t.Fatalf("download-nvd.sh missing incremental support %q", want)
+		}
+	}
+	osv, err := os.ReadFile("../../../scripts/download-osv.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`OSV_SINCE="${3:-}"`, "since_dt", "skipped_stale"} {
+		if !strings.Contains(string(osv), want) {
+			t.Fatalf("download-osv.sh missing incremental support %q", want)
+		}
+	}
+}
+
+func TestCveDbSourceWatermarkEndpoint(t *testing.T) {
+	body := readAllPackageGoFiles(t)
+	for _, want := range []string{
+		`GET /api/admin/cve-db/source/{source}/watermark`,
+		"func (s *Server) handleCveDbSourceWatermark",
+		"s.db.GetCveSourceWatermark",
+		`out["watermark"] = wm.MaxModified.Time.UTC().Format(time.RFC3339)`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("cve source watermark endpoint missing %q", want)
+		}
 	}
 }
 

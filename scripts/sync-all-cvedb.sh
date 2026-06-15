@@ -29,9 +29,94 @@ INDEX_REBUILD_WAIT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_WAIT_SECONDS:-900}"
 INDEX_REBUILD_POLL_SECONDS="${BONGSU_CVE_INDEX_REBUILD_POLL_SECONDS:-5}"
 INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS="${BONGSU_CVE_INDEX_REBUILD_MIN_SERVER_TIMEOUT_SECONDS:-600}"
 BONGSU_OSV_POST_SYNC_VERIFY="${BONGSU_OSV_POST_SYNC_VERIFY:-true}"
+WATERMARK_URL_BASE="${SERVER_URL}/api/admin/cve-db/source"
+
+# --- Incremental sync configuration ---
+# By default the sync is INCREMENTAL: each source is fetched only from its stored
+# watermark (newest modified_date already ingested) minus an overlap window. A
+# periodic FULL sync re-pulls everything and prunes upstream deletions, since the
+# incremental path detects additions/updates but not removals.
+SYNC_OVERLAP_HOURS="${BONGSU_SYNC_OVERLAP_HOURS:-48}"
+FULL_SYNC_INTERVAL_DAYS="${BONGSU_SYNC_FULL_INTERVAL_DAYS:-7}"
+# Persist the marker under TMP_PARENT (the durable parent dir), NOT ${TMPDIR},
+# which was reassigned above to a per-run mktemp dir that the EXIT trap deletes —
+# storing it there would make every run a full sync.
+FULL_SYNC_MARKER="${BONGSU_SYNC_FULL_MARKER:-${TMP_PARENT%/}/.bongsu-last-full-sync}"
+
+# get_watermark <source> -> prints the source's RFC3339 watermark (empty if none).
+get_watermark() {
+    local source="$1"
+    local resp
+    if ! resp=$(curl -fsS -H "X-API-Key: ${API_KEY}" "${WATERMARK_URL_BASE}/${source}/watermark" 2>/dev/null); then
+        echo ""
+        return 0
+    fi
+    echo "${resp}" | python3 -c '
+import json, sys
+try:
+    print((json.load(sys.stdin).get("watermark") or "").strip())
+except Exception:
+    print("")
+' 2>/dev/null || echo ""
+}
+
+# since_for <source> -> watermark minus overlap, as RFC3339 UTC (empty => full).
+# An empty result tells the caller to fall back to a full download for that source.
+since_for() {
+    local source="$1"
+    local wm
+    wm="$(get_watermark "${source}")"
+    if [ -z "${wm}" ]; then
+        echo ""
+        return 0
+    fi
+    OVERLAP_HOURS="${SYNC_OVERLAP_HOURS}" WM="${wm}" python3 -c '
+import os, sys, datetime as dt
+wm = os.environ["WM"].strip()
+if wm.endswith("Z"):
+    wm = wm[:-1] + "+00:00"
+try:
+    t = dt.datetime.fromisoformat(wm).astimezone(dt.timezone.utc)
+except Exception:
+    print("")
+    sys.exit(0)
+overlap = float(os.environ.get("OVERLAP_HOURS") or "0")
+t = t - dt.timedelta(hours=overlap)
+print(t.strftime("%Y-%m-%dT%H:%M:%SZ"))
+' 2>/dev/null || echo ""
+}
+
+# Decide sync mode. FULL when forced, when no marker exists yet, or when the last
+# full sync is older than the configured interval.
+determine_sync_mode() {
+    if [ "${BONGSU_SYNC_FULL:-0}" = "1" ] || [ "${BONGSU_SYNC_FULL:-}" = "true" ]; then
+        echo "full"
+        return 0
+    fi
+    if [ ! -f "${FULL_SYNC_MARKER}" ]; then
+        echo "full"
+        return 0
+    fi
+    local marker_epoch now_epoch age_days
+    # File mtime, portably: GNU `stat -c`, BSD `stat -f`, else a Python fallback.
+    marker_epoch="$(stat -c %Y "${FULL_SYNC_MARKER}" 2>/dev/null \
+        || stat -f %m "${FULL_SYNC_MARKER}" 2>/dev/null \
+        || python3 -c 'import os,sys; print(int(os.path.getmtime(sys.argv[1])))' "${FULL_SYNC_MARKER}" 2>/dev/null \
+        || echo 0)"
+    now_epoch="$(date +%s)"
+    age_days=$(( (now_epoch - marker_epoch) / 86400 ))
+    if [ "${marker_epoch}" -eq 0 ] || [ "${age_days}" -ge "${FULL_SYNC_INTERVAL_DAYS}" ]; then
+        echo "full"
+    else
+        echo "incremental"
+    fi
+}
 
 TOTAL_IMPORTED=0
 FAILED_SOURCES=()
+# Sources imported with finalize=false; their registry freshness is refreshed in
+# the single deferred finalization pass at the end of the sync.
+DEFERRED_SOURCES=()
 REQUIRE_TRIVY_SOURCE="${BONGSU_SYNC_REQUIRE_TRIVY_SOURCE:-true}"
 TRIVY_BIN_FOR_SYNC="${TRIVY_BIN:-${BONGSU_TRIVY_PATH:-}}"
 
@@ -145,8 +230,11 @@ print(data.get("status", ""))
     echo "  ${label} rebuild ${status}."
 
     deadline=$(( $(date +%s) + INDEX_REBUILD_WAIT_SECONDS ))
+    local empty_status_polls=0
     while true; do
-        if ! curl -fsS -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/health" > "${response_file}"; then
+        # fresh=true bypasses the server's short-TTL health cache so a just-queued
+        # rebuild is never misread as not-running from a stale cached snapshot.
+        if ! curl -fsS -H "X-API-Key: ${API_KEY}" "${SERVER_URL}/api/health?fresh=true" > "${response_file}"; then
             echo "ERROR: failed to poll ${label} rebuild status" >&2
             return 1
         fi
@@ -173,9 +261,19 @@ print("|".join([
                 echo "  ${label} rebuild complete: indexed=${indexed}, duration_ms=${duration_ms}"
                 return 0
             fi
+            # running=false with no recorded result yet means the async job has
+            # not registered its state; tolerate a few polls before failing so a
+            # startup race (no prior last_result) is not misreported as an error.
+            if [ -z "${status}" ] && [ "${empty_status_polls}" -lt 6 ] && [ "$(date +%s)" -lt "${deadline}" ]; then
+                empty_status_polls=$((empty_status_polls + 1))
+                echo "  ${label} rebuild status not yet registered (poll ${empty_status_polls})..."
+                sleep "${INDEX_REBUILD_POLL_SECONDS}"
+                continue
+            fi
             echo "ERROR: ${label} rebuild finished with status '${status:-unknown}' ${error_msg}" >&2
             return 1
         fi
+        empty_status_polls=0
         if [ "$(date +%s)" -ge "${deadline}" ]; then
             echo "ERROR: timed out waiting for ${label} rebuild after ${INDEX_REBUILD_WAIT_SECONDS}s" >&2
             return 1
@@ -186,21 +284,35 @@ print("|".join([
 }
 
 finalize_deferred_cve_imports() {
+    # Single finalization pass run AFTER every source has been imported with
+    # finalize=false. Deferring finalization to one pass avoids the recalc
+    # storm (one full-DB security recalculation per finalize=true import, each
+    # up to 2h of RematchCVEs) and, critically, prevents a background recalc
+    # from running concurrently with the next source's import transaction —
+    # the race that produced the cve_database deadlocks (SQLSTATE 40P01).
+    #
+    # Args: <reason> [source ...]  — sources whose registry freshness should be
+    # refreshed (those imported with finalize=false skip the inline refresh).
     local reason="$1"
-    local source="${2:-}"
+    shift || true
+    # Each step is checked explicitly with `|| return $?` so a failed index
+    # rebuild or status refresh is not masked by a later successful curl (the
+    # function runs with errexit disabled because callers invoke it as `if !`).
     echo "  Rebuilding affected package index after deferred imports..."
-    queue_index_rebuild "Affected package index" "${AFFECTED_INDEX_REBUILD_URL}" "cve_affected_index_rebuild"
+    queue_index_rebuild "Affected package index" "${AFFECTED_INDEX_REBUILD_URL}" "cve_affected_index_rebuild" || return $?
     echo "  Rebuilding reference key index after deferred imports..."
-    queue_index_rebuild "Reference key index" "${REFERENCE_INDEX_REBUILD_URL}" "cve_reference_index_rebuild"
-    if [ -n "${source}" ]; then
+    queue_index_rebuild "Reference key index" "${REFERENCE_INDEX_REBUILD_URL}" "cve_reference_index_rebuild" || return $?
+    local source
+    for source in "$@"; do
+        [ -n "${source}" ] || continue
         echo "  Refreshing ${source} source registry status after deferred imports..."
         curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
-            "${REFRESH_SOURCE_STATUS_URL}/${source}/refresh-status" >/dev/null
-    fi
+            "${REFRESH_SOURCE_STATUS_URL}/${source}/refresh-status" >/dev/null || return $?
+    done
     echo "  Queuing security recalculation after deferred imports..."
     curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
         -H "Content-Type: application/json" \
-        -d "{\"reason\":\"${reason}\"}" "${RECALCULATE_URL}" >/dev/null
+        -d "{\"reason\":\"${reason}\"}" "${RECALCULATE_URL}" >/dev/null || return $?
 }
 
 verify_osv_post_sync_freshness() {
@@ -221,9 +333,12 @@ verify_osv_post_sync_freshness() {
         "${SCRIPT_DIR}/verify-live-cvedb-quality.sh"
 }
 
+SYNC_MODE="$(determine_sync_mode)"
+
 echo "=========================================="
 echo " Bongsu CVE Database Sync"
 echo " Server: ${SERVER_URL}"
+echo " Mode:   ${SYNC_MODE} (overlap ${SYNC_OVERLAP_HOURS}h, full every ${FULL_SYNC_INTERVAL_DAYS}d)"
 echo "=========================================="
 echo ""
 preflight_index_rebuild_timeouts
@@ -231,13 +346,26 @@ preflight_index_rebuild_timeouts
 # --- 1. CISA KEV ---
 echo "[1/4] Downloading CISA KEV data..."
 CISA_KEV_FILE="${TMPDIR}/cisa-kev.jsonl"
-"${SCRIPT_DIR}/download-cisa-kev.sh" "${CISA_KEV_FILE}"
+# Tolerate a download failure so already-deferred sources still get finalized at
+# the end (a bare command would abort the whole script under set -e).
+if ! "${SCRIPT_DIR}/download-cisa-kev.sh" "${CISA_KEV_FILE}"; then
+    echo "  ERROR: CISA KEV download failed"
+fi
 
 if [ -s "${CISA_KEV_FILE}" ]; then
+    # CISA KEV is always imported in full (~2MB / ~1600 rows, ~1s). It is NOT
+    # skipped in incremental mode: the source freshness is derived from the newest
+    # row's updated_at, so a full re-import (replace=true) keeps KEV freshness
+    # green. Skipping it would save nothing meaningful and would let KEV age out.
     echo "  Importing CISA KEV data ($(wc -l < "${CISA_KEV_FILE}") entries, $(du -h "${CISA_KEV_FILE}" | cut -f1))..."
-    IMPORTED=$(import_cve_file "${CISA_KEV_FILE}" "cisa-kev")
-    echo "  Imported/updated: ${IMPORTED}"
-    TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+    if IMPORTED=$(import_cve_file "${CISA_KEV_FILE}" "cisa-kev" "true" "false"); then
+        echo "  Imported/updated: ${IMPORTED}"
+        TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+        DEFERRED_SOURCES+=("cisa-kev")
+    else
+        echo "  ERROR: CISA KEV import failed"
+        FAILED_SOURCES+=("cisa-kev:import")
+    fi
 else
     echo "  ERROR: no CISA KEV data"
     FAILED_SOURCES+=("cisa-kev:no-data")
@@ -247,16 +375,41 @@ echo ""
 # --- 2. FIRST EPSS ---
 echo "[2/5] Downloading FIRST EPSS data..."
 EPSS_FILE="${TMPDIR}/epss.jsonl"
-"${SCRIPT_DIR}/download-epss.sh" "${EPSS_FILE}"
-
-if [ -s "${EPSS_FILE}" ]; then
-    echo "  Importing EPSS data ($(wc -l < "${EPSS_FILE}") entries, $(du -h "${EPSS_FILE}" | cut -f1))..."
-    IMPORTED=$(import_cve_file "${EPSS_FILE}" "epss")
-    echo "  Imported/updated: ${IMPORTED}"
-    TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
-else
-    echo "  ERROR: no EPSS data"
-    FAILED_SOURCES+=("epss:no-data")
+# EPSS is a full daily snapshot (no delta API) where modified_date == the score
+# date. Incremental: if we already hold today's UTC date, skip download+import
+# outright; otherwise download and skip only the import when the fetched date is
+# not newer than what we already have (e.g. today's file isn't published yet).
+EPSS_WM_DATE="$(get_watermark epss | cut -dT -f1)"
+EPSS_TODAY="$(date -u +%Y-%m-%d)"
+EPSS_SKIP=0
+if [ "${SYNC_MODE}" = "incremental" ] && [ -n "${EPSS_WM_DATE}" ] && [ "${EPSS_WM_DATE}" = "${EPSS_TODAY}" ]; then
+    echo "  EPSS already current for ${EPSS_TODAY} — skipping download and import."
+    EPSS_SKIP=1
+fi
+if [ "${EPSS_SKIP}" -eq 0 ]; then
+    # Tolerate a download failure so already-deferred sources still get finalized.
+    if ! "${SCRIPT_DIR}/download-epss.sh" "${EPSS_FILE}"; then
+        echo "  ERROR: EPSS download failed"
+    fi
+    if [ -s "${EPSS_FILE}" ]; then
+        EPSS_FILE_DATE="$(head -1 "${EPSS_FILE}" | python3 -c 'import json,sys;print((json.load(sys.stdin).get("modified_date") or "")[:10])' 2>/dev/null || echo "")"
+        if [ "${SYNC_MODE}" = "incremental" ] && [ -n "${EPSS_WM_DATE}" ] && [ -n "${EPSS_FILE_DATE}" ] && [[ ! "${EPSS_FILE_DATE}" > "${EPSS_WM_DATE}" ]]; then
+            echo "  EPSS fetched date ${EPSS_FILE_DATE} is not newer than ${EPSS_WM_DATE} — skipping import."
+        else
+            echo "  Importing EPSS data ($(wc -l < "${EPSS_FILE}") entries, $(du -h "${EPSS_FILE}" | cut -f1))..."
+            if IMPORTED=$(import_cve_file "${EPSS_FILE}" "epss" "true" "false"); then
+                echo "  Imported/updated: ${IMPORTED}"
+                TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+                DEFERRED_SOURCES+=("epss")
+            else
+                echo "  ERROR: EPSS import failed"
+                FAILED_SOURCES+=("epss:import")
+            fi
+        fi
+    else
+        echo "  ERROR: no EPSS data"
+        FAILED_SOURCES+=("epss:no-data")
+    fi
 fi
 echo ""
 
@@ -272,14 +425,25 @@ if [ -n "${BONGSU_OSV_ECOSYSTEMS:-}" ] && [ "$(echo "${BONGSU_OSV_ECOSYSTEMS}" |
 fi
 ECO_COUNT=$(echo "${OSV_ECOSYSTEMS}" | tr ',' '\n' | wc -l)
 ECO_IDX=0
-echo "[3/5] Downloading OSV.dev data (${ECO_COUNT} ecosystems)..."
+# Incremental: a single global OSV watermark (newest modified across all
+# ecosystems) minus overlap. download-osv.sh then writes only entries modified at
+# or after it. Empty for a full sync (or when OSV has no rows yet).
+OSV_SINCE=""
+if [ "${SYNC_MODE}" = "incremental" ]; then
+    OSV_SINCE="$(since_for osv)"
+fi
+if [ -n "${OSV_SINCE}" ]; then
+    echo "[3/5] Downloading OSV.dev data (${ECO_COUNT} ecosystems, incremental since ${OSV_SINCE})..."
+else
+    echo "[3/5] Downloading OSV.dev data (${ECO_COUNT} ecosystems, full)..."
+fi
 
 IFS=',' read -ra ECO_ARRAY <<< "${OSV_ECOSYSTEMS}"
 for eco in "${ECO_ARRAY[@]}"; do
     ECO_IDX=$((ECO_IDX + 1))
     OSV_ECO_FILE="${TMPDIR}/osv-${eco}.jsonl"
     echo "  [${ECO_IDX}/${ECO_COUNT}] ${eco}..."
-    if ! "${SCRIPT_DIR}/download-osv.sh" "${OSV_ECO_FILE}" "${eco}"; then
+    if ! "${SCRIPT_DIR}/download-osv.sh" "${OSV_ECO_FILE}" "${eco}" "${OSV_SINCE}"; then
         echo "    ERROR: ${eco} download failed"
         FAILED_SOURCES+=("osv:${eco}")
         OSV_FAILED=1
@@ -289,9 +453,14 @@ for eco in "${ECO_ARRAY[@]}"; do
         ECO_LINES=$(wc -l < "${OSV_ECO_FILE}")
         ECO_SIZE=$(du -h "${OSV_ECO_FILE}" | cut -f1)
         echo "    Importing ${eco} (${ECO_LINES} entries, ${ECO_SIZE})..."
-        IMPORTED=$(import_cve_file "${OSV_ECO_FILE}" "osv" "false" "false")
-        echo "    Imported/updated: ${IMPORTED}"
-        OSV_TOTAL=$((OSV_TOTAL + IMPORTED))
+        if IMPORTED=$(import_cve_file "${OSV_ECO_FILE}" "osv" "false" "false"); then
+            echo "    Imported/updated: ${IMPORTED}"
+            OSV_TOTAL=$((OSV_TOTAL + IMPORTED))
+        else
+            echo "    ERROR: ${eco} import failed"
+            FAILED_SOURCES+=("osv:${eco}:import")
+            OSV_FAILED=1
+        fi
         rm -f "${OSV_ECO_FILE}"
     else
         echo "    SKIP: ${eco} produced no data"
@@ -300,30 +469,38 @@ done
 
 TOTAL_IMPORTED=$((TOTAL_IMPORTED + OSV_TOTAL))
 if [ "${OSV_TOTAL}" -gt 0 ]; then
-    if [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then
+    # Prune is FULL-only: it deletes any OSV row not refreshed this run, which is
+    # correct only when every ecosystem was fully re-imported. In incremental mode
+    # we imported just the delta, so pruning would wrongly delete unchanged rows.
+    if [ "${SYNC_MODE}" = "full" ] && [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then
         echo "  Pruning stale OSV rows older than ${OSV_PRUNE_BEFORE}..."
-        curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
-            "${SERVER_URL}/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}" >/dev/null
-    elif [ "${OSV_FAILED}" -eq 0 ]; then
+        # finalize=false: defer the recalc to the single finalization pass so the
+        # prune does not start a background recalc that would race later imports.
+        if ! curl -fsS -X POST -H "X-API-Key: ${API_KEY}" \
+            "${SERVER_URL}/api/admin/cve-db/source/osv/prune-stale?before=${OSV_PRUNE_BEFORE}&finalize=false" >/dev/null; then
+            echo "  ERROR: OSV stale prune failed"
+            FAILED_SOURCES+=("osv:prune")
+        fi
+    elif [ "${SYNC_MODE}" = "full" ] && [ "${OSV_FAILED}" -eq 0 ]; then
         echo "  Skipping stale OSV prune because BONGSU_OSV_ECOSYSTEMS is a partial override."
         echo "  Run a full OSV sync with the default ecosystem list to prune upstream removals safely."
         echo "  Keeping aggregate OSV source freshness unchanged after partial sync."
     fi
-    OSV_REFRESH_SOURCE=""
+    # Defer OSV freshness refresh and the heavy index rebuild / recalculation to
+    # the single finalization pass at the end of the whole sync (after NVD and
+    # Trivy), so the recalc runs exactly once and never overlaps a later import.
     if [ "${OSV_FAILED}" -eq 0 ] && [ "${OSV_PRUNE_FULL_SOURCE}" = "true" ]; then
-        OSV_REFRESH_SOURCE="osv"
-    fi
-    if ! finalize_deferred_cve_imports "osv chunk import" "${OSV_REFRESH_SOURCE}"; then
-        echo "  ERROR: OSV deferred import finalization failed"
-        FAILED_SOURCES+=("osv:finalize")
+        DEFERRED_SOURCES+=("osv")
     fi
 fi
 if [ "${OSV_FAILED}" -ne 0 ]; then
     echo "  ERROR: incomplete OSV download"
     FAILED_SOURCES+=("osv:partial")
-elif [ "${OSV_TOTAL}" -eq 0 ]; then
+elif [ "${OSV_TOTAL}" -eq 0 ] && [ "${SYNC_MODE}" = "full" ]; then
     echo "  ERROR: no OSV data"
     FAILED_SOURCES+=("osv:no-data")
+elif [ "${OSV_TOTAL}" -eq 0 ]; then
+    echo "  OSV unchanged since watermark — no delta imported."
 fi
 echo ""
 
@@ -338,19 +515,43 @@ fi
 NVD_FAILED=0
 NVD_TOTAL=0
 NVD_FILE="${TMPDIR}/nvd.jsonl"
-echo "  Years ${NVD_YEARS}..."
-if ! "${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${NVD_YEARS}"; then
+# Incremental: fetch only CVEs modified since the watermark (NVD lastModStartDate)
+# and UPSERT them (replace=false). Full: re-pull the whole year window and replace
+# the source (replace=true). When there is no watermark yet, since_for is empty
+# and download-nvd.sh falls back to the full year window automatically.
+NVD_SINCE=""
+NVD_REPLACE="true"
+if [ "${SYNC_MODE}" = "incremental" ]; then
+    NVD_SINCE="$(since_for nvd)"
+    if [ -n "${NVD_SINCE}" ]; then
+        NVD_REPLACE="false"
+        echo "  Incremental since ${NVD_SINCE}..."
+    else
+        echo "  No NVD watermark yet — full year window ${NVD_YEARS}..."
+    fi
+else
+    echo "  Years ${NVD_YEARS}..."
+fi
+if ! "${SCRIPT_DIR}/download-nvd.sh" "${NVD_FILE}" "${NVD_YEARS}" "${NVD_SINCE}"; then
     echo "    ERROR: NVD download failed"
     FAILED_SOURCES+=("nvd:download")
     NVD_FAILED=1
 elif [ -s "${NVD_FILE}" ]; then
     NVD_LINES=$(wc -l < "${NVD_FILE}")
     NVD_SIZE=$(du -h "${NVD_FILE}" | cut -f1)
-    echo "    Importing NVD (${NVD_LINES} entries, ${NVD_SIZE})..."
-    IMPORTED=$(import_cve_file "${NVD_FILE}" "nvd")
-    echo "    Imported/updated: ${IMPORTED}"
-    NVD_TOTAL=$((NVD_TOTAL + IMPORTED))
+    echo "    Importing NVD (${NVD_LINES} entries, ${NVD_SIZE}, replace=${NVD_REPLACE})..."
+    if IMPORTED=$(import_cve_file "${NVD_FILE}" "nvd" "${NVD_REPLACE}" "false"); then
+        echo "    Imported/updated: ${IMPORTED}"
+        NVD_TOTAL=$((NVD_TOTAL + IMPORTED))
+        DEFERRED_SOURCES+=("nvd")
+    else
+        echo "    ERROR: NVD import failed"
+        FAILED_SOURCES+=("nvd:import")
+        NVD_FAILED=1
+    fi
     rm -f "${NVD_FILE}"
+elif [ -n "${NVD_SINCE}" ]; then
+    echo "    NVD unchanged since ${NVD_SINCE} — no delta imported."
 else
     echo "    ERROR: NVD produced no data"
     FAILED_SOURCES+=("nvd:no-data")
@@ -360,7 +561,7 @@ fi
 TOTAL_IMPORTED=$((TOTAL_IMPORTED + NVD_TOTAL))
 if [ "${NVD_FAILED}" -ne 0 ]; then
     echo "  ERROR: incomplete NVD download; preserving existing nvd source"
-elif [ "${NVD_TOTAL}" -eq 0 ]; then
+elif [ "${NVD_TOTAL}" -eq 0 ] && [ -z "${NVD_SINCE}" ]; then
     echo "  ERROR: no NVD data"
     FAILED_SOURCES+=("nvd:no-data")
 fi
@@ -379,9 +580,15 @@ if find_trivy_binary; then
 
     if [ -s "${TRIVY_FILE}" ]; then
         echo "  Importing Trivy CVEs ($(wc -l < "${TRIVY_FILE}") entries)..."
-        IMPORTED=$(import_cve_file "${TRIVY_FILE}" "trivy")
-        echo "  Imported/updated: ${IMPORTED}"
-        TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+        if IMPORTED=$(import_cve_file "${TRIVY_FILE}" "trivy" "true" "false"); then
+            echo "  Imported/updated: ${IMPORTED}"
+            TOTAL_IMPORTED=$((TOTAL_IMPORTED + IMPORTED))
+            DEFERRED_SOURCES+=("trivy")
+        else
+            echo "  ERROR: Trivy import failed"
+            FAILED_SOURCES+=("trivy:import")
+            TRIVY_FAILED=1
+        fi
     elif [ "${TRIVY_FAILED}" -eq 0 ]; then
         echo "  ERROR: no Trivy CVE data"
         FAILED_SOURCES+=("trivy:no-data")
@@ -396,6 +603,21 @@ else
 fi
 echo ""
 
+# --- Single deferred finalization pass ---
+# Every source above was imported with finalize=false so no per-source background
+# recalculation could run concurrently with a later import (the cve_database
+# deadlock source). Rebuild the affected/reference indexes, refresh source
+# freshness, and run exactly one security recalculation now that all writes are
+# committed.
+if [ "${#DEFERRED_SOURCES[@]}" -gt 0 ]; then
+    echo "[finalize] Finalizing deferred imports for: ${DEFERRED_SOURCES[*]}"
+    if ! finalize_deferred_cve_imports "full cvedb sync" "${DEFERRED_SOURCES[@]}"; then
+        echo "  ERROR: deferred import finalization failed" >&2
+        FAILED_SOURCES+=("finalize")
+    fi
+    echo ""
+fi
+
 # --- Summary ---
 echo "=========================================="
 echo " Sync Complete"
@@ -409,6 +631,18 @@ fi
 
 if [ "${OSV_TOTAL}" -gt 0 ]; then
     verify_osv_post_sync_freshness
+fi
+
+# Record a successful FULL sync AFTER post-sync verification passes, so a failed
+# verification (which aborts under set -e) does not advance the marker. Incremental
+# runs never advance it, so a full sync (with its upstream-deletion prune) always
+# happens at least every FULL_SYNC_INTERVAL_DAYS.
+if [ "${SYNC_MODE}" = "full" ]; then
+    if : > "${FULL_SYNC_MARKER}" 2>/dev/null; then
+        echo " Recorded successful full sync marker: ${FULL_SYNC_MARKER}"
+    else
+        echo " WARNING: could not write full sync marker ${FULL_SYNC_MARKER}; next run may repeat full sync" >&2
+    fi
 fi
 
 # Show DB stats

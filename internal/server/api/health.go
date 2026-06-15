@@ -13,11 +13,16 @@ import (
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	isAdmin := s.authenticateAdmin(r)
 	includeOperationalDetails := isAdmin
+	// fresh=true bypasses the short-TTL cache. The sync script polls this
+	// endpoint to watch async index-rebuild progress; an up-to-8s stale snapshot
+	// can show a just-queued rebuild as not-running with an empty last_result,
+	// which the poller would misread as a failed/unknown rebuild. Admin only.
+	fresh := isAdmin && r.URL.Query().Get("fresh") == "true"
 	// The admin operational health block runs ~10 aggregate/index-stat queries
 	// over large tables and the dashboard polls it constantly; serve it from a
 	// short TTL cache so polling is a map lookup. Non-admin liveness is cheap
 	// and always computed fresh.
-	if includeOperationalDetails {
+	if includeOperationalDetails && !fresh {
 		if cached, ok := s.healthCache.get("admin"); ok {
 			writeJSON(w, http.StatusOK, cached)
 			return

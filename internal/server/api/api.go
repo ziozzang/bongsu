@@ -343,6 +343,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/admin/cve-db/rematch", s.handleCveDbRematch)
 	s.mux.HandleFunc("POST /api/admin/cve-db/source/{source}/prune-stale", s.handleCveDbPruneStaleSource)
 	s.mux.HandleFunc("POST /api/admin/cve-db/source/{source}/refresh-status", s.handleCveDbRefreshSourceStatus)
+	s.mux.HandleFunc("GET /api/admin/cve-db/source/{source}/watermark", s.handleCveDbSourceWatermark)
 	s.mux.HandleFunc("POST /api/admin/cve-db/affected-index/rebuild", s.handleCveDbAffectedIndexRebuild)
 	s.mux.HandleFunc("POST /api/admin/cve-db/reference-index/rebuild", s.handleCveDbReferenceIndexRebuild)
 	s.mux.HandleFunc("POST /api/admin/cve-db/recalc-cvss", s.handleCveDbRecalcCVSS)

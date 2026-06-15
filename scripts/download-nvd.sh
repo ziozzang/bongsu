@@ -1,28 +1,41 @@
 #!/bin/bash
 # Download NVD CVE data via API 2.0 and convert to Bongsu import format (JSONL)
-# Usage: ./download-nvd.sh [output_file] [year_or_range]
+# Usage: ./download-nvd.sh [output_file] [year_or_range] [since_rfc3339]
 # Examples:
 #   ./download-nvd.sh nvd-2026.jsonl 2026
 #   ./download-nvd.sh nvd-recent.jsonl 2024,2025,2026
+#   ./download-nvd.sh nvd-delta.jsonl 2024,2025,2026 2026-06-13T11:50:57Z   # incremental
+#
+# When a third "since" argument (RFC3339 UTC) is provided, only CVEs MODIFIED at
+# or after that timestamp are fetched via NVD's lastModStartDate window (chunked
+# to the API's 120-day maximum). This avoids re-downloading every year each run.
+# In incremental mode an empty result is NOT an error (nothing changed).
 # API docs: https://nvd.nist.gov/developers/vulnerabilities
 
 set -euo pipefail
 
 OUTPUT="${1:-nvd-cve.jsonl}"
 YEARS="${2:-$(date +%Y)}"
+SINCE="${3:-}"
 API_KEY="${NVD_API_KEY:-}"
 OUTPUT_TMP="${OUTPUT}.tmp.$$"
 trap 'rm -f "${OUTPUT_TMP}"' EXIT
 
-echo "Downloading NVD CVE data for: ${YEARS}"
+if [ -n "${SINCE}" ]; then
+    echo "Downloading NVD CVE data modified since: ${SINCE}"
+else
+    echo "Downloading NVD CVE data for: ${YEARS}"
+fi
 > "${OUTPUT_TMP}"
 
 python3 << PYEOF
 import json, urllib.request, time, sys
+import datetime as dt
 
 output = "${OUTPUT_TMP}"
 api_key = "${API_KEY}" or None
 years = [y.strip() for y in "${YEARS}".split(",")]
+since_raw = "${SINCE}".strip()
 
 total_written = 0
 
@@ -34,23 +47,63 @@ def rfc3339_utc(value):
         return value
     return value + "Z"
 
-for year in years:
-    quarters = [
-        (f"{year}-01-01", f"{year}-03-31"),
-        (f"{year}-04-01", f"{year}-06-30"),
-        (f"{year}-07-01", f"{year}-09-30"),
-        (f"{year}-10-01", f"{year}-12-31"),
-    ]
-    for q_start, q_end in quarters:
-        print(f"  {year} {q_start[:10]} to {q_end[:10]}...", file=sys.stderr)
+def parse_since(value):
+    value = value.strip()
+    if not value:
+        return None
+    if value.endswith("Z"):
+        value = value[:-1] + "+00:00"
+    try:
+        return dt.datetime.fromisoformat(value).astimezone(dt.timezone.utc)
+    except Exception as exc:
+        print(f"ERROR: invalid since timestamp {value!r}: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+def nvd_ts(d):
+    # NVD 2.0 accepts extended ISO-8601; no offset is treated as UTC. Avoid '+'
+    # so the query string needs no URL-encoding.
+    return d.strftime("%Y-%m-%dT%H:%M:%S.000")
+
+# Build the list of (start, end) windows to query.
+# - incremental: lastMod windows from the since timestamp to now, <=120 days each.
+# - full:        pubDate quarters per year (original behavior).
+windows = []
+since_dt = parse_since(since_raw)
+incremental = since_dt is not None
+if incremental:
+    now = dt.datetime.now(dt.timezone.utc)
+    cur = since_dt
+    max_span = dt.timedelta(days=119)
+    while cur < now:
+        end = min(cur + max_span, now)
+        windows.append(("lastMod", nvd_ts(cur), nvd_ts(end)))
+        cur = end
+    if not windows:
+        windows.append(("lastMod", nvd_ts(since_dt), nvd_ts(dt.datetime.now(dt.timezone.utc))))
+else:
+    for year in years:
+        for q_start, q_end in [
+            (f"{year}-01-01", f"{year}-03-31"),
+            (f"{year}-04-01", f"{year}-06-30"),
+            (f"{year}-07-01", f"{year}-09-30"),
+            (f"{year}-10-01", f"{year}-12-31"),
+        ]:
+            windows.append(("pub", f"{q_start}T00:00:00.000", f"{q_end}T23:59:59.999"))
+
+for mode, w_start, w_end in windows:
+    if True:
+        print(f"  {mode} {w_start[:10]} to {w_end[:10]}...", file=sys.stderr)
         start_index = 0
         page = 0
 
         while True:
+            if mode == "lastMod":
+                date_params = f"lastModStartDate={w_start}&lastModEndDate={w_end}"
+            else:
+                date_params = f"pubStartDate={w_start}&pubEndDate={w_end}"
             url = (
                 f"https://services.nvd.nist.gov/rest/json/cves/2.0"
-                f"?pubStartDate={q_start}T00:00:00.000"
-                f"&pubEndDate={q_end}T23:59:59.999"
+                f"?{date_params}"
                 f"&resultsPerPage=2000&startIndex={start_index}"
             )
 
@@ -183,9 +236,11 @@ for year in years:
             time.sleep(6 if not api_key else 1)
 
 print(f"Total: {total_written} CVE entries written to {output}", file=sys.stderr)
-if total_written == 0:
+if total_written == 0 and not incremental:
     print("ERROR: NVD download produced no CVE entries", file=sys.stderr)
     sys.exit(1)
+if total_written == 0:
+    print("  (incremental: no NVD CVEs modified since the watermark)", file=sys.stderr)
 PYEOF
 
 mv "${OUTPUT_TMP}" "${OUTPUT}"

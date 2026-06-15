@@ -482,6 +482,30 @@ func (db *DB) DeleteAllCveEntriesTx(ctx context.Context, tx *sql.Tx) (int, error
 	return int(n), nil
 }
 
+// CveSourceWatermark is the incremental-sync cursor for one CVE source: the
+// newest upstream modification timestamp already ingested. The sync scripts read
+// it to fetch only entries changed since (NVD lastModStartDate, OSV/EPSS client
+// filtering), avoiding a full re-download every run.
+type CveSourceWatermark struct {
+	Source       string
+	Count        int
+	MaxModified  sql.NullTime // MAX(modified_date) — the upstream "modified" cursor
+	MaxUpdatedAt sql.NullTime // MAX(updated_at)   — our local write time, a fallback floor
+}
+
+// GetCveSourceWatermark returns the incremental cursor for a single source.
+func (db *DB) GetCveSourceWatermark(ctx context.Context, source string) (CveSourceWatermark, error) {
+	wm := CveSourceWatermark{Source: source}
+	err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*), MAX(modified_date), MAX(updated_at) FROM cve_database WHERE source=$1`,
+		source,
+	).Scan(&wm.Count, &wm.MaxModified, &wm.MaxUpdatedAt)
+	if err != nil {
+		return CveSourceWatermark{}, err
+	}
+	return wm, nil
+}
+
 func (db *DB) RefreshSecuritySourceStatusTx(ctx context.Context, tx *sql.Tx, source string) error {
 	return db.refreshSecuritySourceStatusTx(ctx, tx, source, false)
 }
