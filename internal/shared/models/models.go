@@ -301,6 +301,23 @@ type Session struct {
 	UserAgent  string    `json:"user_agent"`
 }
 
+// APIToken is a DB-backed, rotatable credential. The secret itself is never
+// stored or serialized — only its SHA-256 hash (TokenHash, also kept out of
+// JSON) and a short display Prefix.
+type APIToken struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	TokenHash  string     `json:"-"`
+	Prefix     string     `json:"prefix"`
+	Role       string     `json:"role"`
+	Subject    string     `json:"subject,omitempty"`
+	CreatedBy  string     `json:"created_by,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt  *time.Time `json:"revoked_at,omitempty"`
+}
+
 type CveEntry struct {
 	ID                      string     `json:"id"`
 	VulnerabilityID         string     `json:"vulnerability_id"`

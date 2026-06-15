@@ -1442,4 +1442,40 @@ export const api = {
   graphImages: (limit?: string) => request<{ images: ImageExposure[]; total: number }>('/graph/images', limit ? { limit } : undefined),
   graphOrg: () => request<OrgExposure>('/graph/org'),
   graphRemediation: (limit?: string) => request<{ remediations: RemediationRow[]; total: number }>('/graph/remediation', limit ? { limit } : undefined),
+
+  // User management
+  listUsers: () => request<{ users: LocalUser[]; total: number }>('/admin/users'),
+  createUser: (body: { username: string; password: string; role: string }) =>
+    requestJSON<LocalUser>('/admin/users', body),
+  updateUserRole: (id: string, role: string) =>
+    requestJSON<{ status: string; id: string; role: string }>(`/admin/users/${encodeURIComponent(id)}`, { role }, 'PATCH'),
+  resetUserPassword: (id: string, password: string) =>
+    requestJSON<{ status: string; sessions_revoked: number }>(`/admin/users/${encodeURIComponent(id)}/password`, { password }),
+  deleteUser: (id: string) => requestEmpty<{ status: string }>(`/admin/users/${encodeURIComponent(id)}`, 'DELETE'),
+
+  // API token management
+  listApiTokens: () => request<{ tokens: ApiToken[]; total: number }>('/admin/api-tokens'),
+  createApiToken: (body: { name: string; role: string; subject?: string; expires_in_days?: number }) =>
+    requestJSON<{ token: ApiToken; secret: string }>('/admin/api-tokens', body),
+  revokeApiToken: (id: string) => requestEmpty<{ status: string }>(`/admin/api-tokens/${encodeURIComponent(id)}`, 'DELETE'),
 };
+
+export interface LocalUser {
+  id: string;
+  username: string;
+  role: string;
+  created_at: string;
+  updated_at: string;
+}
+export interface ApiToken {
+  id: string;
+  name: string;
+  prefix: string;
+  role: string;
+  subject?: string;
+  created_by?: string;
+  created_at: string;
+  expires_at?: string | null;
+  last_used_at?: string | null;
+  revoked_at?: string | null;
+}

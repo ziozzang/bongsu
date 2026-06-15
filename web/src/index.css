@@ -1485,3 +1485,27 @@ tr.topo-row-risk > td { background: var(--high-dim); }
 .topo-own-bar-fill { height: 100%; background: var(--critical); border-radius: 3px; transition: width var(--transition); }
 .topo-own-meta { font-size: 0.75rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .topo-own-kev { color: var(--critical); font-weight: 600; }
+
+/* Admin: API token secret callout + revoked-row dim */
+.token-secret-callout {
+  background: var(--low-dim);
+  border: 1px solid var(--low);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+.token-secret-warning { color: var(--low); font-weight: 700; font-size: 0.875rem; margin-bottom: 0.625rem; }
+.token-secret-row { display: flex; align-items: center; gap: 0.625rem; flex-wrap: wrap; }
+.token-secret-value {
+  flex: 1;
+  min-width: 240px;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8125rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  word-break: break-all;
+  color: var(--text);
+}
+.token-secret-meta { margin-top: 0.625rem; font-size: 0.75rem; color: var(--text-muted); }
+tr.row-dim > td { opacity: 0.5; }

@@ -27,3 +27,13 @@ func IsRetryableError(err error) bool {
 	}
 	return false
 }
+
+// IsUniqueViolation reports whether err is a PostgreSQL unique_violation (23505),
+// so callers can map a duplicate key to a 409 without fragile string matching.
+func IsUniqueViolation(err error) bool {
+	var pqErr *pq.Error
+	if errors.As(err, &pqErr) {
+		return pqErr.Code == "23505"
+	}
+	return false
+}

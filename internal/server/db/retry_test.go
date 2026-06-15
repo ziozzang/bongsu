@@ -9,6 +9,39 @@ import (
 	"github.com/lib/pq"
 )
 
+func TestIsUniqueViolation(t *testing.T) {
+	if !IsUniqueViolation(&pq.Error{Code: "23505"}) {
+		t.Fatal("23505 must be a unique violation")
+	}
+	if IsUniqueViolation(&pq.Error{Code: "23503"}) {
+		t.Fatal("foreign-key violation is not a unique violation")
+	}
+	if IsUniqueViolation(errors.New("boom")) || IsUniqueViolation(nil) {
+		t.Fatal("non-pq / nil errors are not unique violations")
+	}
+}
+
+func TestLastAdminGuardLocksRows(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	// The guarded mutations must lock the admin set (and target) FOR UPDATE so the
+	// last-admin invariant is race-free, not a check-then-act.
+	for _, want := range []string{
+		"func lockAdminsAndTarget(",
+		"SELECT id FROM local_users WHERE role='admin' FOR UPDATE",
+		"SELECT role FROM local_users WHERE id=$1 FOR UPDATE",
+		"func (db *DB) DeleteLocalUserGuarded(",
+		"func (db *DB) UpdateLocalUserRoleGuarded(",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("last-admin guard missing %q", want)
+		}
+	}
+}
+
 func TestGetCveSourceWatermarkSQL(t *testing.T) {
 	out, err := readAllPackageGoFiles()
 	if err != nil {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -155,6 +155,8 @@ const ICON_PATHS: Record<string, React.ReactNode> = {
   'cve-search': <><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></>,
   scans: <><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 4v4h4M12 8v4l3 2" /></>,
   rbac: <><circle cx="8" cy="8" r="3.5" /><path d="m12.5 11 7 7M16 14l2.5-2.5M18.5 16.5 21 14" /></>,
+  users: <><circle cx="9" cy="8" r="3.5" /><path d="M3 20a6 6 0 0 1 12 0" /><path d="M16 4.5a3.5 3.5 0 0 1 0 7M21 20a6 6 0 0 0-4-5.6" /></>,
+  tokens: <><circle cx="8" cy="14" r="4" /><path d="m11 11 8-8M16 3h4v4M15 7l2 2" /></>,
   audit: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" /><path d="M14 3v5h5M9 13h6M9 17h6" /></>,
   schedules: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 9h18" /><circle cx="12" cy="15" r="2.5" /><path d="M12 14v1.2l.8.8" /></>,
   'asset-groups': <><path d="M4 7a2 2 0 0 1 2-2h3.5l2 2.5H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" /></>,
@@ -760,7 +762,7 @@ function parseCvssVector(vector: string) {
   return { version: '3.x', parts, labels, values };
 }
 
-type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology';
+type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology' | 'users' | 'tokens';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
 type VulnerabilityFilters = { overdueOnly?: boolean; exploitedOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
 type HostFilters = { agent_status?: string; inventory_status?: string; agent_version_state?: string };
@@ -853,6 +855,8 @@ export default function App() {
         {view === 'cve-search' && <CveSearchView />}
         {view === 'scans' && <ScansView initialRequestFilters={scanRequestFilters} />}
         {view === 'rbac' && <RBACView />}
+        {view === 'users' && <UsersView />}
+        {view === 'tokens' && <ApiTokensView />}
         {view === 'audit' && <AuditLogView />}
         {view === 'vulns' && <VulnsView initialFilters={vulnerabilityFilters} onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'vuln-detail' && <VulnDetailView key={selectedVuln?.id || ''} vuln={selectedVuln} onBack={() => setView('vulns')} />}
@@ -1025,6 +1029,8 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
       ['scans', 'Scan History', 'scans'],
     ] },
     { label: 'Administration', items: [
+      ['users', 'Users', 'users'],
+      ['tokens', 'API Tokens', 'tokens'],
       ['rbac', 'RBAC', 'rbac'],
       ['audit', 'Audit Log', 'audit'],
       ['schedules', 'Schedules', 'schedules'],
@@ -5582,6 +5588,287 @@ function RBACView() {
             </table>
           )}
         </div>
+      </div>
+    </>
+  );
+}
+
+function UsersView() {
+  const [users, setUsers] = useState<LocalUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [newRole, setNewRole] = useState('viewer');
+  const [resetId, setResetId] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError('');
+    api.listUsers()
+      .then(r => { setUsers(r.users || []); setLoading(false); })
+      .catch(err => { setError(err instanceof Error ? err.message : 'Failed to load users'); setLoading(false); });
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async () => {
+    setMsg('');
+    if (!newUsername.trim()) { setMsg('Username is required'); return; }
+    try {
+      await api.createUser({ username: newUsername.trim(), password: newPassword, role: newRole });
+      setMsg('User created');
+      setNewUsername('');
+      setNewPassword('');
+      setNewRole('viewer');
+      load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to create user');
+    }
+  };
+
+  const handleToggleRole = async (u: LocalUser) => {
+    setMsg('');
+    const nextRole = u.role === 'admin' ? 'viewer' : 'admin';
+    try {
+      await api.updateUserRole(u.id, nextRole);
+      setMsg(`${u.username} is now ${nextRole}`);
+      load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to change role');
+    }
+  };
+
+  const handleReset = async (u: LocalUser) => {
+    setMsg('');
+    try {
+      const r = await api.resetUserPassword(u.id, resetPassword);
+      setMsg(`Password reset for ${u.username} — sessions revoked: ${r.sessions_revoked}`);
+      setResetId('');
+      setResetPassword('');
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to reset password');
+    }
+  };
+
+  const handleDelete = async (u: LocalUser) => {
+    if (!confirm(`Delete user ${u.username}? This cannot be undone.`)) return;
+    setMsg('');
+    try {
+      await api.deleteUser(u.id);
+      setMsg(`User ${u.username} deleted`);
+      load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to delete user');
+    }
+  };
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>Users</h1>
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 0' }}><h2>Create User</h2></div>
+        <div className="filters">
+          <input type="text" placeholder="Username" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} />
+          <input type="password" placeholder="Password (min 12 chars)" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={{ minWidth: 200 }} />
+          <select value={newRole} onChange={(e) => setNewRole(e.target.value)}>
+            <option value="viewer">Viewer</option>
+            <option value="admin">Admin</option>
+          </select>
+          <div className="filter-actions">
+            {msg && <span className="result-count" style={{ color: /revoked|created|deleted|now/.test(msg) ? 'var(--low)' : 'var(--critical)' }}>{msg}</span>}
+            <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header"><h2>Users</h2></div>
+        {loading ? <Loading /> : error ? <LoadError message={error} onRetry={load} /> : (
+          <table>
+            <thead>
+              <tr><th>Username</th><th>Role</th><th>Created</th><th>Updated</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id}>
+                  <td>{u.username}</td>
+                  <td><span className={`badge ${u.role === 'admin' ? 'badge-high' : ''}`}>{u.role}</span></td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(u.created_at)}>{formatDateTime(u.created_at)}</td>
+                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(u.updated_at)}>{formatDateTime(u.updated_at)}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => handleToggleRole(u)}>
+                        Make {u.role === 'admin' ? 'viewer' : 'admin'}
+                      </button>
+                      {resetId === u.id ? (
+                        <>
+                          <input type="password" placeholder="New password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} style={{ height: '1.75rem', width: 150 }} />
+                          <button className="btn btn-primary btn-sm" onClick={() => handleReset(u)}>Save</button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => { setResetId(''); setResetPassword(''); }}>Cancel</button>
+                        </>
+                      ) : (
+                        <button className="btn btn-secondary btn-sm" onClick={() => { setResetId(u.id); setResetPassword(''); setMsg(''); }}>Reset password</button>
+                      )}
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {users.length === 0 && <tr className="empty-row"><td colSpan={5}>No users yet — create one above. Admins manage the console; viewers have read-only access.</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+function ApiTokensView() {
+  const [tokens, setTokens] = useState<ApiToken[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
+  const [name, setName] = useState('');
+  const [role, setRole] = useState('viewer');
+  const [subject, setSubject] = useState('');
+  const [expiresInDays, setExpiresInDays] = useState('');
+  const [secret, setSecret] = useState('');
+  const [secretName, setSecretName] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError('');
+    api.listApiTokens()
+      .then(r => { setTokens(r.tokens || []); setLoading(false); })
+      .catch(err => { setError(err instanceof Error ? err.message : 'Failed to load API tokens'); setLoading(false); });
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleCreate = async () => {
+    setMsg('');
+    if (!name.trim()) { setMsg('Name is required'); return; }
+    if (role === 'viewer' && !subject.trim()) { setMsg('Subject is required for viewer tokens'); return; }
+    const days = expiresInDays.trim() ? Number(expiresInDays) : undefined;
+    if (days !== undefined && (!Number.isFinite(days) || days < 0)) { setMsg('Expires in days must be a non-negative number'); return; }
+    try {
+      const r = await api.createApiToken({
+        name: name.trim(),
+        role,
+        subject: role === 'viewer' ? subject.trim() : undefined,
+        expires_in_days: days && days > 0 ? days : undefined,
+      });
+      setSecret(r.secret);
+      setSecretName(r.token.name);
+      setCopied(false);
+      setMsg('Token created');
+      setName('');
+      setSubject('');
+      setExpiresInDays('');
+      load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to create token');
+    }
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(secret);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const handleRevoke = async (t: ApiToken) => {
+    if (!confirm(`Revoke token "${t.name}"? Clients using it will stop working immediately.`)) return;
+    setMsg('');
+    try {
+      await api.revokeApiToken(t.id);
+      setMsg(`Token "${t.name}" revoked`);
+      load();
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Failed to revoke token');
+    }
+  };
+
+  const renderExpires = (t: ApiToken) => {
+    if (!t.expires_at) return <span style={{ color: 'var(--text-muted)' }}>never</span>;
+    const expired = new Date(t.expires_at).getTime() < Date.now();
+    return (
+      <span className="mono" style={{ fontSize: '0.75rem', color: expired ? 'var(--critical)' : undefined }} title={formatDateTimeFull(t.expires_at)}>
+        {formatDateTime(t.expires_at)}{expired ? ' (expired)' : ''}
+      </span>
+    );
+  };
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>API Tokens</h1>
+      {secret && (
+        <div className="token-secret-callout" style={{ marginBottom: '1rem' }}>
+          <div className="token-secret-warning">Copy this token now — it will not be shown again.</div>
+          <div className="token-secret-row">
+            <code className="token-secret-value">{secret}</code>
+            <button className="btn btn-primary btn-sm" onClick={handleCopy}>{copied ? 'Copied' : 'Copy'}</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => { setSecret(''); setCopied(false); }}>Dismiss</button>
+          </div>
+          <div className="token-secret-meta">Secret for token <strong>{secretName}</strong></div>
+        </div>
+      )}
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 0' }}><h2>Create Token</h2></div>
+        <div className="filters">
+          <input type="text" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="viewer">Viewer</option>
+            <option value="admin">Admin</option>
+          </select>
+          {role === 'viewer' && (
+            <input type="text" placeholder="user:alice or group:platform" value={subject} onChange={(e) => setSubject(e.target.value)} style={{ minWidth: 220 }} />
+          )}
+          <input type="number" min={0} placeholder="Expires in days (0 = never)" value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} style={{ width: 180 }} />
+          <div className="filter-actions">
+            {msg && <span className="result-count" style={{ color: /created|revoked/.test(msg) ? 'var(--low)' : 'var(--critical)' }}>{msg}</span>}
+            <button className="btn btn-primary" onClick={handleCreate}>Create</button>
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <div className="card-header"><h2>Tokens</h2></div>
+        {loading ? <Loading /> : error ? <LoadError message={error} onRetry={load} /> : (
+          <table>
+            <thead>
+              <tr><th>Name</th><th>Role</th><th>Subject</th><th>Prefix</th><th>Created</th><th>Expires</th><th>Last used</th><th>Status</th><th>Actions</th></tr>
+            </thead>
+            <tbody>
+              {tokens.map(t => {
+                const revoked = !!t.revoked_at;
+                return (
+                  <tr key={t.id} className={revoked ? 'row-dim' : ''}>
+                    <td>{t.name}</td>
+                    <td><span className={`badge ${t.role === 'admin' ? 'badge-high' : ''}`}>{t.role}</span></td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }}>{t.subject || '-'}</td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }}>{t.prefix}</td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(t.created_at)}>{formatDateTime(t.created_at)}</td>
+                    <td>{renderExpires(t)}</td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }} title={t.last_used_at ? formatDateTimeFull(t.last_used_at) : undefined}>
+                      {t.last_used_at ? formatDateTime(t.last_used_at) : <span style={{ color: 'var(--text-muted)' }}>never</span>}
+                    </td>
+                    <td><span className={`badge ${revoked ? 'badge-unknown' : 'badge-low'}`}>{revoked ? 'revoked' : 'active'}</span></td>
+                    <td>
+                      <button className="btn btn-danger btn-sm" onClick={() => handleRevoke(t)} disabled={revoked}>Revoke</button>
+                    </td>
+                  </tr>
+                );
+              })}
+              {tokens.length === 0 && <tr className="empty-row"><td colSpan={9}>No API tokens yet — create one above for programmatic access. The secret is shown only once at creation.</td></tr>}
+            </tbody>
+          </table>
+        )}
       </div>
     </>
   );

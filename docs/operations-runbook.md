@@ -642,6 +642,14 @@ On large CVE DB snapshots, avoid launching several forced `refresh=true` stats c
 
 The CVE DB is operationally degraded if required sources are missing, `TEMP-*` or `CVD-*` placeholders appear in API results or direct DB invariants, affected/reference indexes are stale, affected-package index rows lack package/ecosystem/fixed evidence, affected-package fixed evidence is URL/package URL/git URL/branch/hash-like non-version data, or EPSS enrichment coverage unexpectedly drops.
 
+## User And API Token Management
+
+Dashboard users and API credentials are managed at runtime (admin only) — no restart required.
+
+**Local users** (`local_users`, bcrypt) — `GET/POST /api/admin/users`, `PATCH /api/admin/users/{id}` (role), `POST /api/admin/users/{id}/password` (admin reset — revokes that user's sessions), `DELETE /api/admin/users/{id}`. Roles are `admin` | `viewer`. Guards (enforced atomically with row locks): the last admin cannot be demoted or deleted, and an admin cannot delete their own in-use account, so `BONGSU_API_KEY` plus at least one admin user always remain. Passwords are >= 12 chars unless `BONGSU_ALLOW_WEAK_SECRETS=true`. The initial admin is still bootstrapped from `BONGSU_ADMIN_USERNAME`/`BONGSU_ADMIN_PASSWORD` only when no users exist. Manage from the dashboard **Administration → Users** panel.
+
+**DB-backed API tokens** (`api_tokens`) — `GET/POST /api/admin/api-tokens`, `DELETE /api/admin/api-tokens/{id}`. These complement the static env keys (`BONGSU_API_KEY`, `BONGSU_VIEWER_API_KEYS`) with credentials that can be created, scoped, expired, and **revoked at runtime**. A token has a role (`admin`, or `viewer` with an RBAC `subject` like `user:alice`), an optional expiry, and tracks `last_used_at`. Only the SHA-256 hash is stored; the plaintext secret (`bsk_…`) is shown **once** at creation. Present it as `X-API-Key` or `Authorization: Bearer`. Active tokens are cached in memory (refresh `BONGSU_API_TOKEN_REFRESH_SECONDS`, default 30) and **revocation/creation take effect immediately** (the cache is evicted/seeded on the mutation). Manage from **Administration → API Tokens**. Prefer per-consumer DB tokens over sharing the static admin key so individual credentials can be rotated and revoked without a restart.
+
 ## Monitoring And Alerting
 
 Prometheus scrapes the conventional **`GET /metrics`** path (the same exposition is also at `/api/admin/metrics`). Because the metrics include vulnerability counts, `/metrics` is **not** public by default — authorize the scrape one of three ways (checked in this order):

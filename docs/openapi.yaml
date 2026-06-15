@@ -2059,6 +2059,133 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/admin/users:
+    get:
+      operationId: listUsers
+      tags: [admin]
+      summary: List dashboard users
+      security: [{ AdminKey: [] }]
+      responses:
+        "200": { description: User list }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: createUser
+      tags: [admin]
+      summary: Create a dashboard user
+      description: "Creates a local user. Password >= 12 chars (unless BONGSU_ALLOW_WEAK_SECRETS). Role: admin | viewer."
+      security: [{ AdminKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password, role]
+              properties:
+                username: { type: string }
+                password: { type: string }
+                role: { type: string, enum: [admin, viewer] }
+      responses:
+        "200": { description: Created user }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: Username already exists }
+  /api/admin/users/{id}:
+    patch:
+      operationId: updateUserRole
+      tags: [admin]
+      summary: Change a user's role
+      description: Refuses to demote the last admin (enforced atomically).
+      security: [{ AdminKey: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [role], properties: { role: { type: string, enum: [admin, viewer] } } }
+      responses:
+        "200": { description: Updated }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: User not found }
+        "409": { description: Cannot demote the last admin }
+    delete:
+      operationId: deleteUser
+      tags: [admin]
+      summary: Delete a user
+      description: Refuses to delete the last admin or your own in-use account.
+      security: [{ AdminKey: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: User not found }
+        "409": { description: Cannot delete the last admin or your own account }
+  /api/admin/users/{id}/password:
+    post:
+      operationId: resetUserPassword
+      tags: [admin]
+      summary: Admin-reset a user's password
+      description: Sets a new password and revokes all of that user's sessions.
+      security: [{ AdminKey: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [password], properties: { password: { type: string } } }
+      responses:
+        "200": { description: Password reset; returns sessions_revoked }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: User not found }
+  /api/admin/api-tokens:
+    get:
+      operationId: listApiTokens
+      tags: [admin]
+      summary: List DB-backed API tokens (metadata only, never the secret)
+      security: [{ AdminKey: [] }]
+      responses:
+        "200": { description: Token list }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+    post:
+      operationId: createApiToken
+      tags: [admin]
+      summary: Create a rotatable API token
+      description: >-
+        Creates a DB-backed token and returns the plaintext secret EXACTLY ONCE.
+        role=admin grants admin; role=viewer requires a subject (e.g. user:alice)
+        and resolves through RBAC. Optional expires_in_days (0/omitted = never).
+        Present the token as X-API-Key or Authorization: Bearer.
+      security: [{ AdminKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, role]
+              properties:
+                name: { type: string }
+                role: { type: string, enum: [admin, viewer] }
+                subject: { type: string }
+                expires_in_days: { type: integer }
+      responses:
+        "200": { description: "Created token + one-time secret" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/admin/api-tokens/{id}:
+    delete:
+      operationId: revokeApiToken
+      tags: [admin]
+      summary: Revoke an API token
+      description: Revocation takes effect immediately (the token is evicted from the in-memory auth cache).
+      security: [{ AdminKey: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Revoked }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Token not found }
+
   /api/admin/retention/prune:
     post:
       operationId: pruneRetention

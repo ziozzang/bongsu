@@ -54,6 +54,7 @@ type Server struct {
 	statsCache   *responseCache
 	healthCache  *responseCache
 	graphCache   *responseCache
+	apiTokens    *apiTokenStore
 
 	securityRecalcMu      sync.Mutex
 	securityRecalcRunning bool
@@ -185,6 +186,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	s.routes()
 	s.bootstrapAdmin()
 	s.startSessionCleanup()
+	s.startAPITokenStore()
 	s.startScheduler()
 	s.startVulnTrendSnapshotter()
 	// Optionally pre-build the airgap export bundle so the first download
@@ -363,6 +365,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/cve-db/sources", s.handleCveDbSources)
 	s.mux.HandleFunc("GET /api/admin/metrics", s.handleAdminMetrics)
 	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
+	s.mux.HandleFunc("GET /api/admin/users", s.handleListUsers)
+	s.mux.HandleFunc("POST /api/admin/users", s.handleCreateUser)
+	s.mux.HandleFunc("PATCH /api/admin/users/{id}", s.handleUpdateUserRole)
+	s.mux.HandleFunc("POST /api/admin/users/{id}/password", s.handleResetUserPassword)
+	s.mux.HandleFunc("DELETE /api/admin/users/{id}", s.handleDeleteUser)
+	s.mux.HandleFunc("GET /api/admin/api-tokens", s.handleListAPITokens)
+	s.mux.HandleFunc("POST /api/admin/api-tokens", s.handleCreateAPIToken)
+	s.mux.HandleFunc("DELETE /api/admin/api-tokens/{id}", s.handleRevokeAPIToken)
 	s.mux.HandleFunc("POST /api/admin/retention/prune", s.handleRetentionPrune)
 	s.mux.HandleFunc("GET /api/admin/rbac/status", s.handleAccessControlStatus)
 	s.mux.HandleFunc("GET /api/admin/rbac/subjects", s.handleListAccessSubjects)
@@ -461,6 +471,9 @@ func (s *Server) authenticateAdmin(r *http.Request) bool {
 	if s.matchKey(r.Header.Get("X-API-Key"), s.apiKey) {
 		return true
 	}
+	if entry, ok := s.apiTokenFromRequest(r); ok && entry.Role == "admin" {
+		return true
+	}
 	u := s.sessionUser(r)
 	return (u != nil && u.Role == "admin") || s.trustedIdentity(r).Admin || s.oidcIdentity(r).Admin
 }
@@ -493,6 +506,10 @@ func (s *Server) viewerSubjects(r *http.Request) []string {
 		if subject := s.viewerKeys[key]; subject != "" {
 			subjects = appendUniqueString(subjects, subject)
 		}
+	}
+	// DB-backed viewer tokens contribute their RBAC subject.
+	if entry, ok := s.apiTokenFromRequest(r); ok && entry.Role == "viewer" && entry.Subject != "" {
+		subjects = appendUniqueString(subjects, entry.Subject)
 	}
 	identity := s.trustedIdentity(r)
 	for _, subject := range identity.Subjects {
