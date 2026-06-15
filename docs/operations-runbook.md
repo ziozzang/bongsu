@@ -644,7 +644,21 @@ The CVE DB is operationally degraded if required sources are missing, `TEMP-*` o
 
 ## Monitoring And Alerting
 
-Scrape `/api/admin/metrics` with the admin API key and alert on:
+Prometheus scrapes the conventional **`GET /metrics`** path (the same exposition is also at `/api/admin/metrics`). Because the metrics include vulnerability counts, `/metrics` is **not** public by default — authorize the scrape one of three ways (checked in this order):
+
+1. `BONGSU_METRICS_PUBLIC=true` — serve `/metrics` with no auth (only on a trusted/isolated scrape network).
+2. `BONGSU_METRICS_TOKEN=<token>` — a dedicated read-only scrape credential that grants nothing but metrics. Present it as `Authorization: Bearer <token>`, `X-Metrics-Token`, `X-API-Key`, or `?token=`. Example Prometheus job:
+
+   ```yaml
+   - job_name: bongsu
+     metrics_path: /metrics
+     authorization: { credentials: "<BONGSU_METRICS_TOKEN>" }
+     static_configs: [{ targets: ["bongsu:5677"] }]
+   ```
+
+3. Otherwise the admin API key is required (same as `/api/admin/metrics`).
+
+Both paths serve a short-TTL cached body (`BONGSU_ADMIN_METRICS_CACHE_SECONDS`, default 15; `?refresh=true` forces recompute) and include self-contained Go runtime gauges (`bongsu_process_goroutines`, `bongsu_process_uptime_seconds`, `bongsu_process_memory_alloc_bytes`, `bongsu_process_gc_total`, …) alongside the domain metrics below. Alert on:
 
 - Any `bongsu_*_metrics_error` gauge greater than zero; increase `BONGSU_ADMIN_METRICS_DB_TIMEOUT_SECONDS` or investigate the failing DB query before trusting the affected metric family.
 - `bongsu_security_db_effective_status{status="ok"} != 1`, missing `bongsu_security_db_effective_source_info`, or a stale `bongsu_security_db_effective_last_sync_timestamp_seconds` / `bongsu_security_db_sync_persisted_last_success_timestamp_seconds`; these describe the persisted CVE DB currently used for matching, not only the in-process sync manager.

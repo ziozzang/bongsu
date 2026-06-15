@@ -2033,6 +2033,31 @@ paths:
                 type: string
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /metrics:
+    get:
+      operationId: getPrometheusMetrics
+      tags: [admin]
+      summary: Prometheus metrics (conventional scrape path)
+      description: >-
+        Same Prometheus exposition as /api/admin/metrics at the conventional
+        /metrics path. Not public by default. Authorize a scrape via
+        BONGSU_METRICS_PUBLIC=true, a dedicated BONGSU_METRICS_TOKEN (as
+        Authorization: Bearer, X-Metrics-Token, X-API-Key, or ?token=), or the
+        admin API key. Includes Go runtime gauges plus all bongsu_* domain
+        metrics.
+      security:
+        - AdminKey: []
+        - MetricsToken: []
+        - {}
+      responses:
+        "200":
+          description: Prometheus exposition text
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /api/admin/retention/prune:
     post:
@@ -4072,6 +4097,11 @@ components:
       in: header
       name: X-API-Key
       description: Viewer API key (subject:key format)
+
+    MetricsToken:
+      type: http
+      scheme: bearer
+      description: Dedicated read-only Prometheus scrape token (BONGSU_METRICS_TOKEN)
 
     InstallToken:
       type: apiKey

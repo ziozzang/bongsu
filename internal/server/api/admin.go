@@ -2,12 +2,15 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math"
 	"net/http"
+	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -21,6 +24,55 @@ func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
+	s.serveMetrics(w, r)
+}
+
+// handleMetrics serves the same Prometheus exposition at the conventional
+// /metrics path for scrapers. Authorization is scrape-friendly (see
+// metricsScrapeAuthorized): a dedicated read-only token, an opt-in public mode,
+// or the normal admin key — so a Prometheus job need not hold an admin
+// credential while the metrics (which include vulnerability counts) are not
+// exposed unauthenticated by default.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	if !s.metricsScrapeAuthorized(r) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	s.serveMetrics(w, r)
+}
+
+// metricsScrapeAuthorized authorizes a /metrics scrape. In priority order:
+//  1. BONGSU_METRICS_PUBLIC=true serves metrics with no auth (trusted networks).
+//  2. BONGSU_METRICS_TOKEN, when set, is accepted via Authorization: Bearer
+//     <token>, X-Metrics-Token, X-API-Key, or ?token= — a read-only scrape
+//     credential that grants nothing but metrics.
+//  3. Otherwise the caller must present the normal admin credential.
+func (s *Server) metricsScrapeAuthorized(r *http.Request) bool {
+	if envBool("BONGSU_METRICS_PUBLIC", false) {
+		return true
+	}
+	if token := strings.TrimSpace(os.Getenv("BONGSU_METRICS_TOKEN")); token != "" {
+		presented := strings.TrimSpace(r.Header.Get("X-Metrics-Token"))
+		if presented == "" {
+			presented = strings.TrimSpace(r.Header.Get("X-API-Key"))
+		}
+		if presented == "" {
+			if auth := strings.TrimSpace(r.Header.Get("Authorization")); strings.HasPrefix(auth, "Bearer ") {
+				presented = strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
+			}
+		}
+		if presented == "" {
+			presented = strings.TrimSpace(r.URL.Query().Get("token"))
+		}
+		if presented != "" && subtle.ConstantTimeCompare([]byte(presented), []byte(token)) == 1 {
+			return true
+		}
+	}
+	return s.authenticateAdmin(r)
+}
+
+func (s *Server) serveMetrics(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("refresh") != "true" {
 		if cached, ok := s.getAdminMetricsCache(); ok {
 			w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
@@ -45,6 +97,25 @@ func (s *Server) handleAdminMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.Header().Set("X-Bongsu-Cache", "miss")
 	w.Write(body)
+}
+
+// writeRuntimeMetrics emits standard Go process/runtime gauges so /metrics works
+// as a self-contained exporter (goroutines, memory, GC, uptime) without pulling
+// in the prometheus client library.
+func (s *Server) writeRuntimeMetrics(b *strings.Builder) {
+	writePromGauge(b, "bongsu_process_num_cpu", nil, float64(runtime.NumCPU()))
+	writePromGauge(b, "bongsu_process_goroutines", nil, float64(runtime.NumGoroutine()))
+	if !s.buildInfo.StartTime.IsZero() {
+		writePromGauge(b, "bongsu_process_start_time_seconds", nil, float64(s.buildInfo.StartTime.Unix()))
+		writePromGauge(b, "bongsu_process_uptime_seconds", nil, time.Since(s.buildInfo.StartTime).Seconds())
+	}
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	writePromGauge(b, "bongsu_process_memory_alloc_bytes", nil, float64(m.Alloc))
+	writePromGauge(b, "bongsu_process_memory_sys_bytes", nil, float64(m.Sys))
+	writePromGauge(b, "bongsu_process_memory_heap_inuse_bytes", nil, float64(m.HeapInuse))
+	writePromCounter(b, "bongsu_process_gc_total", nil, float64(m.NumGC))
+	writePromCounter(b, "bongsu_process_memory_alloc_bytes_total", nil, float64(m.TotalAlloc))
 }
 
 func (s *Server) getAdminMetricsCache() ([]byte, bool) {
@@ -94,7 +165,15 @@ func adminMetricsCacheTTL() time.Duration {
 
 func (s *Server) adminMetrics(ctx context.Context) string {
 	var b strings.Builder
-	writePromGauge(&b, "bongsu_build_info", map[string]string{"service": "bongsu"}, 1)
+	buildLabels := map[string]string{"service": "bongsu"}
+	if v := strings.TrimSpace(s.buildInfo.Version); v != "" {
+		buildLabels["version"] = v
+	}
+	if c := strings.TrimSpace(s.buildInfo.Commit); c != "" {
+		buildLabels["commit"] = c
+	}
+	writePromGauge(&b, "bongsu_build_info", buildLabels, 1)
+	s.writeRuntimeMetrics(&b)
 	if s.db != nil {
 		stats := s.db.Stats()
 		writePromGauge(&b, "bongsu_database_max_open_connections", nil, float64(stats.MaxOpenConnections))
