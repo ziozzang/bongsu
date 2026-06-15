@@ -316,6 +316,7 @@ type BlastRadiusRollup struct {
 	Severity        string         `json:"severity"`
 	CVSSScore       float64        `json:"cvss_score"`
 	EPSSScore       float64        `json:"epss_score"`
+	KnownExploited  bool           `json:"known_exploited"`
 	HostCount       int            `json:"host_count"`
 	ContainerCount  int            `json:"container_count"`
 	PackageCount    int            `json:"package_count"`

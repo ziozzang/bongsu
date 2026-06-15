@@ -1140,8 +1140,8 @@ export interface NotificationLogEntry {
   created_at: string;
 }
 
-export type GraphNodeType = 'host' | 'container' | 'package' | 'service' | 'cve' | 'group';
-export type GraphRel = 'runs' | 'installs' | 'contains' | 'exposes' | 'member_of' | 'affected_by' | 'exposed_to';
+export type GraphNodeType = 'host' | 'container' | 'package' | 'service' | 'cve' | 'group' | 'process' | 'image' | 'team' | 'environment';
+export type GraphRel = 'runs' | 'installs' | 'contains' | 'exposes' | 'member_of' | 'affected_by' | 'exposed_to' | 'served_by' | 'built_from' | 'image_contains' | 'runs_on' | 'owned_by' | 'in_environment' | 'same_as';
 
 export interface GraphNode {
   type: GraphNodeType;
@@ -1181,9 +1181,65 @@ export interface BlastRadiusRollup {
   container_count: number;
   package_count: number;
   group_count: number;
+  known_exploited: boolean;
   by_severity: Record<string, number>;
   by_environment: Record<string, number>;
   by_criticality: Record<string, number>;
+}
+
+export interface ExposedService {
+  host_id: string;
+  hostname: string;
+  environment: string;
+  criticality: string;
+  address: string;
+  port: number;
+  protocol: string;
+  service_name: string;
+  pid: number;
+  process_name: string;
+  process_user: string;
+  cmdline: string;
+  host_critical_high: number;
+  host_known_exploited: boolean;
+}
+export interface ImageExposure {
+  digest: string;
+  image_name: string;
+  host_count: number;
+  container_count: number;
+  package_count: number;
+  cve_count: number;
+  critical_high: number;
+  max_cvss: number;
+  known_exploited: boolean;
+}
+export interface OrgExposureRow {
+  key: string;
+  host_count: number;
+  critical_high: number;
+  known_exploited_hosts: number;
+}
+export interface OrgExposure {
+  by_team: OrgExposureRow[];
+  by_environment: OrgExposureRow[];
+  by_criticality: OrgExposureRow[];
+}
+export interface RemediationRow {
+  package_name: string;
+  ecosystem: string;
+  fixed_version: string;
+  cve_count: number;
+  host_count: number;
+  critical_high: number;
+  max_cvss: number;
+  known_exploited: boolean;
+}
+export interface CveGraphInfo {
+  vulnerability_id: string;
+  known_exploited: boolean;
+  epss_score: number;
+  aliases: string[];
 }
 
 export const api = {
@@ -1381,4 +1437,9 @@ export const api = {
     request<{ graph: GraphNeighborhood; rollup: BlastRadiusRollup }>('/graph/blast-radius', { vulnerability_id: vulnerabilityId }),
   graphHost: (id: string) => request<GraphNeighborhood>(`/graph/host/${encodeURIComponent(id)}`),
   graphGroup: (id: string) => request<GraphNeighborhood>(`/graph/group/${encodeURIComponent(id)}`),
+  graphCve: (id: string) => request<CveGraphInfo>(`/graph/cve/${encodeURIComponent(id)}`),
+  graphExposure: (limit?: string) => request<{ services: ExposedService[]; total: number }>('/graph/exposure', limit ? { limit } : undefined),
+  graphImages: (limit?: string) => request<{ images: ImageExposure[]; total: number }>('/graph/images', limit ? { limit } : undefined),
+  graphOrg: () => request<OrgExposure>('/graph/org'),
+  graphRemediation: (limit?: string) => request<{ remediations: RemediationRow[]; total: number }>('/graph/remediation', limit ? { limit } : undefined),
 };

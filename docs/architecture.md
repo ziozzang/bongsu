@@ -218,7 +218,19 @@ package --affected_by--> cve          (vulnerabilities.vulnerability_id)
 host    --exposed_to-->  cve          (derived: host has a package affected by cve)
 ```
 
-Endpoints (all `GET`, RBAC host-scoped via `AccessScope`, served read-only to admin and viewer keys): `/api/graph/schema` (static ontology), `/api/graph/overview` (node/edge counts), `/api/graph/blast-radius?vulnerability_id=` (CVE → affected hosts + groups, with severity/environment/criticality rollups), `/api/graph/host/{id}` (host-centered subgraph), `/api/graph/group/{id}` (group → member hosts). The dashboard's **Topology** view renders these as an interactive node-link diagram and a CVE blast-radius explorer. Every query is bounded (node/host caps with `truncated` flags) and constrained to the caller's visible hosts.
+Extended node types and relations (`internal/server/db/graph_ext.go`): `process`, `image`, `team`, `environment`; `service --served_by--> process`, `container --built_from--> image`, `image --image_contains--> package`, `image --runs_on--> host`, `host --owned_by--> team`, `host --in_environment--> environment`, `cve --same_as--> cve` (alias equivalence via shared reference keys).
+
+Endpoints (all `GET`, RBAC host-scoped via `AccessScope`, served read-only to admin and viewer keys):
+- `/api/graph/schema` static ontology; `/api/graph/overview` node/edge counts.
+- `/api/graph/blast-radius?vulnerability_id=` CVE → affected hosts + groups, with severity/environment/criticality rollups; CVE nodes enriched with `known_exploited` (CISA KEV) + `epss_score`.
+- `/api/graph/host/{id}`, `/api/graph/group/{id}` host/group-centered subgraphs.
+- `/api/graph/exposure` **network attack surface** — exposed (non-loopback) services joined to their process by pid, ranked by host risk (known-exploited, then critical/high). The "internet-reachable + vulnerable" view.
+- `/api/graph/images` container images deduplicated by digest with host/container/package/CVE fan-out; package/CVE counts linked by (host, scan, container_id) and `package_id` (never free-text container name), so counts are scope-safe.
+- `/api/graph/org` exposure rollup by team / environment / criticality.
+- `/api/graph/remediation` highest-leverage package upgrades — how many CVEs across how many hosts one upgrade clears.
+- `/api/graph/cve/{id}` exploit signals (KEV/EPSS) + alias identifiers.
+
+The dashboard's **Topology** view renders these as an interactive node-link diagram plus Attack-Surface, Images, Remediation, Ownership, and CVE blast-radius sections. Every query is bounded (node/host caps with `truncated` flags) and constrained to the caller's visible hosts.
 
 ## Migrations
 

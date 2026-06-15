@@ -45,3 +45,36 @@ func TestGraphQueriesUseLatestScanAndScope(t *testing.T) {
 		t.Fatalf("graph queries should constrain to latest scan via latestScansSub (found %d references, want >=6)", n)
 	}
 }
+
+func TestGraphExtMethodsAndInvariants(t *testing.T) {
+	out, err := readAllPackageGoFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(out)
+	for _, fn := range []string{
+		"func (db *DB) CVESignals",
+		"func (db *DB) CVEAliases",
+		"func (db *DB) ExposedServices",
+		"func (db *DB) Images",
+		"func (db *DB) OrgExposure",
+		"func (db *DB) Remediation",
+	} {
+		if !strings.Contains(body, fn) {
+			t.Fatalf("graph extension method missing: %s", fn)
+		}
+	}
+	// The scope-bearing extension queries must use scopeClause for RBAC and the
+	// inventory ones must constrain to the latest scan.
+	for _, marker := range []string{
+		`scopeClause(scope, "pi.host_id"`, // ExposedServices
+		`scopeClause(scope, "c.host_id"`,  // Images
+		`scopeClause(scope, "h.id"`,       // OrgExposure
+		`scopeClause(scope, "v.host_id"`,  // Remediation / BlastRadius
+		"source='cisa-kev'",               // KEV exploit signal
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("graph extension missing required marker: %q", marker)
+		}
+	}
+}

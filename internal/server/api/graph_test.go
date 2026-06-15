@@ -17,6 +17,11 @@ func TestGraphRoutesRegistered(t *testing.T) {
 		`s.mux.HandleFunc("GET /api/graph/blast-radius", s.handleGraphBlastRadius)`,
 		`s.mux.HandleFunc("GET /api/graph/host/{id}", s.handleGraphHost)`,
 		`s.mux.HandleFunc("GET /api/graph/group/{id}", s.handleGraphGroup)`,
+		`s.mux.HandleFunc("GET /api/graph/cve/{id}", s.handleGraphCVE)`,
+		`s.mux.HandleFunc("GET /api/graph/exposure", s.handleGraphExposure)`,
+		`s.mux.HandleFunc("GET /api/graph/images", s.handleGraphImages)`,
+		`s.mux.HandleFunc("GET /api/graph/org", s.handleGraphOrg)`,
+		`s.mux.HandleFunc("GET /api/graph/remediation", s.handleGraphRemediation)`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("graph route missing: %q", want)
@@ -28,7 +33,8 @@ func TestGraphHandlersAuthAndScope(t *testing.T) {
 	body := readAllPackageGoFiles(t)
 	for _, fn := range []string{
 		"handleGraphSchema", "handleGraphOverview", "handleGraphBlastRadius",
-		"handleGraphHost", "handleGraphGroup",
+		"handleGraphHost", "handleGraphGroup", "handleGraphCVE",
+		"handleGraphExposure", "handleGraphImages", "handleGraphOrg", "handleGraphRemediation",
 	} {
 		start := strings.Index(body, "func (s *Server) "+fn+"(")
 		if start < 0 {
@@ -44,7 +50,8 @@ func TestGraphHandlersAuthAndScope(t *testing.T) {
 		}
 	}
 	// The data-bearing handlers must derive an RBAC scope, not query unscoped.
-	for _, fn := range []string{"handleGraphOverview", "handleGraphBlastRadius", "handleGraphHost", "handleGraphGroup"} {
+	for _, fn := range []string{"handleGraphOverview", "handleGraphBlastRadius", "handleGraphHost", "handleGraphGroup",
+		"handleGraphExposure", "handleGraphImages", "handleGraphOrg", "handleGraphRemediation"} {
 		start := strings.Index(body, "func (s *Server) "+fn+"(")
 		end := strings.Index(body[start+1:], "\nfunc ")
 		seg := body[start : start+1+end]

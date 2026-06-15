@@ -971,6 +971,102 @@ paths:
           description: Group neighborhood graph
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/graph/exposure:
+    get:
+      operationId: getGraphExposure
+      tags: [graph]
+      summary: Network attack surface (exposed services ranked by host risk)
+      description: >-
+        Lists network-bound (non-loopback) listening services, joined to their
+        backing process by pid, and ranked by the host's vulnerability risk
+        (known-exploited first, then critical/high count). Answers "what is my
+        internet-reachable, vulnerable attack surface?". RBAC host-scoped.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 200, maximum: 2000 }
+      responses:
+        "200": { description: Ranked exposed services }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/graph/images:
+    get:
+      operationId: getGraphImages
+      tags: [graph]
+      summary: Container images deduplicated by digest with vulnerability footprint
+      description: >-
+        Lists container images (grouped by digest) with host/container/package/CVE
+        fan-out, so patching one image to fix many assets can be prioritized.
+        RBAC host-scoped; package/CVE counts are linked by (host, scan,
+        container_id) and package_id, never by free-text container name.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 200, maximum: 1000 }
+      responses:
+        "200": { description: Image exposure list }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/graph/org:
+    get:
+      operationId: getGraphOrg
+      tags: [graph]
+      summary: Exposure rollup by team / environment / criticality
+      description: >-
+        Rolls vulnerability exposure (host count, critical/high findings,
+        known-exploited host count) up by organizational dimension so ownership
+        and risk concentration are visible. RBAC host-scoped.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      responses:
+        "200": { description: Organizational exposure rollup }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/graph/remediation:
+    get:
+      operationId: getGraphRemediation
+      tags: [graph]
+      summary: Highest-leverage package upgrades (patch prioritization)
+      description: >-
+        Ranks (package, fixed_version) upgrades by how many CVEs across how many
+        hosts a single upgrade would clear (known-exploited and critical/high
+        first). Only findings carrying a concrete fixed_version are included.
+        RBAC host-scoped.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, default: 100, maximum: 1000 }
+      responses:
+        "200": { description: Ranked remediations }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/graph/cve/{id}:
+    get:
+      operationId: getGraphCve
+      tags: [graph]
+      summary: CVE exploit signals and aliases
+      description: >-
+        Returns a CVE's known-exploited (CISA KEV) flag, EPSS score, and alias
+        identifiers (CVE/GHSA/DSA/distro equivalents resolved via shared
+        reference keys).
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: CVE signals and aliases }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /api/vulnerabilities/triage:
     post:

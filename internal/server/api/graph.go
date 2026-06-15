@@ -98,6 +98,12 @@ func (s *Server) handleGraphBlastRadius(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	s.enrichGraphCVENodes(r, graph)
+	if rollup != nil {
+		if sig, ok := graph.Root.Attrs["known_exploited"].(bool); ok {
+			rollup.KnownExploited = sig
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"graph": graph, "rollup": rollup})
 }
 
@@ -121,6 +127,7 @@ func (s *Server) handleGraphHost(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "forbidden")
 		return
 	}
+	s.enrichGraphCVENodes(r, nh)
 	writeJSON(w, http.StatusOK, nh)
 }
 
@@ -145,6 +152,140 @@ func (s *Server) handleGraphGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, nh)
+}
+
+// enrichGraphCVENodes annotates every cve node (including the root if it is a
+// cve) with known_exploited (CISA KEV) and epss_score in one batch query.
+func (s *Server) enrichGraphCVENodes(r *http.Request, nh *db.GraphNeighborhood) {
+	if nh == nil {
+		return
+	}
+	vids := map[string]bool{}
+	if nh.Root.Type == db.NodeCVE {
+		vids[nh.Root.ID] = true
+	}
+	for _, n := range nh.Nodes {
+		if n.Type == db.NodeCVE {
+			vids[n.ID] = true
+		}
+	}
+	if len(vids) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(vids))
+	for v := range vids {
+		ids = append(ids, v)
+	}
+	sigs, err := s.db.CVESignals(r.Context(), ids)
+	if err != nil {
+		return
+	}
+	apply := func(n *db.GraphNode) {
+		if n.Type != db.NodeCVE {
+			return
+		}
+		if sig, ok := sigs[n.ID]; ok {
+			if n.Attrs == nil {
+				n.Attrs = map[string]any{}
+			}
+			n.Attrs["known_exploited"] = sig.KnownExploited
+			n.Attrs["epss_score"] = sig.EPSSScore
+		}
+	}
+	apply(&nh.Root)
+	for i := range nh.Nodes {
+		apply(&nh.Nodes[i])
+	}
+}
+
+func (s *Server) handleGraphExposure(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	rows, err := s.db.ExposedServices(r.Context(), s.accessScope(r), limitParam(r, 200))
+	if err != nil {
+		log.Printf("graph exposure: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"services": rows, "total": len(rows)})
+}
+
+func (s *Server) handleGraphImages(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	rows, err := s.db.Images(r.Context(), s.accessScope(r), limitParam(r, 200))
+	if err != nil {
+		log.Printf("graph images: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"images": rows, "total": len(rows)})
+}
+
+func (s *Server) handleGraphOrg(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	org, err := s.db.OrgExposure(r.Context(), s.accessScope(r))
+	if err != nil {
+		log.Printf("graph org: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	writeJSON(w, http.StatusOK, org)
+}
+
+func (s *Server) handleGraphRemediation(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	rows, err := s.db.Remediation(r.Context(), s.accessScope(r), limitParam(r, 100))
+	if err != nil {
+		log.Printf("graph remediation: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"remediations": rows, "total": len(rows)})
+}
+
+func (s *Server) handleGraphCVE(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	vid := strings.TrimSpace(r.PathValue("id"))
+	if vid == "" {
+		writeError(w, http.StatusBadRequest, "vulnerability id is required")
+		return
+	}
+	sigs, err := s.db.CVESignals(r.Context(), []string{vid})
+	if err != nil {
+		log.Printf("graph cve signals: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	aliases, err := s.db.CVEAliases(r.Context(), vid)
+	if err != nil {
+		log.Printf("graph cve aliases: %v", err)
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if aliases == nil {
+		aliases = []string{}
+	}
+	sig := sigs[vid]
+	writeJSON(w, http.StatusOK, map[string]any{
+		"vulnerability_id": vid,
+		"known_exploited":  sig.KnownExploited,
+		"epss_score":       sig.EPSSScore,
+		"aliases":          aliases,
+	})
 }
 
 func emptyNeighborhood(t db.GraphNodeType, id string) *db.GraphNeighborhood {
