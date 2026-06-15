@@ -204,6 +204,22 @@ Classification logic is in `internal/server/db/classify.go` (`ClassifySecuritySo
 | `scan_requests` | Force scan request lifecycle |
 | `audit_logs` | Append-only admin/agent event trail |
 
+### Asset Knowledge Graph (`internal/server/db/graph.go`, `internal/server/api/graph.go`)
+
+A typed, read-only semantic projection over the inventory and CVE tables — **not** a new source of truth. Nodes and edges are derived live from the latest scan per host (`latestScansSub`), so the graph never goes stale and needs no refresh job. The ontology:
+
+```
+host    --runs-->        container
+host    --installs-->    package      (asset_type='host')
+container --contains-->  package      (asset_type='container')
+host    --exposes-->     service      (port_info)
+host    --member_of-->   group        (asset_group_members)
+package --affected_by--> cve          (vulnerabilities.vulnerability_id)
+host    --exposed_to-->  cve          (derived: host has a package affected by cve)
+```
+
+Endpoints (all `GET`, RBAC host-scoped via `AccessScope`, served read-only to admin and viewer keys): `/api/graph/schema` (static ontology), `/api/graph/overview` (node/edge counts), `/api/graph/blast-radius?vulnerability_id=` (CVE → affected hosts + groups, with severity/environment/criticality rollups), `/api/graph/host/{id}` (host-centered subgraph), `/api/graph/group/{id}` (group → member hosts). The dashboard's **Topology** view renders these as an interactive node-link diagram and a CVE blast-radius explorer. Every query is bounded (node/host caps with `truncated` flags) and constrained to the caller's visible hosts.
+
 ## Migrations
 
 Migrations are SQL files in `migrations/` numbered 001–057. Applied once at startup, tracked with per-file SHA-256 checksums in `schema_migrations`. Startup rejects a modified applied file. Migrations 053–057 added: triage assignee, email channel, host facts, container facts, scan.failed trigger.

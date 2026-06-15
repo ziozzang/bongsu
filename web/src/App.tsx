@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -158,6 +158,7 @@ const ICON_PATHS: Record<string, React.ReactNode> = {
   audit: <><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" /><path d="M14 3v5h5M9 13h6M9 17h6" /></>,
   schedules: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M16 2v4M8 2v4M3 9h18" /><circle cx="12" cy="15" r="2.5" /><path d="M12 14v1.2l.8.8" /></>,
   'asset-groups': <><path d="M4 7a2 2 0 0 1 2-2h3.5l2 2.5H18a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" /></>,
+  topology: <><circle cx="12" cy="5" r="2.5" /><circle cx="5" cy="18" r="2.5" /><circle cx="19" cy="18" r="2.5" /><path d="M10.5 7 6.5 16M13.5 7l4 9M7 18h10" /></>,
   trends: <><path d="m3 17 6-6 4 4 8-8" /><path d="M17 7h4v4" /></>,
   reports: <><path d="M3 3v18h18" /><rect x="7" y="11" width="3" height="6" rx="0.5" /><rect x="12.5" y="7" width="3" height="10" rx="0.5" /><rect x="18" y="13" width="3" height="4" rx="0.5" /></>,
   notifications: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9Z" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></>,
@@ -759,7 +760,7 @@ function parseCvssVector(vector: string) {
   return { version: '3.x', parts, labels, values };
 }
 
-type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications';
+type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
 type VulnerabilityFilters = { overdueOnly?: boolean; exploitedOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
 type HostFilters = { agent_status?: string; inventory_status?: string; agent_version_state?: string };
@@ -860,6 +861,7 @@ export default function App() {
         {view === 'trends' && <TrendsView />}
         {view === 'reports' && <ReportsView />}
         {view === 'notifications' && <NotificationsView />}
+        {view === 'topology' && <TopologyView onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
       </div>
     </div>
   );
@@ -1013,6 +1015,9 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
       ['packages', 'Packages', 'packages'],
       ['containers', 'Containers', 'containers'],
       ['asset-groups', 'Asset Groups', 'asset-groups'],
+    ] },
+    { label: 'Topology', items: [
+      ['topology', 'Topology', 'topology'],
     ] },
     { label: 'Security', items: [
       ['vulns', 'Vulnerabilities', 'vulnerabilities'],
@@ -6068,6 +6073,416 @@ function AssetGroupsView() {
         )}
       </div>
     </>
+  );
+}
+
+// ── Topology (typed asset knowledge graph) ──────────────────────────────────
+const GRAPH_NODE_COLORS: Record<GraphNodeType, string> = {
+  host: '#7c6cf0',      // primary violet
+  container: '#3aa0e0', // blue
+  package: '#30c060',   // green
+  service: '#e0b020',   // amber
+  cve: '#f04444',       // red
+  group: '#c060d0',     // magenta
+};
+
+const GRAPH_MAX_NODES = 60;
+
+function graphNodeColor(n: GraphNode): string {
+  if (n.type === 'cve') {
+    const sev = String(n.attrs?.severity ?? '');
+    if (sev) return severityColor(sev);
+  }
+  return GRAPH_NODE_COLORS[n.type] || 'var(--text-muted)';
+}
+
+function graphNodeTitle(n: GraphNode): string {
+  const parts = [`${n.type}: ${n.label}`];
+  const sev = String(n.attrs?.severity ?? '');
+  if (sev) parts.push(`severity ${sev}`);
+  const cvss = Number(n.attrs?.cvss_score ?? 0);
+  if (cvss > 0) parts.push(`CVSS ${cvss.toFixed(1)}`);
+  const env = String(n.attrs?.environment ?? '');
+  if (env) parts.push(`env ${env}`);
+  return parts.join(' · ');
+}
+
+// GraphCanvas renders a GraphNeighborhood as a pure-SVG radial node-link diagram
+// (no external deps). The root sits at the center; the remaining nodes are
+// grouped by type and distributed across concentric rings.
+function GraphCanvas({ data, onNodeClick }: { data: GraphNeighborhood; onNodeClick: (n: GraphNode) => void }) {
+  const cx = 400;
+  const cy = 260;
+
+  const layout = useMemo(() => {
+    // Cap rendered nodes for readability, preferring high-CVSS nodes.
+    const rootKey = `${data.root.type}|${data.root.id}`;
+    const others = data.nodes.filter(n => `${n.type}|${n.id}` !== rootKey);
+    const sorted = [...others].sort((a, b) => Number(b.attrs?.cvss_score ?? 0) - Number(a.attrs?.cvss_score ?? 0));
+    const shown = sorted.slice(0, GRAPH_MAX_NODES);
+    const hiddenCount = sorted.length - shown.length;
+
+    // Group by node type so each type occupies its own arc.
+    const byType = new Map<GraphNodeType, GraphNode[]>();
+    shown.forEach(n => {
+      const list = byType.get(n.type) || [];
+      list.push(n);
+      byType.set(n.type, list);
+    });
+
+    const pos = new Map<string, { x: number; y: number }>();
+    pos.set(rootKey, { x: cx, y: cy });
+
+    const types = Array.from(byType.keys());
+    const ringStep = 110;
+    types.forEach((t, ti) => {
+      const list = byType.get(t) || [];
+      const radius = ringStep * (ti + 1);
+      // Offset each ring's starting angle so labels do not stack vertically.
+      const startAngle = (ti * Math.PI) / 6;
+      list.forEach((n, i) => {
+        const angle = startAngle + (i / Math.max(1, list.length)) * Math.PI * 2;
+        pos.set(`${n.type}|${n.id}`, {
+          x: cx + radius * Math.cos(angle),
+          y: cy + radius * Math.sin(angle),
+        });
+      });
+    });
+
+    const drawn = [data.root, ...shown];
+    const drawnKeys = new Set(drawn.map(n => `${n.type}|${n.id}`));
+    const edges = data.edges.filter(e =>
+      drawnKeys.has(`${e.src_type}|${e.src_id}`) && drawnKeys.has(`${e.dst_type}|${e.dst_id}`),
+    );
+
+    return { pos, drawn, edges, hiddenCount, rootKey };
+  }, [data]);
+
+  const usedTypes = useMemo(() => {
+    const set = new Set<GraphNodeType>();
+    layout.drawn.forEach(n => set.add(n.type));
+    return Array.from(set);
+  }, [layout]);
+
+  return (
+    <div className="graph-canvas">
+      <svg viewBox="0 0 800 520" width="100%" height={480} role="img" aria-label="Asset relationship graph">
+        {layout.edges.map((e, i) => {
+          const a = layout.pos.get(`${e.src_type}|${e.src_id}`);
+          const b = layout.pos.get(`${e.dst_type}|${e.dst_id}`);
+          if (!a || !b) return null;
+          return (
+            <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="graph-edge">
+              <title>{e.rel}</title>
+            </line>
+          );
+        })}
+        {layout.drawn.map(n => {
+          const p = layout.pos.get(`${n.type}|${n.id}`);
+          if (!p) return null;
+          const isRoot = `${n.type}|${n.id}` === layout.rootKey;
+          const r = isRoot ? 16 : 9;
+          const color = graphNodeColor(n);
+          const label = n.label.length > 22 ? n.label.slice(0, 21) + '…' : n.label;
+          return (
+            <g
+              key={`${n.type}|${n.id}`}
+              className="graph-node"
+              transform={`translate(${p.x}, ${p.y})`}
+              onClick={() => onNodeClick(n)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); onNodeClick(n); } }}
+            >
+              <title>{graphNodeTitle(n)}</title>
+              <circle r={r} fill={color} stroke={isRoot ? 'var(--text)' : 'var(--bg)'} strokeWidth={isRoot ? 2 : 1.5} />
+              <text x={0} y={r + 13} textAnchor="middle" className="graph-node-label">{label}</text>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="graph-footer">
+        <div className="graph-legend">
+          {usedTypes.map(t => (
+            <span key={t} className="graph-legend-item">
+              <span className="graph-legend-dot" style={{ background: GRAPH_NODE_COLORS[t] }} />
+              {t}
+            </span>
+          ))}
+        </div>
+        {(layout.hiddenCount > 0 || data.truncated) && (
+          <span className="graph-truncated">
+            {layout.hiddenCount > 0 ? `+${layout.hiddenCount} more (truncated)` : 'results truncated'}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type TopologyFocus =
+  | { kind: 'blast'; id: string }
+  | { kind: 'host'; id: string }
+  | { kind: 'group'; id: string };
+
+function TopologyView({ onSelectHost }: { onSelectHost: (id: string) => void }) {
+  const [schema, setSchema] = useState<GraphSchema | null>(null);
+  const [overview, setOverview] = useState<GraphOverview | null>(null);
+  const [overviewError, setOverviewError] = useState('');
+
+  const [cveInput, setCveInput] = useState('');
+  const [rollup, setRollup] = useState<BlastRadiusRollup | null>(null);
+
+  const [graph, setGraph] = useState<GraphNeighborhood | null>(null);
+  const [trail, setTrail] = useState<{ focus: TopologyFocus; label: string }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadOverview = useCallback(() => {
+    setOverviewError('');
+    Promise.all([
+      api.graphOverview(),
+      api.graphSchema(),
+    ]).then(([ov, sc]) => {
+      setOverview(ov);
+      setSchema(sc);
+    }).catch((err) => setOverviewError(err?.message || 'Failed to load graph overview'));
+  }, []);
+
+  useEffect(() => { loadOverview(); }, [loadOverview]);
+
+  const focusHost = useCallback((id: string, label: string, append: boolean) => {
+    setLoading(true);
+    setError('');
+    api.graphHost(id)
+      .then((g) => {
+        setGraph(g);
+        setRollup(null);
+        setTrail(prev => append ? [...prev, { focus: { kind: 'host', id }, label }] : [{ focus: { kind: 'host', id }, label }]);
+        setLoading(false);
+      })
+      .catch((err) => { setError(err?.message || 'Failed to load host neighborhood'); setLoading(false); });
+  }, []);
+
+  const focusGroup = useCallback((id: string, label: string, append: boolean) => {
+    setLoading(true);
+    setError('');
+    api.graphGroup(id)
+      .then((g) => {
+        setGraph(g);
+        setRollup(null);
+        setTrail(prev => append ? [...prev, { focus: { kind: 'group', id }, label }] : [{ focus: { kind: 'group', id }, label }]);
+        setLoading(false);
+      })
+      .catch((err) => { setError(err?.message || 'Failed to load group neighborhood'); setLoading(false); });
+  }, []);
+
+  const analyzeCve = useCallback((rawId: string) => {
+    const id = rawId.trim();
+    if (!id) return;
+    setLoading(true);
+    setError('');
+    api.graphBlastRadius(id)
+      .then((res) => {
+        setRollup(res.rollup);
+        setGraph(res.graph);
+        setTrail([{ focus: { kind: 'blast', id }, label: id }]);
+        setLoading(false);
+      })
+      .catch((err) => { setError(err?.message || 'Blast-radius analysis failed'); setLoading(false); });
+  }, []);
+
+  const handleNodeClick = useCallback((n: GraphNode) => {
+    if (n.type === 'host') focusHost(n.id, n.label, true);
+    else if (n.type === 'group') focusGroup(n.id, n.label, true);
+    else if (n.type === 'cve') analyzeCve(n.id);
+  }, [focusHost, focusGroup, analyzeCve]);
+
+  const jumpToCrumb = useCallback((idx: number) => {
+    const target = trail[idx];
+    if (!target) return;
+    setTrail(prev => prev.slice(0, idx + 1));
+    setLoading(true);
+    setError('');
+    const f = target.focus;
+    const req = f.kind === 'blast'
+      ? api.graphBlastRadius(f.id).then(r => { setRollup(r.rollup); return r.graph; })
+      : f.kind === 'host'
+        ? api.graphHost(f.id).then(g => { setRollup(null); return g; })
+        : api.graphGroup(f.id).then(g => { setRollup(null); return g; });
+    req
+      .then((g) => { setGraph(g); setLoading(false); })
+      .catch((err) => { setError(err?.message || 'Failed to load neighborhood'); setLoading(false); });
+  }, [trail]);
+
+  const current = trail.length ? trail[trail.length - 1].focus : null;
+  const rootHostId = graph && graph.root.type === 'host' ? graph.root.id : '';
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>Topology</h1>
+
+      {/* A. Overview */}
+      {overviewError ? (
+        <div className="card" style={{ marginBottom: '1rem' }}><LoadError message={overviewError} onRetry={loadOverview} /></div>
+      ) : !overview || !schema ? (
+        <div className="card" style={{ marginBottom: '1rem' }}><Loading label="Loading graph overview..." /></div>
+      ) : (
+        <>
+          <div className="stats-grid">
+            {schema.node_types.map(nt => (
+              <div className="stat-card" key={nt.type} title={nt.description}>
+                <div className="accent-bar" style={{ background: GRAPH_NODE_COLORS[nt.type] || 'var(--primary)' }} />
+                <div className="label">{nt.label}</div>
+                <div className="value" style={{ color: GRAPH_NODE_COLORS[nt.type] }}>{(overview.nodes[nt.type] || 0).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+          <div className="card" style={{ marginBottom: '1rem', padding: '0.75rem 1rem' }}>
+            <div className="graph-edge-stats">
+              {schema.relations.map(rel => (
+                <span key={rel.rel} className="graph-edge-stat" title={rel.description}>
+                  <span className="graph-edge-stat-label">{rel.rel.replace(/_/g, ' ')}</span>
+                  <span className="graph-edge-stat-value">{(overview.edges[rel.rel] || 0).toLocaleString()}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* B. Blast-radius explorer */}
+      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div className="card-header" style={{ margin: '-1rem -1rem 1rem' }}><h2>Blast-Radius Explorer</h2></div>
+        <div className="filters">
+          <input
+            type="text"
+            placeholder="CVE ID (e.g. CVE-2024-3094)"
+            value={cveInput}
+            onChange={(e) => setCveInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') analyzeCve(cveInput); }}
+            style={{ minWidth: 240 }}
+          />
+          <button className="btn btn-primary" onClick={() => analyzeCve(cveInput)} disabled={loading || !cveInput.trim()}>
+            {loading ? 'Analyzing...' : 'Analyze'}
+          </button>
+        </div>
+      </div>
+
+      {error && <div className="card" style={{ marginBottom: '1rem' }}><LoadError message={error} /></div>}
+
+      {loading && <div className="card" style={{ marginBottom: '1rem' }}><Loading label="Loading topology..." /></div>}
+
+      {/* Blast-radius rollup */}
+      {!loading && rollup && current?.kind === 'blast' && (
+        rollup.host_count === 0 ? (
+          <div className="card" style={{ marginBottom: '1rem' }}>
+            <EmptyState message="No assets in your scope are exposed to this CVE." />
+          </div>
+        ) : (
+          <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+            <div className="card-header" style={{ margin: '-1rem -1rem 1rem' }}>
+              <h2>{rollup.vulnerability_id}{rollup.title ? ` — ${rollup.title}` : ''}</h2>
+            </div>
+            <div className="stats-grid">
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: severityColor(rollup.severity) }} />
+                <div className="label">Severity</div>
+                <div className="value" style={{ fontSize: '1rem' }}>
+                  <span className="badge" style={{ color: severityColor(rollup.severity) }}>{rollup.severity || 'UNKNOWN'}</span>
+                </div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: 'var(--high)' }} />
+                <div className="label">CVSS</div>
+                <div className="value">{rollup.cvss_score > 0 ? rollup.cvss_score.toFixed(1) : '-'}</div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: 'var(--medium)' }} />
+                <div className="label">EPSS</div>
+                <div className="value">{rollup.epss_score > 0 ? (rollup.epss_score * 100).toFixed(1) + '%' : '-'}</div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: GRAPH_NODE_COLORS.host }} />
+                <div className="label">Hosts</div>
+                <div className="value" style={{ color: GRAPH_NODE_COLORS.host }}>{rollup.host_count.toLocaleString()}</div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: GRAPH_NODE_COLORS.container }} />
+                <div className="label">Containers</div>
+                <div className="value" style={{ color: GRAPH_NODE_COLORS.container }}>{rollup.container_count.toLocaleString()}</div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: GRAPH_NODE_COLORS.package }} />
+                <div className="label">Packages</div>
+                <div className="value" style={{ color: GRAPH_NODE_COLORS.package }}>{rollup.package_count.toLocaleString()}</div>
+              </div>
+              <div className="stat-card">
+                <div className="accent-bar" style={{ background: GRAPH_NODE_COLORS.group }} />
+                <div className="label">Groups</div>
+                <div className="value" style={{ color: GRAPH_NODE_COLORS.group }}>{rollup.group_count.toLocaleString()}</div>
+              </div>
+            </div>
+            <div className="graph-breakdowns">
+              <GraphBreakdown title="By Severity" data={rollup.by_severity} />
+              <GraphBreakdown title="By Environment" data={rollup.by_environment} />
+              <GraphBreakdown title="By Criticality" data={rollup.by_criticality} />
+            </div>
+          </div>
+        )
+      )}
+
+      {/* C + D. Focus graph + drill-down */}
+      {!loading && graph && !(rollup && current?.kind === 'blast' && rollup.host_count === 0) && (
+        <div className="card" style={{ padding: '1rem' }}>
+          <div className="graph-toolbar">
+            <nav className="graph-breadcrumb" aria-label="Topology focus">
+              {trail.map((c, i) => (
+                <React.Fragment key={`${c.focus.kind}|${c.focus.id}|${i}`}>
+                  {i > 0 && <span className="graph-breadcrumb-sep">/</span>}
+                  {i === trail.length - 1 ? (
+                    <span className="graph-breadcrumb-current">{c.label}</span>
+                  ) : (
+                    <a href="#" onClick={(e) => { e.preventDefault(); jumpToCrumb(i); }}>{c.label}</a>
+                  )}
+                </React.Fragment>
+              ))}
+            </nav>
+            {rootHostId && (
+              <button className="btn btn-secondary btn-sm" onClick={() => onSelectHost(rootHostId)}>
+                Open host detail
+              </button>
+            )}
+          </div>
+          <GraphCanvas data={graph} onNodeClick={handleNodeClick} />
+        </div>
+      )}
+
+      {!loading && !graph && !error && !rollup && (
+        <div className="card">
+          <EmptyState message="Enter a CVE ID above to map its blast radius, then click hosts, groups, or CVEs in the graph to drill down." />
+        </div>
+      )}
+    </>
+  );
+}
+
+function GraphBreakdown({ title, data }: { title: string; data: Record<string, number> }) {
+  const entries = Object.entries(data || {}).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  return (
+    <div className="graph-breakdown">
+      <div className="graph-breakdown-title">{title}</div>
+      {entries.length === 0 ? (
+        <div className="graph-breakdown-empty">—</div>
+      ) : (
+        entries.map(([k, v]) => (
+          <div className="graph-breakdown-row" key={k}>
+            <span className="graph-breakdown-key">{k || 'unknown'}</span>
+            <span className="graph-breakdown-count">{v.toLocaleString()}</span>
+          </div>
+        ))
+      )}
+    </div>
   );
 }
 

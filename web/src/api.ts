@@ -1140,6 +1140,52 @@ export interface NotificationLogEntry {
   created_at: string;
 }
 
+export type GraphNodeType = 'host' | 'container' | 'package' | 'service' | 'cve' | 'group';
+export type GraphRel = 'runs' | 'installs' | 'contains' | 'exposes' | 'member_of' | 'affected_by' | 'exposed_to';
+
+export interface GraphNode {
+  type: GraphNodeType;
+  id: string;
+  label: string;
+  attrs?: Record<string, unknown>;
+}
+export interface GraphEdge {
+  rel: GraphRel;
+  src_type: GraphNodeType;
+  src_id: string;
+  dst_type: GraphNodeType;
+  dst_id: string;
+  attrs?: Record<string, unknown>;
+}
+export interface GraphNeighborhood {
+  root: GraphNode;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  truncated: boolean;
+}
+export interface GraphSchema {
+  node_types: { type: GraphNodeType; label: string; description: string }[];
+  relations: { rel: GraphRel; src: GraphNodeType; dst: GraphNodeType; description: string }[];
+}
+export interface GraphOverview {
+  nodes: Partial<Record<GraphNodeType, number>>;
+  edges: Partial<Record<GraphRel, number>>;
+}
+export interface BlastRadiusRollup {
+  vulnerability_id: string;
+  title: string;
+  severity: string;
+  cvss_score: number;
+  epss_score: number;
+  host_count: number;
+  container_count: number;
+  package_count: number;
+  group_count: number;
+  by_severity: Record<string, number>;
+  by_environment: Record<string, number>;
+  by_criticality: Record<string, number>;
+}
+
 export const api = {
   login: (username: string, password: string) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -1328,4 +1374,11 @@ export const api = {
     requestJSON<{ status: string; message: string }>(`/admin/notification-rules/${id}/test`, {}),
   notificationLog: (params?: { rule_id?: string; limit?: string; offset?: string }) =>
     request<{ items: NotificationLogEntry[]; total: number }>('/admin/notification-log', params),
+
+  graphSchema: () => request<GraphSchema>('/graph/schema'),
+  graphOverview: () => request<GraphOverview>('/graph/overview'),
+  graphBlastRadius: (vulnerabilityId: string) =>
+    request<{ graph: GraphNeighborhood; rollup: BlastRadiusRollup }>('/graph/blast-radius', { vulnerability_id: vulnerabilityId }),
+  graphHost: (id: string) => request<GraphNeighborhood>(`/graph/host/${encodeURIComponent(id)}`),
+  graphGroup: (id: string) => request<GraphNeighborhood>(`/graph/group/${encodeURIComponent(id)}`),
 };

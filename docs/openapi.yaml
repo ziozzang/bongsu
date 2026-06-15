@@ -842,6 +842,136 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/graph/schema:
+    get:
+      operationId: getGraphSchema
+      tags: [graph]
+      summary: Asset knowledge graph ontology
+      description: >-
+        Returns the static ontology of the asset knowledge graph: the node types
+        (host, container, package, service, cve, group) and the typed relations
+        between them (runs, installs, contains, exposes, member_of, affected_by,
+        exposed_to). The UI uses this for legends and edge semantics.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      responses:
+        "200":
+          description: Graph ontology
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/graph/overview:
+    get:
+      operationId: getGraphOverview
+      tags: [graph]
+      summary: Graph node/edge counts
+      description: >-
+        Returns counts of each node type and relation type across the caller's
+        visible (latest-scan) inventory.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      responses:
+        "200":
+          description: Node and edge counts
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/graph/blast-radius:
+    get:
+      operationId: getGraphBlastRadius
+      tags: [graph]
+      summary: CVE blast-radius subgraph and impact rollup
+      description: >-
+        Given a vulnerability_id, returns the CVE-centered subgraph (affected
+        hosts and the asset groups they belong to) plus an impact rollup
+        (host/container/package/group counts and breakdowns by severity,
+        environment, and criticality). Scoped to the caller's accessible hosts.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: vulnerability_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: The vulnerability / CVE identifier (e.g. CVE-2024-3094)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 300
+            maximum: 2000
+          description: Maximum number of affected host nodes (capped at 2000)
+      responses:
+        "200":
+          description: Blast-radius graph and rollup
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/graph/host/{id}:
+    get:
+      operationId: getGraphHost
+      tags: [graph]
+      summary: Host-centered subgraph
+      description: >-
+        Returns a host plus its 1-hop neighborhood: containers (runs), exposed
+        services (exposes), asset groups (member_of), and the CVEs it is exposed
+        to (exposed_to, top by CVSS). Returns 403 if the host is outside the
+        caller's scope.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 500
+          description: Maximum number of CVE nodes
+      responses:
+        "200":
+          description: Host neighborhood graph
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Host outside caller scope
+  /api/graph/group/{id}:
+    get:
+      operationId: getGraphGroup
+      tags: [graph]
+      summary: Asset-group-centered subgraph
+      description: >-
+        Returns an asset group plus its member hosts (member_of), each annotated
+        with its critical/high CVE count. Member hosts are scope-filtered.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 300
+            maximum: 2000
+      responses:
+        "200":
+          description: Group neighborhood graph
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /api/vulnerabilities/triage:
     post:
       operationId: upsertVulnerabilityTriage
