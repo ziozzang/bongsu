@@ -2263,6 +2263,61 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { description: Host outside caller scope }
 
+  /api/admin/ai-policy:
+    get:
+      operationId: getAIPolicy
+      tags: [admin]
+      summary: AI action policy status
+      description: >-
+        Reports the AI action governance mode (off / suggest / assisted / auto),
+        the minimum confidence, whether production high-criticality suppressions
+        require approval, and approval-queue counts.
+      security: [{ AdminKey: [] }]
+      responses:
+        "200": { description: Policy status }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/admin/ai-approvals:
+    get:
+      operationId: listAIApprovals
+      tags: [admin]
+      summary: List AI action approvals (human-approval queue)
+      security: [{ AdminKey: [] }]
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, approved, rejected] } }
+        - { name: limit, in: query, schema: { type: integer, default: 200, maximum: 1000 } }
+      responses:
+        "200": { description: Approvals + counts }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/admin/ai-approvals/{id}/approve:
+    post:
+      operationId: approveAIApproval
+      tags: [admin]
+      summary: Approve and execute a queued AI action
+      description: >-
+        Atomically claims the pending approval and executes its action (e.g. a
+        triage suppression). 409 if it was not pending (already decided / lost a
+        race). Audited.
+      security: [{ AdminKey: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Approved + executed }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Not found }
+        "409": { description: Approval not pending }
+        "500": { description: Action execution failed (approval rolled back) }
+  /api/admin/ai-approvals/{id}/reject:
+    post:
+      operationId: rejectAIApproval
+      tags: [admin]
+      summary: Reject a queued AI action
+      security: [{ AdminKey: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Rejected }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Not found }
+        "409": { description: Approval not pending }
+
   /api/admin/retention/prune:
     post:
       operationId: pruneRetention

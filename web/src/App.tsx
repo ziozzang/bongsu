@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -122,6 +122,58 @@ function isVulnAnalysis(r: VulnAnalysis | { analysis: null }): r is VulnAnalysis
   return 'recommended_action' in r;
 }
 
+// aiPolicyModeTone / aiPolicyModeBlurb describe the AI action policy mode for
+// the AI Triage and AI Approvals surfaces.
+function aiPolicyModeTone(mode?: string): SeverityTone {
+  switch ((mode || '').toLowerCase()) {
+    case 'auto': return 'medium';
+    case 'assisted': return 'accent';
+    case 'suggest': return 'low';
+    default: return 'neutral';
+  }
+}
+function aiPolicyModeBlurb(mode?: string): string {
+  switch ((mode || '').toLowerCase()) {
+    case 'off': return 'AI actions are disabled — nothing is applied or queued.';
+    case 'suggest': return 'AI proposes actions only; nothing is auto-applied or queued for approval.';
+    case 'assisted': return 'Low-risk actions are auto-applied; the rest are queued for approval.';
+    case 'auto': return 'All confident actions are auto-applied without approval.';
+    default: return 'Current AI action policy.';
+  }
+}
+// aiApprovalStatusTone maps an approval status to its Badge tone.
+function aiApprovalStatusTone(status?: string): SeverityTone {
+  switch ((status || '').toLowerCase()) {
+    case 'pending': return 'medium';
+    case 'approved': return 'low';
+    case 'rejected': return 'neutral';
+    default: return 'neutral';
+  }
+}
+// aiActionLabel renders an action_type as a compact human label.
+function aiActionLabel(action?: string): string {
+  return action || 'unknown';
+}
+// aiProposedSummary renders the key fields of a proposed action compactly,
+// reading the Record<string, unknown> defensively.
+function aiProposedSummary(actionType: string, proposed: Record<string, unknown>): string {
+  if (actionType === 'triage.suppress') {
+    const status = proposed.triage_status;
+    if (typeof status === 'string' && status) return `→ ${status}`;
+  }
+  try {
+    const s = JSON.stringify(proposed);
+    return s.length > 80 ? `${s.slice(0, 80)}…` : s;
+  } catch {
+    return '-';
+  }
+}
+// strField reads a string field from a Record<string, unknown> defensively.
+function strField(rec: Record<string, unknown>, key: string): string {
+  const v = rec[key];
+  return typeof v === 'string' ? v : v != null ? String(v) : '';
+}
+
 const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
 
 function severityColor(sev?: string): string {
@@ -209,6 +261,7 @@ const ICON_PATHS: Record<string, React.ReactNode> = {
   check: <><path d="M20 6 9 17l-5-5" /></>,
   arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
   'ai-triage': <><path d="M12 3l1.6 4.2L18 9l-4.4 1.8L12 15l-1.6-4.2L6 9l4.4-1.8L12 3Z" /><path d="M18 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z" /></>,
+  'ai-approvals': <><path d="M12 3 5 6v5c0 4 3 6.5 7 8 4-1.5 7-4 7-8V6l-7-3Z" /><path d="m9 11 2 2 4-4" /></>,
 };
 
 function Icon({ name, size = 16, className, strokeWidth = 1.5, style }: { name: string; size?: number; className?: string; strokeWidth?: number; style?: React.CSSProperties }) {
@@ -799,7 +852,7 @@ function parseCvssVector(vector: string) {
   return { version: '3.x', parts, labels, values };
 }
 
-type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology' | 'users' | 'tokens' | 'ai-triage';
+type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology' | 'users' | 'tokens' | 'ai-triage' | 'ai-approvals';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
 type VulnerabilityFilters = { overdueOnly?: boolean; exploitedOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
 type HostFilters = { agent_status?: string; inventory_status?: string; agent_version_state?: string };
@@ -904,6 +957,7 @@ export default function App() {
         {view === 'notifications' && <NotificationsView />}
         {view === 'topology' && <TopologyView onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
         {view === 'ai-triage' && <AiTriageView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
+        {view === 'ai-approvals' && <AiApprovalsView />}
       </div>
     </div>
   );
@@ -1072,6 +1126,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
       ['tokens', 'API Tokens', 'tokens'],
       ['rbac', 'RBAC', 'rbac'],
       ['audit', 'Audit Log', 'audit'],
+      ['ai-approvals', 'AI Approvals', 'ai-approvals'],
       ['schedules', 'Schedules', 'schedules'],
       ['notifications', 'Notifications', 'notifications'],
     ] },
@@ -6051,6 +6106,7 @@ function ApiTokensView() {
 
 function AiTriageView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
   const [llm, setLlm] = useState<LLMStatus | null>(null);
+  const [policy, setPolicy] = useState<AIPolicyStatus | null>(null);
   const [analyses, setAnalyses] = useState<VulnAnalysis[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [total, setTotal] = useState(0);
@@ -6078,6 +6134,7 @@ function AiTriageView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
   useEffect(() => {
     let active = true;
     api.llmStatus().then(s => { if (active) setLlm(s); }).catch(() => { if (active) setLlm(null); });
+    api.aiPolicy().then(p => { if (active) setPolicy(p); }).catch(() => { if (active) setPolicy(null); });
     return () => { active = false; };
   }, []);
 
@@ -6153,6 +6210,29 @@ function AiTriageView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
         )}
       </div>
 
+      {policy && (
+        <div className="card ai-card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <Icon name="ai-approvals" size={16} />
+              <strong>AI Action Policy</strong>
+              <Badge tone={aiPolicyModeTone(policy.mode)} dot>{policy.mode || 'off'}</Badge>
+              <span className="mono" style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                min confidence {Math.round((policy.min_confidence || 0) * 100)}% · protect production {policy.protect_production ? 'on' : 'off'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+              {(['pending', 'approved', 'rejected'] as const).map(s => (
+                <Badge key={s} tone={aiApprovalStatusTone(s)}>{s}: {policy.approval_counts?.[s] || 0}</Badge>
+              ))}
+            </div>
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '0.5rem' }}>
+            {aiPolicyModeBlurb(policy.mode)}
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <h2>Analyses {total > 0 ? `(${total})` : ''}</h2>
@@ -6218,6 +6298,169 @@ function AiTriageView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
                           {applyingId === a.id ? 'Applying...' : 'Apply'}
                         </button>
                       )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+function AiApprovalsView() {
+  const [approvals, setApprovals] = useState<AIApproval[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [total, setTotal] = useState(0);
+  const [policy, setPolicy] = useState<AIPolicyStatus | null>(null);
+  const [filter, setFilter] = useState('pending');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
+  const [actingId, setActingId] = useState('');
+  const [expanded, setExpanded] = useState('');
+
+  const load = useCallback((status: string) => {
+    setLoading(true);
+    setError('');
+    api.listAiApprovals(status === 'all' ? undefined : status)
+      .then(r => {
+        setApprovals(r.approvals || []);
+        setCounts(r.counts || {});
+        setTotal(r.total || 0);
+        setLoading(false);
+      })
+      .catch(err => { setError(err instanceof Error ? err.message : 'Failed to load AI approvals'); setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api.aiPolicy().then(p => { if (active) setPolicy(p); }).catch(() => { if (active) setPolicy(null); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => { load(filter); }, [load, filter]);
+
+  const decide = async (a: AIApproval, action: 'approve' | 'reject') => {
+    const prompt = action === 'approve'
+      ? 'Approve and execute this AI action?'
+      : 'Reject this AI action?';
+    if (!confirm(prompt)) return;
+    setActingId(a.id);
+    setMsg('');
+    try {
+      const r = action === 'approve' ? await api.approveAiApproval(a.id) : await api.rejectAiApproval(a.id);
+      setMsg(`${a.subject || a.id} ${r.status || action + 'd'}`);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : `${action} failed`);
+    } finally {
+      setActingId('');
+      load(filter);
+    }
+  };
+
+  const countEntries = Object.entries(counts).filter(([, n]) => n > 0);
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>AI Approvals</h1>
+      {policy && (
+        <div className="card ai-card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <Icon name="ai-approvals" size={16} />
+              <strong>AI Action Policy</strong>
+              <Badge tone={aiPolicyModeTone(policy.mode)} dot>{policy.mode || 'off'}</Badge>
+              <span className="mono" style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+                min confidence {Math.round((policy.min_confidence || 0) * 100)}% · protect production {policy.protect_production ? 'on' : 'off'}
+              </span>
+            </div>
+          </div>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '0.5rem' }}>
+            {aiPolicyModeBlurb(policy.mode)}
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <h2>Approval Queue {total > 0 ? `(${total})` : ''}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            {msg && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{msg}</span>}
+            {countEntries.length > 0 && countEntries.map(([s, n]) => (
+              <Badge key={s} tone={aiApprovalStatusTone(s)}>{s}: {n}</Badge>
+            ))}
+            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+        </div>
+        {loading ? <Loading /> : error ? <LoadError message={error} onRetry={() => load(filter)} /> : approvals.length === 0 ? (
+          <EmptyState message="No AI actions awaiting approval." />
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>Action</th>
+                <th>Proposed</th>
+                <th>Confidence</th>
+                <th>Rule</th>
+                <th>Reason</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {approvals.map(a => {
+                const pending = a.status === 'pending';
+                const isOpen = expanded === a.id;
+                const reasoning = strField(a.context, 'reasoning');
+                const decided = a.decided_by || a.decided_at;
+                return (
+                  <tr key={a.id}>
+                    <td className="mono" style={{ fontSize: '0.8125rem' }}>{a.subject || strField(a.proposed, 'vulnerability_id') || '-'}</td>
+                    <td><Badge tone="accent">{aiActionLabel(a.action_type)}</Badge></td>
+                    <td className="mono" style={{ fontSize: '0.8125rem' }} title={(() => { try { return JSON.stringify(a.proposed); } catch { return ''; } })()}>
+                      {aiProposedSummary(a.action_type, a.proposed)}
+                    </td>
+                    <td className="mono">{Math.round((a.confidence || 0) * 100)}%</td>
+                    <td>{a.rule ? <Badge tone="neutral">{a.rule}</Badge> : <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                    <td style={{ maxWidth: 300 }}>
+                      {a.reason || reasoning ? (
+                        <span
+                          title={reasoning || a.reason}
+                          onClick={() => setExpanded(isOpen ? '' : a.id)}
+                          style={{ cursor: 'pointer', display: 'block', fontSize: '0.8125rem', color: 'var(--text-muted)', whiteSpace: isOpen ? 'normal' : 'nowrap', overflow: isOpen ? 'visible' : 'hidden', textOverflow: 'ellipsis' }}
+                        >
+                          {a.reason || reasoning}
+                        </span>
+                      ) : <span style={{ color: 'var(--text-muted)' }}>-</span>}
+                    </td>
+                    <td><Badge tone={aiApprovalStatusTone(a.status)} dot>{a.status}</Badge></td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(a.created_at)}>{formatDateTime(a.created_at)}</td>
+                    <td>
+                      {pending ? (
+                        <div style={{ display: 'flex', gap: '0.375rem' }}>
+                          <button className="btn btn-primary btn-sm" onClick={() => decide(a, 'approve')} disabled={actingId === a.id}>
+                            {actingId === a.id ? '...' : 'Approve'}
+                          </button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => decide(a, 'reject')} disabled={actingId === a.id}>
+                            Reject
+                          </button>
+                        </div>
+                      ) : decided ? (
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
+                          {a.decided_by || 'system'}
+                          {a.decided_at ? ` · ${formatDateTime(a.decided_at)}` : ''}
+                        </span>
+                      ) : <span style={{ color: 'var(--text-muted)' }}>-</span>}
                     </td>
                   </tr>
                 );

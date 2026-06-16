@@ -660,7 +660,18 @@ An optional LLM analyzes findings and suggests a triage assessment (risk, exploi
 
 **Workflow:** results feed the existing triage flow. `POST /api/admin/vuln-analysis/run?limit=N` runs a prioritized batch (known-exploited/critical/high first), re-analyzing a finding only when its grounding inputs changed (cached by input hash). A periodic worker runs when `BONGSU_LLM_ANALYZE_INTERVAL_MINUTES>0` (batch `BONGSU_LLM_ANALYZE_BATCH`, default 20). The dashboard **Security → AI Triage** view and the **AI Assessment** card on each vulnerability show suggestions; an analyst applies them with one click.
 
-**Auto-apply** (`BONGSU_LLM_AUTOAPPLY_CONFIDENCE`, default `0`=off): when set, a suggestion is auto-applied as a triage decision only if confidence ≥ threshold AND the action is in `BONGSU_LLM_AUTOAPPLY_ACTIONS` (default `false_positive,accept_risk`). As a prompt-injection safeguard, the AI **never auto-silences a known-exploited (KEV), critical-severity, or CVSS≥9.0 finding** regardless of confidence — those always require a human. Every auto-apply is audited (`vuln_analysis.auto_apply`). Start with auto-apply off; enable cautiously with a high threshold after reviewing suggestion quality. Metrics: `bongsu_llm_enabled`, `bongsu_vulnerability_analysis{recommended_action=...}`.
+**AI action policy engine.** Every AI-proposed action is routed through a governance engine with a mode set modeled on agent-permission systems (`BONGSU_AI_ACTION_MODE`):
+
+| Mode | Behavior |
+|---|---|
+| `off` | the AI takes no action |
+| `suggest` (default) | suggestions only; nothing is applied or queued (human-in-the-loop) |
+| `assisted` | low-risk allowed actions are auto-applied; the rest are **queued for human approval** |
+| `auto` | every action the rules allow is auto-applied (hard-safety still applies) |
+
+The engine computes a verdict (allow / ask / deny) from the action context, then the mode maps it to an outcome (apply / queue / none). Rules: a suppressing action is **always denied** for a known-exploited (KEV), critical-severity, or CVSS≥9.0 finding regardless of mode or confidence (prompt-injection defense); confidence below `BONGSU_AI_MIN_CONFIDENCE` is denied; and when `BONGSU_AI_PROTECT_PRODUCTION=true` (default) a suppression on a **production high-criticality** host always escalates to human approval (verdict `ask`) instead of auto-applying. `BONGSU_AI_MIN_CONFIDENCE` falls back to the older `BONGSU_LLM_AUTOAPPLY_CONFIDENCE`, and a legacy `BONGSU_LLM_AUTOAPPLY_CONFIDENCE>0` with no mode set behaves as `auto`.
+
+**Approval queue:** in `assisted` mode, `ask` actions land in `ai_action_approvals`. Review them at **Administration → AI Approvals** (or `GET /api/admin/ai-approvals?status=pending`); **Approve** atomically claims and executes the action (the same executor used for auto-apply, so it validates the payload and rebuilds derived summaries), **Reject** discards it. Approvals dedup per finding (vuln+host+package). Every queue/apply/approve/reject is audited (`ai_action.*`). Start in `suggest`, move to `assisted` once you trust the suggestions, and reserve `auto` for low-stakes estates. Metrics: `bongsu_llm_enabled`, `bongsu_vulnerability_analysis{recommended_action=...}`.
 
 ## Monitoring And Alerting
 

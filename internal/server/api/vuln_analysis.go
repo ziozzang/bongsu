@@ -14,7 +14,6 @@ import (
 
 	"github.com/ziozzang/bongsu/internal/server/db"
 	"github.com/ziozzang/bongsu/internal/server/llm"
-	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
 // dbCountVulnAnalyses is a nil-db-safe wrapper used by the metrics exposition.
@@ -30,16 +29,6 @@ func getenvDefault(key, def string) string {
 		return v
 	}
 	return def
-}
-
-func containsCSV(csv, val string) bool {
-	val = strings.TrimSpace(val)
-	for _, part := range strings.Split(csv, ",") {
-		if strings.TrimSpace(part) == val {
-			return true
-		}
-	}
-	return false
 }
 
 // AI-assisted vulnerability analysis. The LLM reasons over database-sourced facts
@@ -210,52 +199,16 @@ func (s *Server) analyzeCandidate(ctx context.Context, c db.AnalysisCandidate) (
 	if err := s.db.UpsertVulnAnalysis(ctx, a, hash); err != nil {
 		return nil, err
 	}
-	if s.maybeAutoApply(ctx, c, a) {
+	// Route the suggestion through the AI action policy engine: it may apply the
+	// suppressing decision now, queue it for human approval, or do nothing,
+	// depending on the configured mode and risk rules.
+	if s.governAIAnalysisAction(ctx, c, a) {
 		a.AutoApplied = true
 		if err := s.db.UpsertVulnAnalysis(ctx, a, hash); err != nil {
 			log.Printf("vuln-analysis: failed to record auto_applied flag for %s: %v", c.VulnerabilityID, err)
 		}
 	}
 	return a, nil
-}
-
-// maybeAutoApply applies a suppressing decision when enabled and confident.
-func (s *Server) maybeAutoApply(ctx context.Context, c db.AnalysisCandidate, a *db.VulnAnalysis) bool {
-	threshold := envFloat("BONGSU_LLM_AUTOAPPLY_CONFIDENCE", 0)
-	if threshold <= 0 || a.Confidence < threshold {
-		return false
-	}
-	// Defense-in-depth against prompt injection via the upstream CVE description:
-	// the AI may NEVER auto-silence a serious finding. Known-exploited (KEV),
-	// critical-severity, or high-CVSS findings always require a human decision,
-	// regardless of the model's confidence.
-	if c.KnownExploited || strings.EqualFold(c.Severity, "critical") || c.CVSSScore >= 9.0 {
-		return false
-	}
-	allowed := getenvDefault("BONGSU_LLM_AUTOAPPLY_ACTIONS", "false_positive,accept_risk")
-	if !containsCSV(allowed, a.RecommendedAction) {
-		return false
-	}
-	status := triageStatusForAction(a.RecommendedAction)
-	if status == "" {
-		return false
-	}
-	t := &models.VulnerabilityTriage{
-		VulnerabilityID: c.VulnerabilityID,
-		HostID:          c.HostID,
-		PkgName:         c.PkgName,
-		Status:          status,
-		Reason:          fmt.Sprintf("AI auto-triage (%s, confidence %.2f)", a.Model, a.Confidence),
-		Comment:         a.Reasoning,
-		UpdatedBy:       "ai-analyzer",
-	}
-	if err := s.db.UpsertVulnerabilityTriage(ctx, t); err != nil {
-		log.Printf("vuln-analysis auto-apply failed for %s: %v", c.VulnerabilityID, err)
-		return false
-	}
-	s.auditSystem("vuln_analysis.auto_apply", "vulnerability", c.VulnerabilityID, "ok",
-		map[string]any{"status": status, "confidence": a.Confidence, "model": a.Model, "host_id": c.HostID, "pkg_name": c.PkgName})
-	return true
 }
 
 // runAnalysisBatch analyzes up to limit prioritized findings. Returns the count
@@ -437,16 +390,14 @@ func (s *Server) handleApplyVulnAnalysis(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "recommended action is not directly applicable as a triage decision")
 		return
 	}
-	t := &models.VulnerabilityTriage{
-		VulnerabilityID: a.VulnerabilityID,
-		HostID:          a.HostID,
-		PkgName:         a.PkgName,
-		Status:          status,
-		Reason:          fmt.Sprintf("Applied AI suggestion (%s, confidence %.2f)", a.Model, a.Confidence),
-		Comment:         a.Reasoning,
-		UpdatedBy:       s.actorID(r),
-	}
-	if err := s.db.UpsertVulnerabilityTriage(r.Context(), t); err != nil {
+	// Route through the shared executor so manual apply gets the same validation
+	// and derived-summary rebuild as the auto/approval paths.
+	payload, _ := json.Marshal(triageSuppressPayload{
+		VulnerabilityID: a.VulnerabilityID, HostID: a.HostID, PkgName: a.PkgName, TriageStatus: status,
+		Reason:  fmt.Sprintf("Applied AI suggestion (%s, confidence %.2f)", a.Model, a.Confidence),
+		Comment: a.Reasoning,
+	})
+	if err := s.executeAIAction(r.Context(), "triage.suppress", payload, s.actorID(r)); err != nil {
 		writeError(w, http.StatusInternalServerError, "db error")
 		return
 	}

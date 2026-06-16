@@ -1474,7 +1474,37 @@ export const api = {
       ...(params.host_id ? { host_id: params.host_id } : {}),
       ...(params.analyze ? { analyze: 'true' } : {}),
     }),
+
+  // AI action policy + approval queue
+  aiPolicy: () => request<AIPolicyStatus>('/admin/ai-policy'),
+  listAiApprovals: (status?: string) =>
+    request<{ approvals: AIApproval[]; total: number; counts: Record<string, number> }>('/admin/ai-approvals', status ? { status } : undefined),
+  approveAiApproval: (id: string) =>
+    requestJSON<{ status: string }>(`/admin/ai-approvals/${encodeURIComponent(id)}/approve`, {}),
+  rejectAiApproval: (id: string) =>
+    requestJSON<{ status: string }>(`/admin/ai-approvals/${encodeURIComponent(id)}/reject`, {}),
 };
+
+export interface AIPolicyStatus {
+  mode: string;
+  min_confidence: number;
+  protect_production: boolean;
+  approval_counts: Record<string, number>;
+}
+export interface AIApproval {
+  id: string;
+  action_type: string;
+  subject: string;
+  proposed: Record<string, unknown>;
+  context: Record<string, unknown>;
+  confidence: number;
+  rule: string;
+  reason: string;
+  status: string;
+  created_at: string;
+  decided_at?: string | null;
+  decided_by?: string;
+}
 
 export interface LLMStatus {
   enabled: boolean;
