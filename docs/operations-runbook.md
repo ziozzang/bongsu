@@ -650,6 +650,18 @@ Dashboard users and API credentials are managed at runtime (admin only) — no r
 
 **DB-backed API tokens** (`api_tokens`) — `GET/POST /api/admin/api-tokens`, `DELETE /api/admin/api-tokens/{id}`. These complement the static env keys (`BONGSU_API_KEY`, `BONGSU_VIEWER_API_KEYS`) with credentials that can be created, scoped, expired, and **revoked at runtime**. A token has a role (`admin`, or `viewer` with an RBAC `subject` like `user:alice`), an optional expiry, and tracks `last_used_at`. Only the SHA-256 hash is stored; the plaintext secret (`bsk_…`) is shown **once** at creation. Present it as `X-API-Key` or `Authorization: Bearer`. Active tokens are cached in memory (refresh `BONGSU_API_TOKEN_REFRESH_SECONDS`, default 30) and **revocation/creation take effect immediately** (the cache is evicted/seeded on the mutation). Manage from **Administration → API Tokens**. Prefer per-consumer DB tokens over sharing the static admin key so individual credentials can be rotated and revoked without a restart.
 
+## AI-Assisted Vulnerability Analysis
+
+An optional LLM analyzes findings and suggests a triage assessment (risk, exploitability, likely-false-positive, recommended action, reasoning, confidence). It is **disabled by default** and **grounded only on database facts** (CVE description, CVSS, EPSS, KEV, package/version, fixed version, host environment/criticality, network exposure) — the model is never asked to recall CVE details.
+
+**Provider** (`BONGSU_LLM_PROVIDER`): `none` (default), `anthropic`, or `openai`. The `openai` provider speaks the OpenAI chat-completions API, so it also covers **Ollama, vLLM, LocalAI, and litellm** — point `BONGSU_LLM_BASE_URL` at a **local/on-prem model to keep all vulnerability data in your network** (air-gap friendly). Config: `BONGSU_LLM_BASE_URL`, `BONGSU_LLM_MODEL`, `BONGSU_LLM_API_KEY`, `BONGSU_LLM_MAX_TOKENS` (1024), `BONGSU_LLM_TIMEOUT_SECONDS` (60).
+
+**Data governance:** with `none` nothing leaves the process. With an external provider, the grounding facts above are sent per finding — use a local model for sensitive estates. Provider/network errors are logged server-side, never echoed to API clients.
+
+**Workflow:** results feed the existing triage flow. `POST /api/admin/vuln-analysis/run?limit=N` runs a prioritized batch (known-exploited/critical/high first), re-analyzing a finding only when its grounding inputs changed (cached by input hash). A periodic worker runs when `BONGSU_LLM_ANALYZE_INTERVAL_MINUTES>0` (batch `BONGSU_LLM_ANALYZE_BATCH`, default 20). The dashboard **Security → AI Triage** view and the **AI Assessment** card on each vulnerability show suggestions; an analyst applies them with one click.
+
+**Auto-apply** (`BONGSU_LLM_AUTOAPPLY_CONFIDENCE`, default `0`=off): when set, a suggestion is auto-applied as a triage decision only if confidence ≥ threshold AND the action is in `BONGSU_LLM_AUTOAPPLY_ACTIONS` (default `false_positive,accept_risk`). As a prompt-injection safeguard, the AI **never auto-silences a known-exploited (KEV), critical-severity, or CVSS≥9.0 finding** regardless of confidence — those always require a human. Every auto-apply is audited (`vuln_analysis.auto_apply`). Start with auto-apply off; enable cautiously with a high threshold after reviewing suggestion quality. Metrics: `bongsu_llm_enabled`, `bongsu_vulnerability_analysis{recommended_action=...}`.
+
 ## Monitoring And Alerting
 
 Prometheus scrapes the conventional **`GET /metrics`** path (the same exposition is also at `/api/admin/metrics`). Because the metrics include vulnerability counts, `/metrics` is **not** public by default — authorize the scrape one of three ways (checked in this order):

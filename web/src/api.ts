@@ -1458,7 +1458,48 @@ export const api = {
   createApiToken: (body: { name: string; role: string; subject?: string; expires_in_days?: number }) =>
     requestJSON<{ token: ApiToken; secret: string }>('/admin/api-tokens', body),
   revokeApiToken: (id: string) => requestEmpty<{ status: string }>(`/admin/api-tokens/${encodeURIComponent(id)}`, 'DELETE'),
+
+  // AI vulnerability analysis
+  llmStatus: () => request<LLMStatus>('/admin/llm/status'),
+  runVulnAnalysis: (limit?: number) =>
+    requestJSON<{ analyzed: number }>(`/admin/vuln-analysis/run${limit ? `?limit=${limit}` : ''}`, {}),
+  listVulnAnalyses: (action?: string) =>
+    request<{ analyses: VulnAnalysis[]; total: number; counts: Record<string, number> }>('/admin/vuln-analysis', action ? { action } : undefined),
+  applyVulnAnalysis: (id: string) =>
+    requestJSON<{ status: string; triage_status: string }>(`/admin/vuln-analysis/${encodeURIComponent(id)}/apply`, {}),
+  vulnAnalysis: (params: { vulnerability_id: string; pkg_name?: string; host_id?: string; analyze?: boolean }) =>
+    request<VulnAnalysis | { analysis: null }>('/vulnerabilities/analysis', {
+      vulnerability_id: params.vulnerability_id,
+      ...(params.pkg_name ? { pkg_name: params.pkg_name } : {}),
+      ...(params.host_id ? { host_id: params.host_id } : {}),
+      ...(params.analyze ? { analyze: 'true' } : {}),
+    }),
 };
+
+export interface LLMStatus {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  autoapply_confidence: number;
+  worker_interval_min: number;
+}
+export interface VulnAnalysis {
+  id: string;
+  vulnerability_id: string;
+  pkg_name: string;
+  host_id: string;
+  provider: string;
+  model: string;
+  risk_level: string;
+  likely_false_positive: boolean;
+  exploitability: string;
+  recommended_action: string;
+  reasoning: string;
+  confidence: number;
+  auto_applied: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface LocalUser {
   id: string;

@@ -332,6 +332,11 @@ input[type='checkbox'], input[type='radio'] {
   overflow: hidden;
 }
 
+/* AI assessment surfaces: a subtle primary accent to set them apart. */
+.card.ai-card {
+  border-left: 3px solid var(--primary);
+}
+
 .card-header {
   display: flex;
   align-items: center;

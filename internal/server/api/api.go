@@ -18,6 +18,7 @@ import (
 
 	"github.com/ziozzang/bongsu/internal/server/cvematch"
 	"github.com/ziozzang/bongsu/internal/server/db"
+	"github.com/ziozzang/bongsu/internal/server/llm"
 	"github.com/ziozzang/bongsu/internal/server/secdb"
 	"github.com/ziozzang/bongsu/internal/server/trivydb"
 	"github.com/ziozzang/bongsu/internal/shared/models"
@@ -55,6 +56,7 @@ type Server struct {
 	healthCache  *responseCache
 	graphCache   *responseCache
 	apiTokens    *apiTokenStore
+	llm          *llm.Client
 
 	securityRecalcMu      sync.Mutex
 	securityRecalcRunning bool
@@ -183,10 +185,12 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	s.authenticator = s.initAuthenticator()
 	s.ruleNotifier = newRuleNotifier(s)
 
+	s.llm = llm.New(llmConfigFromEnv())
 	s.routes()
 	s.bootstrapAdmin()
 	s.startSessionCleanup()
 	s.startAPITokenStore()
+	s.startVulnAnalyzer()
 	s.startScheduler()
 	s.startVulnTrendSnapshotter()
 	// Optionally pre-build the airgap export bundle so the first download
@@ -373,6 +377,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/api-tokens", s.handleListAPITokens)
 	s.mux.HandleFunc("POST /api/admin/api-tokens", s.handleCreateAPIToken)
 	s.mux.HandleFunc("DELETE /api/admin/api-tokens/{id}", s.handleRevokeAPIToken)
+	s.mux.HandleFunc("GET /api/admin/llm/status", s.handleLLMStatus)
+	s.mux.HandleFunc("POST /api/admin/vuln-analysis/run", s.handleRunVulnAnalysis)
+	s.mux.HandleFunc("GET /api/admin/vuln-analysis", s.handleListVulnAnalyses)
+	s.mux.HandleFunc("POST /api/admin/vuln-analysis/{id}/apply", s.handleApplyVulnAnalysis)
+	s.mux.HandleFunc("GET /api/vulnerabilities/analysis", s.handleGetVulnAnalysis)
 	s.mux.HandleFunc("POST /api/admin/retention/prune", s.handleRetentionPrune)
 	s.mux.HandleFunc("GET /api/admin/rbac/status", s.handleAccessControlStatus)
 	s.mux.HandleFunc("GET /api/admin/rbac/subjects", s.handleListAccessSubjects)

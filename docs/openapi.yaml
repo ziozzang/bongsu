@@ -2186,6 +2186,83 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { description: Token not found }
 
+  /api/admin/llm/status:
+    get:
+      operationId: getLLMStatus
+      tags: [admin]
+      summary: AI analysis provider status
+      description: Reports whether an LLM provider is configured (enabled, provider, model, auto-apply confidence, worker interval).
+      security: [{ AdminKey: [] }]
+      responses:
+        "200": { description: LLM status }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/admin/vuln-analysis/run:
+    post:
+      operationId: runVulnAnalysis
+      tags: [admin]
+      summary: Run a batch of AI vulnerability analysis
+      description: >-
+        Analyzes up to `limit` (<=50) prioritized findings (known-exploited /
+        critical / high-CVSS first) using the configured LLM, grounded only on
+        database facts. Re-analyzes a finding only when its grounding inputs
+        changed. 400 if no provider is configured.
+      security: [{ AdminKey: [] }]
+      parameters: [{ name: limit, in: query, schema: { type: integer, default: 10, maximum: 50 } }]
+      responses:
+        "200": { description: "{ analyzed: N }" }
+        "400": { description: LLM provider not configured }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/admin/vuln-analysis:
+    get:
+      operationId: listVulnAnalyses
+      tags: [admin]
+      summary: List AI vulnerability analyses
+      security: [{ AdminKey: [] }]
+      parameters:
+        - { name: action, in: query, schema: { type: string }, description: filter by recommended_action }
+        - { name: limit, in: query, schema: { type: integer, default: 200, maximum: 1000 } }
+      responses:
+        "200": { description: "Analyses + counts by recommended_action" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/admin/vuln-analysis/{id}/apply:
+    post:
+      operationId: applyVulnAnalysis
+      tags: [admin]
+      summary: Apply an AI suggestion as a triage decision
+      description: >-
+        Applies a suppressing AI recommendation (false_positive or accept_risk)
+        as a vulnerability_triage decision. Other actions are not directly
+        applicable (400). Audited.
+      security: [{ AdminKey: [] }]
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Applied }
+        "400": { description: Recommended action not directly applicable }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { description: Analysis not found }
+  /api/vulnerabilities/analysis:
+    get:
+      operationId: getVulnAnalysis
+      tags: [vulnerabilities]
+      summary: AI analysis for a single finding
+      description: >-
+        Returns the stored AI analysis for (vulnerability_id, pkg_name, host_id),
+        or {analysis:null}. With analyze=true and a configured provider, runs an
+        on-demand analysis. RBAC host-scoped.
+      security:
+        - AdminKey: []
+        - ViewerKey: []
+      parameters:
+        - { name: vulnerability_id, in: query, required: true, schema: { type: string } }
+        - { name: pkg_name, in: query, schema: { type: string } }
+        - { name: host_id, in: query, schema: { type: string } }
+        - { name: analyze, in: query, schema: { type: boolean }, description: run on-demand if none stored }
+      responses:
+        "200": { description: Analysis or null }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: Host outside caller scope }
+
   /api/admin/retention/prune:
     post:
       operationId: pruneRetention

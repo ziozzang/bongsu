@@ -174,6 +174,18 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 	}
 	writePromGauge(&b, "bongsu_build_info", buildLabels, 1)
 	s.writeRuntimeMetrics(&b)
+	{
+		llmEnabled := 0.0
+		if s.llm.Enabled() {
+			llmEnabled = 1
+		}
+		writePromGauge(&b, "bongsu_llm_enabled", map[string]string{"provider": s.llm.Provider(), "model": s.llm.Model()}, llmEnabled)
+		if counts, err := s.dbCountVulnAnalyses(ctx); err == nil {
+			for action, n := range counts {
+				writePromGauge(&b, "bongsu_vulnerability_analysis", map[string]string{"recommended_action": action}, float64(n))
+			}
+		}
+	}
 	if s.db != nil {
 		stats := s.db.Stats()
 		writePromGauge(&b, "bongsu_database_max_open_connections", nil, float64(stats.MaxOpenConnections))

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken } from './api';
+import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis } from './api';
 
 const verCmp = (a: string, b: string): number => {
   const pa = versionSegments(a);
@@ -84,6 +84,42 @@ function riskLevelColor(level?: string): string {
     case 'medium': return 'var(--medium)';
     default: return 'var(--text-muted)';
   }
+}
+
+// recommendedActionLabel / recommendedActionTone map an LLM recommended_action
+// to a human label and a Badge tone for the AI assessment surfaces.
+function recommendedActionLabel(action?: string): string {
+  switch ((action || '').toLowerCase()) {
+    case 'false_positive': return 'False positive';
+    case 'accept_risk': return 'Accept risk';
+    case 'remediate': return 'Remediate';
+    case 'investigate': return 'Investigate';
+    case 'monitor': return 'Monitor';
+    default: return action ? action.replace(/_/g, ' ') : 'Unknown';
+  }
+}
+function recommendedActionTone(action?: string): SeverityTone {
+  switch ((action || '').toLowerCase()) {
+    case 'remediate': return 'high';
+    case 'investigate': return 'medium';
+    case 'false_positive': return 'low';
+    case 'accept_risk': return 'accent';
+    default: return 'neutral';
+  }
+}
+// riskLevelTone maps an LLM risk_level string to a Badge tone.
+function riskLevelTone(level?: string): SeverityTone {
+  switch ((level || '').toLowerCase()) {
+    case 'critical': return 'critical';
+    case 'high': return 'high';
+    case 'medium': return 'medium';
+    case 'low': return 'low';
+    default: return 'unknown';
+  }
+}
+// isVulnAnalysis is the type guard for api.vulnAnalysis's union return.
+function isVulnAnalysis(r: VulnAnalysis | { analysis: null }): r is VulnAnalysis {
+  return 'recommended_action' in r;
 }
 
 const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
@@ -172,6 +208,7 @@ const ICON_PATHS: Record<string, React.ReactNode> = {
   flame: <><path d="M12 3c1 3 4 5 4 9a4 4 0 0 1-8 0c0-2 1-3 2-4 .5 1.5 2 2 2 3.5" /></>,
   check: <><path d="M20 6 9 17l-5-5" /></>,
   arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
+  'ai-triage': <><path d="M12 3l1.6 4.2L18 9l-4.4 1.8L12 15l-1.6-4.2L6 9l4.4-1.8L12 3Z" /><path d="M18 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z" /></>,
 };
 
 function Icon({ name, size = 16, className, strokeWidth = 1.5, style }: { name: string; size?: number; className?: string; strokeWidth?: number; style?: React.CSSProperties }) {
@@ -762,7 +799,7 @@ function parseCvssVector(vector: string) {
   return { version: '3.x', parts, labels, values };
 }
 
-type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology' | 'users' | 'tokens';
+type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology' | 'users' | 'tokens' | 'ai-triage';
 type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
 type VulnerabilityFilters = { overdueOnly?: boolean; exploitedOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
 type HostFilters = { agent_status?: string; inventory_status?: string; agent_version_state?: string };
@@ -866,6 +903,7 @@ export default function App() {
         {view === 'reports' && <ReportsView />}
         {view === 'notifications' && <NotificationsView />}
         {view === 'topology' && <TopologyView onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
+        {view === 'ai-triage' && <AiTriageView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
       </div>
     </div>
   );
@@ -1026,6 +1064,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
     { label: 'Security', items: [
       ['vulns', 'Vulnerabilities', 'vulnerabilities'],
       ['cve-search', 'CVE Search', 'cve-search'],
+      ['ai-triage', 'AI Triage', 'ai-triage'],
       ['scans', 'Scan History', 'scans'],
     ] },
     { label: 'Administration', items: [
@@ -3890,6 +3929,140 @@ function AffectedAssetsModal({ vulnerabilityId, onClose }: { vulnerabilityId: st
   );
 }
 
+// AiAnalysisBody renders a stored VulnAnalysis: badges, confidence, reasoning,
+// a model/provider footer, and an Apply action for actionable recommendations.
+function AiAnalysisBody({ analysis, onApply, applyMsg, applying }: {
+  analysis: VulnAnalysis;
+  onApply?: () => void;
+  applyMsg?: string;
+  applying?: boolean;
+}) {
+  const actionable = analysis.recommended_action === 'false_positive' || analysis.recommended_action === 'accept_risk';
+  return (
+    <>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' }}>
+        <Badge tone={recommendedActionTone(analysis.recommended_action)}>{recommendedActionLabel(analysis.recommended_action)}</Badge>
+        <Badge tone={riskLevelTone(analysis.risk_level)} dot>{analysis.risk_level || 'unknown'} risk</Badge>
+        {analysis.auto_applied && <Badge tone="accent">auto-applied</Badge>}
+      </div>
+      <table style={{ marginBottom: '0.75rem' }}>
+        <tbody>
+          <tr><td style={{ color: 'var(--text-muted)', width: 160 }}>Exploitability</td><td className="mono">{analysis.exploitability || '-'}</td></tr>
+          <tr><td style={{ color: 'var(--text-muted)' }}>Confidence</td><td className="mono">{Math.round((analysis.confidence || 0) * 100)}%</td></tr>
+          <tr><td style={{ color: 'var(--text-muted)' }}>Likely false positive</td><td className="mono">{analysis.likely_false_positive ? 'Yes' : 'No'}</td></tr>
+        </tbody>
+      </table>
+      {analysis.reasoning && (
+        <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '0.75rem' }}>{analysis.reasoning}</div>
+      )}
+      {onApply && actionable && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+          <button className="btn btn-primary btn-sm" onClick={onApply} disabled={applying}>{applying ? 'Applying...' : 'Apply'}</button>
+          {applyMsg && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{applyMsg}</span>}
+        </div>
+      )}
+      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }} className="mono">
+        {analysis.model || '-'} · {analysis.provider || '-'} · updated {formatDateTime(analysis.updated_at)}
+      </div>
+    </>
+  );
+}
+
+// AiAssessmentCard fetches and renders the AI assessment for a single
+// vulnerability finding. It degrades gracefully when the LLM is not
+// configured and never throws into the surrounding detail page.
+function AiAssessmentCard({ vuln }: { vuln: Vuln }) {
+  const [llm, setLlm] = useState<LLMStatus | null>(null);
+  const [llmLoaded, setLlmLoaded] = useState(false);
+  const [analysis, setAnalysis] = useState<VulnAnalysis | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState('');
+  const [applying, setApplying] = useState(false);
+  const [applyMsg, setApplyMsg] = useState('');
+
+  const params = useMemo(() => ({
+    vulnerability_id: vuln.vulnerability_id,
+    ...(vuln.pkg_name ? { pkg_name: vuln.pkg_name } : {}),
+    ...(vuln.host_id ? { host_id: vuln.host_id } : {}),
+  }), [vuln.vulnerability_id, vuln.pkg_name, vuln.host_id]);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setError('');
+    setAnalysis(null);
+    setApplyMsg('');
+    api.llmStatus()
+      .then(status => {
+        if (!active) return;
+        setLlm(status);
+        setLlmLoaded(true);
+        if (!status.enabled) { setLoading(false); return; }
+        return api.vulnAnalysis(params)
+          .then(r => { if (active) setAnalysis(isVulnAnalysis(r) ? r : null); })
+          .finally(() => { if (active) setLoading(false); });
+      })
+      .catch(() => {
+        // Treat an unreachable/failed status check as "not configured" rather
+        // than breaking the vuln detail page.
+        if (active) { setLlmLoaded(true); setLoading(false); }
+      });
+    return () => { active = false; };
+  }, [params]);
+
+  const runAnalyze = async () => {
+    setRunning(true);
+    setError('');
+    try {
+      const r = await api.vulnAnalysis({ ...params, analyze: true });
+      setAnalysis(isVulnAnalysis(r) ? r : null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'AI analysis is not configured');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const applyAnalysis = async () => {
+    if (!analysis) return;
+    setApplying(true);
+    setApplyMsg('');
+    try {
+      const r = await api.applyVulnAnalysis(analysis.id);
+      setApplyMsg(`applied as ${r.triage_status}`);
+    } catch (err) {
+      setApplyMsg(err instanceof Error ? err.message : 'Apply failed');
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  const disabled = llmLoaded && (!llm || !llm.enabled);
+
+  return (
+    <div className="card ai-card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+      <h3 style={{ margin: '0 0 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <Icon name="ai-triage" size={16} /> AI Assessment
+      </h3>
+      {!llmLoaded || loading ? (
+        <Loading label="Loading AI assessment..." />
+      ) : disabled ? (
+        <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>AI analysis not configured</div>
+      ) : analysis ? (
+        <AiAnalysisBody analysis={analysis} onApply={applyAnalysis} applyMsg={applyMsg} applying={applying} />
+      ) : (
+        <div>
+          <button className="btn btn-primary btn-sm" onClick={runAnalyze} disabled={running}>
+            {running ? 'Analyzing...' : 'Analyze with AI'}
+          </button>
+          {error && <span style={{ marginLeft: '0.75rem', color: 'var(--critical)', fontSize: '0.8125rem' }}>{error}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => void }) {
   const [hostMap, setHostMap] = useState<Record<string, string>>({});
   const [hostIPMap, setHostIPMap] = useState<Record<string, string>>({});
@@ -4052,6 +4225,8 @@ function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => voi
         {triageMsg && <span style={{ marginLeft: '0.75rem', color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{triageMsg}</span>}
         {triageComment && <div style={{ marginTop: '0.75rem', fontSize: '0.8125rem', color: 'var(--text-muted)' }}>Current note: {triageComment}</div>}
       </div>
+
+      <AiAssessmentCard vuln={vuln} />
 
       {vuln.title && (
         <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
@@ -5866,6 +6041,187 @@ function ApiTokensView() {
                 );
               })}
               {tokens.length === 0 && <tr className="empty-row"><td colSpan={9}>No API tokens yet — create one above for programmatic access. The secret is shown only once at creation.</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+function AiTriageView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
+  const [llm, setLlm] = useState<LLMStatus | null>(null);
+  const [analyses, setAnalyses] = useState<VulnAnalysis[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
+  const [running, setRunning] = useState(false);
+  const [applyingId, setApplyingId] = useState('');
+  const [filter, setFilter] = useState('');
+  const [expanded, setExpanded] = useState<string>('');
+
+  const load = useCallback((action: string) => {
+    setLoading(true);
+    setError('');
+    api.listVulnAnalyses(action || undefined)
+      .then(r => {
+        setAnalyses(r.analyses || []);
+        setCounts(r.counts || {});
+        setTotal(r.total || 0);
+        setLoading(false);
+      })
+      .catch(err => { setError(err instanceof Error ? err.message : 'Failed to load AI analyses'); setLoading(false); });
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    api.llmStatus().then(s => { if (active) setLlm(s); }).catch(() => { if (active) setLlm(null); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => { load(filter); }, [load, filter]);
+
+  const runAnalysis = async () => {
+    setRunning(true);
+    setMsg('');
+    try {
+      const r = await api.runVulnAnalysis(20);
+      setMsg(`Analyzed ${r.analyzed} finding${r.analyzed === 1 ? '' : 's'}`);
+      load(filter);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Analysis failed');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const applyOne = async (a: VulnAnalysis) => {
+    setApplyingId(a.id);
+    setMsg('');
+    try {
+      const r = await api.applyVulnAnalysis(a.id);
+      setMsg(`${a.vulnerability_id} applied as ${r.triage_status}`);
+      load(filter);
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : 'Apply failed');
+    } finally {
+      setApplyingId('');
+    }
+  };
+
+  const enabled = !!llm && llm.enabled;
+  const countEntries = Object.entries(counts).filter(([, n]) => n > 0);
+
+  return (
+    <>
+      <h1 style={{ marginBottom: '1.5rem' }}>AI Triage</h1>
+      <div className="card ai-card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.375rem' }}>
+              <Icon name="ai-triage" size={16} />
+              <strong>LLM Analysis</strong>
+              <Badge tone={enabled ? 'low' : 'unknown'} dot>{enabled ? 'enabled' : 'disabled'}</Badge>
+            </div>
+            <div className="mono" style={{ fontSize: '0.8125rem', color: 'var(--text-muted)' }}>
+              {llm ? `${llm.provider || 'none'} · ${llm.model || '-'}` : 'status unavailable'}
+              {llm && llm.enabled && (
+                <> · auto-apply ≥ {Math.round((llm.autoapply_confidence || 0) * 100)}% · worker every {llm.worker_interval_min}m</>
+              )}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            {msg && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{msg}</span>}
+            <button className="btn btn-primary btn-sm" onClick={runAnalysis} disabled={!enabled || running}>
+              {running ? 'Running...' : 'Run analysis'}
+            </button>
+          </div>
+        </div>
+        {!enabled && (
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.8125rem', marginTop: '0.5rem' }}>
+            AI analysis not configured — set an LLM provider to enable on-demand and periodic triage.
+          </div>
+        )}
+        {countEntries.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
+            {countEntries.map(([action, n]) => (
+              <Badge key={action} tone={recommendedActionTone(action)}>{recommendedActionLabel(action)}: {n}</Badge>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h2>Analyses {total > 0 ? `(${total})` : ''}</h2>
+          <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">All actions</option>
+            <option value="false_positive">False positive</option>
+            <option value="accept_risk">Accept risk</option>
+            <option value="remediate">Remediate</option>
+            <option value="investigate">Investigate</option>
+            <option value="monitor">Monitor</option>
+          </select>
+        </div>
+        {loading ? <Loading /> : error ? <LoadError message={error} onRetry={() => load(filter)} /> : analyses.length === 0 ? (
+          <EmptyState message="No AI analyses yet — run analysis or enable the periodic worker." />
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Vulnerability</th>
+                <th>Package</th>
+                <th>Host</th>
+                <th>Recommended action</th>
+                <th>Risk</th>
+                <th>Exploitability</th>
+                <th>Confidence</th>
+                <th>Auto-applied</th>
+                <th>Reasoning</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {analyses.map(a => {
+                const actionable = a.recommended_action === 'false_positive' || a.recommended_action === 'accept_risk';
+                const isOpen = expanded === a.id;
+                return (
+                  <tr key={a.id}>
+                    <td className="mono" style={{ fontSize: '0.8125rem' }}>
+                      {onSelectVuln
+                        ? <a href="#" style={{ color: 'var(--primary)' }} onClick={(e) => { e.preventDefault(); onSelectVuln({ vulnerability_id: a.vulnerability_id, pkg_name: a.pkg_name, host_id: a.host_id } as Vuln); }}>{a.vulnerability_id}</a>
+                        : a.vulnerability_id}
+                    </td>
+                    <td className="mono" style={{ fontSize: '0.8125rem' }}>{a.pkg_name || '-'}</td>
+                    <td className="mono" style={{ fontSize: '0.75rem' }}>{a.host_id ? a.host_id.slice(0, 8) : '-'}</td>
+                    <td><Badge tone={recommendedActionTone(a.recommended_action)}>{recommendedActionLabel(a.recommended_action)}</Badge></td>
+                    <td><Badge tone={riskLevelTone(a.risk_level)} dot>{a.risk_level || 'unknown'}</Badge></td>
+                    <td className="mono" style={{ fontSize: '0.8125rem' }}>{a.exploitability || '-'}</td>
+                    <td className="mono">{Math.round((a.confidence || 0) * 100)}%</td>
+                    <td>{a.auto_applied ? <Badge tone="accent">auto</Badge> : <span style={{ color: 'var(--text-muted)' }}>-</span>}</td>
+                    <td style={{ maxWidth: 320 }}>
+                      {a.reasoning ? (
+                        <span
+                          title={a.reasoning}
+                          onClick={() => setExpanded(isOpen ? '' : a.id)}
+                          style={{ cursor: 'pointer', display: 'block', fontSize: '0.8125rem', color: 'var(--text-muted)', whiteSpace: isOpen ? 'normal' : 'nowrap', overflow: isOpen ? 'visible' : 'hidden', textOverflow: 'ellipsis' }}
+                        >
+                          {a.reasoning}
+                        </span>
+                      ) : <span style={{ color: 'var(--text-muted)' }}>-</span>}
+                    </td>
+                    <td>
+                      {actionable && (
+                        <button className="btn btn-primary btn-sm" onClick={() => applyOne(a)} disabled={applyingId === a.id}>
+                          {applyingId === a.id ? 'Applying...' : 'Apply'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
