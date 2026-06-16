@@ -1,0 +1,28 @@
+title = "Bongsu gitleaks config"
+
+# Use gitleaks' built-in rules, then allowlist the project's intentional,
+# non-sensitive test fixtures and placeholder values so the scan flags only
+# real secrets.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Intentional test fixtures and documented placeholders"
+regexes = [
+  # CI / test credentials (deliberately fake, used across the test suite).
+  '''test-admin-key-0123456789''',
+  '''test-install-token-0123456789''',
+  '''test-metrics-token''',
+  '''test-agent-[A-Za-z0-9_-]+''',
+  '''viewer-test-key''',
+  # API-token prefix construction + obviously-fake test token values.
+  '''bsk_"\s*\+\s*hex''',
+  '''bsk_deadbeef''',
+  '''bsk_(expired|immortal|unknown)''',
+  # .env.example placeholders.
+  '''change-me-to-[A-Za-z-]+''',
+]
+paths = [
+  # Documented example env — placeholders only.
+  '''deploy/\.env\.example''',
+]
