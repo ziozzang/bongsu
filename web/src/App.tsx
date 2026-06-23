@@ -9,80 +9,12 @@ import { formatDateTime, formatDateTimeFull, formatDateOnly, fmtCount, shortDate
 import { Icon, BeaconMark } from './components/Icon';
 import { Loading, LoadError, EmptyState, SortHeader, Badge, toneColor } from './components/primitives';
 import { StackedAreaChart, BarSeries, DonutChart, Sparkline, KpiCard, SEV_KEYS } from './components/charts';
+import { RangeSwitcher, CheckboxField, Modal, Pager } from './components/controls';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 
 
 
-// Shared range switcher for the dashboard charts.
-function RangeSwitcher({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div className="range-switcher" role="tablist">
-      {['14', '30', '90'].map(d => (
-        <button key={d} type="button" role="tab" aria-selected={value === d} className={value === d ? 'active' : ''} onClick={() => onChange(d)}>{d}d</button>
-      ))}
-    </div>
-  );
-}
-
-// CheckboxField is the single clickable checkbox+label control used across all
-// filter bars and forms (replaces ad-hoc inline-styled <label> wrappers).
-function CheckboxField({ label, checked, onChange, title, disabled }: { label: string; checked: boolean; onChange: (checked: boolean) => void; title?: string; disabled?: boolean }) {
-  return (
-    <label className="checkbox-field" title={title}>
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-      {label}
-    </label>
-  );
-}
-
-// Modal is the shared dialog shell: consistent backdrop, header with title + X,
-// Escape-to-close, and a scrollable body.
-function Modal({ title, onClose, children, width }: { title: React.ReactNode; onClose: () => void; children: React.ReactNode; width?: string }) {
-  const modalRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    // Move focus into the dialog on open; restore to the trigger on close.
-    const prevFocus = document.activeElement as HTMLElement | null;
-    modalRef.current?.focus();
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      if (prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus();
-    };
-  }, [onClose]);
-  return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div
-        ref={modalRef}
-        className="modal"
-        role="dialog"
-        aria-modal="true"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-        style={width ? { width } : undefined}
-      >
-        <div className="modal-header">
-          <h2>{title}</h2>
-          <button type="button" className="modal-close" onClick={onClose} aria-label="Close" title="Close (Esc)">×</button>
-        </div>
-        <div className="modal-body">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function Pager({ page, limit, total, onPage }: { page: number; limit: number; total: number; onPage: (p: number) => void }) {
-  return (
-    <div className="pagination" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', marginTop: '0.75rem' }}>
-      <button disabled={page === 0} onClick={() => onPage(page - 1)}>Prev</button>
-      <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>
-        Page {page + 1} / {Math.max(1, Math.ceil(total / limit))} ({total.toLocaleString()} items)
-      </span>
-      <button disabled={(page + 1) * limit >= total} onClick={() => onPage(page + 1)}>Next</button>
-    </div>
-  );
-}
 
 // renderFactValue formats an arbitrary JSON fact value for display: scalars
 // inline, string arrays as comma lists, arrays of objects as compact rows, and
