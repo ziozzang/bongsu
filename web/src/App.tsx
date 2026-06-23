@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTheme } from './hooks/useTheme';
 import { LiveIndicator } from './components/LiveIndicator';
+import { subscribeLiveBus } from './hooks/useLiveEvents';
 import { CommandPalette, type CommandItem } from './components/CommandPalette';
 import { DataTable, type Column } from './components/DataTable';
 import { getHashView, setHashView } from './hooks/useHashRoute';
@@ -577,6 +578,18 @@ function DashboardView({ onOpenScanRequests, onOpenVulnerabilities, onOpenHosts 
     api.stats().then(setStats).catch((e) => setStatsError(e instanceof Error ? e.message : 'Failed to load stats'));
   }, []);
   useEffect(() => { loadStats(); }, [loadStats]);
+  // Live KPI refresh: when a low-frequency aggregate event arrives over SSE,
+  // refetch the (RBAC-scoped, server-cached) stats + fleet rather than the
+  // server pushing a snapshot — so scoped viewers never receive global counts.
+  // finding.new is intentionally excluded (it bursts; scan.completed covers it).
+  const reloadLiveKpis = useCallback(() => {
+    loadStats();
+    api.agentFleetStatus().then(r => { setAgentFleetStatus(r); if (r.installer) setInstallerStatus(r.installer); }).catch(() => {});
+  }, [loadStats]);
+  useEffect(() => {
+    const agg = new Set(['scan.completed', 'scan.failed', 'agent.online', 'agent.offline', 'secdb.updated']);
+    return subscribeLiveBus((e) => { if (agg.has(e.type)) reloadLiveKpis(); });
+  }, [reloadLiveKpis]);
   useEffect(() => {
     api.rawHealth().then(h => {
       setHealth(h);

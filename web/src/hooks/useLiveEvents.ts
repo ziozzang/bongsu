@@ -25,6 +25,20 @@ export const LIVE_EVENT_TYPES = [
   'kpi.snapshot',
 ];
 
+// A process-wide bus so components other than the one holding the SSE
+// subscription (e.g. a dashboard reacting to scan events) can react to live
+// events WITHOUT opening a second EventSource. The single useLiveEvents instance
+// (the sidebar LiveIndicator) feeds it.
+type LiveListener = (e: LiveEvent) => void;
+const liveBus = new Set<LiveListener>();
+
+export function subscribeLiveBus(fn: LiveListener): () => void {
+  liveBus.add(fn);
+  return () => {
+    liveBus.delete(fn);
+  };
+}
+
 // useLiveEvents subscribes to the server's SSE feed (GET /api/events/stream),
 // keeping a rolling buffer of recent events and the connection state. It
 // reconnects with exponential backoff and resumes from the last seen event id
@@ -63,6 +77,7 @@ export function useLiveEvents(opts?: { types?: string[]; onEvent?: (e: LiveEvent
         try {
           const data = JSON.parse(ev.data) as LiveEvent;
           onEventRef.current?.(data);
+          liveBus.forEach((l) => l(data));
           setEvents((prev) => [data, ...prev].slice(0, max));
         } catch {
           /* ignore malformed frame */
