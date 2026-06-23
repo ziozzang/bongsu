@@ -10,6 +10,7 @@ import { Icon, BeaconMark } from './components/Icon';
 import { Loading, LoadError, EmptyState, SortHeader, Badge, toneColor } from './components/primitives';
 import { StackedAreaChart, BarSeries, DonutChart, Sparkline, KpiCard, SEV_KEYS } from './components/charts';
 import { RangeSwitcher, CheckboxField, Modal, Pager } from './components/controls';
+import { renderFactValue, FactsCard } from './components/FactsCard';
 import { UsersView } from './views/UsersView';
 import { ApiTokensView } from './views/ApiTokensView';
 import { AuditLogView } from './views/AuditLogView';
@@ -17,6 +18,7 @@ import { SchedulesView } from './views/SchedulesView';
 import { AiApprovalsView } from './views/AiApprovalsView';
 import { RBACView } from './views/RBACView';
 import { NotificationsView } from './views/NotificationsView';
+import { ContainersView } from './views/ContainersView';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 
@@ -26,69 +28,6 @@ import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSe
 // renderFactValue formats an arbitrary JSON fact value for display: scalars
 // inline, string arrays as comma lists, arrays of objects as compact rows, and
 // nested objects as an indented key/value block.
-function renderFactValue(value: unknown): React.ReactNode {
-  if (value === null || value === undefined) return <span style={{ color: 'var(--text-muted)' }}>-</span>;
-  if (Array.isArray(value)) {
-    if (value.length === 0) return <span style={{ color: 'var(--text-muted)' }}>none</span>;
-    if (value.every(v => typeof v !== 'object' || v === null)) {
-      return <span className="mono" style={{ fontSize: '0.78rem', wordBreak: 'break-word' }}>{value.join(', ')}</span>;
-    }
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-        {value.map((v, i) => <div key={i} style={{ borderLeft: '2px solid var(--border)', paddingLeft: '0.5rem' }}>{renderFactValue(v)}</div>)}
-      </div>
-    );
-  }
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>);
-    return (
-      <table style={{ width: '100%' }}>
-        <tbody>
-          {entries.map(([k, v]) => (
-            <tr key={k}>
-              <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem', verticalAlign: 'top', whiteSpace: 'nowrap', paddingRight: '0.75rem', width: '1%' }}>{k}</td>
-              <td style={{ fontSize: '0.8rem' }}>{renderFactValue(v)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    );
-  }
-  return <span className="mono" style={{ fontSize: '0.78rem', wordBreak: 'break-word' }}>{String(value)}</span>;
-}
-
-// FactsCard renders the unstructured host/container facts JSONB as a set of
-// collapsible sections, one per top-level fact key (cpu, memory, dmi, ...).
-function FactsCard({ title, facts, collectedAt }: { title: string; facts?: Record<string, unknown>; collectedAt?: string | null }) {
-  const sections = facts ? Object.entries(facts) : [];
-  const [open, setOpen] = useState<Record<string, boolean>>({});
-  if (sections.length === 0) return null;
-  return (
-    <div className="card" style={{ marginBottom: '1rem' }}>
-      <div className="card-header">
-        <h2>{title}</h2>
-        {collectedAt && <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>collected {new Date(collectedAt).toLocaleString()}</span>}
-      </div>
-      <div style={{ padding: '0.5rem 1rem 1rem' }}>
-        {sections.sort((a, b) => a[0].localeCompare(b[0])).map(([key, val]) => {
-          const isOpen = open[key] ?? (key === 'os_release' || key === 'memory');
-          return (
-            <div key={key} style={{ borderBottom: '1px solid var(--border)', padding: '0.4rem 0' }}>
-              <div
-                style={{ cursor: 'pointer', fontWeight: 600, fontSize: '0.8125rem', display: 'flex', gap: '0.4rem', userSelect: 'none' }}
-                onClick={() => setOpen(o => ({ ...o, [key]: !isOpen }))}
-              >
-                <span style={{ color: 'var(--text-muted)' }}>{isOpen ? '▾' : '▸'}</span>{key}
-              </div>
-              {isOpen && <div style={{ marginTop: '0.35rem', paddingLeft: '1rem' }}>{renderFactValue(val)}</div>}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function agentStatusColor(status?: string) {
   switch (status) {
     case 'online': return 'var(--low)';
@@ -4034,184 +3973,6 @@ function PackagesView({ onSelectVuln }: { onSelectVuln?: (v: Vuln) => void }) {
   );
 }
 
-function ContainersView() {
-  const [containers, setContainers] = useState<ContainerAsset[]>([]);
-  const [hosts, setHosts] = useState<Host[]>([]);
-  const [hostMap, setHostMap] = useState<Record<string, string>>({});
-  const [hostIPMap, setHostIPMap] = useState<Record<string, string>>({});
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [expandedFacts, setExpandedFacts] = useState('');
-  const loadSeq = useRef(0);
-
-  const [hostId, setHostId] = useState('');
-  const [runtime, setRuntime] = useState('');
-  const [state, setState] = useState('');
-  const [image, setImage] = useState('');
-  const [query, setQuery] = useState('');
-  const [sortBy, setSortBy] = useState('created_at');
-  const [sortDesc, setSortDesc] = useState(true);
-  const limit = 100;
-
-  useEffect(() => {
-    api.hosts().then(hs => {
-      const m: Record<string, string> = {};
-      const ip: Record<string, string> = {};
-      (hs || []).forEach(h => { m[h.id] = h.hostname; ip[h.id] = h.ip_address; });
-      setHosts(hs || []);
-      setHostMap(m);
-      setHostIPMap(ip);
-    }).catch(() => {});
-  }, []);
-
-  const load = useCallback((p: number, hId: string, rt: string, st: string, img: string, q: string, sBy: string, sDesc: boolean) => {
-    const seq = ++loadSeq.current;
-    setLoading(true);
-    const params: Record<string, string> = {
-      limit: String(limit),
-      offset: String(p * limit),
-    };
-    if (hId) params.host_id = hId;
-    if (rt) params.runtime = rt;
-    if (st) params.state = st;
-    if (img) params.image = img;
-    if (q) params.q = q;
-    if (sBy) { params.sort_by = sBy; params.sort_order = sDesc ? 'desc' : 'asc'; }
-
-    api.containers(params)
-      .then(r => {
-        if (seq !== loadSeq.current) return;
-        setContainers(r.items || []);
-        setTotal(r.total || 0);
-        setPage(p);
-        setLoading(false);
-      })
-      .catch(() => { if (seq === loadSeq.current) setLoading(false); });
-  }, []);
-
-  useEffect(() => { load(0, hostId, runtime, state, image, query, sortBy, sortDesc); }, [hostId, runtime, state]);
-
-  const handleSearch = () => { load(0, hostId, runtime, state, image, query, sortBy, sortDesc); };
-  const handleKeyDown = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleSearch(); };
-
-  const toggleSort = (col: string) => {
-    const nextDesc = sortBy === col ? !sortDesc : false;
-    setSortBy(col);
-    setSortDesc(nextDesc);
-    load(0, hostId, runtime, state, image, query, col, nextDesc);
-  };
-
-
-  const runtimes = Array.from(new Set(['docker', 'containerd', 'podman', ...containers.map(c => c.runtime).filter(Boolean)])).sort();
-  const states = Array.from(new Set(['running', 'exited', 'created', 'paused', 'restarting', 'dead', ...containers.map(c => c.state).filter(Boolean)])).sort();
-  const cols: [string, string][] = [
-    ['name', 'Name'], ['state', 'State'], ['runtime', 'Runtime'],
-    ['image_name', 'Image'], ['container_id', 'Container ID'],
-    ['vulnerability_count', 'Findings'], ['critical_count', 'Critical'], ['high_count', 'High'], ['max_cvss', 'Max CVSS'], ['package_count', 'Packages'],
-    ['started_at', 'Started'],
-  ];
-
-  return (
-    <>
-      <h1 style={{ marginBottom: '1.5rem' }}>Containers</h1>
-      <div className="card filter-bar" style={{ marginBottom: '1rem', padding: '1rem' }}>
-        <div className="filters">
-          <select value={hostId} onChange={(e) => setHostId(e.target.value)}>
-            <option value="">All Hosts</option>
-            {hosts.map(h => (
-              <option key={h.id} value={h.id}>{h.hostname || h.id}</option>
-            ))}
-          </select>
-          <select value={runtime} onChange={(e) => setRuntime(e.target.value)}>
-            <option value="">All Runtimes</option>
-            {runtimes.map(rt => <option key={rt} value={rt}>{rt}</option>)}
-          </select>
-          <select value={state} onChange={(e) => setState(e.target.value)}>
-            <option value="">All States</option>
-            {states.map(st => <option key={st} value={st}>{st}</option>)}
-          </select>
-          <input
-            type="text"
-            placeholder="Image name..."
-            value={image}
-            onChange={(e) => setImage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            style={{ minWidth: 180 }}
-          />
-          <input
-            type="text"
-            placeholder="Name, container ID, image ID..."
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            style={{ minWidth: 240 }}
-          />
-          <div className="filter-actions">
-            <span className="result-count">{total.toLocaleString()} containers</span>
-            <button className="btn btn-primary" onClick={handleSearch}>Search</button>
-          </div>
-        </div>
-      </div>
-      <div className="card">
-        {loading ? <Loading /> : (
-          <table>
-            <thead>
-              <tr>
-                <th>Host</th>
-                {cols.map(([key, label]) => (
-                  <SortHeader key={key} col={key} label={label} sortBy={sortBy} sortDesc={sortDesc} onSort={toggleSort} />
-                ))}
-                <th>Labels</th>
-                <th>Image ID</th>
-                <th>Scan</th>
-                <th>Scanned</th>
-              </tr>
-            </thead>
-            <tbody>
-              {containers.map(c => (
-                <React.Fragment key={c.id}>
-                <tr>
-                  <td><span className="host-link" title={`IP: ${hostIPMap[c.host_id] || ''}`}>{hostMap[c.host_id] || c.host_id}</span></td>
-                  <td
-                    className="mono"
-                    style={{ cursor: c.facts ? 'pointer' : 'default' }}
-                    title={c.facts ? 'Show container OS facts' : ''}
-                    onClick={() => c.facts && setExpandedFacts(e => (e === c.id ? '' : c.id))}
-                  >{c.facts ? (expandedFacts === c.id ? '▾ ' : '▸ ') : ''}{c.name || '-'}</td>
-                  <td><span className="badge">{c.state || '-'}</span></td>
-                  <td>{c.runtime || '-'}</td>
-                  <td className="mono" title={c.image_name}>{c.image_name || '-'}</td>
-                  <td className="mono" title={c.container_id}>{c.container_id ? c.container_id.slice(0, 16) : '-'}</td>
-                  <td className="mono" style={{ color: c.vulnerability_count ? 'var(--high)' : 'var(--text-muted)', fontWeight: c.vulnerability_count ? 700 : 400 }}>{c.vulnerability_count || 0}</td>
-                  <td className="mono" style={{ color: c.critical_count ? 'var(--critical)' : 'var(--text-muted)', fontWeight: c.critical_count ? 700 : 400 }}>{c.critical_count || 0}</td>
-                  <td className="mono" style={{ color: c.high_count ? 'var(--high)' : 'var(--text-muted)', fontWeight: c.high_count ? 700 : 400 }}>{c.high_count || 0}</td>
-                  <td className="mono" style={{ color: (c.max_cvss || 0) >= 9 ? 'var(--critical)' : (c.max_cvss || 0) >= 7 ? 'var(--high)' : 'var(--text-muted)' }}>{c.max_cvss ? c.max_cvss.toFixed(1) : '-'}</td>
-                  <td className="mono">{fmtCount(c.package_count)}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(c.started_at)}>{formatDateTime(c.started_at)}</td>
-                  <td className="mono" title={c.labels_redacted ? 'Labels hidden by default; use include_labels=true in the API for raw labels' : ''}>{c.label_count || 0}</td>
-                  <td className="mono" title={c.image_id}>{c.image_id ? c.image_id.replace(/^sha256:/, '').slice(0, 18) : '-'}</td>
-                  <td className="mono" title={c.latest_scan_id || c.scan_id}>{(c.latest_scan_id || c.scan_id || '').slice(0, 8) || '-'}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(c.created_at)}>{formatDateTime(c.created_at)}</td>
-                </tr>
-                {expandedFacts === c.id && c.facts && (
-                  <tr>
-                    <td colSpan={16} style={{ background: 'var(--bg)', padding: '0.75rem 1.5rem' }}>
-                      {renderFactValue(c.facts)}
-                    </td>
-                  </tr>
-                )}
-                </React.Fragment>
-              ))}
-              {containers.length === 0 && <tr className="empty-row"><td colSpan={16}>No containers reported yet — agents collect running containers automatically unless started with -skip-containers.</td></tr>}
-            </tbody>
-          </table>
-        )}
-        <Pager page={page} limit={limit} total={total} onPage={(p) => load(p, hostId, runtime, state, image, query, sortBy, sortDesc)} />
-      </div>
-    </>
-  );
-}
 
 function CveSearchView() {
   const [results, setResults] = useState<{items: CveDbEntry[]; total: number}>({items: [], total: 0});
