@@ -419,19 +419,35 @@ func parseApkPackages(out []byte) []models.Package {
 		if line == "" {
 			continue
 		}
-		idx := strings.LastIndex(line, "-")
-		if idx <= 0 || idx == len(line)-1 {
+		name, version := splitApkNameVersion(line)
+		if name == "" || version == "" {
 			continue
 		}
 		pkgs = append(pkgs, models.Package{
 			ID:      uuid.New().String(),
-			Name:    line[:idx],
-			Version: line[idx+1:],
+			Name:    name,
+			Version: version,
 			PkgType: "os",
 			Source:  "apk",
 		})
 	}
 	return pkgs
+}
+
+// splitApkNameVersion splits an `apk info -v` line ("busybox-1.36.1-r0") into
+// name and version. apk versions always begin with a digit, and a package name
+// segment never starts with a digit immediately after a hyphen, so the version
+// begins at the first "-<digit>". The "-r<rev>" revision suffix is not a
+// "-<digit>" boundary (the "r" is a letter), so the split is unambiguous —
+// "busybox-1.36.1-r0" → ("busybox", "1.36.1-r0"), keeping the full comparable
+// version rather than the previous bug that returned just "r0".
+func splitApkNameVersion(line string) (name, version string) {
+	for i := 0; i+1 < len(line); i++ {
+		if line[i] == '-' && line[i+1] >= '0' && line[i+1] <= '9' {
+			return line[:i], line[i+1:]
+		}
+	}
+	return "", ""
 }
 
 func normalizeSourcePackageName(src, source string) string {

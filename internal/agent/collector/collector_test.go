@@ -10,10 +10,13 @@ import (
 // ---------------------------------------------------------------------------
 // parseApkPackages
 //
-// parseApkPackages splits on the LAST hyphen in the line:
-//   "busybox-1.36.1-r0"  → name="busybox-1.36.1"  version="r0"
-//   "musl-1.2.4-r2"      → name="musl-1.2.4"       version="r2"
-// This mirrors the implementation (strings.LastIndex(line, "-")).
+// `apk info -v` prints "<name>-<version>" where the version starts at the first
+// "-<digit>" and includes the "-r<rev>" suffix:
+//   "busybox-1.36.1-r0"             → name="busybox"             version="1.36.1-r0"
+//   "ca-certificates-bundle-2023..."→ name="ca-certificates-bundle" version="2023..-r0"
+// The name (which may contain hyphens) must be preserved whole so it matches
+// advisories keyed on the package name, and the version must be the full
+// comparable string, not just the revision.
 // ---------------------------------------------------------------------------
 
 func TestParseApkPackages(t *testing.T) {
@@ -26,30 +29,28 @@ func TestParseApkPackages(t *testing.T) {
 		wantSource  string
 	}{
 		{
-			// Last hyphen splits: "busybox-1.36.1" / "r0"
 			name:        "typical alpine package",
 			input:       "busybox-1.36.1-r0\n",
 			wantLen:     1,
-			wantName:    "busybox-1.36.1",
-			wantVersion: "r0",
+			wantName:    "busybox",
+			wantVersion: "1.36.1-r0",
 			wantSource:  "apk",
 		},
 		{
-			// underscore in name — last hyphen still the only split point
 			name:        "package with underscore in name",
 			input:       "ssl_client-1.36.1-r0\n",
 			wantLen:     1,
-			wantName:    "ssl_client-1.36.1",
-			wantVersion: "r0",
+			wantName:    "ssl_client",
+			wantVersion: "1.36.1-r0",
 			wantSource:  "apk",
 		},
 		{
-			// multiple hyphens — last one splits
+			// hyphenated name — version still begins at the first "-<digit>"
 			name:        "package with multiple hyphens",
 			input:       "ca-certificates-bundle-20230506-r0\n",
 			wantLen:     1,
-			wantName:    "ca-certificates-bundle-20230506",
-			wantVersion: "r0",
+			wantName:    "ca-certificates-bundle",
+			wantVersion: "20230506-r0",
 			wantSource:  "apk",
 		},
 	}
@@ -104,11 +105,11 @@ func TestParseApkPackages_EmptyInput(t *testing.T) {
 }
 
 func TestParseApkPackages_SkipsMalformedLines(t *testing.T) {
-	// "nohyphen" → no hyphen → skipped.
-	// "-startshyphen" → idx==0 → skipped (idx <= 0 guard).
-	// "trailinghyphen-" → hyphen at end → skipped (idx == len-1 guard).
-	// "valid-r0" → idx>0, not at end → included.
-	input := "nohyphen\n-startshyphen\ntrailinghyphen-\nvalid-r0\n"
+	// "nohyphen" → no "-<digit>" → skipped.
+	// "noversion-rc" → no "-<digit>" boundary → skipped.
+	// "trailinghyphen-" → hyphen at end, no following digit → skipped.
+	// "valid-1.0-r0" → version begins at "-1.0" → included.
+	input := "nohyphen\nnoversion-rc\ntrailinghyphen-\nvalid-1.0-r0\n"
 	pkgs := parseApkPackages([]byte(input))
 	if len(pkgs) != 1 {
 		t.Fatalf("len = %d, want 1: %#v", len(pkgs), pkgs)
@@ -116,8 +117,8 @@ func TestParseApkPackages_SkipsMalformedLines(t *testing.T) {
 	if pkgs[0].Name != "valid" {
 		t.Errorf("Name = %q, want %q", pkgs[0].Name, "valid")
 	}
-	if pkgs[0].Version != "r0" {
-		t.Errorf("Version = %q, want %q", pkgs[0].Version, "r0")
+	if pkgs[0].Version != "1.0-r0" {
+		t.Errorf("Version = %q, want %q", pkgs[0].Version, "1.0-r0")
 	}
 }
 
