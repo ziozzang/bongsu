@@ -154,6 +154,12 @@ func compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installedVersion, cve
 	}
 	pkgCat := packageCategory(pkgType, pkgEco)
 	pkgNormEco := normalizeEcosystem(pkgEco)
+	if pkgNormEco == "" {
+		// Detectors sometimes set pkg_type but leave ecosystem empty (e.g. a jar
+		// with no registry ecosystem); fall back to the type so the ecosystem
+		// gate can still match (jar->maven, composer->packagist, …).
+		pkgNormEco = normalizeEcosystem(pkgType)
+	}
 	cveNormEco := normalizeEcosystem(cveEco)
 	for _, p := range products {
 		if !strings.EqualFold(p.Name, pkgName) {
@@ -167,7 +173,11 @@ func compatibleSecurityCandidate(pkgName, pkgType, pkgEco, installedVersion, cve
 		if effectiveEco == "" {
 			continue
 		}
-		if len(fixedVersions(p)) == 0 {
+		// An advisory is actionable only if it bounds the affected set: a fixed
+		// version, or a range with an upper bound (fixed/last_affected, e.g. an
+		// unpatched vuln). An introduced-only range (no upper bound) would flag
+		// every version and is dropped as noise.
+		if len(fixedVersions(p)) == 0 && !hasUpperBoundedRange(p) {
 			continue
 		}
 		if !versionIsAffected(effectiveEco, installedVersion, p) {
@@ -302,6 +312,13 @@ func cpeVersionAffected(installed string, p affectedProduct) bool {
 		if exact == "" || exact == "*" || exact == "-" {
 			return false
 		}
+		// CPE version fields sometimes carry a wildcard tail (e.g. "1.2.*"),
+		// meaning every patch of that minor; treat it as a numeric-segment prefix
+		// match rather than a literal equality (which would never hit).
+		if i := strings.IndexByte(exact, '*'); i >= 0 {
+			prefix := strings.TrimRight(exact[:i], ".")
+			return versionLineageHasPrefix(installed, prefix)
+		}
 		cmp, ok := vercmpGeneric(installed, exact)
 		return ok && cmp == 0
 	}
@@ -346,13 +363,119 @@ func versionIsAffected(eco, installed string, p affectedProduct) bool {
 		return false
 	}
 	fixed := uniqueFixedVersions(p.Fixed)
-	if len(fixed) != 1 {
+	switch len(fixed) {
+	case 0:
 		return false
+	case 1:
+		if less, ok := versionLess(eco, installed, fixed[0]); ok && less {
+			return true
+		}
+		return false
+	default:
+		// Multiple fixed versions with no ranges == per-branch backports (e.g.
+		// fixed in 1.2.8 AND 1.3.4). The install is affected if it is below the
+		// fix in its OWN release branch (same major.minor); if no fix shares the
+		// branch, it predates all branches and is affected iff below the lowest
+		// fix. Avoids both the old "drop everything" false negative and the naive
+		// "below max fix" false positive (1.2.9 vs fixes [1.2.8, 1.3.4]).
+		return belowBranchFix(eco, installed, fixed)
 	}
-	if less, ok := versionLess(eco, installed, fixed[0]); ok && less {
-		return true
+}
+
+// hasUpperBoundedRange reports whether any range carries an upper bound (fixed
+// or last_affected) that makes it actionable. An introduced-only range has no
+// upper bound and must not match every version.
+func hasUpperBoundedRange(p affectedProduct) bool {
+	for _, r := range p.Ranges {
+		for _, ev := range r.Events {
+			if strings.TrimSpace(ev.Fixed) != "" || strings.TrimSpace(ev.LastAffected) != "" {
+				return true
+			}
+		}
 	}
 	return false
+}
+
+// belowBranchFix decides affectedness against a set of per-branch fixed versions.
+func belowBranchFix(eco, installed string, fixed []string) bool {
+	instLineage := versionLineage(installed)
+	branchMatched := false
+	if instLineage != "" {
+		for _, f := range fixed {
+			if versionLineage(f) != instLineage {
+				continue
+			}
+			branchMatched = true
+			if less, ok := versionLess(eco, installed, f); ok && less {
+				return true
+			}
+		}
+	}
+	if branchMatched {
+		// A fix exists in the install's own branch and it is at/above it -> patched.
+		return false
+	}
+	low := ""
+	for _, f := range fixed {
+		if low == "" {
+			low = f
+			continue
+		}
+		if less, ok := versionLess(eco, f, low); ok && less {
+			low = f
+		}
+	}
+	if low == "" {
+		return false
+	}
+	less, ok := versionLess(eco, installed, low)
+	return ok && less
+}
+
+// versionLineage returns the leading "major.minor" of a version (epoch-stripped)
+// used to group per-branch backport fixes; "" when two numeric segments can't
+// be parsed.
+func versionLineage(v string) string {
+	v = stripVersionEpoch(strings.TrimSpace(v))
+	if len(v) > 1 && (v[0] == 'v' || v[0] == 'V') && v[1] >= '0' && v[1] <= '9' {
+		v = v[1:] // drop a leading v (Go/npm convention)
+	}
+	segs := strings.FieldsFunc(v, func(r rune) bool {
+		return r == '.' || r == '-' || r == '_' || r == '+' || r == '~' || r == ':'
+	})
+	nums := make([]string, 0, 2)
+	for _, s := range segs {
+		n := ""
+		for _, c := range s {
+			if c < '0' || c > '9' {
+				break
+			}
+			n += string(c)
+		}
+		if n == "" {
+			break
+		}
+		nums = append(nums, n)
+		if len(nums) == 2 {
+			break
+		}
+	}
+	if len(nums) < 2 {
+		return ""
+	}
+	return nums[0] + "." + nums[1]
+}
+
+// versionLineageHasPrefix reports whether installed's dotted version begins with
+// the given numeric prefix on a segment boundary (so "1.2" matches "1.2.3" but
+// not "1.20.0"). Used for CPE wildcard-exact versions like "1.2.*".
+func versionLineageHasPrefix(installed, prefix string) bool {
+	inst := stripVersionEpoch(strings.TrimSpace(installed))
+	prefix = strings.TrimSpace(prefix)
+	if inst == "" || prefix == "" {
+		return false
+	}
+	return strings.HasPrefix(inst+".", prefix+".")
 }
 
 func fixedVersions(p affectedProduct) []string {

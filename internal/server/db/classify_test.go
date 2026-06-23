@@ -421,13 +421,24 @@ func TestCompareVersionsHonorsNumericEpochs(t *testing.T) {
 	}
 }
 
-func TestCompatibleSecurityCandidateRejectsAmbiguousMultiFixedWithoutRanges(t *testing.T) {
+// Multi-fixed advisories without ranges are now matched branch-aware (per the
+// scanning-mechanism review): an install below its OWN branch's fix is affected,
+// while a between-branches version with no same-branch fix stays unmatched.
+func TestCompatibleSecurityCandidateMultiFixedIsBranchAware(t *testing.T) {
 	affected := `[{"name":"foo","ecosystem":"npm","fixed":["1.2.9","2.0.1"]}]`
+	// 1.3.0 has no fix in its own (1.3) branch and is above the lowest fix
+	// (1.2.9) -> genuinely ambiguous, stays unmatched.
 	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "1.3.0", "code-library", "", affected); ok {
-		t.Fatal("multi-fixed candidate without affected ranges should not match across ambiguous release branches")
+		t.Fatal("a between-branches version with no same-branch fix must not match")
 	}
-	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "2.0.0", "code-library", "", affected); ok {
-		t.Fatal("multi-fixed candidate without affected ranges should not match newer branch versions")
+	// 2.0.0 is below its own branch's fix (2.0.1) -> genuinely vulnerable; the
+	// old behavior dropped this (false negative) and it must now match.
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "2.0.0", "code-library", "", affected); !ok {
+		t.Fatal("an install below its own branch's fix must match")
+	}
+	// 2.0.1 is exactly its branch's fix -> patched.
+	if _, ok := compatibleSecurityCandidate("foo", "npm", "npm", "2.0.1", "code-library", "", affected); ok {
+		t.Fatal("an install at its branch's fix must not match")
 	}
 }
 
