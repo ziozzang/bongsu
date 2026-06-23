@@ -287,6 +287,7 @@ func (s *Server) Handler() http.Handler {
 	h = s.securityHeadersMiddleware(h)
 	h = s.rateLimitMiddleware(h)
 	h = s.oidcIdentityCacheMiddleware(h)
+	h = s.principalCacheMiddleware(h)
 	h = s.requestIDMiddleware(h)
 	h = s.accessLogMiddleware(h)
 	return h
@@ -473,35 +474,29 @@ func (s *Server) serveDashboard() {
 	log.Printf("Serving dashboard from %s", distDir)
 }
 
+// The authenticate* helpers below are thin capability checks over the unified
+// Principal (see principal.go) — the single resolution point for all credential
+// sources.
+
 func (s *Server) authenticateWeb(r *http.Request) bool {
 	if !s.webAuth {
 		return true
 	}
-	return s.authenticateAdmin(r) || len(s.viewerSubjects(r)) > 0 || s.authenticateSession(r)
+	p := s.principal(r)
+	return p.Admin || p.has(ScopeViewer) || len(p.Subjects) > 0
 }
 
 func (s *Server) authenticateAdmin(r *http.Request) bool {
-	if s.matchKey(r.Header.Get("X-API-Key"), s.apiKey) {
-		return true
-	}
-	if entry, ok := s.apiTokenFromRequest(r); ok && entry.Role == "admin" {
-		return true
-	}
-	u := s.sessionUser(r)
-	return (u != nil && u.Role == "admin") || s.trustedIdentity(r).Admin || s.oidcIdentity(r).Admin
+	return s.principal(r).has(ScopeAdmin)
 }
 
 func (s *Server) authenticateAgent(r *http.Request) bool {
-	key := r.Header.Get("X-API-Key")
-	return s.matchKey(key, s.agentKey) || s.matchKey(key, s.apiKey)
+	return s.principal(r).has(ScopeAgent)
 }
 
 func (s *Server) authenticateInstall(r *http.Request) bool {
-	token := r.Header.Get("X-Install-Token")
-	if s.installToken != "" && s.matchKey(token, s.installToken) {
-		return true
-	}
-	return s.authenticateAdmin(r)
+	p := s.principal(r)
+	return p.has(ScopeInstall) || p.Admin
 }
 
 func (s *Server) viewerSubject(r *http.Request) string {
@@ -513,24 +508,9 @@ func (s *Server) viewerSubject(r *http.Request) string {
 }
 
 func (s *Server) viewerSubjects(r *http.Request) []string {
-	subjects := []string{}
-	key := r.Header.Get("X-API-Key")
-	if key != "" {
-		if subject := s.viewerKeys[key]; subject != "" {
-			subjects = appendUniqueString(subjects, subject)
-		}
-	}
-	// DB-backed viewer tokens contribute their RBAC subject.
-	if entry, ok := s.apiTokenFromRequest(r); ok && entry.Role == "viewer" && entry.Subject != "" {
-		subjects = appendUniqueString(subjects, entry.Subject)
-	}
-	identity := s.trustedIdentity(r)
-	for _, subject := range identity.Subjects {
-		subjects = appendUniqueString(subjects, subject)
-	}
-	oidc := s.oidcIdentity(r)
-	for _, subject := range oidc.Subjects {
-		subjects = appendUniqueString(subjects, subject)
+	subjects := s.principal(r).Subjects
+	if subjects == nil {
+		return []string{}
 	}
 	return subjects
 }
@@ -657,10 +637,7 @@ func appendUniqueString(items []string, item string) []string {
 }
 
 func (s *Server) accessScope(r *http.Request) db.AccessScope {
-	if s.authenticateAdmin(r) || !s.webAuth {
-		return db.AccessScope{All: true}
-	}
-	if u := s.sessionUser(r); u != nil && u.Role == "admin" {
+	if !s.webAuth || s.principal(r).Admin {
 		return db.AccessScope{All: true}
 	}
 	subjects := s.viewerSubjects(r)
@@ -680,11 +657,12 @@ func (s *Server) accessScope(r *http.Request) db.AccessScope {
 }
 
 func (s *Server) authenticateExport(r *http.Request) bool {
-	return s.authenticateAdmin(r) || len(s.viewerSubjects(r)) > 0 || s.authenticateSession(r)
+	p := s.principal(r)
+	return p.Admin || p.has(ScopeExport) || len(p.Subjects) > 0
 }
 
 func (s *Server) exportScope(r *http.Request) db.AccessScope {
-	if s.authenticateAdmin(r) {
+	if s.principal(r).Admin {
 		return db.AccessScope{All: true}
 	}
 	subjects := s.viewerSubjects(r)

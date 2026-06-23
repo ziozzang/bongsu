@@ -61,8 +61,10 @@ func TestUserHandlersGuardsAndAuth(t *testing.T) {
 	if !strings.Contains(body, `"secret": secret`) {
 		t.Fatal("create token must return the plaintext secret once")
 	}
-	if !strings.Contains(body, "entry.Role == \"admin\"") || !strings.Contains(body, "s.apiTokenFromRequest(r)") {
-		t.Fatal("authenticateAdmin must accept a DB admin token")
+	// The unified principal resolver consumes the DB token and grants admin for a
+	// role=admin token; authenticateAdmin then delegates to the principal.
+	if !strings.Contains(body, "s.apiTokenFromRequest(r)") || !strings.Contains(body, `case "admin":`) {
+		t.Fatal("resolvePrincipal must accept a DB admin token")
 	}
 }
 

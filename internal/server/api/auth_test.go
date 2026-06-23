@@ -118,23 +118,37 @@ func TestAuthSeparation(t *testing.T) {
 
 func TestAdminAuthenticationAcceptsLocalAdminSession(t *testing.T) {
 	out := readAllPackageGoFiles(t)
-	start := strings.Index(out, "func (s *Server) authenticateAdmin")
+	// Admin authentication is unified in resolvePrincipal: it must grant admin from
+	// the bootstrap key, a DB admin token, an admin session, and trusted/OIDC admin.
+	start := strings.Index(out, "func (s *Server) resolvePrincipal")
 	if start < 0 {
-		t.Fatal("authenticateAdmin not found")
+		t.Fatal("resolvePrincipal not found")
 	}
-	end := strings.Index(out[start:], "func (s *Server) authenticateAgent")
-	if end < 0 {
-		t.Fatal("authenticateAgent not found")
-	}
-	fn := out[start : start+end]
+	end := strings.Index(out[start+1:], "\nfunc ")
+	fn := out[start : start+1+end]
 	for _, want := range []string{
-		"s.matchKey(r.Header.Get(\"X-API-Key\"), s.apiKey)",
-		"s.sessionUser(r)",
-		`u.Role == "admin"`,
+		"s.matchKey(key, s.apiKey)",  // bootstrap admin key
+		"s.sessionUser(r)",           // session
+		`u.Role == "admin"`,          // admin session grants admin
+		"s.apiTokenFromRequest(r)",   // DB token
+		`entry.Role == "admin"` + "", // (admin token path)
+		"s.trustedIdentity(r)",
+		"s.oidcIdentity(r)",
 	} {
-		if !strings.Contains(fn, want) {
-			t.Fatalf("authenticateAdmin must accept local admin sessions; missing %q in %s", want, fn)
+		if want == `entry.Role == "admin"` {
+			// the resolver uses a switch on entry.Role; accept either form.
+			if !strings.Contains(fn, "switch entry.Role") && !strings.Contains(fn, `case "admin"`) {
+				t.Fatalf("resolvePrincipal must grant admin for a DB admin token: %s", fn)
+			}
+			continue
 		}
+		if !strings.Contains(fn, want) {
+			t.Fatalf("resolvePrincipal must accept admin sources; missing %q", want)
+		}
+	}
+	// And the thin wrapper delegates.
+	if !strings.Contains(out, "func (s *Server) authenticateAdmin(r *http.Request) bool {\n\treturn s.principal(r).has(ScopeAdmin)") {
+		t.Fatal("authenticateAdmin must delegate to the principal")
 	}
 }
 
@@ -7495,8 +7509,13 @@ func TestAuthenticateWebIncludesSessionCheck(t *testing.T) {
 		t.Fatal("authenticateWeb end not found")
 	}
 	fn := out[start : start+end]
-	if !strings.Contains(fn, "authenticateSession(r)") {
-		t.Fatalf("authenticateWeb must check session: %s", fn)
+	// Web auth admits any authenticated read principal; the session is resolved
+	// (and admitted) inside the unified resolvePrincipal via s.sessionUser.
+	if !strings.Contains(fn, "p.has(ScopeViewer)") || !strings.Contains(fn, "p.Admin") {
+		t.Fatalf("authenticateWeb must admit viewer/admin principals: %s", fn)
+	}
+	if !strings.Contains(out, "s.sessionUser(r)") {
+		t.Fatal("the principal resolver must consult the session")
 	}
 }
 
