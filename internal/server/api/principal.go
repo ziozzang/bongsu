@@ -4,7 +4,12 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"sort"
+	"strings"
 	"sync"
+	"time"
+
+	"github.com/ziozzang/bongsu/internal/server/db"
 )
 
 // Scope is a coarse capability a principal may hold. RBAC host scoping is layered
@@ -42,18 +47,57 @@ type Principal struct {
 	// to silently union into an escalated principal; they no longer do, but they
 	// are flagged so operators can detect credential confusion / spoofing attempts.
 	MultiIdentity bool
+
+	// IdentityKey is the normalized key (e.g. "user:alice") of the selected
+	// identity, used to decide whether other sources prove the SAME identity.
+	IdentityKey string
+	// Enriched is true when a same-identity source contributed extra RBAC
+	// subjects to the first-wins identity (subjects-only union; never scope/admin).
+	Enriched bool
+	// Rejected is true when the request presented two DIFFERENT identities and the
+	// reject-mismatch policy denied it. A rejected principal carries no effective
+	// authority (Admin=false, empty Scopes/Subjects) so every gate returns 401.
+	Rejected     bool
+	RejectReason string
+	// Decisions is the per-source audit trail (selected / enriched / ignored /
+	// rejected / capability) recorded for every credential the request presented.
+	Decisions []AuthDecision
 }
+
+// SourceDecision is how buildPrincipal treated one presented credential source.
+type SourceDecision string
+
+const (
+	SourceSelected             SourceDecision = "selected"                   // Pass1 first-wins identity
+	SourceEnrichedSameIdentity SourceDecision = "enriched_same_identity"     // same identity, added subjects
+	SourceIgnoredSameIdentity  SourceDecision = "ignored_same_identity"      // same identity, no new subjects
+	SourceRejectedMismatch     SourceDecision = "rejected_identity_mismatch" // different identity -> deny
+	SourceAddedCapability      SourceDecision = "added_capability"           // agent/install scope added
+	SourceIgnoredCapability    SourceDecision = "ignored_capability"         // capability not applied
+)
 
 // SourceMatch is one credential source that authenticated on a request. Kind/ID
 // mirror Principal; Selected marks the one source that actually determined the
 // principal's identity (or the additive capability that was applied).
 type SourceMatch struct {
-	Kind     string
-	ID       string
-	Admin    bool
-	Scopes   []Scope
-	Subjects []string
-	Selected bool
+	Kind        string
+	ID          string
+	Admin       bool
+	Scopes      []Scope
+	Subjects    []string
+	Selected    bool
+	IdentityKey string         // normalized identity key (identity sources only)
+	Decision    SourceDecision // how this source was treated
+	Reason      string         // audit detail for ignore/reject
+}
+
+// AuthDecision is the compact, serializable audit record for one source.
+type AuthDecision struct {
+	Kind        string         `json:"kind"`
+	ID          string         `json:"id"`
+	IdentityKey string         `json:"identity_key,omitempty"`
+	Decision    SourceDecision `json:"decision"`
+	Reason      string         `json:"reason,omitempty"`
 }
 
 // identitySources are the credential kinds that assert WHO the caller is and may
@@ -69,7 +113,7 @@ func isIdentityKind(kind string) bool {
 }
 
 func (p *Principal) has(s Scope) bool {
-	if p == nil {
+	if p == nil || p.Rejected {
 		return false
 	}
 	if p.Admin {
@@ -79,7 +123,7 @@ func (p *Principal) has(s Scope) bool {
 }
 
 func (p *Principal) authenticated() bool {
-	return p != nil && (p.Admin || len(p.Scopes) > 0 || len(p.Subjects) > 0)
+	return p != nil && !p.Rejected && (p.Admin || len(p.Scopes) > 0 || len(p.Subjects) > 0)
 }
 
 type principalCacheKey struct{}
@@ -212,14 +256,32 @@ func (s *Server) resolvePrincipal(r *http.Request) *Principal {
 	return s.buildPrincipal(r, matches)
 }
 
-// buildPrincipal applies the first-wins-identity + additive-capability policy to
-// the raw set of matched sources and records every match for audit.
+// buildPrincipal applies the escalation-safe identity policy (Phase A v2) to the
+// raw set of matched sources and records a per-source audit trail:
+//
+//   - Pass 0 normalizes subjects and computes each identity source's IdentityKey.
+//   - Pass 1 selects the single highest-priority IDENTITY (first-wins) and then,
+//     for each *additional* identity source, either ENRICHES the selected
+//     identity with extra RBAC subjects (only when it proves the SAME identity —
+//     never adding scope or admin) or, when it proves a DIFFERENT identity and
+//     the reject-mismatch policy is on, REJECTS the whole request (401). A
+//     rejected principal is stripped of all effective authority.
+//   - Pass 2 adds the narrow agent/install capabilities (skipped entirely if the
+//     request was rejected).
+//   - Pass 3 derives ScopeExport.
 func (s *Server) buildPrincipal(r *http.Request, matches []SourceMatch) *Principal {
 	p := &Principal{Kind: "anonymous", Scopes: map[Scope]bool{}}
 
-	// Pass 1 — select the single highest-priority IDENTITY source. matches are
-	// appended in priority order, so the first identity match is authoritative.
-	identityChosen := false
+	// Pass 0 — normalize subjects + identity keys.
+	for i := range matches {
+		matches[i].Subjects = normalizeSubjects(matches[i].Subjects)
+		if key, ok := identityKeyForSource(matches[i]); ok {
+			matches[i].IdentityKey = key
+		}
+	}
+
+	// Pass 1 — first-wins identity + same-identity enrichment / mismatch reject.
+	var selected *SourceMatch
 	identityCount := 0
 	for i := range matches {
 		m := &matches[i]
@@ -227,52 +289,250 @@ func (s *Server) buildPrincipal(r *http.Request, matches []SourceMatch) *Princip
 			continue
 		}
 		identityCount++
-		if identityChosen {
-			continue // a higher-priority identity already won; never union.
+		if selected == nil {
+			selected = m
+			m.Selected = true
+			m.Decision = SourceSelected
+			p.Kind, p.ID, p.Admin = m.Kind, m.ID, m.Admin
+			p.IdentityKey = m.IdentityKey
+			for _, sc := range m.Scopes {
+				p.Scopes[sc] = true
+			}
+			p.Subjects = unionSubjects(nil, m.Subjects)
+			continue
 		}
-		identityChosen = true
-		m.Selected = true
-		p.Kind, p.ID, p.Admin = m.Kind, m.ID, m.Admin
-		for _, sc := range m.Scopes {
-			p.Scopes[sc] = true
+
+		// A second (or later) identity matched.
+		if s.authEnrichSameIdentity && sameIdentity(*selected, *m) {
+			before := len(p.Subjects)
+			p.Subjects = unionSubjects(p.Subjects, m.Subjects)
+			if len(p.Subjects) != before {
+				m.Decision = SourceEnrichedSameIdentity
+				m.Reason = "subjects_union_only"
+				p.Enriched = true
+			} else {
+				m.Decision = SourceIgnoredSameIdentity
+				m.Reason = "same_identity_no_new_subjects"
+			}
+			continue
 		}
-		p.Subjects = append(p.Subjects, m.Subjects...)
+
+		// Different identity (or enrichment disabled): never union. Reject when the
+		// policy is on; otherwise fall back to legacy first-wins-ignore.
+		if s.authRejectMismatch {
+			m.Decision = SourceRejectedMismatch
+			m.Reason = "identity_mismatch"
+			p.Rejected = true
+			p.RejectReason = "multiple distinct identity credentials presented"
+		} else {
+			m.Decision = SourceIgnoredSameIdentity
+			m.Reason = "ignored_mismatch_reject_disabled"
+		}
 	}
 	p.MultiIdentity = identityCount > 1
 
-	// Pass 2 — apply additive narrow capabilities (agent/install). These never
-	// carry Admin or subjects, so they cannot widen the selected identity.
-	for i := range matches {
-		m := &matches[i]
-		if isIdentityKind(m.Kind) {
-			continue
+	if p.Rejected {
+		clearEffectiveAuth(p)
+	} else {
+		// Pass 2 — additive narrow capabilities (agent/install). These never carry
+		// Admin or subjects, so they cannot widen the selected identity.
+		for i := range matches {
+			m := &matches[i]
+			if isIdentityKind(m.Kind) {
+				continue
+			}
+			if p.Admin {
+				m.Decision = SourceIgnoredCapability
+				m.Reason = "admin_implies_all"
+				continue
+			}
+			m.Selected = true
+			m.Decision = SourceAddedCapability
+			for _, sc := range m.Scopes {
+				p.Scopes[sc] = true
+			}
+			if p.Kind == "anonymous" {
+				p.Kind, p.ID = m.Kind, m.ID
+			}
 		}
-		m.Selected = true
-		for _, sc := range m.Scopes {
-			p.Scopes[sc] = true
-		}
-		if p.Kind == "anonymous" {
-			p.Kind, p.ID = m.Kind, m.ID
-		}
-	}
 
-	// Viewer + subjects are read capabilities; any read principal can export.
-	if p.has(ScopeViewer) || len(p.Subjects) > 0 {
-		p.Scopes[ScopeExport] = true
+		// Pass 3 — viewer + subjects are read capabilities; any read principal can export.
+		if p.has(ScopeViewer) || len(p.Subjects) > 0 {
+			p.Scopes[ScopeExport] = true
+		}
 	}
 
 	p.Presented = matches
-	if p.MultiIdentity {
-		// Credential confusion: the request carried two+ distinct identities. We
-		// did not escalate (first-wins), but surface it for detection/forensics.
-		kinds := make([]string, 0, len(matches))
-		for _, m := range matches {
-			if isIdentityKind(m.Kind) {
-				kinds = append(kinds, m.Kind)
-			}
-		}
-		log.Printf("auth multi-identity request_id=%s selected=%s presented=%v",
-			requestIDFromRequest(r), p.Kind, kinds)
-	}
+	p.Decisions = auditDecisions(matches)
+	s.logAuthDecision(r, p)
 	return p
+}
+
+// clearEffectiveAuth strips a rejected principal of all authority while keeping
+// Kind/ID and the audit trail for forensics.
+func clearEffectiveAuth(p *Principal) {
+	p.Admin = false
+	p.Scopes = map[Scope]bool{}
+	p.Subjects = nil
+}
+
+// auditDecisions projects the matched sources into the compact audit records.
+func auditDecisions(matches []SourceMatch) []AuthDecision {
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]AuthDecision, 0, len(matches))
+	for _, m := range matches {
+		d := m.Decision
+		if d == "" {
+			d = SourceIgnoredCapability
+		}
+		out = append(out, AuthDecision{Kind: m.Kind, ID: m.ID, IdentityKey: m.IdentityKey, Decision: d, Reason: m.Reason})
+	}
+	return out
+}
+
+// logAuthDecision emits a structured audit line for any non-trivial resolution
+// (rejection, enrichment, or multi-identity) and best-effort persists it to the
+// auth_events table. Single-source requests are silent. The DB write is async and
+// non-fatal: an audit-store failure never affects the auth decision.
+func (s *Server) logAuthDecision(r *http.Request, p *Principal) {
+	if !p.Rejected && !p.Enriched && !p.MultiIdentity {
+		return
+	}
+	requestID := requestIDFromRequest(r)
+	switch {
+	case p.Rejected:
+		log.Printf("auth reject request_id=%s reason=%q presented=%v",
+			requestID, p.RejectReason, presentedIdentityKinds(p.Presented))
+	case p.Enriched:
+		log.Printf("auth enrich request_id=%s identity=%s subjects=%v",
+			requestID, p.IdentityKey, p.Subjects)
+	default:
+		log.Printf("auth multi-identity request_id=%s selected=%s presented=%v",
+			requestID, p.Kind, presentedIdentityKinds(p.Presented))
+	}
+	s.persistAuthEvent(r, requestID, p)
+}
+
+// persistAuthEvent asynchronously writes the audit record. Request fields are
+// captured synchronously (r must not be touched after the handler returns); the
+// write runs on a background context so a finished request doesn't cancel it.
+func (s *Server) persistAuthEvent(r *http.Request, requestID string, p *Principal) {
+	if s == nil || s.db == nil {
+		return
+	}
+	ev := db.AuthEvent{
+		RequestID:     requestID,
+		RemoteAddr:    r.RemoteAddr,
+		Method:        r.Method,
+		Path:          r.URL.Path,
+		FinalKind:     p.Kind,
+		FinalID:       p.ID,
+		FinalAdmin:    p.Admin,
+		FinalIdentity: p.IdentityKey,
+		Rejected:      p.Rejected,
+		RejectReason:  p.RejectReason,
+		MultiIdentity: p.MultiIdentity,
+		Enriched:      p.Enriched,
+		Presented:     p.Presented,
+		Decisions:     p.Decisions,
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.db.InsertAuthEvent(ctx, ev); err != nil {
+			log.Printf("auth audit write failed request_id=%s: %v", requestID, err)
+		}
+	}()
+}
+
+func presentedIdentityKinds(matches []SourceMatch) []string {
+	kinds := make([]string, 0, len(matches))
+	for _, m := range matches {
+		if isIdentityKind(m.Kind) {
+			kinds = append(kinds, m.Kind)
+		}
+	}
+	return kinds
+}
+
+// identityKeyForSource computes the normalized identity key for an identity
+// source: a user:* subject if present, else Kind+ID. Capability sources have no
+// identity key.
+func identityKeyForSource(m SourceMatch) (string, bool) {
+	if !isIdentityKind(m.Kind) {
+		return "", false
+	}
+	if u := primaryUserSubject(m.Subjects); u != "" {
+		return u, true
+	}
+	if m.ID != "" {
+		return m.Kind + ":" + strings.ToLower(strings.TrimSpace(m.ID)), true
+	}
+	return "", false
+}
+
+// sameIdentity reports whether two identity sources prove the SAME principal.
+// bootstrap is always treated as an isolated identity (any other identity
+// alongside it is a mismatch). Otherwise a shared user:* subject is authoritative;
+// failing that, an identical Kind+ID.
+func sameIdentity(a, b SourceMatch) bool {
+	if !isIdentityKind(a.Kind) || !isIdentityKind(b.Kind) {
+		return false
+	}
+	if a.Kind == "bootstrap" || b.Kind == "bootstrap" {
+		return false // break-glass key never merges with any other identity
+	}
+	au, bu := primaryUserSubject(a.Subjects), primaryUserSubject(b.Subjects)
+	if au != "" && bu != "" {
+		return au == bu
+	}
+	if a.Kind == b.Kind && a.ID != "" && b.ID != "" {
+		return strings.EqualFold(strings.TrimSpace(a.ID), strings.TrimSpace(b.ID))
+	}
+	return false
+}
+
+// primaryUserSubject returns a lowercased "user:<name>" key for the first
+// user:* subject, or "". The lowercasing is for case-insensitive IDENTITY
+// comparison only — it is never written back into a Principal's Subjects, which
+// must preserve their original case for the case-sensitive RBAC external_id match.
+func primaryUserSubject(subjects []string) string {
+	for _, s := range subjects {
+		s = strings.TrimSpace(s)
+		if strings.HasPrefix(strings.ToLower(s), "user:") {
+			return strings.ToLower(s)
+		}
+	}
+	return ""
+}
+
+// normalizeSubjects preserves subject VALUES (case and bare, colon-less names
+// like a legacy viewer-key "alice" are kept — RBAC matches external_id exactly),
+// dropping only blanks and exact duplicates and sorting for determinism. It does
+// NOT lowercase or require a "kind:" prefix; subject normalization for identity
+// comparison happens separately in primaryUserSubject.
+func normalizeSubjects(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// unionSubjects merges b into a, dedups (case-sensitive) and re-sorts.
+func unionSubjects(a, b []string) []string {
+	merged := append(append([]string(nil), a...), b...)
+	return normalizeSubjects(merged)
 }

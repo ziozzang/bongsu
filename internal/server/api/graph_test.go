@@ -1,6 +1,7 @@
 package api
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -63,7 +64,9 @@ func TestGraphHandlersAuthAndScope(t *testing.T) {
 
 func TestGraphReadEndpointsCached(t *testing.T) {
 	body := readAllPackageGoFiles(t)
-	if !strings.Contains(body, "graphCache   *responseCache") {
+	// Whitespace-tolerant: gofmt aligns the struct field column to the widest
+	// field name, so the gap after "graphCache" shifts when fields are added.
+	if !regexp.MustCompile(`graphCache\s+\*responseCache`).MatchString(body) {
 		t.Fatal("Server should hold a graphCache responseCache")
 	}
 	if !strings.Contains(body, `newResponseCache("BONGSU_GRAPH_CACHE_SECONDS"`) {

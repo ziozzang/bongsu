@@ -44,21 +44,28 @@ type Server struct {
 	trustedAuth  trustedIdentityConfig
 	oidcAuth     *oidcTokenVerifier
 	webAuth      bool
-	corsOrigins  map[string]bool
-	corsAllowAll bool
-	mux          *http.ServeMux
-	loginLimit   *loginLimiter
-	matcher      *cvematch.Matcher
-	dbMgr        *trivydb.Manager
-	secMgr       *secdb.Manager
-	notifier     *webhookNotifier
-	bundleCache  *secdbBundleCache
-	statsCache   *responseCache
-	healthCache  *responseCache
-	graphCache   *responseCache
-	apiTokens    *apiTokenStore
-	llm          *llm.Client
-	live         *live.Hub
+	// authEnrichSameIdentity unions RBAC subjects from additional credential
+	// sources that prove the SAME identity (e.g. session + OIDC for user:alice)
+	// onto the first-wins principal. authRejectMismatch rejects (401) a request
+	// that presents two DIFFERENT identities. Both default ON (Phase A v2); the
+	// env escape hatches (=false) exist for one-release migration safety.
+	authEnrichSameIdentity bool
+	authRejectMismatch     bool
+	corsOrigins            map[string]bool
+	corsAllowAll           bool
+	mux                    *http.ServeMux
+	loginLimit             *loginLimiter
+	matcher                *cvematch.Matcher
+	dbMgr                  *trivydb.Manager
+	secMgr                 *secdb.Manager
+	notifier               *webhookNotifier
+	bundleCache            *secdbBundleCache
+	statsCache             *responseCache
+	healthCache            *responseCache
+	graphCache             *responseCache
+	apiTokens              *apiTokenStore
+	llm                    *llm.Client
+	live                   *live.Hub
 
 	securityRecalcMu      sync.Mutex
 	securityRecalcRunning bool
@@ -156,6 +163,10 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 		trustedAuth:  trustedIdentityConfigFromEnv(),
 		oidcAuth:     newOIDCTokenVerifierFromEnv(),
 		webAuth:      os.Getenv("BONGSU_WEB_AUTH") != "false",
+
+		authEnrichSameIdentity: os.Getenv("BONGSU_AUTH_ENRICH_SAME_IDENTITY") != "false",
+		authRejectMismatch:     os.Getenv("BONGSU_AUTH_REJECT_IDENTITY_MISMATCH") != "false",
+
 		corsOrigins:  parseAllowedOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
 		corsAllowAll: allowsAllOrigins(os.Getenv("BONGSU_CORS_ALLOWED_ORIGINS")),
 		mux:          http.NewServeMux(),
