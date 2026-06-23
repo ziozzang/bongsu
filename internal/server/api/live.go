@@ -11,11 +11,38 @@ import (
 	"github.com/ziozzang/bongsu/internal/server/live"
 )
 
+// writeLiveMetrics emits the live-monitoring channel gauges/counters into the
+// hand-rolled /metrics exposition.
+func (s *Server) writeLiveMetrics(b *strings.Builder) {
+	if s.live == nil {
+		return
+	}
+	m := s.live.Metrics()
+	writePromGauge(b, "bongsu_live_connections_active", nil, float64(m.ActiveConnections))
+	writePromCounter(b, "bongsu_live_connections_total", nil, float64(m.ConnectionsTotal))
+	writePromCounter(b, "bongsu_live_events_sent_total", nil, float64(m.EventsSent))
+	writePromCounter(b, "bongsu_live_events_dropped_total", nil, float64(m.EventsDropped))
+	writePromCounter(b, "bongsu_live_events_replayed_total", nil, float64(m.EventsReplayed))
+}
+
 // handleEventStream serves the live monitoring feed as Server-Sent Events. The
 // caller must be an authenticated viewer (or higher); the events delivered are
 // filtered to the caller's RBAC host scope. A reconnecting browser resumes via
 // Last-Event-ID; a ?types= filter narrows to specific event types.
 func (s *Server) handleEventStream(w http.ResponseWriter, r *http.Request) {
+	// EventSource cannot set request headers, so accept the caller's token via a
+	// query parameter and inject it into the header slots the Principal resolver
+	// reads (X-API-Key for API keys/DB tokens, Authorization for DB/session
+	// tokens). Injected before the first s.principal() call so the per-request
+	// cache resolves with it.
+	if tok := strings.TrimSpace(r.URL.Query().Get("access_token")); tok != "" {
+		if r.Header.Get("X-API-Key") == "" {
+			r.Header.Set("X-API-Key", tok)
+		}
+		if r.Header.Get("Authorization") == "" {
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+	}
 	if !s.authenticateWeb(r) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return

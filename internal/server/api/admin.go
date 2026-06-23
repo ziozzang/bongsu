@@ -174,6 +174,7 @@ func (s *Server) adminMetrics(ctx context.Context) string {
 	}
 	writePromGauge(&b, "bongsu_build_info", buildLabels, 1)
 	s.writeRuntimeMetrics(&b)
+	s.writeLiveMetrics(&b)
 	{
 		llmEnabled := 0.0
 		if s.llm.Enabled() {
