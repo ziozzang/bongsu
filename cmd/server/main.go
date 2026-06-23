@@ -198,6 +198,15 @@ func main() {
 		log.Println("Security DB sync manager started")
 	}
 
+	// Event-outbox dispatcher: delivers durable pipeline events (notifications,
+	// rematch) at-least-once with retry and dead-lettering.
+	{
+		bgCtx, bgCancel := context.WithCancel(context.Background())
+		defer bgCancel()
+		go server.StartOutboxDispatcher(bgCtx)
+		log.Println("Event outbox dispatcher started")
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)

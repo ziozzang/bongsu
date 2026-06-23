@@ -115,8 +115,14 @@ func TestNotificationEnvVarsPresent(t *testing.T) {
 
 func TestNotificationEngineTriggeredAfterScan(t *testing.T) {
 	out := readAllPackageGoFiles(t)
-	if !strings.Contains(out, `evaluateAndDispatch(ctx, "scan.completed"`) {
-		t.Fatal("notification engine not triggered after scan completion")
+	// Notifications are now durable: the report handler enqueues a scan.completed
+	// event to the transactional outbox, and the dispatcher delivers it by calling
+	// the rule engine. Assert both ends of that path exist.
+	if !strings.Contains(out, `eventNotification, notificationEventPayload{Event: "scan.completed"`) {
+		t.Fatal("scan.completed must be enqueued to the event outbox after a scan")
+	}
+	if !strings.Contains(out, `evaluateAndDispatch(ctx, p.Event, p.Data)`) {
+		t.Fatal("outbox dispatcher must deliver notification events via the rule engine")
 	}
 }
 

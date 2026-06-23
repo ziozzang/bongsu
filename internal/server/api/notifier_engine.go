@@ -35,26 +35,75 @@ func newRuleNotifier(s *Server) *ruleNotifier {
 	}
 }
 
-func (n *ruleNotifier) evaluateAndDispatch(ctx context.Context, event string, data map[string]any) {
+// evaluateAndDispatch evaluates the enabled rules for an event and dispatches the
+// matching ones. It returns an error if any matching rule's delivery ultimately
+// failed, so a caller draining the event outbox can retry the whole event
+// (at-least-once). Rule fetch failures are also returned so the event is retried
+// rather than silently dropped.
+func (n *ruleNotifier) evaluateAndDispatch(ctx context.Context, event string, data map[string]any) error {
 	if envBool("BONGSU_NOTIFICATION_DISABLED", false) {
-		return
+		return nil
 	}
 	rules, err := n.server.db.GetEnabledRulesForEvent(ctx, event)
 	if err != nil {
-		log.Printf("notification rules fetch: %v", err)
-		return
+		return fmt.Errorf("notification rules fetch: %w", err)
 	}
+	failed := 0
 	for _, rule := range rules {
 		if !n.matchesConditions(&rule, data) {
 			continue
 		}
-		n.dispatch(ctx, &rule, event, data)
+		if !n.dispatch(ctx, &rule, event, data) {
+			failed++
+		}
 	}
+	if failed > 0 {
+		return fmt.Errorf("%d notification rule(s) failed delivery for event %s", failed, event)
+	}
+	return nil
+}
+
+// notifCountMap reads a {label: count} map from event data, tolerating both the
+// native map[string]int (in-process call) and the map[string]float64/any shape
+// that survives a JSON round-trip through the event outbox.
+func notifCountMap(v any) (map[string]int, bool) {
+	switch m := v.(type) {
+	case map[string]int:
+		return m, true
+	case map[string]float64:
+		out := make(map[string]int, len(m))
+		for k, f := range m {
+			out[k] = int(f)
+		}
+		return out, true
+	case map[string]any:
+		out := make(map[string]int, len(m))
+		for k, raw := range m {
+			n, _ := notifInt(raw)
+			out[k] = n
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+// notifInt reads an int from event data, tolerating the float64/json.Number a
+// JSON round-trip produces.
+func notifInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	}
+	return 0, false
 }
 
 func (n *ruleNotifier) matchesConditions(rule *db.NotificationRule, data map[string]any) bool {
 	if rule.MinSeverity != "" {
-		if counts, ok := data["severity_counts"].(map[string]int); ok {
+		if counts, ok := notifCountMap(data["severity_counts"]); ok {
 			matched := false
 			for sev, cnt := range counts {
 				if cnt > 0 && severityRank(sev) >= severityRank(rule.MinSeverity) {
@@ -68,7 +117,7 @@ func (n *ruleNotifier) matchesConditions(rule *db.NotificationRule, data map[str
 		}
 	}
 	if rule.MinRiskLevel != "" {
-		if counts, ok := data["risk_level_counts"].(map[string]int); ok {
+		if counts, ok := notifCountMap(data["risk_level_counts"]); ok {
 			matched := false
 			for rl, cnt := range counts {
 				if cnt > 0 && riskRank(rl) >= riskRank(rule.MinRiskLevel) {
@@ -82,7 +131,7 @@ func (n *ruleNotifier) matchesConditions(rule *db.NotificationRule, data map[str
 		}
 	}
 	if rule.ExploitedOnly {
-		if exploited, ok := data["exploited_count"].(int); ok && exploited == 0 {
+		if exploited, ok := notifInt(data["exploited_count"]); ok && exploited == 0 {
 			return false
 		}
 	}
@@ -105,7 +154,11 @@ func (n *ruleNotifier) matchesConditions(rule *db.NotificationRule, data map[str
 	return true
 }
 
-func (n *ruleNotifier) dispatch(ctx context.Context, rule *db.NotificationRule, event string, data map[string]any) {
+// dispatch delivers one rule's notification and records the attempt. It returns
+// true on successful delivery (or a non-retryable misconfiguration that should
+// not block the event) and false when the send failed and the event should be
+// retried from the outbox.
+func (n *ruleNotifier) dispatch(ctx context.Context, rule *db.NotificationRule, event string, data map[string]any) bool {
 	payload := map[string]any{
 		"event":     event,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
@@ -119,23 +172,28 @@ func (n *ruleNotifier) dispatch(ctx context.Context, rule *db.NotificationRule, 
 		TriggerEvent: event,
 		Payload:      payloadJSON,
 	}
+	ok := true
 	switch rule.ChannelType {
 	case "webhook":
 		cfg := map[string]string{}
 		json.Unmarshal(rule.ChannelConfig, &cfg)
 		if strings.TrimSpace(cfg["url"]) == "" {
+			// Misconfiguration, not a transient failure — retrying won't help, so
+			// don't wedge the event; surface it in the log instead.
 			log.Printf("notification rule %s: no url in channel_config", rule.ID)
-			return
+			return true
 		}
 		status, errMsg, attempts := n.sendWebhook(ctx, rule, event, payload)
 		logEntry.Status = status
 		logEntry.ErrorMessage = errMsg
 		logEntry.Attempts = attempts
+		ok = status == "sent"
 	case "email":
 		status, errMsg, attempts := n.sendEmail(ctx, rule, event, payload)
 		logEntry.Status = status
 		logEntry.ErrorMessage = errMsg
 		logEntry.Attempts = attempts
+		ok = status == "sent"
 	case "log":
 		log.Printf("[NOTIFICATION] rule=%s event=%s data=%s", rule.Name, event, string(payloadJSON))
 		logEntry.Status = "sent"
@@ -145,6 +203,7 @@ func (n *ruleNotifier) dispatch(ctx context.Context, rule *db.NotificationRule, 
 		log.Printf("notification log record: %v", err)
 	}
 	n.server.db.TouchNotificationRuleTrigger(ctx, rule.ID)
+	return ok
 }
 
 func (n *ruleNotifier) sendWebhook(ctx context.Context, rule *db.NotificationRule, event string, payload map[string]any) (string, string, int) {

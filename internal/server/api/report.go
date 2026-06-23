@@ -305,16 +305,24 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	scanFailed := scanFailedFromStatus(scanStatus, ingestErrors)
+	// Durably enqueue notifications BEFORE responding: the outbox dispatcher
+	// delivers them at-least-once with retry, so a crash or a failing webhook no
+	// longer silently loses the event (the previous fire-and-forget goroutine).
+	webhookData := reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, riskCounts, ingestErrors)
+	if _, err := s.db.EnqueueEvent(r.Context(), eventNotification, notificationEventPayload{Event: "scan.completed", Data: webhookData}, ""); err != nil {
+		log.Printf("enqueue scan.completed notification for scan %s: %v", report.ScanID, err)
+	}
+	if scanFailed {
+		if _, err := s.db.EnqueueEvent(r.Context(), eventNotification, notificationEventPayload{Event: "scan.failed", Data: scanFailedPayload(&report, scanStatus, errorSummary, ingestErrors)}, ""); err != nil {
+			log.Printf("enqueue scan.failed notification for scan %s: %v", report.ScanID, err)
+		}
+	}
+	// The trend snapshot is best-effort analytics, not an at-least-once event.
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := s.db.RecordVulnTrendSnapshot(ctx, report.Host.ID, report.ScanID); err != nil {
 			log.Printf("trend snapshot after scan %s: %v", report.ScanID, err)
-		}
-		webhookData := reportWebhookPayload(&report, scanStatus, inventoryStatus, insertedVulns, skippedVulns, vulnTotal, sevCounts, riskCounts, ingestErrors)
-		s.ruleNotifier.evaluateAndDispatch(ctx, "scan.completed", webhookData)
-		if scanFailed {
-			s.ruleNotifier.evaluateAndDispatch(ctx, "scan.failed", scanFailedPayload(&report, scanStatus, errorSummary, ingestErrors))
 		}
 	}()
 
