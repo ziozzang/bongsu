@@ -7,81 +7,11 @@ import { verCmp } from './lib/version';
 import { type SeverityTone, findingSourceLabel, riskLevelLabel, riskLevelColor, recommendedActionLabel, recommendedActionTone, riskLevelTone, isVulnAnalysis, aiPolicyModeTone, aiPolicyModeBlurb, aiApprovalStatusTone, aiActionLabel, aiProposedSummary, strField, SEVERITY_ORDER, severityColor } from './lib/severity';
 import { formatDateTime, formatDateTimeFull, formatDateOnly, fmtCount, shortDate, niceMax } from './lib/format';
 import { Icon, BeaconMark } from './components/Icon';
+import { Loading, LoadError, EmptyState, SortHeader, Badge, toneColor } from './components/primitives';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 
 
-function Loading({ label = 'Loading...' }: { label?: string }) {
-  return (
-    <div className="state-block">
-      <div className="spinner" />
-      <span>{label}</span>
-    </div>
-  );
-}
-
-function LoadError({ message, onRetry }: { message: string; onRetry?: () => void }) {
-  return (
-    <div className="state-block state-error">
-      <span>{message}</span>
-      {onRetry && <button className="btn btn-secondary btn-sm" onClick={onRetry}>Retry</button>}
-    </div>
-  );
-}
-
-// EmptyState renders the standard "no results" message for an empty list/table.
-function EmptyState({ message = 'No results found' }: { message?: string }) {
-  return <div className="state-block">{message}</div>;
-}
-
-// SortHeader: a sortable <th> with a clear, clickable affordance. The active
-// column shows a solid ▲/▼ arrow; inactive columns show a dimmed ↕ hint.
-function SortHeader({ col, label, sortBy, sortDesc, onSort }: {
-  col: string; label: React.ReactNode; sortBy: string; sortDesc: boolean; onSort: (col: string) => void;
-}) {
-  const active = sortBy === col;
-  return (
-    <th
-      className={`clickable sort-th${active ? ' sort-active' : ''}`}
-      onClick={() => onSort(col)}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(col); } }}
-      role="button"
-      tabIndex={0}
-      aria-sort={active ? (sortDesc ? 'descending' : 'ascending') : 'none'}
-      style={{ userSelect: 'none' }}
-    >
-      {label}
-      <span className={`sort-ind${active ? ' active' : ''}`} aria-hidden="true">{active ? (sortDesc ? '▼' : '▲') : '↕'}</span>
-    </th>
-  );
-}
-
-// ── Icon system ──────────────────────────────────────────────────────────────
-// Single stroke-based inline SVG icon component (lucide-style: 1.5px stroke,
-// round caps/joins, currentColor). No external icon dependency.
-
-// ── Badge ────────────────────────────────────────────────────────────────────
-// One Badge look used everywhere. `dot` variant prepends a status dot for tables.
-function toneColor(tone: SeverityTone): string {
-  switch (tone) {
-    case 'critical': return 'var(--critical)';
-    case 'high': return 'var(--high)';
-    case 'medium': return 'var(--medium)';
-    case 'low': return 'var(--low)';
-    case 'accent': return 'var(--primary)';
-    case 'unknown': return 'var(--unknown)';
-    default: return 'var(--text-muted)';
-  }
-}
-function Badge({ tone = 'neutral', dot, children, title }: { tone?: SeverityTone; dot?: boolean; children: React.ReactNode; title?: string }) {
-  const color = toneColor(tone);
-  return (
-    <span className="badge2" title={title} style={{ color, background: `color-mix(in srgb, ${color} 14%, transparent)` }}>
-      {dot && <span className="badge2-dot" style={{ background: color }} />}
-      {children}
-    </span>
-  );
-}
 
 // ── Pure-SVG chart primitives ────────────────────────────────────────────────
 const CHART_W = 720; // viewBox width; charts scale responsively via preserveAspectRatio
