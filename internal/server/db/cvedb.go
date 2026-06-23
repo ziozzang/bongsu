@@ -2691,14 +2691,15 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 
 	query := fmt.Sprintf(`
 		%s
-		SELECT p.id, p.name, p.version, p.host_id, p.scan_id, p.container, p.file_path,
+		SELECT p.id, p.name, p.src_name, p.version, p.host_id, p.scan_id, p.container, p.file_path,
 		       p.pkg_type, p.ecosystem,
 		       c.vulnerability_id, c.severity, c.cvss_score, c.cvss_vector,
 		       c.title, c.description, c.refs, c.category, c.ecosystem, c.affected_products
 		FROM packages p
 		%s
 		JOIN cve_affected_packages cap
-		  ON cap.package_name = lower(p.name)
+		  ON (cap.package_name = lower(p.name)
+		      OR (p.src_name <> '' AND cap.package_name = lower(p.src_name)))
 		 AND cap.ecosystem = %s
 		JOIN cve_database c ON c.id = cap.cve_id
 		%s
@@ -2713,18 +2714,18 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 	defer rows.Close()
 
 	type match struct {
-		pkgID, pkgName, version, hostID, scanID, container, filePath string
-		pkgType, pkgEco                                              string
-		vulnID, severity, title, description, refs                   string
-		category, cveEco, affectedProducts                           string
-		cvssScore                                                    float64
-		cvssVector                                                   string
+		pkgID, pkgName, srcName, version, hostID, scanID, container, filePath string
+		pkgType, pkgEco                                                       string
+		vulnID, severity, title, description, refs                            string
+		category, cveEco, affectedProducts                                   string
+		cvssScore                                                            float64
+		cvssVector                                                           string
 	}
 	var matches []match
 
 	for rows.Next() {
 		var m match
-		if err := rows.Scan(&m.pkgID, &m.pkgName, &m.version, &m.hostID, &m.scanID,
+		if err := rows.Scan(&m.pkgID, &m.pkgName, &m.srcName, &m.version, &m.hostID, &m.scanID,
 			&m.container, &m.filePath, &m.pkgType, &m.pkgEco,
 			&m.vulnID, &m.severity, &m.cvssScore, &m.cvssVector,
 			&m.title, &m.description, &m.refs, &m.category, &m.cveEco, &m.affectedProducts); err != nil {
@@ -2743,6 +2744,13 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 
 	for _, m := range matches {
 		affected, ok := compatibleSecurityCandidate(m.pkgName, m.pkgType, m.pkgEco, m.version, m.category, m.cveEco, m.affectedProducts)
+		if !ok && m.srcName != "" && !strings.EqualFold(m.srcName, m.pkgName) {
+			// Distro advisories (Debian/Ubuntu/RHEL) are keyed by SOURCE package
+			// name, while the installed package is a binary built from it (e.g.
+			// libssl3 from openssl). Retry the gate against the source name so the
+			// binary still matches its source advisory.
+			affected, ok = compatibleSecurityCandidate(m.srcName, m.pkgType, m.pkgEco, m.version, m.category, m.cveEco, m.affectedProducts)
+		}
 		if !ok {
 			result.Skipped++
 			continue

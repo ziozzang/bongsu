@@ -153,7 +153,7 @@ func namedValues(args []driver.NamedValue) []driver.Value {
 
 func rematchCandidateColumns() []string {
 	return []string{
-		"id", "name", "version", "host_id", "scan_id", "container", "file_path",
+		"id", "name", "src_name", "version", "host_id", "scan_id", "container", "file_path",
 		"pkg_type", "ecosystem", "vulnerability_id", "severity", "cvss_score", "cvss_vector",
 		"title", "description", "refs", "category", "cve_ecosystem", "affected_products",
 	}
@@ -161,7 +161,7 @@ func rematchCandidateColumns() []string {
 
 func rematchCandidate(vulnID, pkgEco, cveCategory, cveEco, version, affected string) []driver.Value {
 	return []driver.Value{
-		"pkg-1", "left-pad", version, "host-1", "scan-1", "", "/app/package-lock.json",
+		"pkg-1", "left-pad", "", version, "host-1", "scan-1", "", "/app/package-lock.json",
 		"npm", pkgEco, vulnID, "LOW", 9.1, "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
 		vulnID + " title", vulnID + " description", `[{"url":"https://example.test/` + vulnID + `"}]`,
 		cveCategory, cveEco, affected,
