@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTheme } from './hooks/useTheme';
+import { LiveIndicator } from './components/LiveIndicator';
 import { CommandPalette, type CommandItem } from './components/CommandPalette';
 import { DataTable, type Column } from './components/DataTable';
 import { getHashView, setHashView } from './hooks/useHashRoute';
@@ -481,6 +482,7 @@ function Sidebar({ view, onNavigate, onLogout, onOpenSearch }: { view: View; onN
           </div>
         ))}
       </nav>
+      {onLogout && <LiveIndicator />}
       <ThemeToggle />
       {onLogout && showPw && <ChangePasswordPanel onClose={() => setShowPw(false)} />}
       {onLogout && (
