@@ -18,6 +18,7 @@ import (
 
 	"github.com/ziozzang/bongsu/internal/server/cvematch"
 	"github.com/ziozzang/bongsu/internal/server/db"
+	"github.com/ziozzang/bongsu/internal/server/live"
 	"github.com/ziozzang/bongsu/internal/server/llm"
 	"github.com/ziozzang/bongsu/internal/server/secdb"
 	"github.com/ziozzang/bongsu/internal/server/trivydb"
@@ -57,6 +58,7 @@ type Server struct {
 	graphCache   *responseCache
 	apiTokens    *apiTokenStore
 	llm          *llm.Client
+	live         *live.Hub
 
 	securityRecalcMu      sync.Mutex
 	securityRecalcRunning bool
@@ -186,6 +188,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	s.ruleNotifier = newRuleNotifier(s)
 
 	s.llm = llm.New(llmConfigFromEnv())
+	s.live = live.NewHub(envInt("BONGSU_LIVE_RING", 1000), envInt("BONGSU_LIVE_MAX_CONNS", 256))
 	s.routes()
 	s.bootstrapAdmin()
 	s.startSessionCleanup()
@@ -347,6 +350,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/admin/agent-fleet/status", s.handleAgentFleetStatus)
 	s.mux.HandleFunc("GET /api/stats", s.handleStats)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
+	s.mux.HandleFunc("GET /api/events/stream", s.handleEventStream)
 	s.mux.HandleFunc("GET /api/ready", s.handleReady)
 	s.mux.HandleFunc("GET /api/live", s.handleLiveness)
 	s.mux.HandleFunc("GET /api/docs/openapi.yaml", s.handleOpenAPISpec)
