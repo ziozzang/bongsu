@@ -5,6 +5,7 @@ import { DataTable, type Column } from './components/DataTable';
 import { getHashView, setHashView } from './hooks/useHashRoute';
 import { verCmp } from './lib/version';
 import { type SeverityTone, findingSourceLabel, riskLevelLabel, riskLevelColor, recommendedActionLabel, recommendedActionTone, riskLevelTone, isVulnAnalysis, aiPolicyModeTone, aiPolicyModeBlurb, aiApprovalStatusTone, aiActionLabel, aiProposedSummary, strField, SEVERITY_ORDER, severityColor } from './lib/severity';
+import { formatDateTime, formatDateTimeFull, formatDateOnly, fmtCount, shortDate, niceMax } from './lib/format';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 
@@ -158,18 +159,6 @@ const SEV_KEYS = [
   { key: 'low_count', label: 'Low', color: 'var(--low)', raw: '#30c060' },
 ] as const;
 
-function shortDate(d: string): string {
-  const dt = new Date(d + 'T00:00:00');
-  if (isNaN(dt.getTime())) return d;
-  return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
-function niceMax(v: number): number {
-  if (v <= 0) return 1;
-  const pow = Math.pow(10, Math.floor(Math.log10(v)));
-  const norm = v / pow;
-  const step = norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10;
-  return step * pow;
-}
 
 // StackedAreaChart: severity-over-time, stacked filled areas + line tops, with
 // a hover guide and tooltip showing the day's breakdown.
@@ -600,32 +589,6 @@ function dateInputValue(value?: string | null) {
 
 // ── Shared formatting helpers ────────────────────────────────────────────────
 // One date/time format used across every view: local "YYYY-MM-DD HH:mm".
-function pad2(n: number): string { return n < 10 ? `0${n}` : `${n}`; }
-function formatDateTime(value?: string | number | null): string {
-  if (value === undefined || value === null || value === '') return '-';
-  const dt = new Date(value);
-  if (isNaN(dt.getTime())) return typeof value === 'string' ? value : '-';
-  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())} ${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
-}
-// Full precision (with seconds) for hover tooltips.
-function formatDateTimeFull(value?: string | number | null): string {
-  if (value === undefined || value === null || value === '') return '-';
-  const dt = new Date(value);
-  if (isNaN(dt.getTime())) return typeof value === 'string' ? value : '-';
-  return `${formatDateTime(value)}:${pad2(dt.getSeconds())}`;
-}
-// Date-only local "YYYY-MM-DD".
-function formatDateOnly(value?: string | number | null): string {
-  if (value === undefined || value === null || value === '') return '-';
-  const dt = new Date(value);
-  if (isNaN(dt.getTime())) return typeof value === 'string' ? value : '-';
-  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
-}
-// Thousands-grouped integer; counts > 999 always get separators.
-function fmtCount(n?: number | null): string {
-  if (n === undefined || n === null || !Number.isFinite(n)) return '0';
-  return n.toLocaleString();
-}
 
 function parseCvssVector(vector: string) {
   const isV4 = vector.startsWith('CVSS:4.0/');
