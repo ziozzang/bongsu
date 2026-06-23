@@ -58,6 +58,7 @@
 /* --- Semantic: dark (default) --- */
 :root,
 [data-theme='dark'] {
+  color-scheme: dark;
   --bg: #0b0d13;
   --bg-base: #0b0d13;
   --bg-raised: #10131b;
@@ -90,6 +91,7 @@
 
 /* --- Semantic: light (opt-in via <html data-theme="light">) --- */
 [data-theme='light'] {
+  color-scheme: light;
   --bg: #f6f7fb;
   --bg-base: #f6f7fb;
   --bg-raised: #ffffff;
@@ -176,9 +178,7 @@ input::placeholder, textarea::placeholder {
   color: var(--text-muted);
 }
 
-input[type='date'] {
-  color-scheme: dark;
-}
+/* color-scheme is set per theme on :root, so native date pickers follow the mode. */
 
 input[type='checkbox'], input[type='radio'] {
   accent-color: var(--primary);
@@ -1624,3 +1624,105 @@ tr.topo-row-risk > td { background: var(--high-dim); }
 }
 .token-secret-meta { margin-top: 0.625rem; font-size: 0.75rem; color: var(--text-muted); }
 tr.row-dim > td { opacity: 0.5; }
+
+/* ==========================================================================
+   Command palette (⌘K) — UI redesign
+   ========================================================================== */
+.cmdk-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  z-index: 1000;
+  backdrop-filter: blur(2px);
+}
+.cmdk {
+  width: min(640px, 92vw);
+  background: var(--overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.cmdk-input {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-md);
+  padding: var(--space-4) var(--space-5);
+  outline: none;
+}
+.cmdk-input::placeholder { color: var(--text-placeholder); }
+.cmdk-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.cmdk-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.cmdk-item.active { background: var(--primary-dim); color: var(--text); }
+.cmdk-icon { display: inline-flex; color: var(--text-muted); }
+.cmdk-item.active .cmdk-icon { color: var(--primary); }
+.cmdk-label { flex: 1; font-size: var(--font-base); }
+.cmdk-group { font-size: var(--font-xs); color: var(--text-muted); }
+.cmdk-empty { padding: var(--space-4); text-align: center; color: var(--text-muted); font-size: var(--font-sm); }
+.cmdk-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--border);
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
+}
+.cmdk-hint kbd {
+  font-family: var(--font-mono);
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* Sidebar command-palette trigger */
+.sidebar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0.625rem var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  width: calc(100% - 1.25rem);
+}
+.sidebar-search:hover { background: var(--surface-hover); border-color: var(--border-light); color: var(--text-secondary); }
+.sidebar-search:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.sidebar-search .nav-icon { opacity: 0.7; flex-shrink: 0; }
+.sidebar-search-label { flex: 1; text-align: left; }
+.sidebar-search-kbd {
+  font-family: var(--font-mono);
+  font-size: var(--font-2xs);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--text-muted);
+}

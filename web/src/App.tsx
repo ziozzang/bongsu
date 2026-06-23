@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTheme } from './hooks/useTheme';
+import { CommandPalette, type CommandItem } from './components/CommandPalette';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 const verCmp = (a: string, b: string): number => {
@@ -907,12 +908,25 @@ export default function App() {
   const [selectedVuln, setSelectedVuln] = useState<Vuln | null>(null);
   const [authed, setAuthed] = useState(hasAuth());
   const [noAuthMode, setNoAuthMode] = useState(false);
+  const [cmdkOpen, setCmdkOpen] = useState(false);
 
   useEffect(() => {
     api.rawHealth().then(h => {
       if (!h.web_auth) { setNoAuthMode(true); setAuthed(true); }
     }).catch(() => {});
     onAuthFailure(() => setAuthed(false));
+  }, []);
+
+  // ⌘K / Ctrl-K toggles the command palette globally.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setCmdkOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
@@ -936,9 +950,21 @@ export default function App() {
     setView('hosts');
   };
 
+  const cmdkItems: CommandItem[] = NAV_GROUPS.flatMap((g) =>
+    g.items.map(([v, label, icon]) => ({
+      id: v,
+      label,
+      group: g.label,
+      keywords: v,
+      icon: <Icon name={icon} size={16} />,
+      run: () => navigate(v),
+    })),
+  );
+
   return (
     <div className="layout">
-      <Sidebar view={view} onNavigate={navigate} onLogout={noAuthMode ? undefined : () => { clearApiKey(); clearSession(); setAuthed(false); }} />
+      <CommandPalette open={cmdkOpen} onClose={() => setCmdkOpen(false)} items={cmdkItems} placeholder="Jump to a page…  (⌘K / Ctrl-K)" />
+      <Sidebar view={view} onNavigate={navigate} onOpenSearch={() => setCmdkOpen(true)} onLogout={noAuthMode ? undefined : () => { clearApiKey(); clearSession(); setAuthed(false); }} />
       <div className="main">
         {view === 'dashboard' && <DashboardView onOpenScanRequests={openScanRequests} onOpenVulnerabilities={openVulnerabilities} onOpenHosts={openHosts} />}
         {view === 'hosts' && <HostsView initialFilters={hostFilters} onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
@@ -1096,6 +1122,41 @@ function ChangePasswordPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+// NAV_GROUPS is the single source of truth for primary navigation, shared by the
+// sidebar and the command palette. Order reflects the redesign's IA priority:
+// Overview -> Security -> Inventory -> Topology -> Administration.
+const NAV_GROUPS: { label: string; items: [View, string, string][] }[] = [
+  { label: 'Overview', items: [
+    ['dashboard', 'Dashboard', 'dashboard'],
+    ['trends', 'Trends', 'trends'],
+    ['reports', 'Reports', 'reports'],
+  ] },
+  { label: 'Security', items: [
+    ['vulns', 'Vulnerabilities', 'vulnerabilities'],
+    ['cve-search', 'CVE Search', 'cve-search'],
+    ['ai-triage', 'AI Triage', 'ai-triage'],
+    ['scans', 'Scan History', 'scans'],
+  ] },
+  { label: 'Inventory', items: [
+    ['hosts', 'Hosts', 'hosts'],
+    ['packages', 'Packages', 'packages'],
+    ['containers', 'Containers', 'containers'],
+    ['asset-groups', 'Asset Groups', 'asset-groups'],
+  ] },
+  { label: 'Topology', items: [
+    ['topology', 'Topology', 'topology'],
+  ] },
+  { label: 'Administration', items: [
+    ['users', 'Users', 'users'],
+    ['tokens', 'API Tokens', 'tokens'],
+    ['rbac', 'RBAC', 'rbac'],
+    ['audit', 'Audit Log', 'audit'],
+    ['ai-approvals', 'AI Approvals', 'ai-approvals'],
+    ['schedules', 'Schedules', 'schedules'],
+    ['notifications', 'Notifications', 'notifications'],
+  ] },
+];
+
 function ThemeToggle() {
   const { theme, toggle } = useTheme();
   const next = theme === 'dark' ? 'light' : 'dark';
@@ -1113,49 +1174,26 @@ function ThemeToggle() {
   );
 }
 
-function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: View) => void; onLogout?: () => void }) {
+function Sidebar({ view, onNavigate, onLogout, onOpenSearch }: { view: View; onNavigate: (v: View) => void; onLogout?: () => void; onOpenSearch?: () => void }) {
   const [me, setMe] = useState<{ username: string; role: string } | null>(null);
   const [showPw, setShowPw] = useState(false);
   useEffect(() => {
     if (!onLogout) return;
     api.authMe().then(r => setMe(r.user ? { username: r.user.username, role: r.user.role } : null)).catch(() => setMe(null));
   }, [onLogout]);
-  const groups: { label: string; items: [View, string, string][] }[] = [
-    { label: 'Overview', items: [
-      ['dashboard', 'Dashboard', 'dashboard'],
-      ['trends', 'Trends', 'trends'],
-      ['reports', 'Reports', 'reports'],
-    ] },
-    { label: 'Inventory', items: [
-      ['hosts', 'Hosts', 'hosts'],
-      ['packages', 'Packages', 'packages'],
-      ['containers', 'Containers', 'containers'],
-      ['asset-groups', 'Asset Groups', 'asset-groups'],
-    ] },
-    { label: 'Topology', items: [
-      ['topology', 'Topology', 'topology'],
-    ] },
-    { label: 'Security', items: [
-      ['vulns', 'Vulnerabilities', 'vulnerabilities'],
-      ['cve-search', 'CVE Search', 'cve-search'],
-      ['ai-triage', 'AI Triage', 'ai-triage'],
-      ['scans', 'Scan History', 'scans'],
-    ] },
-    { label: 'Administration', items: [
-      ['users', 'Users', 'users'],
-      ['tokens', 'API Tokens', 'tokens'],
-      ['rbac', 'RBAC', 'rbac'],
-      ['audit', 'Audit Log', 'audit'],
-      ['ai-approvals', 'AI Approvals', 'ai-approvals'],
-      ['schedules', 'Schedules', 'schedules'],
-      ['notifications', 'Notifications', 'notifications'],
-    ] },
-  ];
+  const groups = NAV_GROUPS;
   return (
     <div className="sidebar">
       <div className="sidebar-brand">
         <h1><span className="brand-icon"><BeaconMark size={22} /></span> Bongsu</h1>
       </div>
+      {onOpenSearch && (
+        <button type="button" className="sidebar-search" onClick={onOpenSearch} aria-label="Open command palette">
+          <span className="nav-icon"><Icon name="cve-search" size={15} /></span>
+          <span className="sidebar-search-label">Search</span>
+          <kbd className="sidebar-search-kbd">⌘K</kbd>
+        </button>
+      )}
       <nav>
         {groups.map(group => (
           <div className="nav-group" key={group.label}>
