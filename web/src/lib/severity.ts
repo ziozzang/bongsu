@@ -124,3 +124,13 @@ export function severityColor(sev?: string): string {
     default: return 'var(--unknown)';
   }
 }
+
+// agentStatusColor maps an agent liveness status to its CSS color var.
+export function agentStatusColor(status?: string): string {
+  switch (status) {
+    case 'online': return 'var(--low)';
+    case 'stale': return 'var(--medium)';
+    case 'offline': return 'var(--critical)';
+    default: return 'var(--text-muted)';
+  }
+}
