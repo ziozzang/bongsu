@@ -61,3 +61,9 @@ export function formatAge(seconds?: number) {
   if (hours < 48) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
 }
+
+// dateInputValue trims a timestamp to the YYYY-MM-DD a <input type=date> expects.
+export function dateInputValue(value?: string | null): string {
+  if (!value) return '';
+  return value.slice(0, 10);
+}

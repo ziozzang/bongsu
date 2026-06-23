@@ -7,14 +7,16 @@ import { DataTable, type Column } from './components/DataTable';
 import { getHashView, setHashView } from './hooks/useHashRoute';
 import { verCmp } from './lib/version';
 import { type SeverityTone, findingSourceLabel, riskLevelLabel, riskLevelColor, recommendedActionLabel, recommendedActionTone, riskLevelTone, isVulnAnalysis, aiPolicyModeTone, aiPolicyModeBlurb, aiApprovalStatusTone, aiActionLabel, aiProposedSummary, strField, SEVERITY_ORDER, severityColor, agentStatusColor } from './lib/severity';
-import { formatDateTime, formatDateTimeFull, formatDateOnly, fmtCount, shortDate, niceMax, formatAge } from './lib/format';
+import { formatDateTime, formatDateTimeFull, formatDateOnly, fmtCount, shortDate, niceMax, formatAge, dateInputValue } from './lib/format';
 import { type ScanRequestFilters, type VulnerabilityFilters, type HostFilters } from './lib/viewTypes';
+import { parseCvssVector } from './lib/cvss';
 import { Icon, BeaconMark } from './components/Icon';
 import { Loading, LoadError, EmptyState, SortHeader, Badge, toneColor } from './components/primitives';
 import { StackedAreaChart, BarSeries, DonutChart, Sparkline, KpiCard, SEV_KEYS } from './components/charts';
 import { RangeSwitcher, CheckboxField, Modal, Pager } from './components/controls';
 import { renderFactValue, FactsCard } from './components/FactsCard';
 import { CvssTooltip } from './components/CvssTooltip';
+import { AiAssessmentCard } from './components/AiAssessmentCard';
 import { UsersView } from './views/UsersView';
 import { ApiTokensView } from './views/ApiTokensView';
 import { AuditLogView } from './views/AuditLogView';
@@ -43,62 +45,10 @@ import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSe
 // nested objects as an indented key/value block.
 
 
-function dateInputValue(value?: string | null) {
-  if (!value) return '';
-  return value.slice(0, 10);
-}
 
 // ── Shared formatting helpers ────────────────────────────────────────────────
 // One date/time format used across every view: local "YYYY-MM-DD HH:mm".
 
-function parseCvssVector(vector: string) {
-  const isV4 = vector.startsWith('CVSS:4.0/');
-  const isV3 = vector.startsWith('CVSS:3.');
-  const prefix = isV4 ? 'CVSS:4.0/' : isV3 ? vector.substring(0, 10) + '/' : '';
-  const clean = vector.replace(prefix, '').replace(/^CVSS:[0-9.]+\//, '');
-  const parts = clean.split('/');
-
-  if (isV4) {
-    const labels: Record<string, string> = {
-      AV: 'Attack Vector', AC: 'Attack Complexity', AT: 'Attack Requirements',
-      PR: 'Privileges Required', UI: 'User Interaction', VC: 'Vuln Confidentiality',
-      VI: 'Vuln Integrity', VA: 'Vuln Availability', SC: 'Sub Confidentiality',
-      SI: 'Sub Integrity', SA: 'Sub Availability', E: 'Exploit Maturity',
-    };
-    const values: Record<string, Record<string, string>> = {
-      AV: { N: 'Network', A: 'Adjacent', L: 'Local', P: 'Physical' },
-      AC: { L: 'Low', H: 'High' },
-      AT: { N: 'None', P: 'Present' },
-      PR: { N: 'None', L: 'Low', H: 'High' },
-      UI: { N: 'None', P: 'Passive', A: 'Active' },
-      VC: { N: 'None', L: 'Low', H: 'High' },
-      VI: { N: 'None', L: 'Low', H: 'High' },
-      VA: { N: 'None', L: 'Low', H: 'High' },
-      SC: { N: 'None', L: 'Low', H: 'High' },
-      SI: { N: 'None', L: 'Low', H: 'High' },
-      SA: { N: 'None', L: 'Low', H: 'High' },
-      E: { X: 'Not Defined', A: 'Attacked', P: 'POC', U: 'Unreported' },
-    };
-    return { version: '4.0', parts, labels, values };
-  }
-
-  const labels: Record<string, string> = {
-    AV: 'Attack Vector', AC: 'Attack Complexity', PR: 'Privileges Required',
-    UI: 'User Interaction', S: 'Scope', C: 'Confidentiality',
-    I: 'Integrity', A: 'Availability',
-  };
-  const values: Record<string, Record<string, string>> = {
-    AV: { N: 'Network', A: 'Adjacent', L: 'Local', P: 'Physical' },
-    AC: { L: 'Low', H: 'High' },
-    PR: { N: 'None', L: 'Low', H: 'High' },
-    UI: { N: 'None', R: 'Required' },
-    S: { U: 'Unchanged', C: 'Changed' },
-    C: { N: 'None', L: 'Low', H: 'High' },
-    I: { N: 'None', L: 'Low', H: 'High' },
-    A: { N: 'None', L: 'Low', H: 'High' },
-  };
-  return { version: '3.x', parts, labels, values };
-}
 
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology' | 'users' | 'tokens' | 'ai-triage' | 'ai-approvals';
 
@@ -3077,137 +3027,10 @@ function AffectedAssetsModal({ vulnerabilityId, onClose }: { vulnerabilityId: st
 
 // AiAnalysisBody renders a stored VulnAnalysis: badges, confidence, reasoning,
 // a model/provider footer, and an Apply action for actionable recommendations.
-function AiAnalysisBody({ analysis, onApply, applyMsg, applying }: {
-  analysis: VulnAnalysis;
-  onApply?: () => void;
-  applyMsg?: string;
-  applying?: boolean;
-}) {
-  const actionable = analysis.recommended_action === 'false_positive' || analysis.recommended_action === 'accept_risk';
-  return (
-    <>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', alignItems: 'center', marginBottom: '0.75rem' }}>
-        <Badge tone={recommendedActionTone(analysis.recommended_action)}>{recommendedActionLabel(analysis.recommended_action)}</Badge>
-        <Badge tone={riskLevelTone(analysis.risk_level)} dot>{analysis.risk_level || 'unknown'} risk</Badge>
-        {analysis.auto_applied && <Badge tone="accent">auto-applied</Badge>}
-      </div>
-      <table style={{ marginBottom: '0.75rem' }}>
-        <tbody>
-          <tr><td style={{ color: 'var(--text-muted)', width: 160 }}>Exploitability</td><td className="mono">{analysis.exploitability || '-'}</td></tr>
-          <tr><td style={{ color: 'var(--text-muted)' }}>Confidence</td><td className="mono">{Math.round((analysis.confidence || 0) * 100)}%</td></tr>
-          <tr><td style={{ color: 'var(--text-muted)' }}>Likely false positive</td><td className="mono">{analysis.likely_false_positive ? 'Yes' : 'No'}</td></tr>
-        </tbody>
-      </table>
-      {analysis.reasoning && (
-        <div style={{ whiteSpace: 'pre-wrap', fontSize: '0.875rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: '0.75rem' }}>{analysis.reasoning}</div>
-      )}
-      {onApply && actionable && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
-          <button className="btn btn-primary btn-sm" onClick={onApply} disabled={applying}>{applying ? 'Applying...' : 'Apply'}</button>
-          {applyMsg && <span style={{ color: 'var(--text-muted)', fontSize: '0.8125rem' }}>{applyMsg}</span>}
-        </div>
-      )}
-      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }} className="mono">
-        {analysis.model || '-'} · {analysis.provider || '-'} · updated {formatDateTime(analysis.updated_at)}
-      </div>
-    </>
-  );
-}
 
 // AiAssessmentCard fetches and renders the AI assessment for a single
 // vulnerability finding. It degrades gracefully when the LLM is not
 // configured and never throws into the surrounding detail page.
-function AiAssessmentCard({ vuln }: { vuln: Vuln }) {
-  const [llm, setLlm] = useState<LLMStatus | null>(null);
-  const [llmLoaded, setLlmLoaded] = useState(false);
-  const [analysis, setAnalysis] = useState<VulnAnalysis | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState('');
-  const [applying, setApplying] = useState(false);
-  const [applyMsg, setApplyMsg] = useState('');
-
-  const params = useMemo(() => ({
-    vulnerability_id: vuln.vulnerability_id,
-    ...(vuln.pkg_name ? { pkg_name: vuln.pkg_name } : {}),
-    ...(vuln.host_id ? { host_id: vuln.host_id } : {}),
-  }), [vuln.vulnerability_id, vuln.pkg_name, vuln.host_id]);
-
-  useEffect(() => {
-    let active = true;
-    setLoading(true);
-    setError('');
-    setAnalysis(null);
-    setApplyMsg('');
-    api.llmStatus()
-      .then(status => {
-        if (!active) return;
-        setLlm(status);
-        setLlmLoaded(true);
-        if (!status.enabled) { setLoading(false); return; }
-        return api.vulnAnalysis(params)
-          .then(r => { if (active) setAnalysis(isVulnAnalysis(r) ? r : null); })
-          .finally(() => { if (active) setLoading(false); });
-      })
-      .catch(() => {
-        // Treat an unreachable/failed status check as "not configured" rather
-        // than breaking the vuln detail page.
-        if (active) { setLlmLoaded(true); setLoading(false); }
-      });
-    return () => { active = false; };
-  }, [params]);
-
-  const runAnalyze = async () => {
-    setRunning(true);
-    setError('');
-    try {
-      const r = await api.vulnAnalysis({ ...params, analyze: true });
-      setAnalysis(isVulnAnalysis(r) ? r : null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'AI analysis is not configured');
-    } finally {
-      setRunning(false);
-    }
-  };
-
-  const applyAnalysis = async () => {
-    if (!analysis) return;
-    setApplying(true);
-    setApplyMsg('');
-    try {
-      const r = await api.applyVulnAnalysis(analysis.id);
-      setApplyMsg(`applied as ${r.triage_status}`);
-    } catch (err) {
-      setApplyMsg(err instanceof Error ? err.message : 'Apply failed');
-    } finally {
-      setApplying(false);
-    }
-  };
-
-  const disabled = llmLoaded && (!llm || !llm.enabled);
-
-  return (
-    <div className="card ai-card" style={{ marginBottom: '1rem', padding: '1rem' }}>
-      <h3 style={{ margin: '0 0 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-        <Icon name="ai-triage" size={16} /> AI Assessment
-      </h3>
-      {!llmLoaded || loading ? (
-        <Loading label="Loading AI assessment..." />
-      ) : disabled ? (
-        <div style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>AI analysis not configured</div>
-      ) : analysis ? (
-        <AiAnalysisBody analysis={analysis} onApply={applyAnalysis} applyMsg={applyMsg} applying={applying} />
-      ) : (
-        <div>
-          <button className="btn btn-primary btn-sm" onClick={runAnalyze} disabled={running}>
-            {running ? 'Analyzing...' : 'Analyze with AI'}
-          </button>
-          {error && <span style={{ marginLeft: '0.75rem', color: 'var(--critical)', fontSize: '0.8125rem' }}>{error}</span>}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function VulnDetailView({ vuln, onBack }: { vuln: Vuln | null; onBack: () => void }) {
   const [hostMap, setHostMap] = useState<Record<string, string>>({});
