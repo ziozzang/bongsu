@@ -4,129 +4,10 @@ import { CommandPalette, type CommandItem } from './components/CommandPalette';
 import { DataTable, type Column } from './components/DataTable';
 import { getHashView, setHashView } from './hooks/useHashRoute';
 import { verCmp } from './lib/version';
+import { type SeverityTone, findingSourceLabel, riskLevelLabel, riskLevelColor, recommendedActionLabel, recommendedActionTone, riskLevelTone, isVulnAnalysis, aiPolicyModeTone, aiPolicyModeBlurb, aiApprovalStatusTone, aiActionLabel, aiProposedSummary, strField, SEVERITY_ORDER, severityColor } from './lib/severity';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 
-function findingSourceLabel(source?: string): string {
-  switch (source || 'scanner') {
-    case 'scanner': return 'Scanner';
-    case 'cve-db': return 'CVE DB';
-    default: return source || 'Scanner';
-  }
-}
-
-function riskLevelLabel(level?: string): string {
-  return level ? level.replace('_', ' ') : 'low';
-}
-
-function riskLevelColor(level?: string): string {
-  switch ((level || '').toLowerCase()) {
-    case 'critical': return 'var(--critical)';
-    case 'high': return 'var(--high)';
-    case 'medium': return 'var(--medium)';
-    default: return 'var(--text-muted)';
-  }
-}
-
-// recommendedActionLabel / recommendedActionTone map an LLM recommended_action
-// to a human label and a Badge tone for the AI assessment surfaces.
-function recommendedActionLabel(action?: string): string {
-  switch ((action || '').toLowerCase()) {
-    case 'false_positive': return 'False positive';
-    case 'accept_risk': return 'Accept risk';
-    case 'remediate': return 'Remediate';
-    case 'investigate': return 'Investigate';
-    case 'monitor': return 'Monitor';
-    default: return action ? action.replace(/_/g, ' ') : 'Unknown';
-  }
-}
-function recommendedActionTone(action?: string): SeverityTone {
-  switch ((action || '').toLowerCase()) {
-    case 'remediate': return 'high';
-    case 'investigate': return 'medium';
-    case 'false_positive': return 'low';
-    case 'accept_risk': return 'accent';
-    default: return 'neutral';
-  }
-}
-// riskLevelTone maps an LLM risk_level string to a Badge tone.
-function riskLevelTone(level?: string): SeverityTone {
-  switch ((level || '').toLowerCase()) {
-    case 'critical': return 'critical';
-    case 'high': return 'high';
-    case 'medium': return 'medium';
-    case 'low': return 'low';
-    default: return 'unknown';
-  }
-}
-// isVulnAnalysis is the type guard for api.vulnAnalysis's union return.
-function isVulnAnalysis(r: VulnAnalysis | { analysis: null }): r is VulnAnalysis {
-  return 'recommended_action' in r;
-}
-
-// aiPolicyModeTone / aiPolicyModeBlurb describe the AI action policy mode for
-// the AI Triage and AI Approvals surfaces.
-function aiPolicyModeTone(mode?: string): SeverityTone {
-  switch ((mode || '').toLowerCase()) {
-    case 'auto': return 'medium';
-    case 'assisted': return 'accent';
-    case 'suggest': return 'low';
-    default: return 'neutral';
-  }
-}
-function aiPolicyModeBlurb(mode?: string): string {
-  switch ((mode || '').toLowerCase()) {
-    case 'off': return 'AI actions are disabled — nothing is applied or queued.';
-    case 'suggest': return 'AI proposes actions only; nothing is auto-applied or queued for approval.';
-    case 'assisted': return 'Low-risk actions are auto-applied; the rest are queued for approval.';
-    case 'auto': return 'All confident actions are auto-applied without approval.';
-    default: return 'Current AI action policy.';
-  }
-}
-// aiApprovalStatusTone maps an approval status to its Badge tone.
-function aiApprovalStatusTone(status?: string): SeverityTone {
-  switch ((status || '').toLowerCase()) {
-    case 'pending': return 'medium';
-    case 'approved': return 'low';
-    case 'rejected': return 'neutral';
-    default: return 'neutral';
-  }
-}
-// aiActionLabel renders an action_type as a compact human label.
-function aiActionLabel(action?: string): string {
-  return action || 'unknown';
-}
-// aiProposedSummary renders the key fields of a proposed action compactly,
-// reading the Record<string, unknown> defensively.
-function aiProposedSummary(actionType: string, proposed: Record<string, unknown>): string {
-  if (actionType === 'triage.suppress') {
-    const status = proposed.triage_status;
-    if (typeof status === 'string' && status) return `→ ${status}`;
-  }
-  try {
-    const s = JSON.stringify(proposed);
-    return s.length > 80 ? `${s.slice(0, 80)}…` : s;
-  } catch {
-    return '-';
-  }
-}
-// strField reads a string field from a Record<string, unknown> defensively.
-function strField(rec: Record<string, unknown>, key: string): string {
-  const v = rec[key];
-  return typeof v === 'string' ? v : v != null ? String(v) : '';
-}
-
-const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const;
-
-function severityColor(sev?: string): string {
-  switch ((sev || '').toUpperCase()) {
-    case 'CRITICAL': return 'var(--critical)';
-    case 'HIGH': return 'var(--high)';
-    case 'MEDIUM': return 'var(--medium)';
-    case 'LOW': return 'var(--low)';
-    default: return 'var(--unknown)';
-  }
-}
 
 function Loading({ label = 'Loading...' }: { label?: string }) {
   return (
@@ -247,7 +128,6 @@ function BeaconMark({ size = 22 }: { size?: number }) {
 
 // ── Badge ────────────────────────────────────────────────────────────────────
 // One Badge look used everywhere. `dot` variant prepends a status dot for tables.
-type SeverityTone = 'critical' | 'high' | 'medium' | 'low' | 'unknown' | 'neutral' | 'accent';
 function toneColor(tone: SeverityTone): string {
   switch (tone) {
     case 'critical': return 'var(--critical)';
