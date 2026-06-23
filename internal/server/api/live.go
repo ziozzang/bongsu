@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -122,4 +124,53 @@ func (s *Server) publishLive(eventType live.EventType, severity string, payload 
 		return
 	}
 	s.live.Publish(&live.Event{Type: eventType, Severity: severity, Payload: payload})
+}
+
+// StartLivenessMonitor polls host last-seen on an interval and emits an
+// agent.online / agent.offline live event whenever a host's computed agent
+// status transitions. The status is derived per request elsewhere; this loop
+// turns the level into an edge so the dashboard can alert on the moment an agent
+// goes dark (or recovers) without the client polling. Run as a background
+// goroutine; returns when ctx is cancelled.
+func (s *Server) StartLivenessMonitor(ctx context.Context) {
+	interval := time.Duration(envInt("BONGSU_LIVENESS_POLL_SECONDS", 60)) * time.Second
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	prev := map[string]string{} // host ID -> last observed agent status
+	primed := false             // skip emitting on the first sweep (no prior state)
+	log.Printf("agent liveness monitor started (interval=%s)", interval)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			hosts, err := s.db.ListHosts(ctx)
+			if err != nil {
+				log.Printf("liveness monitor list hosts: %v", err)
+				continue
+			}
+			now := time.Now()
+			for i := range hosts {
+				h := &hosts[i]
+				applyAgentStatus(h, now)
+				old, seen := prev[h.ID]
+				prev[h.ID] = h.AgentStatus
+				if !primed || !seen || old == h.AgentStatus {
+					continue
+				}
+				eventType, severity := live.EventAgentOffline, live.SeverityWarning
+				if h.AgentStatus == "online" {
+					eventType, severity = live.EventAgentOnline, live.SeverityInfo
+				}
+				s.publishLive(eventType, severity, map[string]any{
+					"host_id":         h.ID,
+					"hostname":        h.Hostname,
+					"prev_status":     old,
+					"new_status":      h.AgentStatus,
+					"last_seen_age_s": h.LastSeenAgeS,
+				})
+			}
+			primed = true
+		}
+	}
 }

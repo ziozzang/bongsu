@@ -207,6 +207,15 @@ func main() {
 		log.Println("Event outbox dispatcher started")
 	}
 
+	// Agent liveness monitor: emits agent.online/offline live events on status
+	// transitions for the real-time dashboard.
+	{
+		bgCtx, bgCancel := context.WithCancel(context.Background())
+		defer bgCancel()
+		go server.StartLivenessMonitor(bgCtx)
+		log.Println("Agent liveness monitor started")
+	}
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigCh)

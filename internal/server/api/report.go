@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ziozzang/bongsu/internal/server/db"
+	"github.com/ziozzang/bongsu/internal/server/live"
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
@@ -317,6 +318,31 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 			log.Printf("enqueue scan.failed notification for scan %s: %v", report.ScanID, err)
 		}
 	}
+	// Publish to the live monitoring feed (at-most-once; the dashboard resyncs
+	// from the next kpi.snapshot if a client missed it). host_id scopes it for RBAC.
+	liveSeverity := live.SeverityInfo
+	if scanFailed {
+		liveSeverity = live.SeverityWarning
+	}
+	s.publishLive(live.EventScanCompleted, liveSeverity, map[string]any{
+		"host_id":         report.Host.ID,
+		"hostname":        report.Host.Hostname,
+		"scan_id":         report.ScanID,
+		"status":          scanStatus,
+		"inserted":        insertedVulns,
+		"total":           vulnTotal,
+		"severity_counts": sevCounts,
+	})
+	if scanFailed {
+		s.publishLive(live.EventScanFailed, live.SeverityWarning, map[string]any{
+			"host_id":  report.Host.ID,
+			"hostname": report.Host.Hostname,
+			"scan_id":  report.ScanID,
+			"status":   scanStatus,
+			"error":    errorSummary,
+		})
+	}
+
 	// The trend snapshot is best-effort analytics, not an at-least-once event.
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
