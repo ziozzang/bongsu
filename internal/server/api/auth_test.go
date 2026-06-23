@@ -1473,7 +1473,7 @@ func TestInstallerStatusReportsBinaryReadiness(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	webApp, err := os.ReadFile("../../../web/src/App.tsx")
+	webApp, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2700,7 +2700,7 @@ func TestRBACStatusEndpointExposesOperationalCounters(t *testing.T) {
 }
 
 func TestRBACViewShowsAuthOperationalStatus(t *testing.T) {
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3154,7 +3154,7 @@ func TestAdminMetricsExposeSecurityRecalculationLastResult(t *testing.T) {
 }
 
 func TestDashboardInstallSnippetIncludesInstallToken(t *testing.T) {
-	out, err := os.ReadFile("../../../web/src/App.tsx")
+	out, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3208,7 +3208,7 @@ func TestSecurityDBBundleImportLastResultCarriesProvenance(t *testing.T) {
 }
 
 func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
-	out, err := os.ReadFile("../../../web/src/App.tsx")
+	out, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3272,7 +3272,7 @@ func TestDashboardShowsDatabaseHealthErrors(t *testing.T) {
 }
 
 func TestDashboardShowsCisaKevPrioritization(t *testing.T) {
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3558,7 +3558,7 @@ func TestCveDbStatsQueryConcurrencyClamp(t *testing.T) {
 }
 
 func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3645,7 +3645,7 @@ func TestDashboardShowsCveSourceQualityGate(t *testing.T) {
 }
 
 func TestDashboardExposesAirgapSecurityBundleActions(t *testing.T) {
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -3692,7 +3692,7 @@ func TestDashboardExposesAirgapSecurityBundleActions(t *testing.T) {
 }
 
 func TestContainersViewShowsImageRiskSummary(t *testing.T) {
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5597,7 +5597,7 @@ func TestHostDetailShowsRuntimeInventory(t *testing.T) {
 		}
 	}
 
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5617,7 +5617,7 @@ func TestHostDetailShowsRuntimeInventory(t *testing.T) {
 }
 
 func TestDashboardShowsAgentTokenBindingState(t *testing.T) {
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -5970,7 +5970,7 @@ func TestCreateScanRequestValidatesTargetHost(t *testing.T) {
 
 func TestScanHistoryExposesIngestErrorSummary(t *testing.T) {
 	apiOut := readAllPackageGoFiles(t)
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6130,7 +6130,7 @@ func TestStatsExposeActiveFindingCounts(t *testing.T) {
 }
 
 func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
-	out, err := os.ReadFile("../../../web/src/App.tsx")
+	out, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6230,7 +6230,7 @@ func TestDashboardShowsCurrentSecurityDBRescanCounts(t *testing.T) {
 }
 
 func TestAuditLogDashboardCoversSecurityStatusesAndActions(t *testing.T) {
-	out, err := os.ReadFile("../../../web/src/App.tsx")
+	out, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6255,7 +6255,7 @@ func TestAuditLogDashboardCoversSecurityStatusesAndActions(t *testing.T) {
 
 func TestRetentionPruneCutoffsAreExposed(t *testing.T) {
 	apiOut := readAllPackageGoFiles(t)
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6299,7 +6299,7 @@ func TestAuditLogTimeRangeFiltersAreExposed(t *testing.T) {
 		}
 	}
 
-	uiOut, err := os.ReadFile("../../../web/src/App.tsx")
+	uiOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6330,7 +6330,7 @@ func TestAuditLogTimeRangeFiltersAreExposed(t *testing.T) {
 }
 
 func TestVulnerabilityViewsShowPackageContext(t *testing.T) {
-	out, err := os.ReadFile("../../../web/src/App.tsx")
+	out, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6404,7 +6404,7 @@ func TestVulnSummaryUsesActiveFindingCounts(t *testing.T) {
 }
 
 func TestDashboardShowsRiskLevelSummary(t *testing.T) {
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -6480,7 +6480,7 @@ func TestDashboardShowsRiskLevelSummary(t *testing.T) {
 
 func TestStatsAndDashboardShowTriageExceptionLifecycle(t *testing.T) {
 	apiOut := readAllPackageGoFiles(t)
-	appOut, err := os.ReadFile("../../../web/src/App.tsx")
+	appOut, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -7144,7 +7144,7 @@ func TestCveDbAffectedPackageEvidenceEndpoint(t *testing.T) {
 }
 
 func TestDashboardCveSearchAutoLoadsAndShowsErrors(t *testing.T) {
-	out, err := os.ReadFile("../../../web/src/App.tsx")
+	out, err := readWebAppSource()
 	if err != nil {
 		t.Fatal(err)
 	}
