@@ -7,7 +7,8 @@ import { DataTable, type Column } from './components/DataTable';
 import { getHashView, setHashView } from './hooks/useHashRoute';
 import { verCmp } from './lib/version';
 import { type SeverityTone, findingSourceLabel, riskLevelLabel, riskLevelColor, recommendedActionLabel, recommendedActionTone, riskLevelTone, isVulnAnalysis, aiPolicyModeTone, aiPolicyModeBlurb, aiApprovalStatusTone, aiActionLabel, aiProposedSummary, strField, SEVERITY_ORDER, severityColor } from './lib/severity';
-import { formatDateTime, formatDateTimeFull, formatDateOnly, fmtCount, shortDate, niceMax } from './lib/format';
+import { formatDateTime, formatDateTimeFull, formatDateOnly, fmtCount, shortDate, niceMax, formatAge } from './lib/format';
+import { type ScanRequestFilters, type VulnerabilityFilters, type HostFilters } from './lib/viewTypes';
 import { Icon, BeaconMark } from './components/Icon';
 import { Loading, LoadError, EmptyState, SortHeader, Badge, toneColor } from './components/primitives';
 import { StackedAreaChart, BarSeries, DonutChart, Sparkline, KpiCard, SEV_KEYS } from './components/charts';
@@ -40,15 +41,6 @@ function agentStatusColor(status?: string) {
   }
 }
 
-function formatAge(seconds?: number) {
-  if (seconds === undefined || seconds === null) return '-';
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
 
 function dateInputValue(value?: string | null) {
   if (!value) return '';
@@ -108,9 +100,6 @@ function parseCvssVector(vector: string) {
 }
 
 type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology' | 'users' | 'tokens' | 'ai-triage' | 'ai-approvals';
-type ScanRequestFilters = { status?: string; scan_type?: string; security_db_revision?: string; stale?: string };
-type VulnerabilityFilters = { overdueOnly?: boolean; exploitedOnly?: boolean; riskLevel?: string; triageStatus?: string; owner?: string; team?: string; environment?: string; criticality?: string };
-type HostFilters = { agent_status?: string; inventory_status?: string; agent_version_state?: string };
 
 type AffectedAsset = {
   host_id: string;
