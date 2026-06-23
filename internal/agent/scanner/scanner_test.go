@@ -52,6 +52,51 @@ Version: 2.38-1
 	}
 }
 
+// A dpkg status database routinely retains stanzas for packages that are NOT on
+// disk ("not-installed" after purge) or only partly present ("half-installed").
+// Their Status string contains the substring "installed", so a naive
+// strings.Contains check reports them as installed — false-positive findings for
+// software that isn't there. Only the exact status word "installed" must count.
+func TestParseDpkgStatusSkipsNonInstalledStates(t *testing.T) {
+	const status = `Package: real-pkg
+Status: install ok installed
+Version: 1.0
+Architecture: amd64
+
+Package: purged-pkg
+Status: purge ok not-installed
+Version: 2.0
+Architecture: amd64
+
+Package: broken-pkg
+Status: install ok half-installed
+Version: 3.0
+Architecture: amd64
+
+Package: unpacked-pkg
+Status: install ok unpacked
+Version: 4.0
+Architecture: amd64
+
+Package: configfiles-pkg
+Status: deinstall ok config-files
+Version: 5.0
+Architecture: amd64
+`
+	dir := t.TempDir()
+	p := filepath.Join(dir, "status")
+	if err := os.WriteFile(p, []byte(status), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pkgs, err := parseDpkgStatus(dir, p, "debian")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pkgs) != 1 || pkgs[0].Name != "real-pkg" {
+		t.Fatalf("only the fully-installed package must be reported, got %+v", pkgs)
+	}
+}
+
 func TestDpkgSourceWithVersion(t *testing.T) {
 	const status = `Package: adb
 Status: install ok installed

@@ -31,8 +31,16 @@ func parseDpkgStatus(root, path, pkgType string) ([]models.Package, error) {
 		if name == "" || version == "" {
 			return
 		}
-		if st := cur["Status"]; st != "" && !strings.Contains(st, "installed") {
-			return
+		// dpkg Status is "<want> <flag> <status-word>"; only the status word
+		// "installed" means the package is fully present. Substring matching on
+		// "installed" is wrong: "not-installed" (a purged/removed entry that is
+		// NOT on disk) and "half-installed" (a broken unpack) both contain it,
+		// which would report vulnerabilities for packages that aren't there.
+		if st := cur["Status"]; st != "" {
+			fields := strings.Fields(st)
+			if len(fields) == 0 || fields[len(fields)-1] != "installed" {
+				return
+			}
 		}
 		pkgs = append(pkgs, models.Package{
 			ID:        uuid.New().String(),

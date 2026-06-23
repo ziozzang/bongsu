@@ -101,6 +101,11 @@ func parseRPMQuery(out []byte) []models.Package {
 // rpmSourceName strips the version/arch tail from a SOURCERPM value
 // ("openssl-1.1.1k-14.el8_6.src.rpm" → "openssl").
 func rpmSourceName(src string) string {
+	// rpm reports "(none)" for packages with no source rpm (e.g. gpg-pubkey
+	// pseudo-packages); that is not a source name.
+	if src == "" || src == "(none)" {
+		return ""
+	}
 	src = strings.TrimSuffix(src, ".src.rpm")
 	if i := strings.LastIndex(src, "-"); i > 0 {
 		src = src[:i]

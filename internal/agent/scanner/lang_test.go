@@ -28,7 +28,7 @@ func TestScanLanguagePackagesAcrossNonStandardDirs(t *testing.T) {
 	writeFile(t, root, "opt/app/package-lock.json",
 		`{"packages":{"":{"version":"1.0.0"},"node_modules/lodash":{"version":"4.17.21"}}}`)
 	// pinned requirements
-	writeFile(t, root, "srv/svc/requirements.txt", "flask==3.0.0\n# comment\nunpinned-pkg>=1.0\n")
+	writeFile(t, root, "srv/svc/requirements.txt", "flask==3.0.0\n# comment\nunpinned-pkg>=1.0\nDjango[bcrypt]==4.2.0\n")
 	// go.mod
 	writeFile(t, root, "build/go.mod", "module x\n\nrequire (\n\tgithub.com/pkg/errors v0.9.1\n)\n")
 	// Cargo.lock
@@ -43,6 +43,7 @@ func TestScanLanguagePackagesAcrossNonStandardDirs(t *testing.T) {
 		{"requests", "2.31.0", "PyPI"},
 		{"lodash", "4.17.21", "npm"},
 		{"flask", "3.0.0", "PyPI"},
+		{"Django", "4.2.0", "PyPI"}, // extras suffix "[bcrypt]" stripped from the name
 		{"github.com/pkg/errors", "0.9.1", "Go"},
 		{"serde", "1.0.197", "crates.io"},
 	}

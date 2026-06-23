@@ -199,6 +199,12 @@ func parseRequirementsTxt(root, path string) []models.Package {
 		// Only pinned requirements (name==version) are resolved versions.
 		if i := strings.Index(line, "=="); i > 0 {
 			name := strings.TrimSpace(line[:i])
+			// Strip a PEP 508 extras suffix ("django[bcrypt]" -> "django"); the
+			// extras select optional deps and are not part of the project name
+			// advisories are keyed on.
+			if b := strings.IndexByte(name, '['); b > 0 {
+				name = strings.TrimSpace(name[:b])
+			}
 			rest := strings.TrimSpace(line[i+2:])
 			if j := strings.IndexAny(rest, " ;#"); j >= 0 {
 				rest = rest[:j]
