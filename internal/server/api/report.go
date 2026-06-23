@@ -126,6 +126,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 
 	insertedVulns := 0
 	skippedVulns := 0
+	var newFindings []db.NewFinding
 	if len(report.Vulns) > 0 {
 		for i := range report.Vulns {
 			if report.Vulns[i].ID == "" {
@@ -140,6 +141,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		} else if result != nil {
 			insertedVulns += result.Inserted
 			skippedVulns += result.Skipped
+			newFindings = append(newFindings, result.NewFindings...)
 		}
 		if n, err := s.db.EnrichVulnerabilities(ctx); err == nil && n > 0 {
 			log.Printf("Enriched %d vulnerabilities with CVE DB info", n)
@@ -165,6 +167,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 			} else if result != nil {
 				insertedVulns += result.Inserted
 				skippedVulns += result.Skipped
+				newFindings = append(newFindings, result.NewFindings...)
 			}
 			if n, err := s.db.EnrichVulnerabilities(ctx); err == nil && n > 0 {
 				log.Printf("Enriched %d vulnerabilities with CVE DB scores", n)
@@ -340,6 +343,26 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 			"scan_id":  report.ScanID,
 			"status":   scanStatus,
 			"error":    errorSummary,
+		})
+	}
+	// Emit a live event per newly-discovered critical/high finding so the feed
+	// surfaces them in real time (capped to avoid flooding a noisy first scan).
+	for i, f := range newFindings {
+		if i >= envInt("BONGSU_LIVE_NEW_FINDING_CAP", 25) {
+			break
+		}
+		et := live.EventFindingNewHigh
+		sev := live.SeverityWarning
+		if f.Severity == "CRITICAL" {
+			et, sev = live.EventFindingNewCrit, live.SeverityCritical
+		}
+		s.publishLive(et, sev, map[string]any{
+			"host_id":  f.HostID,
+			"hostname": report.Host.Hostname,
+			"cve":      f.VulnerabilityID,
+			"pkg":      f.PkgName,
+			"severity": f.Severity,
+			"cvss":     f.CVSSScore,
 		})
 	}
 
