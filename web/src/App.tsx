@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useTheme } from './hooks/useTheme';
 import { CommandPalette, type CommandItem } from './components/CommandPalette';
 import { DataTable, type Column } from './components/DataTable';
+import { getHashView, setHashView } from './hooks/useHashRoute';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 const verCmp = (a: string, b: string): number => {
@@ -901,7 +902,7 @@ async function fetchAffectedAssets(vulnerabilityId: string, limit = 500): Promis
 }
 
 export default function App() {
-  const [view, setView] = useState<View>('dashboard');
+  const [view, setView] = useState<View>(viewFromHash);
   const [scanRequestFilters, setScanRequestFilters] = useState<ScanRequestFilters>({});
   const [vulnerabilityFilters, setVulnerabilityFilters] = useState<VulnerabilityFilters>({});
   const [hostFilters, setHostFilters] = useState<HostFilters>({});
@@ -928,6 +929,20 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Keep the URL hash and the active view in sync both ways (deep links + back/
+  // forward). The guards make the two effects idempotent so they can't loop.
+  useEffect(() => {
+    setHashView(view);
+  }, [view]);
+  useEffect(() => {
+    const onHash = () => {
+      const v = viewFromHash();
+      setView((prev) => (prev === v ? prev : v));
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
   }, []);
 
   if (!authed) return <LoginScreen onLogin={() => setAuthed(true)} />;
@@ -1157,6 +1172,17 @@ const NAV_GROUPS: { label: string; items: [View, string, string][] }[] = [
     ['notifications', 'Notifications', 'notifications'],
   ] },
 ];
+
+// Routing: the set of valid views and the list each detail view falls back to
+// when its URL is loaded directly (no in-memory selection).
+const ALL_VIEWS = new Set<View>(['dashboard', 'hosts', 'host-detail', 'packages', 'containers', 'vulns', 'vuln-detail', 'scans', 'audit', 'rbac', 'cve-search', 'schedules', 'asset-groups', 'trends', 'reports', 'notifications', 'topology', 'users', 'tokens', 'ai-triage', 'ai-approvals']);
+const DETAIL_FALLBACK: Partial<Record<View, View>> = { 'host-detail': 'hosts', 'vuln-detail': 'vulns' };
+
+function viewFromHash(): View {
+  const h = getHashView() as View;
+  if (!ALL_VIEWS.has(h)) return 'dashboard';
+  return DETAIL_FALLBACK[h] ?? h;
+}
 
 function ThemeToggle() {
   const { theme, toggle } = useTheme();
