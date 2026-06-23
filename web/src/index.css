@@ -1726,3 +1726,26 @@ tr.row-dim > td { opacity: 0.5; }
   padding: 1px 5px;
   color: var(--text-muted);
 }
+
+/* DataTable primitive (UI redesign) — inherits base table styles. */
+.data-table { width: 100%; }
+.data-table.sticky-header thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-raised);
+}
+.dt-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border-light);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: dt-spin 0.7s linear infinite;
+  vertical-align: -1px;
+  margin-right: var(--space-2);
+}
+@keyframes dt-spin { to { transform: rotate(360deg); } }
+.dt-error { color: var(--critical); }
+.dt-retry { margin-left: var(--space-3); }

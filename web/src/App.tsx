@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTheme } from './hooks/useTheme';
 import { CommandPalette, type CommandItem } from './components/CommandPalette';
+import { DataTable, type Column } from './components/DataTable';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 const verCmp = (a: string, b: string): number => {
@@ -5974,41 +5975,37 @@ function UsersView() {
       </div>
       <div className="card">
         <div className="card-header"><h2>Users</h2></div>
-        {loading ? <Loading /> : error ? <LoadError message={error} onRetry={load} /> : (
-          <table>
-            <thead>
-              <tr><th>Username</th><th>Role</th><th>Created</th><th>Updated</th><th>Actions</th></tr>
-            </thead>
-            <tbody>
-              {users.map(u => (
-                <tr key={u.id}>
-                  <td>{u.username}</td>
-                  <td><span className={`badge ${u.role === 'admin' ? 'badge-high' : ''}`}>{u.role}</span></td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(u.created_at)}>{formatDateTime(u.created_at)}</td>
-                  <td className="mono" style={{ fontSize: '0.75rem' }} title={formatDateTimeFull(u.updated_at)}>{formatDateTime(u.updated_at)}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => handleToggleRole(u)}>
-                        Make {u.role === 'admin' ? 'viewer' : 'admin'}
-                      </button>
-                      {resetId === u.id ? (
-                        <>
-                          <input type="password" placeholder="New password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} style={{ height: '1.75rem', width: 150 }} />
-                          <button className="btn btn-primary btn-sm" onClick={() => handleReset(u)}>Save</button>
-                          <button className="btn btn-secondary btn-sm" onClick={() => { setResetId(''); setResetPassword(''); }}>Cancel</button>
-                        </>
-                      ) : (
-                        <button className="btn btn-secondary btn-sm" onClick={() => { setResetId(u.id); setResetPassword(''); setMsg(''); }}>Reset password</button>
-                      )}
-                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)}>Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-              {users.length === 0 && <tr className="empty-row"><td colSpan={5}>No users yet — create one above. Admins manage the console; viewers have read-only access.</td></tr>}
-            </tbody>
-          </table>
-        )}
+        <DataTable<LocalUser>
+          rows={users}
+          loading={loading}
+          error={error || null}
+          onRetry={load}
+          rowKey={(u) => u.id}
+          empty="No users yet — create one above. Admins manage the console; viewers have read-only access."
+          columns={[
+            { key: 'username', header: 'Username', render: (u) => u.username },
+            { key: 'role', header: 'Role', render: (u) => <span className={`badge ${u.role === 'admin' ? 'badge-high' : ''}`}>{u.role}</span> },
+            { key: 'created', header: 'Created', className: 'mono', render: (u) => <span title={formatDateTimeFull(u.created_at)}>{formatDateTime(u.created_at)}</span> },
+            { key: 'updated', header: 'Updated', className: 'mono', render: (u) => <span title={formatDateTimeFull(u.updated_at)}>{formatDateTime(u.updated_at)}</span> },
+            { key: 'actions', header: 'Actions', render: (u) => (
+              <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <button className="btn btn-secondary btn-sm" onClick={() => handleToggleRole(u)}>
+                  Make {u.role === 'admin' ? 'viewer' : 'admin'}
+                </button>
+                {resetId === u.id ? (
+                  <>
+                    <input type="password" placeholder="New password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} style={{ height: '1.75rem', width: 150 }} />
+                    <button className="btn btn-primary btn-sm" onClick={() => handleReset(u)}>Save</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setResetId(''); setResetPassword(''); }}>Cancel</button>
+                  </>
+                ) : (
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setResetId(u.id); setResetPassword(''); setMsg(''); }}>Reset password</button>
+                )}
+                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(u)}>Delete</button>
+              </div>
+            ) },
+          ]}
+        />
       </div>
     </>
   );
