@@ -3,6 +3,7 @@ package db
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -552,53 +553,118 @@ func isSafeFixedVersion(version string) bool {
 	return true
 }
 
+// versionInRange evaluates an OSV range's events against an installed version.
+// Per the OSV schema the consumer must process events in ascending version order
+// (events for one range may encode several disjoint affected intervals, e.g.
+// [1.0,1.2) and [3.0,3.5)), so the events are sorted first and then a simple
+// running "vulnerable" flag is toggled: introduced sets it (installed >= v),
+// fixed/limit clear it (installed >= v), last_affected clears it (installed > v).
+// Iterating in raw array order — as before — produced false results for
+// multi-interval ranges whose events were not already globally sorted.
 func versionInRange(eco, installed string, events []affectedRangeEvent) bool {
-	active := false
-	for _, ev := range events {
-		if ev.Introduced != "" {
+	sorted, ordered := sortRangeEvents(eco, events)
+	if !ordered {
+		// Versions could not be totally ordered (incomparable across schemes);
+		// fall back to the producer's order rather than a partial sort.
+		sorted = events
+	}
+	vulnerable := false
+	for _, ev := range sorted {
+		switch {
+		case ev.Introduced != "":
 			if ev.Introduced == "0" {
-				active = true
-			} else if cmp, ok := compareVersions(eco, installed, ev.Introduced); ok {
-				active = cmp >= 0
-			} else {
+				vulnerable = true
+				continue
+			}
+			cmp, ok := compareVersions(eco, installed, ev.Introduced)
+			if !ok {
 				return false
 			}
-		}
-		if active && ev.Fixed != "" {
+			if cmp >= 0 {
+				vulnerable = true
+			}
+		case ev.Fixed != "":
 			if !isSafeFixedVersion(ev.Fixed) {
+				// A garbage fixed boundary (commit hash, URL, branch name) makes
+				// the interval's upper edge untrustworthy — reject the range
+				// rather than treat it as unbounded-affected.
 				return false
 			}
-			if less, ok := versionLess(eco, installed, ev.Fixed); ok {
-				if less {
-					return true
-				}
-				active = false
-			} else {
+			cmp, ok := compareVersions(eco, installed, ev.Fixed)
+			if !ok {
 				return false
 			}
-		}
-		if active && ev.LastAffected != "" {
-			if cmp, ok := compareVersions(eco, installed, ev.LastAffected); ok {
-				if cmp <= 0 {
-					return true
-				}
-				active = false
-			} else {
+			if cmp >= 0 {
+				vulnerable = false
+			}
+		case ev.LastAffected != "":
+			cmp, ok := compareVersions(eco, installed, ev.LastAffected)
+			if !ok {
 				return false
 			}
-		}
-		if active && ev.Limit != "" {
-			if less, ok := versionLess(eco, installed, ev.Limit); ok {
-				if less {
-					return true
-				}
-				active = false
-			} else {
+			if cmp > 0 {
+				vulnerable = false
+			}
+		case ev.Limit != "":
+			cmp, ok := compareVersions(eco, installed, ev.Limit)
+			if !ok {
 				return false
+			}
+			if cmp >= 0 {
+				vulnerable = false
 			}
 		}
 	}
-	return active
+	return vulnerable
+}
+
+// rangeEventVersion returns the single version an OSV event carries plus a tie
+// rank: at the same version an "introduced" (rank 0) must sort before a clearing
+// event (rank 1) so e.g. [introduced:X, fixed:X] leaves X unaffected.
+func rangeEventVersion(ev affectedRangeEvent) (string, int) {
+	switch {
+	case ev.Introduced != "":
+		return ev.Introduced, 0
+	case ev.Fixed != "":
+		return ev.Fixed, 1
+	case ev.LastAffected != "":
+		return ev.LastAffected, 1
+	case ev.Limit != "":
+		return ev.Limit, 1
+	}
+	return "", 2
+}
+
+// sortRangeEvents returns the events ordered ascending by version (introduced:"0"
+// first). ordered is false if any two versions were incomparable, in which case
+// the caller keeps the original order.
+func sortRangeEvents(eco string, events []affectedRangeEvent) ([]affectedRangeEvent, bool) {
+	out := append([]affectedRangeEvent(nil), events...)
+	ordered := true
+	sort.SliceStable(out, func(i, j int) bool {
+		zi := out[i].Introduced == "0"
+		zj := out[j].Introduced == "0"
+		_, ri := rangeEventVersion(out[i])
+		_, rj := rangeEventVersion(out[j])
+		if zi || zj {
+			if zi && zj {
+				return ri < rj
+			}
+			return zi // introduced:"0" (-inf) sorts first
+		}
+		vi, _ := rangeEventVersion(out[i])
+		vj, _ := rangeEventVersion(out[j])
+		cmp, ok := compareVersions(eco, vi, vj)
+		if !ok {
+			ordered = false
+			return false
+		}
+		if cmp != 0 {
+			return cmp < 0
+		}
+		return ri < rj
+	})
+	return out, ordered
 }
 
 func versionLess(eco, a, b string) (bool, bool) {

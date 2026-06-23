@@ -73,6 +73,47 @@ func TestCpeVersionAffectedWildcardExact(t *testing.T) {
 	}
 }
 
+// OSV ranges may encode several disjoint affected intervals in one event list,
+// and the schema requires consumers to process events in ascending version order.
+// versionInRange must sort first — iterating the raw (possibly unsorted) order
+// previously gave wrong answers for multi-interval ranges.
+func TestVersionInRangeSortsMultiInterval(t *testing.T) {
+	// Two intervals [1.0,1.2) and [3.0,3.5) with events deliberately NOT globally
+	// sorted (both introduceds before both fixeds).
+	unsorted := []affectedRangeEvent{
+		{Introduced: "1.0"},
+		{Introduced: "3.0"},
+		{Fixed: "3.5"},
+		{Fixed: "1.2"},
+	}
+	cases := []struct {
+		v    string
+		want bool
+	}{
+		{"1.1", true},  // inside first interval — the regression case
+		{"1.2", false}, // exactly the first fix
+		{"2.0", false}, // between intervals
+		{"3.2", true},  // inside second interval
+		{"3.5", false}, // exactly the second fix
+		{"4.0", false}, // above all
+		{"0.9", false}, // below all
+	}
+	for _, c := range cases {
+		if got := versionInRange("npm", c.v, unsorted); got != c.want {
+			t.Fatalf("versionInRange(%s) over unsorted multi-interval = %v, want %v", c.v, got, c.want)
+		}
+	}
+	// Same intervals already sorted must give identical answers.
+	sorted := []affectedRangeEvent{
+		{Introduced: "1.0"}, {Fixed: "1.2"}, {Introduced: "3.0"}, {Fixed: "3.5"},
+	}
+	for _, c := range cases {
+		if got := versionInRange("npm", c.v, sorted); got != c.want {
+			t.Fatalf("versionInRange(%s) over sorted multi-interval = %v, want %v", c.v, got, c.want)
+		}
+	}
+}
+
 func TestVersionLineage(t *testing.T) {
 	cases := map[string]string{
 		"1.2.3":          "1.2",
