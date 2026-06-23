@@ -2814,8 +2814,8 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		stmt, err := tx.PrepareContext(ctx, `INSERT INTO vulnerabilities
 (id, package_id, scan_id, host_id, vulnerability_id, severity, title, description,
  pkg_name, pkg_path, installed_version, fixed_version, cvss_score, cvss_vector,
- primary_url, container, layer_id, finding_source, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
+ primary_url, container, layer_id, finding_source, finding_key, created_at, last_seen)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now(),now())
 ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`)
 		if err != nil {
 			return nil, fmt.Errorf("prepare: %w", err)
@@ -2823,10 +2823,11 @@ ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`)
 		defer stmt.Close()
 
 		for _, v := range newVulns {
+			findingKey := ComputeFindingKey(FindingIdentity{HostID: v.HostID, PkgName: v.PkgName, PkgPath: v.PkgPath, VulnerabilityID: v.VulnerabilityID})
 			res, err := stmt.ExecContext(ctx, v.ID, v.PackageID, v.ScanID, v.HostID,
 				v.VulnerabilityID, v.Severity, v.Title, v.Description,
 				v.PkgName, v.PkgPath, v.InstalledVer, v.FixedVersion,
-				v.CVSSScore, v.CVSSVector, v.PrimaryURL, v.Container, "", v.FindingSource)
+				v.CVSSScore, v.CVSSVector, v.PrimaryURL, v.Container, "", v.FindingSource, findingKey)
 			if err != nil {
 				continue
 			}
@@ -3018,18 +3019,19 @@ WHERE p.pkg_type='runtime' AND p.ecosystem<>''` + scanFilterFor("p", opts.ScanID
 		stmt, err := tx.PrepareContext(ctx, `INSERT INTO vulnerabilities
 (id, package_id, scan_id, host_id, vulnerability_id, severity, title, description,
  pkg_name, pkg_path, installed_version, fixed_version, cvss_score, cvss_vector,
- primary_url, container, layer_id, finding_source, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
+ primary_url, container, layer_id, finding_source, finding_key, created_at, last_seen)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now(),now())
 ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`)
 		if err != nil {
 			return nil, fmt.Errorf("prepare: %w", err)
 		}
 		defer stmt.Close()
 		for _, v := range newVulns {
+			findingKey := ComputeFindingKey(FindingIdentity{HostID: v.HostID, PkgName: v.PkgName, PkgPath: v.PkgPath, VulnerabilityID: v.VulnerabilityID})
 			res, err := stmt.ExecContext(ctx, v.ID, v.PackageID, v.ScanID, v.HostID,
 				v.VulnerabilityID, v.Severity, v.Title, v.Description,
 				v.PkgName, v.PkgPath, v.InstalledVer, v.FixedVersion,
-				v.CVSSScore, v.CVSSVector, v.PrimaryURL, v.Container, "", v.FindingSource)
+				v.CVSSScore, v.CVSSVector, v.PrimaryURL, v.Container, "", v.FindingSource, findingKey)
 			if err != nil {
 				continue
 			}
