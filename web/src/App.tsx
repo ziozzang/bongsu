@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useTheme } from './hooks/useTheme';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
 const verCmp = (a: string, b: string): number => {
@@ -262,6 +263,8 @@ const ICON_PATHS: Record<string, React.ReactNode> = {
   arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
   'ai-triage': <><path d="M12 3l1.6 4.2L18 9l-4.4 1.8L12 15l-1.6-4.2L6 9l4.4-1.8L12 3Z" /><path d="M18 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z" /></>,
   'ai-approvals': <><path d="M12 3 5 6v5c0 4 3 6.5 7 8 4-1.5 7-4 7-8V6l-7-3Z" /><path d="m9 11 2 2 4-4" /></>,
+  sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>,
+  moon: <><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" /></>,
 };
 
 function Icon({ name, size = 16, className, strokeWidth = 1.5, style }: { name: string; size?: number; className?: string; strokeWidth?: number; style?: React.CSSProperties }) {
@@ -1093,6 +1096,23 @@ function ChangePasswordPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+function ThemeToggle() {
+  const { theme, toggle } = useTheme();
+  const next = theme === 'dark' ? 'light' : 'dark';
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={toggle}
+      title={`Switch to ${next} theme`}
+      aria-label={`Switch to ${next} theme`}
+    >
+      <span className="nav-icon"><Icon name={theme === 'dark' ? 'sun' : 'moon'} size={16} /></span>
+      <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
+    </button>
+  );
+}
+
 function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: View) => void; onLogout?: () => void }) {
   const [me, setMe] = useState<{ username: string; role: string } | null>(null);
   const [showPw, setShowPw] = useState(false);
@@ -1149,6 +1169,7 @@ function Sidebar({ view, onNavigate, onLogout }: { view: View; onNavigate: (v: V
           </div>
         ))}
       </nav>
+      <ThemeToggle />
       {onLogout && showPw && <ChangePasswordPanel onClose={() => setShowPw(false)} />}
       {onLogout && (
         <div className="sidebar-footer">

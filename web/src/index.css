@@ -1317,6 +1317,25 @@ table td.mono, table th { font-variant-numeric: tabular-nums; }
   outline-offset: -2px;
 }
 
+.theme-toggle {
+  margin: auto 0.625rem 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.theme-toggle:hover { background: var(--surface-hover); border-color: var(--border-light); color: var(--text); }
+.theme-toggle:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* When the toggle owns the auto margin, the footer should not also push down. */
+.theme-toggle + .sidebar-footer { margin-top: 0; }
+
 .sidebar-footer {
   margin-top: auto;
   border-top: 1px solid var(--border);
