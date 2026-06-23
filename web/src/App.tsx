@@ -3,71 +3,9 @@ import { useTheme } from './hooks/useTheme';
 import { CommandPalette, type CommandItem } from './components/CommandPalette';
 import { DataTable, type Column } from './components/DataTable';
 import { getHashView, setHashView } from './hooks/useHashRoute';
+import { verCmp } from './lib/version';
 import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSession, hasAuth, onAuthFailure, type Host, type UserAccount, type ProcessSnapshot, type PortInfo, type Vuln, type Pkg, type Stats, type FilterOptions, type Scan, type ScanRequest, type HealthStatus, type CveDbEntry, type CveAffectedPackage, type CveReferenceGroupSummary, type CveDbStatsResponse, type CveSourceStat, type CveRematchPolicy, type CveEpssMergeStats, type CveDbQuality, type InstallerStatus, type SecurityDbOperationalStatus, type AgentFleetStatus, type ContainerAsset, type VulnSummaryRow, type AuditLog, type AccessSubject, type AccessPolicy, type AccessControlStatus, type ScheduledScan, type AssetGroup, type AssetGroupDetail, type VulnTrendRow, type ScanActivityRow, type VulnTrendSummary, type AtRiskHost, type Recommendation, type PostureComparison, type ExecutiveSummary, type SLAComplianceReport, type RiskBreakdownRow, type NotificationRule, type NotificationLogEntry, type GraphNodeType, type GraphNode, type GraphNeighborhood, type GraphSchema, type GraphOverview, type BlastRadiusRollup, type ExposedService, type ImageExposure, type OrgExposure, type OrgExposureRow, type RemediationRow, type CveGraphInfo, type LocalUser, type ApiToken, type LLMStatus, type VulnAnalysis, type AIPolicyStatus, type AIApproval } from './api';
 
-const verCmp = (a: string, b: string): number => {
-  const pa = versionSegments(a);
-  const pb = versionSegments(b);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const na = pa[i] || 0;
-    const nb = pb[i] || 0;
-    if (na !== nb) return na - nb;
-  }
-  const aPre = isPreReleaseVersion(a);
-  const bPre = isPreReleaseVersion(b);
-  if (aPre && !bPre) return -1;
-  if (!aPre && bPre) return 1;
-  if (aPre && bPre) return comparePreRelease(a, b);
-  return 0;
-};
-
-const preReleaseMarkers = ['dev', 'snapshot', 'preview', 'pre', 'alpha', 'beta', 'rc'];
-
-function versionSegments(v: string): number[] {
-  const clean = stripPreReleaseSuffix(v.trim().replace(/^v?/, '').replace(/^[0-9]+:/, ''));
-  return clean.split(/[^0-9]+/).filter(Boolean).map((p) => Number.parseInt(p, 10)).filter((n) => Number.isFinite(n));
-}
-
-function isPreReleaseVersion(v: string): boolean {
-  const clean = v.toLowerCase().split('+')[0];
-  return clean.includes('~') || preReleaseMarkers.some((m) => clean.includes(m));
-}
-
-function stripPreReleaseSuffix(v: string): string {
-  const low = v.toLowerCase();
-  let cut = low.includes('+') ? low.indexOf('+') : v.length;
-  const tilde = low.indexOf('~');
-  if (tilde >= 0 && tilde < cut) cut = tilde;
-  preReleaseMarkers.forEach((marker) => {
-    const idx = low.indexOf(marker);
-    if (idx >= 0 && idx < cut) cut = idx;
-  });
-  return v.slice(0, cut).replace(/[-_.]+$/, '');
-}
-
-function comparePreRelease(a: string, b: string): number {
-  const [ar, an] = preReleaseRank(a);
-  const [br, bn] = preReleaseRank(b);
-  if (ar !== br) return ar - br;
-  return an - bn;
-}
-
-function preReleaseRank(v: string): [number, number] {
-  const clean = v.toLowerCase().split('+')[0];
-  for (let i = 0; i < preReleaseMarkers.length; i++) {
-    const marker = preReleaseMarkers[i];
-    if (clean.includes(marker)) return [i + 1, preReleaseNumber(clean, marker)];
-  }
-  if (clean.includes('~')) return [0, preReleaseNumber(clean, '~')];
-  return [preReleaseMarkers.length + 1, 0];
-}
-
-function preReleaseNumber(v: string, marker: string): number {
-  const idx = v.indexOf(marker);
-  if (idx < 0) return 0;
-  const match = v.slice(idx + marker.length).match(/\d+/);
-  return match ? Number.parseInt(match[0], 10) : 0;
-}
 
 function findingSourceLabel(source?: string): string {
   switch (source || 'scanner') {
