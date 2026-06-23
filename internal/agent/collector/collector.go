@@ -345,7 +345,12 @@ func (c *Collector) CollectOSQueryPackages() ([]models.Package, error) {
 
 func (c *Collector) CollectNativePackages() ([]models.Package, error) {
 	if _, err := exec.LookPath("dpkg-query"); err == nil {
-		out, err := c.commandOutput("dpkg-query", "-W", "-f=${binary:Package}\t${Version}\t${Architecture}\t${source:Package}\n")
+		// dpkg-query -W lists packages in EVERY state, including config-files
+		// (removed, not purged) and not-installed entries that still carry a
+		// ${Version}. Emit the status word first so parseDelimitedPackages can
+		// drop anything that isn't fully "installed" — otherwise removed
+		// packages produce findings for software no longer on disk.
+		out, err := c.commandOutput("dpkg-query", "-W", "-f=${db:Status-Status}\t${binary:Package}\t${Version}\t${Architecture}\t${source:Package}\n")
 		if err == nil {
 			return parseDelimitedPackages(out, "dpkg"), nil
 		}
@@ -373,6 +378,14 @@ func parseDelimitedPackages(out []byte, source string) []models.Package {
 			continue
 		}
 		parts := strings.Split(line, "\t")
+		// dpkg rows carry a leading status word; keep only fully-installed
+		// packages and drop the status column before the shared field parse.
+		if source == "dpkg" {
+			if len(parts) < 1 || strings.TrimSpace(parts[0]) != "installed" {
+				continue
+			}
+			parts = parts[1:]
+		}
 		if len(parts) < 2 {
 			continue
 		}

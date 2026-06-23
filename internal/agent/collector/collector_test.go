@@ -375,9 +375,15 @@ func TestParseNetstatProcess(t *testing.T) {
 }
 
 func TestParseDelimitedPackagesSkipsInvalidRows(t *testing.T) {
-	pkgs := parseDelimitedPackages([]byte("openssl\t3.0.17-1\tamd64\topenssl\nmissing-version\t\tamd64\t\nbad-row\n"), "dpkg")
+	// dpkg rows carry a leading status word; only fully-installed entries count.
+	in := "installed\topenssl\t3.0.17-1\tamd64\topenssl\n" +
+		"config-files\tremoved-pkg\t1.0-1\tamd64\tremoved-pkg\n" + // removed, files purged
+		"not-installed\tnever-pkg\t2.0\tamd64\t\n" + // recorded but absent
+		"installed\tmissing-version\t\tamd64\t\n" +
+		"installed\tbad-row\n"
+	pkgs := parseDelimitedPackages([]byte(in), "dpkg")
 	if len(pkgs) != 1 {
-		t.Fatalf("packages = %d, want 1: %#v", len(pkgs), pkgs)
+		t.Fatalf("packages = %d, want 1 (only installed): %#v", len(pkgs), pkgs)
 	}
 	if pkgs[0].Name != "openssl" || pkgs[0].Version != "3.0.17-1" || pkgs[0].Arch != "amd64" || pkgs[0].SrcName != "openssl" || pkgs[0].Source != "dpkg" || pkgs[0].PkgType != "os" {
 		t.Fatalf("unexpected package: %#v", pkgs[0])
@@ -387,7 +393,7 @@ func TestParseDelimitedPackagesSkipsInvalidRows(t *testing.T) {
 func TestCollectOSQueryPackagesFallsBackToDpkgQuery(t *testing.T) {
 	binDir := t.TempDir()
 	dpkg := filepath.Join(binDir, "dpkg-query")
-	if err := os.WriteFile(dpkg, []byte("#!/bin/sh\nprintf 'openssl\\t3.0.17-1\\tamd64\\topenssl\\n'\n"), 0755); err != nil {
+	if err := os.WriteFile(dpkg, []byte("#!/bin/sh\nprintf 'installed\\topenssl\\t3.0.17-1\\tamd64\\topenssl\\n'\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir)
