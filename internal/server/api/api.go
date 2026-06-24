@@ -313,6 +313,8 @@ func (s *Server) APIKey() string {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/report", s.handleReport)
+	s.mux.HandleFunc("POST /api/sbom", s.handleSBOMIngest)
+	s.mux.HandleFunc("GET /api/scans/{id}/sbom", s.handleGetScanSBOM)
 	s.mux.HandleFunc("GET /api/hosts", s.handleListHosts)
 	s.mux.HandleFunc("GET /api/hosts/{id}", s.handleGetHost)
 	s.mux.HandleFunc("DELETE /api/hosts/{id}", s.handleDeleteHost)

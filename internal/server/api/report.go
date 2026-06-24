@@ -124,81 +124,7 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		ingestErrors = append(ingestErrors, "packages: "+err.Error())
 	}
 
-	insertedVulns := 0
-	skippedVulns := 0
-	var newFindings []db.NewFinding
-	if len(report.Vulns) > 0 {
-		for i := range report.Vulns {
-			if report.Vulns[i].ID == "" {
-				report.Vulns[i].ID = uuid.New().String()
-			}
-			report.Vulns[i].ScanID = report.ScanID
-			report.Vulns[i].HostID = report.Host.ID
-		}
-		if result, err := s.db.InsertVulnerabilities(ctx, report.Vulns); err != nil {
-			log.Printf("insert vulns: %v", err)
-			ingestErrors = append(ingestErrors, "vulnerabilities: "+err.Error())
-		} else if result != nil {
-			insertedVulns += result.Inserted
-			skippedVulns += result.Skipped
-			newFindings = append(newFindings, result.NewFindings...)
-		}
-		if n, err := s.db.EnrichVulnerabilities(ctx); err == nil && n > 0 {
-			log.Printf("Enriched %d vulnerabilities with CVE DB info", n)
-		}
-	} else if s.matcher != nil && s.dbMgr != nil && s.dbMgr.IsReady() && len(report.Packages) > 0 {
-		log.Printf("Running server-side CVE matching for scan %s (%d packages)", report.ScanID, len(report.Packages))
-		vulns, err := s.matcher.Match(ctx, report.Packages, report.Host)
-		if err != nil {
-			log.Printf("Server-side CVE matching failed: %v", err)
-			ingestErrors = append(ingestErrors, "server_match: "+err.Error())
-		} else {
-			log.Printf("Matched %d vulnerabilities for scan %s", len(vulns), report.ScanID)
-			for i := range vulns {
-				if vulns[i].ID == "" {
-					vulns[i].ID = uuid.New().String()
-				}
-				vulns[i].ScanID = report.ScanID
-				vulns[i].HostID = report.Host.ID
-			}
-			if result, err := s.db.InsertVulnerabilities(ctx, vulns); err != nil {
-				log.Printf("insert matched vulns: %v", err)
-				ingestErrors = append(ingestErrors, "matched_vulnerabilities: "+err.Error())
-			} else if result != nil {
-				insertedVulns += result.Inserted
-				skippedVulns += result.Skipped
-				newFindings = append(newFindings, result.NewFindings...)
-			}
-			if n, err := s.db.EnrichVulnerabilities(ctx); err == nil && n > 0 {
-				log.Printf("Enriched %d vulnerabilities with CVE DB scores", n)
-			}
-		}
-	}
-	if len(report.Packages) > 0 {
-		opts := rematchOptionsFromEnv()
-		opts.ScanID = report.ScanID
-		if result, err := s.db.RematchCVEs(ctx, opts); err != nil {
-			log.Printf("scan CVE DB rematch failed: %v", err)
-			ingestErrors = append(ingestErrors, "cve_db_rematch: "+err.Error())
-		} else {
-			if result.Limited {
-				ingestErrors = append(ingestErrors, fmt.Sprintf("cve_db_rematch: candidate limit %d reached", result.CandidateLimit))
-			}
-			if result.NewVulns > 0 {
-				log.Printf("CVE DB rematched %d vulnerabilities for scan %s", result.NewVulns, report.ScanID)
-				insertedVulns += result.NewVulns
-			}
-		}
-		// CPE/runtime matching: flag detected runtimes (python/node/jdk) against
-		// NVD CPE advisories, version-gated to avoid false positives.
-		if result, err := s.db.RematchCPE(ctx, opts); err != nil {
-			log.Printf("scan CPE rematch failed: %v", err)
-			ingestErrors = append(ingestErrors, "cpe_rematch: "+err.Error())
-		} else if result.NewVulns > 0 {
-			log.Printf("CPE matched %d runtime vulnerabilities for scan %s", result.NewVulns, report.ScanID)
-			insertedVulns += result.NewVulns
-		}
-	}
+	insertedVulns, skippedVulns, newFindings, ingestErrors := s.runScanMatch(ctx, &report, ingestErrors)
 
 	for i := range report.Users {
 		if report.Users[i].ID == "" {
@@ -249,6 +175,12 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		ingestErrors = append(ingestErrors, "complete_scan: "+err.Error())
 		errorSummary = scanErrorSummary(ingestErrors)
 	}
+	// Optionally retain a point-in-time CycloneDX SBOM for this scan so an
+	// operator can later answer "what was installed on this host at scan time".
+	// Off by default (per-scan-per-host BOM storage adds up); opt in with
+	// BONGSU_SBOM_STORE_GENERATED=true. Best-effort; never affects the scan.
+	s.maybeStoreGeneratedSBOM(ctx, &report)
+
 	// A new scan changes the dashboard aggregates; drop the cached stats/health
 	// responses so the next poll reflects this ingest immediately.
 	s.statsCache.invalidate()
@@ -420,6 +352,88 @@ func (s *Server) verifyAgentHostBinding(r *http.Request, hostID string) error {
 		return err
 	}
 	return nil
+}
+
+// runScanMatch derives and persists vulnerabilities for an already-created scan
+// whose packages are stored. It runs the identical sequence — agent-reported
+// vulns OR server-side matcher, then EnrichVulnerabilities, then CVE-DB rematch
+// and CPE/runtime rematch — for both agent reports and ingested SBOMs, so the
+// two ingest paths can never drift in how findings are produced. Returns the
+// inserted/skipped counts, any new findings, and the accumulated error list.
+func (s *Server) runScanMatch(ctx context.Context, report *models.ScanReport, ingestErrors []string) (insertedVulns, skippedVulns int, newFindings []db.NewFinding, errs []string) {
+	if len(report.Vulns) > 0 {
+		for i := range report.Vulns {
+			if report.Vulns[i].ID == "" {
+				report.Vulns[i].ID = uuid.New().String()
+			}
+			report.Vulns[i].ScanID = report.ScanID
+			report.Vulns[i].HostID = report.Host.ID
+		}
+		if result, err := s.db.InsertVulnerabilities(ctx, report.Vulns); err != nil {
+			log.Printf("insert vulns: %v", err)
+			ingestErrors = append(ingestErrors, "vulnerabilities: "+err.Error())
+		} else if result != nil {
+			insertedVulns += result.Inserted
+			skippedVulns += result.Skipped
+			newFindings = append(newFindings, result.NewFindings...)
+		}
+		if n, err := s.db.EnrichVulnerabilities(ctx); err == nil && n > 0 {
+			log.Printf("Enriched %d vulnerabilities with CVE DB info", n)
+		}
+	} else if s.matcher != nil && s.dbMgr != nil && s.dbMgr.IsReady() && len(report.Packages) > 0 {
+		log.Printf("Running server-side CVE matching for scan %s (%d packages)", report.ScanID, len(report.Packages))
+		vulns, err := s.matcher.Match(ctx, report.Packages, report.Host)
+		if err != nil {
+			log.Printf("Server-side CVE matching failed: %v", err)
+			ingestErrors = append(ingestErrors, "server_match: "+err.Error())
+		} else {
+			log.Printf("Matched %d vulnerabilities for scan %s", len(vulns), report.ScanID)
+			for i := range vulns {
+				if vulns[i].ID == "" {
+					vulns[i].ID = uuid.New().String()
+				}
+				vulns[i].ScanID = report.ScanID
+				vulns[i].HostID = report.Host.ID
+			}
+			if result, err := s.db.InsertVulnerabilities(ctx, vulns); err != nil {
+				log.Printf("insert matched vulns: %v", err)
+				ingestErrors = append(ingestErrors, "matched_vulnerabilities: "+err.Error())
+			} else if result != nil {
+				insertedVulns += result.Inserted
+				skippedVulns += result.Skipped
+				newFindings = append(newFindings, result.NewFindings...)
+			}
+			if n, err := s.db.EnrichVulnerabilities(ctx); err == nil && n > 0 {
+				log.Printf("Enriched %d vulnerabilities with CVE DB scores", n)
+			}
+		}
+	}
+	if len(report.Packages) > 0 {
+		opts := rematchOptionsFromEnv()
+		opts.ScanID = report.ScanID
+		if result, err := s.db.RematchCVEs(ctx, opts); err != nil {
+			log.Printf("scan CVE DB rematch failed: %v", err)
+			ingestErrors = append(ingestErrors, "cve_db_rematch: "+err.Error())
+		} else {
+			if result.Limited {
+				ingestErrors = append(ingestErrors, fmt.Sprintf("cve_db_rematch: candidate limit %d reached", result.CandidateLimit))
+			}
+			if result.NewVulns > 0 {
+				log.Printf("CVE DB rematched %d vulnerabilities for scan %s", result.NewVulns, report.ScanID)
+				insertedVulns += result.NewVulns
+			}
+		}
+		// CPE/runtime matching: flag detected runtimes (python/node/jdk) against
+		// NVD CPE advisories, version-gated to avoid false positives.
+		if result, err := s.db.RematchCPE(ctx, opts); err != nil {
+			log.Printf("scan CPE rematch failed: %v", err)
+			ingestErrors = append(ingestErrors, "cpe_rematch: "+err.Error())
+		} else if result.NewVulns > 0 {
+			log.Printf("CPE matched %d runtime vulnerabilities for scan %s", result.NewVulns, report.ScanID)
+			insertedVulns += result.NewVulns
+		}
+	}
+	return insertedVulns, skippedVulns, newFindings, ingestErrors
 }
 
 func normalizeScanReport(report *models.ScanReport) error {
