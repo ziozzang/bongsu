@@ -128,6 +128,11 @@ type Package struct {
 	MaxCVSS     float64   `json:"max_cvss"`
 	VulnCount   int       `json:"vuln_count"`
 	CreatedAt   time.Time `json:"created_at"`
+	// Dependencies lists the names (or PURLs) of packages this package directly
+	// depends on, when the source (npm lockfile, SBOM) carries that graph.
+	// Additive and optional: older agents omit it. Consumed to build the
+	// per-scan package_dependencies edge table; it is not a packages column.
+	Dependencies []string `json:"dependencies,omitempty"`
 }
 
 type Vulnerability struct {

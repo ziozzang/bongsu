@@ -123,6 +123,15 @@ func (s *Server) handleReport(w http.ResponseWriter, r *http.Request) {
 		log.Printf("insert packages: %v", err)
 		ingestErrors = append(ingestErrors, "packages: "+err.Error())
 	}
+	// Persist the dependency graph any package carried (e.g. npm lockfiles), so
+	// transitive blast-radius queries are possible. No-op for older agents that
+	// don't report dependencies.
+	if edges := db.BuildScanDependencyEdges(report.Packages); len(edges) > 0 {
+		if err := s.db.StorePackageDependencies(ctx, report.ScanID, edges); err != nil {
+			log.Printf("store package dependencies: %v", err)
+			ingestErrors = append(ingestErrors, "dependencies: "+err.Error())
+		}
+	}
 
 	insertedVulns, skippedVulns, newFindings, ingestErrors := s.runScanMatch(ctx, &report, ingestErrors)
 

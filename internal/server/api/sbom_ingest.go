@@ -104,6 +104,18 @@ func (s *Server) handleSBOMIngest(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.InsertPackages(ctx, pkgs); err != nil {
 		ingestErrors = append(ingestErrors, "packages: "+err.Error())
 	}
+	// Persist the dependency graph the SBOM carried (PURL->PURL edges).
+	if len(meta.Dependencies) > 0 {
+		var edges [][2]string
+		for parent, children := range meta.Dependencies {
+			for _, child := range children {
+				edges = append(edges, [2]string{parent, child})
+			}
+		}
+		if err := s.db.StorePackageDependencies(ctx, report.ScanID, edges); err != nil {
+			ingestErrors = append(ingestErrors, "dependencies: "+err.Error())
+		}
+	}
 
 	insertedVulns, skippedVulns, _, ingestErrors := s.runScanMatch(ctx, &report, ingestErrors)
 
@@ -195,6 +207,34 @@ func (s *Server) handleGetScanSBOM(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"sbom-"+scanID+"."+format+".json\"")
 	_, _ = w.Write(sbom.BOM)
+}
+
+// handleScanDependents returns the transitive set of components that depend on
+// a given package within a scan — the dependency blast radius of a (typically
+// vulnerable) component. ?package=<purl-or-name> selects the target.
+func (s *Server) handleScanDependents(w http.ResponseWriter, r *http.Request) {
+	if !s.authenticateWeb(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	scanID := r.PathValue("id")
+	target := strings.TrimSpace(r.URL.Query().Get("package"))
+	if target == "" {
+		writeError(w, http.StatusBadRequest, "package query param required (PURL or name)")
+		return
+	}
+	key := db.DependencyKey(target, target)
+	dependents, err := s.db.DependentsOf(r.Context(), scanID, key)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"scan_id":    scanID,
+		"package":    target,
+		"dependents": dependents,
+		"count":      len(dependents),
+	})
 }
 
 // synthSBOMHost builds a stable synthetic host for an SBOM subject. The ID is

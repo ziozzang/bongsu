@@ -62,6 +62,29 @@ func TestScanLanguagePackagesAcrossNonStandardDirs(t *testing.T) {
 	}
 }
 
+func TestNpmLockCapturesDependencies(t *testing.T) {
+	root := t.TempDir()
+	// v2/v3 lockfile: each package entry carries its direct dependencies.
+	writeFile(t, root, "app/package-lock.json", `{"packages":{
+	  "":{"version":"1.0.0"},
+	  "node_modules/express":{"version":"4.18.2","dependencies":{"lodash":"^4.17.0"}},
+	  "node_modules/lodash":{"version":"4.17.21"}
+	}}`)
+	pkgs := ScanLanguagePackages(root, 20)
+	var express *models.Package
+	for i := range pkgs {
+		if pkgs[i].Name == "express" {
+			express = &pkgs[i]
+		}
+	}
+	if express == nil {
+		t.Fatalf("express not parsed: %+v", pkgs)
+	}
+	if len(express.Dependencies) != 1 || express.Dependencies[0] != "lodash" {
+		t.Fatalf("express must record its dependency on lodash, got %v", express.Dependencies)
+	}
+}
+
 func TestLanguageScanDepthBound(t *testing.T) {
 	root := t.TempDir()
 	deep := "a/b/c/d/e/f/g/h/requirements.txt"

@@ -152,7 +152,8 @@ func parseNpmLock(root, path string) []models.Package {
 	}
 	var lock struct {
 		Packages map[string]struct {
-			Version string `json:"version"`
+			Version      string            `json:"version"`
+			Dependencies map[string]string `json:"dependencies"`
 		} `json:"packages"`
 		Dependencies map[string]struct {
 			Version string `json:"version"`
@@ -172,6 +173,11 @@ func parseNpmLock(root, path string) []models.Package {
 			continue
 		}
 		if p := newLangPkg(name, v.Version, "npm", path); p.Name != "" {
+			// Preserve the direct dependency names so the server can rebuild the
+			// dependency graph (transitive blast-radius). v1 lockfiles lack this.
+			for dep := range v.Dependencies {
+				p.Dependencies = append(p.Dependencies, dep)
+			}
 			out = append(out, p)
 		}
 	}

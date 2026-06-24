@@ -315,6 +315,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/report", s.handleReport)
 	s.mux.HandleFunc("POST /api/sbom", s.handleSBOMIngest)
 	s.mux.HandleFunc("GET /api/scans/{id}/sbom", s.handleGetScanSBOM)
+	s.mux.HandleFunc("GET /api/scans/{id}/dependents", s.handleScanDependents)
 	s.mux.HandleFunc("GET /api/hosts/{id}/vex", s.handleExportHostVEX)
 	s.mux.HandleFunc("POST /api/vex", s.handleImportVEX)
 	s.mux.HandleFunc("GET /api/hosts", s.handleListHosts)
