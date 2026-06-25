@@ -71,7 +71,7 @@ func TestGraphExtMethodsAndInvariants(t *testing.T) {
 		`scopeClause(scope, "c.host_id"`,  // Images
 		`scopeClause(scope, "h.id"`,       // OrgExposure
 		`scopeClause(scope, "v.host_id"`,  // Remediation / BlastRadius
-		"source='cisa-kev'",               // KEV exploit signal
+		"FROM cve_kev",                    // KEV exploit signal (signal plane)
 	} {
 		if !strings.Contains(body, marker) {
 			t.Fatalf("graph extension missing required marker: %q", marker)
@@ -91,7 +91,7 @@ func TestGraphPerformanceShape(t *testing.T) {
 		t.Fatal("GraphOverviewForScope should use a MATERIALIZED latest-scan CTE")
 	}
 	// KEV membership must be a semijoin against a small CTE, not a per-row EXISTS.
-	if !strings.Contains(body, "kev AS (SELECT DISTINCT vulnerability_id FROM cve_database WHERE source='cisa-kev')") {
+	if !strings.Contains(body, "kev AS (SELECT vulnerability_id FROM cve_kev)") {
 		t.Fatal("KEV checks should use the kev semijoin CTE")
 	}
 	if strings.Contains(body, "graphKEVExistsExpr") {

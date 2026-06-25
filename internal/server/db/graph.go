@@ -337,7 +337,8 @@ func (db *DB) BlastRadius(ctx context.Context, vulnID string, scope AccessScope,
 	roll := &BlastRadiusRollup{VulnerabilityID: vulnID, BySeverity: map[string]int{}, ByEnvironment: map[string]int{}, ByCriticality: map[string]int{}}
 	// CVE catalog metadata (most severe row across sources).
 	_ = db.QueryRowContext(ctx,
-		`SELECT COALESCE(title,''), COALESCE(severity,''), COALESCE(cvss_score,0), COALESCE(epss_score,0)
+		`SELECT COALESCE(title,''), COALESCE(severity,''), COALESCE(cvss_score,0),
+		        COALESCE((SELECT score FROM cve_epss e WHERE e.vulnerability_id=$1),0)
 		 FROM cve_database WHERE vulnerability_id=$1 ORDER BY cvss_score DESC NULLS LAST LIMIT 1`,
 		vulnID).Scan(&roll.Title, &roll.Severity, &roll.CVSSScore, &roll.EPSSScore)
 

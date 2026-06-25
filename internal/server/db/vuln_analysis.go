@@ -59,10 +59,10 @@ func (db *DB) ListAnalysisCandidates(ctx context.Context, limit int) ([]Analysis
 	}
 	q := `
 WITH ls AS MATERIALIZED ` + latestScansSub + `,
-kev AS (SELECT DISTINCT vulnerability_id FROM cve_database WHERE source='cisa-kev')
+kev AS (SELECT vulnerability_id FROM cve_kev)
 SELECT v.vulnerability_id, COALESCE(v.pkg_name,''), v.host_id, COALESCE(h.hostname,''),
        COALESCE(v.severity,''), COALESCE(v.cvss_score,0),
-       COALESCE((SELECT MAX(epss_score) FROM cve_database WHERE vulnerability_id=v.vulnerability_id),0),
+       COALESCE((SELECT score FROM cve_epss WHERE vulnerability_id=v.vulnerability_id),0),
        (kev.vulnerability_id IS NOT NULL),
        COALESCE(v.installed_version,''), COALESCE(v.fixed_version,''),
        COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id=v.package_id),''),
@@ -113,10 +113,10 @@ LIMIT ` + fmt.Sprintf("%d", limit)
 func (db *DB) GetAnalysisCandidate(ctx context.Context, vulnID, pkgName, hostID string) (*AnalysisCandidate, error) {
 	q := `
 WITH ls AS MATERIALIZED ` + latestScansSub + `,
-kev AS (SELECT DISTINCT vulnerability_id FROM cve_database WHERE source='cisa-kev')
+kev AS (SELECT vulnerability_id FROM cve_kev)
 SELECT v.vulnerability_id, COALESCE(v.pkg_name,''), v.host_id, COALESCE(h.hostname,''),
        COALESCE(v.severity,''), COALESCE(v.cvss_score,0),
-       COALESCE((SELECT MAX(epss_score) FROM cve_database WHERE vulnerability_id=v.vulnerability_id),0),
+       COALESCE((SELECT score FROM cve_epss WHERE vulnerability_id=v.vulnerability_id),0),
        (kev.vulnerability_id IS NOT NULL),
        COALESCE(v.installed_version,''), COALESCE(v.fixed_version,''),
        COALESCE((SELECT p.ecosystem FROM packages p WHERE p.id=v.package_id),''),

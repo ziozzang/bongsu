@@ -30,7 +30,7 @@ const (
 // IDs once per query so KEV membership becomes a hash semijoin (LEFT JOIN kev ...
 // kev.vulnerability_id IS NOT NULL) instead of a correlated EXISTS evaluated per
 // row. Backed by the partial index idx_cve_database_kev_vuln.
-const kevCTE = `kev AS (SELECT DISTINCT vulnerability_id FROM cve_database WHERE source='cisa-kev')`
+const kevCTE = `kev AS (SELECT vulnerability_id FROM cve_kev)`
 
 // CVESignal is the per-CVE exploit/risk enrichment.
 type CVESignal struct {
@@ -46,12 +46,15 @@ func (db *DB) CVESignals(ctx context.Context, vids []string) (map[string]CVESign
 		return out, nil
 	}
 	rows, err := db.QueryContext(ctx, `
-SELECT cd.vulnerability_id,
-       bool_or(cd.source='cisa-kev') AS kev,
-       COALESCE(MAX(cd.epss_score),0) AS epss
-FROM cve_database cd
-WHERE cd.vulnerability_id = ANY($1)
-GROUP BY cd.vulnerability_id`, pqStringArray(vids))
+SELECT vulnerability_id,
+       bool_or(is_kev) AS kev,
+       COALESCE(MAX(epss),0) AS epss
+FROM (
+    SELECT vulnerability_id, true AS is_kev, 0::real AS epss FROM cve_kev WHERE vulnerability_id = ANY($1)
+    UNION ALL
+    SELECT vulnerability_id, false, score FROM cve_epss WHERE vulnerability_id = ANY($1)
+) s
+GROUP BY vulnerability_id`, pqStringArray(vids))
 	if err != nil {
 		return nil, err
 	}
