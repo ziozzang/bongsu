@@ -1,0 +1,185 @@
+package intel
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/ziozzang/bongsu/internal/server/db"
+)
+
+// Store persists intel runs and audits every tool call. Run/finish writes are
+// synchronous (the run lifecycle depends on them); tool-call audit writes go
+// through a buffered channel drained by a single writer goroutine, so a slow DB
+// never stalls a tool response. When the channel is full an audit is dropped and
+// a per-run counter is incremented (the run records how many audits it lost) —
+// the design favors a fast tool path with visible loss over blocking.
+type Store struct {
+	db      *db.DB
+	auditCh chan auditEvent
+	wg      sync.WaitGroup
+	dropped sync.Map // runID -> *int64
+	closed  chan struct{}
+	once    sync.Once
+}
+
+type auditEvent struct {
+	runID      string
+	seq        int
+	tool       string
+	args       []byte
+	result     []byte
+	truncated  bool
+	durationMS int
+	errMsg     string
+}
+
+// NewStore builds a store with an audit buffer of the given size (default 1024)
+// and starts the writer goroutine.
+func NewStore(database *db.DB, bufferSize int) *Store {
+	if bufferSize <= 0 {
+		bufferSize = 1024
+	}
+	s := &Store{
+		db:      database,
+		auditCh: make(chan auditEvent, bufferSize),
+		closed:  make(chan struct{}),
+	}
+	s.wg.Add(1)
+	go s.auditWriter()
+	return s
+}
+
+// RunRecord is the persisted shape of a run at creation.
+type RunRecord struct {
+	Scenario       string
+	Goal           string
+	PrincipalID    string
+	PrincipalScope any
+	ToolsInjected  []string
+}
+
+// CreateRun inserts a new run in status 'running' and returns its id.
+func (s *Store) CreateRun(ctx context.Context, r RunRecord) (string, error) {
+	scope := marshalJSONObject(r.PrincipalScope)
+	var id string
+	err := s.db.QueryRowContext(ctx,
+		`INSERT INTO intel_runs (scenario, goal, principal_id, principal_scope, status, tools_injected)
+		 VALUES ($1,$2,$3,$4,'running',$5) RETURNING id`,
+		r.Scenario, r.Goal, r.PrincipalID, scope, pqTextArray(r.ToolsInjected)).Scan(&id)
+	return id, err
+}
+
+// FinishRun records the terminal status, output, token usage and any dropped
+// audits for a run.
+func (s *Store) FinishRun(ctx context.Context, runID, status string, output any, usage any, errMsg string) error {
+	var dropped int64
+	if v, ok := s.dropped.Load(runID); ok {
+		dropped = atomic.LoadInt64(v.(*int64))
+	}
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE intel_runs SET status=$2, output=$3, token_usage=$4, error=$5, dropped_audits=$6, ended_at=now()
+		 WHERE id=$1`,
+		runID, status, marshalJSONOrNull(output), marshalJSONObject(usage), errMsg, dropped)
+	s.dropped.Delete(runID)
+	return err
+}
+
+// RecordToolCall queues a tool-call audit (non-blocking). On a full buffer the
+// audit is dropped and the run's drop counter is incremented.
+func (s *Store) RecordToolCall(runID string, seq int, tool string, args, result []byte, truncated bool, duration time.Duration, errMsg string) {
+	ev := auditEvent{
+		runID: runID, seq: seq, tool: tool, args: args, result: result,
+		truncated: truncated, durationMS: int(duration.Milliseconds()), errMsg: errMsg,
+	}
+	select {
+	case s.auditCh <- ev:
+	default:
+		ctr, _ := s.dropped.LoadOrStore(runID, new(int64))
+		atomic.AddInt64(ctr.(*int64), 1)
+	}
+}
+
+func (s *Store) auditWriter() {
+	defer s.wg.Done()
+	for ev := range s.auditCh {
+		args := ev.args
+		if len(args) == 0 {
+			args = []byte("{}")
+		}
+		_, _ = s.db.ExecContext(context.Background(),
+			`INSERT INTO intel_tool_calls (run_id, seq, tool_name, input_args, output_result, output_truncated, duration_ms, error)
+			 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+			ev.runID, ev.seq, ev.tool, args, nullableJSON(ev.result), ev.truncated, ev.durationMS, ev.errMsg)
+	}
+}
+
+// Close stops the writer goroutine after draining queued audits.
+func (s *Store) Close() {
+	s.once.Do(func() {
+		close(s.auditCh)
+		s.wg.Wait()
+	})
+}
+
+func marshalJSONObject(v any) []byte {
+	if v == nil {
+		return []byte("{}")
+	}
+	raw, err := json.Marshal(v)
+	if err != nil || len(raw) == 0 || string(raw) == "null" {
+		return []byte("{}")
+	}
+	return raw
+}
+
+func marshalJSONOrNull(v any) any {
+	if v == nil {
+		return nil
+	}
+	raw, err := json.Marshal(v)
+	if err != nil || string(raw) == "null" {
+		return nil
+	}
+	return raw
+}
+
+func nullableJSON(raw []byte) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	return raw
+}
+
+func pqTextArray(items []string) any {
+	// Build a Postgres text[] literal. lib/pq accepts a string literal of the
+	// form {a,b}; values are quoted to survive commas/spaces.
+	if len(items) == 0 {
+		return "{}"
+	}
+	out := make([]byte, 0, 16)
+	out = append(out, '{')
+	for i, it := range items {
+		if i > 0 {
+			out = append(out, ',')
+		}
+		out = append(out, '"')
+		for _, c := range []byte(it) {
+			if c == '"' || c == '\\' {
+				out = append(out, '\\')
+			}
+			out = append(out, c)
+		}
+		out = append(out, '"')
+	}
+	out = append(out, '}')
+	return string(out)
+}
+
+// compile-time assertion that db.DB exposes the database/sql querier methods.
+var _ interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+} = (*db.DB)(nil)
