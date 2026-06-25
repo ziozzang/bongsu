@@ -89,6 +89,37 @@ func TestRunnerParsesRunResponse(t *testing.T) {
 	}
 }
 
+// Tool calls are reconstructed from the run's events (tool action followed by an
+// observation), so the run can be audited even though jikji uses a fixed MCP.
+func TestRunnerReconstructsToolCalls(t *testing.T) {
+	resp := `{"id":"r","status":"completed","response":"done","events":[
+	  {"action":{"kind":"tool","name":"advisory_for","arguments":{"cve":"CVE-1"}}},
+	  {"observation":{"result":"{\"exploited_kev\":true}"}},
+	  {"action":{"kind":"tool","tool":"dependents_of","input":{"package":"lodash"}}},
+	  {"observation":{"result":"[]"}},
+	  {"action":{"kind":"respond","response":"done"}}
+	]}`
+	srv := fakeJikji(t, resp, nil)
+	defer srv.Close()
+	r := NewRunner(RunnerConfig{BaseURL: srv.URL})
+	res, err := r.Run(context.Background(), "triage")
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.ToolSteps != 2 || len(res.ToolCalls) != 2 {
+		t.Fatalf("want 2 tool calls, got steps=%d calls=%d", res.ToolSteps, len(res.ToolCalls))
+	}
+	if res.ToolCalls[0].Name != "advisory_for" || res.ToolCalls[1].Name != "dependents_of" {
+		t.Fatalf("tool names wrong: %+v", res.ToolCalls)
+	}
+	if !strings.Contains(string(res.ToolCalls[0].Result), "exploited_kev") {
+		t.Fatalf("tool result not captured: %s", res.ToolCalls[0].Result)
+	}
+	if !strings.Contains(string(res.ToolCalls[1].Args), "lodash") {
+		t.Fatalf("tool args (input fallback) not captured: %s", res.ToolCalls[1].Args)
+	}
+}
+
 func TestRunnerHTTPErrorSurfaces(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)

@@ -87,6 +87,16 @@ func TestServiceRunScenarioEndToEnd(t *testing.T) {
 	if !contains(out.Response, "canonical") {
 		t.Fatalf("stored response wrong: %s", out.Response)
 	}
+
+	// The tool action in the run events was reconstructed into an audit row.
+	var auditCount int
+	if err := database.QueryRowContext(ctx,
+		`SELECT count(*) FROM intel_tool_calls WHERE run_id=$1`, outcome.RunID).Scan(&auditCount); err != nil {
+		t.Fatalf("count audit: %v", err)
+	}
+	if auditCount != 1 {
+		t.Fatalf("expected 1 reconstructed tool-call audit row, got %d", auditCount)
+	}
 }
 
 // TestServiceFailedRunPersisted: a backbone error marks the run failed and still

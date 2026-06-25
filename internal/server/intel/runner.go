@@ -118,6 +118,20 @@ type Result struct {
 	CompletionTokens int
 	TotalTokens      int
 	ContextTokens    int
+	// ToolCalls is the per-tool audit reconstructed from the run's events. In the
+	// HTTP /v1/runs model jikji uses a fixed boot-configured MCP, so per-run tool
+	// audit is derived here from the run response rather than from the MCP
+	// connection (see design §11).
+	ToolCalls []ToolCall
+}
+
+// ToolCall is one tool invocation observed in a run's event stream. Fields are
+// best-effort: the agent event schema varies, so the raw action/observation JSON
+// is preserved for audit even when the name can't be extracted.
+type ToolCall struct {
+	Name   string
+	Args   json.RawMessage
+	Result json.RawMessage
 }
 
 // Run executes one agentic backbone run for the given prompt via POST /v1/runs.
@@ -167,10 +181,9 @@ func parseRunResponse(raw []byte) (Result, error) {
 		Response      string `json:"response"`
 		ContextTokens int    `json:"context_tokens"`
 		Events        []struct {
-			Action struct {
-				Kind string `json:"kind"`
-			} `json:"action"`
-			Usage struct {
+			Action      json.RawMessage `json:"action"`
+			Observation json.RawMessage `json:"observation"`
+			Usage       struct {
 				PromptTokens     int `json:"prompt_tokens"`
 				CompletionTokens int `json:"completion_tokens"`
 				TotalTokens      int `json:"total_tokens"`
@@ -181,16 +194,44 @@ func parseRunResponse(raw []byte) (Result, error) {
 		return Result{}, fmt.Errorf("intel: parse run response: %w", err)
 	}
 	res := Result{RunID: resp.ID, Status: resp.Status, Response: resp.Response, ContextTokens: resp.ContextTokens}
+	var pending *ToolCall
 	for i := range resp.Events {
 		e := &resp.Events[i]
-		if e.Action.Kind == "tool" {
-			res.ToolSteps++
-		}
 		if e.Usage.TotalTokens > 0 || e.Usage.PromptTokens > 0 {
 			res.PromptTokens += e.Usage.PromptTokens
 			res.CompletionTokens += e.Usage.CompletionTokens
 			res.TotalTokens += e.Usage.TotalTokens
 		}
+		if len(e.Action) > 0 {
+			var a struct {
+				Kind     string          `json:"kind"`
+				Name     string          `json:"name"`
+				Tool     string          `json:"tool"`
+				ToolName string          `json:"tool_name"`
+				Args     json.RawMessage `json:"arguments"`
+				Input    json.RawMessage `json:"input"`
+			}
+			if json.Unmarshal(e.Action, &a) == nil && a.Kind == "tool" {
+				res.ToolSteps++
+				// flush any prior tool call missing its observation
+				if pending != nil {
+					res.ToolCalls = append(res.ToolCalls, *pending)
+				}
+				args := a.Args
+				if len(args) == 0 {
+					args = a.Input
+				}
+				pending = &ToolCall{Name: firstNonEmpty(a.Name, a.Tool, a.ToolName), Args: args}
+			}
+		}
+		if len(e.Observation) > 0 && pending != nil {
+			pending.Result = e.Observation
+			res.ToolCalls = append(res.ToolCalls, *pending)
+			pending = nil
+		}
+	}
+	if pending != nil {
+		res.ToolCalls = append(res.ToolCalls, *pending)
 	}
 	if res.Response == "" && res.Status == "" {
 		return Result{}, errors.New("intel: backbone produced no response")
@@ -227,6 +268,15 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func envInt(key string, def int) int {

@@ -114,6 +114,15 @@ func (s *Service) RunScenario(ctx context.Context, req RunRequest) (RunOutcome, 
 	if status == "" {
 		status = "completed"
 	}
+	// Reconstruct the per-tool audit from the run's events (HTTP model has no
+	// per-run MCP id to correlate; see design §11).
+	for i, tc := range res.ToolCalls {
+		name := tc.Name
+		if name == "" {
+			name = "unknown"
+		}
+		s.store.RecordToolCall(runID, i+1, name, tc.Args, tc.Result, false, 0, "")
+	}
 	output := map[string]any{"response": res.Response}
 	usage := map[string]any{
 		"prompt_tokens": res.PromptTokens, "completion_tokens": res.CompletionTokens,
