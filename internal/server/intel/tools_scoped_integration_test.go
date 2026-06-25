@@ -115,6 +115,14 @@ func TestScopedToolsEnforceRBAC(t *testing.T) {
 		t.Fatalf("alice sbom_at on host B must be forbidden, got err=%v", err)
 	}
 
+	// 5b) asset_graph on host B: denied; on host A: allowed.
+	if _, err := reg.Call(WithScope(ctx, alice), alice, "asset_graph", map[string]any{"host_id": hostB.ID}); err == nil || !strings.Contains(err.Error(), "forbidden") {
+		t.Fatalf("alice asset_graph on host B must be forbidden, got err=%v", err)
+	}
+	if _, err := reg.Call(WithScope(ctx, alice), alice, "asset_graph", map[string]any{"host_id": hostA.ID}); err != nil {
+		t.Fatalf("alice asset_graph on host A must be allowed: %v", err)
+	}
+
 	// 6) admin sees both hosts.
 	ares, err := reg.Call(WithScope(ctx, admin), admin, "query_vulns", map[string]any{})
 	if err != nil {

@@ -20,6 +20,7 @@ func RegisterScopedTools(reg *Registry, database *db.DB) {
 	reg.Register(&queryVulnsTool{db: database})
 	reg.Register(&dependentsOfTool{db: database})
 	reg.Register(&sbomAtTool{db: database})
+	reg.Register(&assetGraphTool{db: database})
 }
 
 // resolveAccessScope maps a caller scope to a db.AccessScope. Admin sees all;
@@ -224,6 +225,62 @@ func (t *sbomAtTool) Call(ctx context.Context, args map[string]any) (string, err
 	return marshalToolResult(map[string]any{
 		"scan_id": scanID, "available": true, "format": sbom.Format, "origin": sbom.Origin,
 		"component_count": sbom.ComponentCount, "spec_version": sbom.SpecVersion, "source_ref": sbom.SourceRef,
+	})
+}
+
+// ── asset_graph(host_id) ────────────────────────────────────────────────────
+
+type assetGraphTool struct{ db *db.DB }
+
+func (assetGraphTool) Name() string { return "asset_graph" }
+func (assetGraphTool) Description() string {
+	return "Return the asset neighborhood graph for a host (its packages, containers, exposed services and CVE nodes) summarized. Scoped to the caller's hosts."
+}
+func (assetGraphTool) InputSchema() json.RawMessage {
+	return json.RawMessage(`{"type":"object","properties":{"host_id":{"type":"string"},"cve_limit":{"type":"integer"}},"required":["host_id"]}`)
+}
+
+func (t *assetGraphTool) Call(ctx context.Context, args map[string]any) (string, error) {
+	as, err := resolveAccessScope(ctx, t.db, ScopeFromContext(ctx))
+	if err != nil {
+		return "", err
+	}
+	hostID := argString(args, "host_id")
+	if hostID == "" {
+		return "", ToolError("asset_graph requires 'host_id'")
+	}
+	if !scopeAllowsHost(as, hostID) {
+		return "", ToolError("forbidden: host %s is outside the caller's scope", hostID)
+	}
+	cveLimit := argInt(args, "cve_limit", 50)
+	if cveLimit <= 0 || cveLimit > 200 {
+		cveLimit = 50
+	}
+	nh, err := t.db.HostNeighborhood(ctx, hostID, as, cveLimit)
+	if err != nil {
+		return "", fmt.Errorf("asset_graph: %w", err)
+	}
+	nodesByType := map[string]int{}
+	type cveNode struct {
+		ID    string         `json:"id"`
+		Label string         `json:"label"`
+		Attrs map[string]any `json:"attrs,omitempty"`
+	}
+	cves := []cveNode{}
+	for i := range nh.Nodes {
+		n := &nh.Nodes[i]
+		nodesByType[string(n.Type)]++
+		if string(n.Type) == "cve" {
+			cves = append(cves, cveNode{ID: n.ID, Label: n.Label, Attrs: n.Attrs})
+		}
+	}
+	return marshalToolResult(map[string]any{
+		"host_id":       hostID,
+		"node_count":    len(nh.Nodes),
+		"edge_count":    len(nh.Edges),
+		"truncated":     nh.Truncated,
+		"nodes_by_type": nodesByType,
+		"cves":          cves,
 	})
 }
 

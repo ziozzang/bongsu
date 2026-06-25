@@ -21,7 +21,7 @@ func TestScenariosRegistered(t *testing.T) {
 func TestScenarioRequiredToolsExist(t *testing.T) {
 	known := map[string]bool{
 		"advisory_for": true, "exposure_lookup": true,
-		"query_vulns": true, "dependents_of": true, "sbom_at": true,
+		"query_vulns": true, "dependents_of": true, "sbom_at": true, "asset_graph": true,
 	}
 	sreg := NewScenarioRegistry()
 	RegisterScenarios(sreg)
