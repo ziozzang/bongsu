@@ -760,6 +760,12 @@ func (db *DB) SyncEPSSPriorityColumnsTx(ctx context.Context, tx *sql.Tx) (int, e
 	}
 	clearN, _ := clearRes.RowsAffected()
 	setN, _ := setRes.RowsAffected()
+	// Keep the signal-plane tables (cve_kev, cve_epss) in lockstep with each EPSS
+	// sync: the same secdb refresh that updates EPSS columns rebuilds the
+	// dedicated signal tables the read path now consumes.
+	if err := db.RefreshSignalTablesTx(ctx, tx); err != nil {
+		return 0, err
+	}
 	return int(clearN + setN), nil
 }
 
@@ -2717,9 +2723,9 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		pkgID, pkgName, srcName, version, hostID, scanID, container, filePath string
 		pkgType, pkgEco                                                       string
 		vulnID, severity, title, description, refs                            string
-		category, cveEco, affectedProducts                                   string
-		cvssScore                                                            float64
-		cvssVector                                                           string
+		category, cveEco, affectedProducts                                    string
+		cvssScore                                                             float64
+		cvssVector                                                            string
 	}
 	var matches []match
 
