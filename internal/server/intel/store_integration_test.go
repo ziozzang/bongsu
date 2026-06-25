@@ -33,6 +33,14 @@ func openIntelDB(t *testing.T) *db.DB {
 	t.Cleanup(func() { database.Close() })
 	// RunMigrations reads the relative migrations/ dir, so run it from repo root.
 	runMigrationsFromRoot(t, ctx, database)
+	// Start each intel integration test from a clean slate (these tests use fixed
+	// ids, so leftover rows from a prior run would collide).
+	if _, err := database.ExecContext(ctx, `TRUNCATE intel_tool_calls, intel_runs, vulnerabilities,
+		package_dependencies, packages, scans, hosts, access_policies, access_subjects,
+		cve_kev, cve_epss, cve_affected_packages, cve_database,
+		exposure_catalog_entries, exposure_catalog_sources, scan_sboms RESTART IDENTITY CASCADE`); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
 	return database
 }
 
