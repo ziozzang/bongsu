@@ -29,6 +29,7 @@ import { ContainersView } from './views/ContainersView';
 import { TrendsView } from './views/TrendsView';
 import { ScansView } from './views/ScansView';
 import { AiTriageView } from './views/AiTriageView';
+import { IntelView } from './views/IntelView';
 import { PackagesView } from './views/PackagesView';
 import { AssetGroupsView } from './views/AssetGroupsView';
 import { CveSearchView } from './views/CveSearchView';
@@ -54,7 +55,7 @@ import { api, setApiKey, getApiKey, clearApiKey, setSession, getSession, clearSe
 // One date/time format used across every view: local "YYYY-MM-DD HH:mm".
 
 
-type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology' | 'users' | 'tokens' | 'ai-triage' | 'ai-approvals';
+type View = 'dashboard' | 'hosts' | 'packages' | 'containers' | 'vulns' | 'vuln-detail' | 'scans' | 'audit' | 'rbac' | 'host-detail' | 'cve-search' | 'schedules' | 'asset-groups' | 'trends' | 'reports' | 'notifications' | 'topology' | 'users' | 'tokens' | 'ai-triage' | 'ai-approvals' | 'intel';
 
 
 export default function App() {
@@ -159,6 +160,7 @@ export default function App() {
         {view === 'topology' && <TopologyView onSelectHost={(id) => { setSelectedHostId(id); setView('host-detail'); }} />}
         {view === 'ai-triage' && <AiTriageView onSelectVuln={(v) => { setSelectedVuln(v); setView('vuln-detail'); }} />}
         {view === 'ai-approvals' && <AiApprovalsView />}
+        {view === 'intel' && <IntelView />}
       </div>
     </div>
   );
@@ -307,6 +309,7 @@ const NAV_GROUPS: { label: string; items: [View, string, string][] }[] = [
     ['vulns', 'Vulnerabilities', 'vulnerabilities'],
     ['cve-search', 'CVE Search', 'cve-search'],
     ['ai-triage', 'AI Triage', 'ai-triage'],
+    ['intel', 'Intelligence', 'ai-triage'],
     ['scans', 'Scan History', 'scans'],
   ] },
   { label: 'Inventory', items: [

@@ -1242,6 +1242,24 @@ export interface CveGraphInfo {
   aliases: string[];
 }
 
+export interface IntelRunOutcome {
+  run_id: string;
+  scenario: string;
+  status: string;
+  response: string;
+  tool_steps: number;
+  total_tokens: number;
+}
+
+export interface IntelRunView {
+  id: string;
+  scenario: string;
+  status: string;
+  output?: { response?: string } | null;
+  token_usage?: Record<string, number>;
+  error?: string;
+}
+
 export const api = {
   login: (username: string, password: string) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -1458,6 +1476,12 @@ export const api = {
   createApiToken: (body: { name: string; role: string; subject?: string; expires_in_days?: number }) =>
     requestJSON<{ token: ApiToken; secret: string }>('/admin/api-tokens', body),
   revokeApiToken: (id: string) => requestEmpty<{ status: string }>(`/admin/api-tokens/${encodeURIComponent(id)}`, 'DELETE'),
+
+  // Security intelligence (jikji backbone)
+  intelScenarios: () => request<{ enabled: boolean; scenarios: string[] }>('/intel/scenarios'),
+  runIntel: (scenario: string, params: Record<string, unknown>) =>
+    requestJSON<IntelRunOutcome>('/intel/runs', { scenario, params }),
+  getIntelRun: (id: string) => request<IntelRunView>(`/intel/runs/${encodeURIComponent(id)}`),
 
   // AI vulnerability analysis
   llmStatus: () => request<LLMStatus>('/admin/llm/status'),
