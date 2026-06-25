@@ -1,69 +1,66 @@
 // Package intel is Bongsu's security-intelligence layer: it drives an external
-// intelligence backbone (the jikji binary/server — used as a compiled binary,
-// never imported as source) to run agentic reasoning over Bongsu's own security
-// data. This file is the backbone adapter — a bounded, timeout-guarded runner
-// that execs the jikji agent CLI and parses its JSONL stream. Scenarios (triage,
-// correlation, remediation, NL query) compose on top of this runner; tools are
-// injected into runs over MCP (see the tool registry / MCP server).
+// intelligence backbone (the jikji server — used over its HTTP API, never
+// imported as source, never shelled out to) to run agentic reasoning over
+// Bongsu's own security data. This file is the backbone adapter — a bounded,
+// timeout-guarded client of jikji's POST /v1/runs agent endpoint.
+//
+// The backbone is configured ONCE at Bongsu boot (BONGSU_INTEL_JIKJI_URL points
+// at a jikji server that has been configured — at ITS boot — with the tools it
+// may use, e.g. Bongsu's MCP tool server). At runtime Bongsu only makes HTTP
+// calls; it does not spawn jikjictl or reconfigure jikji.
 //
 // Design invariants:
-//   - The backbone is OPTIONAL: when unconfigured or unreachable, Run returns
-//     ErrBackboneDisabled / an error and callers degrade gracefully — core
-//     scanning/matching never depends on it.
-//   - Bounded concurrency + per-run timeout: a backbone call carries a large
-//     fixed context overhead, so concurrent runs are capped and each is
-//     deadline-guarded to protect the process under load.
-//   - Secret safety: only the caller-supplied prompt and explicit flags reach the
-//     subprocess; the runner adds no credentials to argv and does not log prompts.
+//   - OPTIONAL: no BONGSU_INTEL_JIKJI_URL -> ErrBackboneDisabled; callers degrade
+//     gracefully. Core scanning/matching never depends on the backbone.
+//   - Bounded concurrency + per-run timeout: a run carries large fixed context
+//     overhead, so concurrent runs are capped and each is deadline-guarded.
+//   - Secret safety: only the caller-supplied prompt/goal is sent; the adapter
+//     adds no credentials and does not log prompts.
 package intel
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// ErrBackboneDisabled is returned when no backbone binary is configured.
-var ErrBackboneDisabled = errors.New("intel: backbone disabled (set BONGSU_INTEL_JIKJICTL)")
+// ErrBackboneDisabled is returned when no backbone URL is configured.
+var ErrBackboneDisabled = errors.New("intel: backbone disabled (set BONGSU_INTEL_JIKJI_URL)")
 
-// RunnerConfig configures the backbone adapter. All fields come from
-// BONGSU_INTEL_* env vars, resolved by RunnerConfigFromEnv.
+// RunnerConfig configures the backbone adapter from BONGSU_INTEL_* env (resolved
+// at Bongsu boot).
 type RunnerConfig struct {
-	BinPath        string        // path to the jikjictl binary; empty disables the runner
-	Model          string        // backbone model id (e.g. deepseek-v4-flash:cloud)
-	APIURL         string        // jikji server URL (optional; jikjictl default used if empty)
+	BaseURL        string        // jikji server base URL (e.g. http://127.0.0.1:1385); empty disables
 	MaxConcurrency int           // concurrent runs cap
 	Timeout        time.Duration // per-run wall-clock deadline
-	MaxSteps       int           // agent step budget
+	MaxSteps       int           // agent step budget (jikji caps at 64)
 }
 
-// RunnerConfigFromEnv reads the backbone configuration from the environment.
+// RunnerConfigFromEnv reads the backbone configuration.
 func RunnerConfigFromEnv() RunnerConfig {
 	return RunnerConfig{
-		BinPath:        strings.TrimSpace(os.Getenv("BONGSU_INTEL_JIKJICTL")),
-		Model:          strings.TrimSpace(envOr("BONGSU_INTEL_MODEL", "deepseek-v4-flash:cloud")),
-		APIURL:         strings.TrimSpace(os.Getenv("BONGSU_INTEL_API_URL")),
+		BaseURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("BONGSU_INTEL_JIKJI_URL")), "/"),
 		MaxConcurrency: envInt("BONGSU_INTEL_MAX_CONCURRENCY", 4),
 		Timeout:        time.Duration(envInt("BONGSU_INTEL_TIMEOUT_SECONDS", 120)) * time.Second,
 		MaxSteps:       envInt("BONGSU_INTEL_MAX_STEPS", 8),
 	}
 }
 
-// Runner execs the jikji agent CLI under a concurrency bound.
+// Runner is an HTTP client of jikji's agent-run endpoint, under a concurrency bound.
 type Runner struct {
-	cfg RunnerConfig
-	sem chan struct{}
+	cfg  RunnerConfig
+	sem  chan struct{}
+	http *http.Client
 }
 
-// NewRunner builds a bounded runner. A non-positive MaxConcurrency defaults to 4.
+// NewRunner builds a bounded runner.
 func NewRunner(cfg RunnerConfig) *Runner {
 	if cfg.MaxConcurrency <= 0 {
 		cfg.MaxConcurrency = 4
@@ -74,29 +71,59 @@ func NewRunner(cfg RunnerConfig) *Runner {
 	if cfg.MaxSteps <= 0 {
 		cfg.MaxSteps = 8
 	}
-	return &Runner{cfg: cfg, sem: make(chan struct{}, cfg.MaxConcurrency)}
+	if cfg.MaxSteps > 64 {
+		cfg.MaxSteps = 64
+	}
+	return &Runner{
+		cfg:  cfg,
+		sem:  make(chan struct{}, cfg.MaxConcurrency),
+		http: &http.Client{Timeout: cfg.Timeout + 10*time.Second},
+	}
 }
 
 // NewRunnerFromEnv is the env-configured constructor.
 func NewRunnerFromEnv() *Runner { return NewRunner(RunnerConfigFromEnv()) }
 
-// Enabled reports whether a backbone binary is configured.
-func (r *Runner) Enabled() bool { return r != nil && r.cfg.BinPath != "" }
+// Enabled reports whether a backbone URL is configured.
+func (r *Runner) Enabled() bool { return r != nil && r.cfg.BaseURL != "" }
+
+// Health reports whether the backbone is reachable (GET /health). Used for
+// graceful degrade — the intelligence API returns 503 when this fails while the
+// scan/match pipeline keeps working.
+func (r *Runner) Health(ctx context.Context) error {
+	if !r.Enabled() {
+		return ErrBackboneDisabled
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, r.cfg.BaseURL+"/health", nil)
+	resp, err := r.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("intel: backbone unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("intel: backbone health %d", resp.StatusCode)
+	}
+	return nil
+}
 
 // Result is the parsed outcome of an agent run.
 type Result struct {
 	RunID            string
+	Status           string // jikji run status (e.g. "completed")
 	Response         string
+	ToolSteps        int
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
-	Steps            int
+	ContextTokens    int
 }
 
-// Run executes one agentic backbone run for the given prompt and returns the
-// final response. It blocks on the concurrency semaphore (honoring ctx) and
-// enforces the configured per-run timeout. The prompt is the only caller data
-// placed on the command line; callers must not embed secrets in it.
+// Run executes one agentic backbone run for the given prompt via POST /v1/runs.
+// It blocks on the concurrency semaphore (honoring ctx) and enforces the
+// per-run timeout. The prompt is the only caller data sent; callers must not
+// embed secrets in it.
 func (r *Runner) Run(ctx context.Context, prompt string) (Result, error) {
 	if !r.Enabled() {
 		return Result{}, ErrBackboneDisabled
@@ -107,95 +134,91 @@ func (r *Runner) Run(ctx context.Context, prompt string) (Result, error) {
 	case <-ctx.Done():
 		return Result{}, ctx.Err()
 	}
-
 	runCtx, cancel := context.WithTimeout(ctx, r.cfg.Timeout)
 	defer cancel()
 
-	args := []string{"chat", "--mode", "jsonl", "--prompt", prompt,
-		"--timeout", r.cfg.Timeout.String()}
-	if r.cfg.Model != "" {
-		args = append(args, "--model", r.cfg.Model)
+	body, _ := json.Marshal(map[string]any{"prompt": prompt, "max_steps": r.cfg.MaxSteps})
+	req, err := http.NewRequestWithContext(runCtx, http.MethodPost, r.cfg.BaseURL+"/v1/runs", bytes.NewReader(body))
+	if err != nil {
+		return Result{}, err
 	}
-	if r.cfg.APIURL != "" {
-		args = append(args, "--api-url", r.cfg.APIURL)
-	}
-
-	cmd := exec.CommandContext(runCtx, r.cfg.BinPath, args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := r.http.Do(req)
+	if err != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
 			return Result{}, fmt.Errorf("intel: backbone run timed out after %s", r.cfg.Timeout)
 		}
-		return Result{}, fmt.Errorf("intel: backbone run failed: %w (%s)", err, truncate(stderr.String(), 200))
+		return Result{}, fmt.Errorf("intel: backbone run failed: %w", err)
 	}
-	return parseJSONLStream(stdout.Bytes())
+	defer resp.Body.Close()
+	raw, _ := readLimited(resp.Body, 16*1024*1024)
+	if resp.StatusCode/100 != 2 {
+		return Result{}, fmt.Errorf("intel: backbone run HTTP %d: %s", resp.StatusCode, truncate(string(raw), 200))
+	}
+	return parseRunResponse(raw)
 }
 
-// parseJSONLStream extracts the final response and token usage from the jikji
-// agent JSONL stream (run.started / run.step / run.completed events).
-func parseJSONLStream(out []byte) (Result, error) {
-	var res Result
-	sc := bufio.NewScanner(bytes.NewReader(out))
-	sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	var lastContent string
-	sawCompleted := false
-	for sc.Scan() {
-		line := bytes.TrimSpace(sc.Bytes())
-		if len(line) == 0 || line[0] != '{' {
-			continue
-		}
-		var ev struct {
-			Type   string `json:"type"`
-			RunID  string `json:"run_id"`
+// parseRunResponse extracts the final response, status and token usage from the
+// jikji /v1/runs JSON ({id, status, response, context_tokens, events:[...]}).
+func parseRunResponse(raw []byte) (Result, error) {
+	var resp struct {
+		ID            string `json:"id"`
+		Status        string `json:"status"`
+		Response      string `json:"response"`
+		ContextTokens int    `json:"context_tokens"`
+		Events        []struct {
 			Action struct {
-				Kind     string `json:"kind"`
-				Response string `json:"response"`
+				Kind string `json:"kind"`
 			} `json:"action"`
-			Metadata struct {
-				Response string `json:"response"`
-			} `json:"metadata"`
 			Usage struct {
 				PromptTokens     int `json:"prompt_tokens"`
 				CompletionTokens int `json:"completion_tokens"`
 				TotalTokens      int `json:"total_tokens"`
 			} `json:"usage"`
+		} `json:"events"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		return Result{}, fmt.Errorf("intel: parse run response: %w", err)
+	}
+	res := Result{RunID: resp.ID, Status: resp.Status, Response: resp.Response, ContextTokens: resp.ContextTokens}
+	for i := range resp.Events {
+		e := &resp.Events[i]
+		if e.Action.Kind == "tool" {
+			res.ToolSteps++
 		}
-		if json.Unmarshal(line, &ev) != nil {
-			continue
-		}
-		if ev.RunID != "" {
-			res.RunID = ev.RunID
-		}
-		switch ev.Type {
-		case "run.step":
-			if ev.Action.Kind == "content" && ev.Action.Response != "" {
-				lastContent = ev.Action.Response
-				res.Steps++
-			} else {
-				res.Steps++
-			}
-		case "run.completed":
-			sawCompleted = true
-			if ev.Metadata.Response != "" {
-				res.Response = ev.Metadata.Response
-			}
-			res.PromptTokens = ev.Usage.PromptTokens
-			res.CompletionTokens = ev.Usage.CompletionTokens
-			res.TotalTokens = ev.Usage.TotalTokens
+		if e.Usage.TotalTokens > 0 || e.Usage.PromptTokens > 0 {
+			res.PromptTokens += e.Usage.PromptTokens
+			res.CompletionTokens += e.Usage.CompletionTokens
+			res.TotalTokens += e.Usage.TotalTokens
 		}
 	}
-	if err := sc.Err(); err != nil {
-		return Result{}, fmt.Errorf("intel: read backbone stream: %w", err)
-	}
-	if res.Response == "" {
-		res.Response = lastContent
-	}
-	if !sawCompleted && res.Response == "" {
-		return Result{}, errors.New("intel: backbone produced no completion")
+	if res.Response == "" && res.Status == "" {
+		return Result{}, errors.New("intel: backbone produced no response")
 	}
 	return res, nil
+}
+
+func readLimited(r interface{ Read([]byte) (int, error) }, max int64) ([]byte, error) {
+	buf := bytes.Buffer{}
+	_, err := buf.ReadFrom(&limitedReader{r: r, n: max})
+	return buf.Bytes(), err
+}
+
+type limitedReader struct {
+	r interface{ Read([]byte) (int, error) }
+	n int64
+}
+
+func (l *limitedReader) Read(p []byte) (int, error) {
+	if l.n <= 0 {
+		return 0, nil
+	}
+	if int64(len(p)) > l.n {
+		p = p[:l.n]
+	}
+	n, err := l.r.Read(p)
+	l.n -= int64(n)
+	return n, err
 }
 
 func truncate(s string, n int) string {
@@ -204,13 +227,6 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
-}
-
-func envOr(key, def string) string {
-	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
-		return v
-	}
-	return def
 }
 
 func envInt(key string, def int) int {
