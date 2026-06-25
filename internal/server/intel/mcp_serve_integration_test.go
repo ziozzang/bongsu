@@ -52,8 +52,8 @@ func TestMCPServeEndToEnd(t *testing.T) {
 	}
 
 	reg := DefaultRegistry(database)
-	if names := reg.Names(); len(names) != 5 {
-		t.Fatalf("default registry should have 5 tools, got %v", names)
+	if names := reg.Names(); len(names) != 6 {
+		t.Fatalf("default registry should have 6 tools, got %v", names)
 	}
 
 	srv := NewMCPServer(reg, scope).WithAudit(func(seq int, tool string, args, result []byte, isErr bool, dur time.Duration) {

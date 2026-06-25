@@ -1555,8 +1555,8 @@ func TestCveDatabaseSearchSupportsAffectedPackageAndMatchableFilters(t *testing.
 		"cap.package_name ILIKE",
 		"cap.ecosystem ILIKE",
 		"cap.fixed_version ILIKE",
-		"epss_score>=$",
-		"epss_percentile>=$",
+		"SELECT score FROM cve_epss ce_f WHERE",
+		"SELECT percentile FROM cve_epss ce_fp WHERE",
 		"source NOT IN ('cisa-kev', 'epss')",
 		"if matchableOnly",
 		"EXISTS (SELECT 1 FROM cve_affected_packages cap_matchable WHERE cap_matchable.cve_id = cve_database.id)",
@@ -3939,46 +3939,41 @@ func TestCveDatabaseStoresEPSSPriorityColumns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	migration, err := os.ReadFile("../../../migrations/020_cve_epss.sql")
+	migration, err := os.ReadFile("../../../migrations/072_signal_plane.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := string(bodyBytes)
-	migrationBody := string(migration)
+	signalMigrationBody := string(migration)
 	for _, want := range []string{
 		"epss_score",
-		"epss_percentile",
+		// Signal plane (Phase 2b): EPSS is read back from cve_epss (the SSoT) as a
+		// subquery alias; KEV/EPSS ingest is routed to the dedicated tables, never
+		// into cve_database.
 		"&e.EPSSScore",
 		"&e.EPSSPercentile",
-		"epss_score=EXCLUDED.epss_score",
-		"epss_percentile=EXCLUDED.epss_percentile",
-		"func (db *DB) SyncEPSSPriorityColumns(ctx context.Context)",
-		"func (db *DB) SyncEPSSPriorityColumnsTx",
+		"SELECT score FROM cve_epss",
+		"SELECT percentile FROM cve_epss",
+		"INSERT INTO cve_kev",
+		"INSERT INTO cve_epss",
+		`case "cisa-kev":`,
+		`case "epss":`,
 		"func (db *DB) GetCveEPSSMergeStats",
 		"type CveEPSSMergeStats struct",
-		"MergeCoveragePercent",
-		"NonEPSSCoveragePercent",
-		"EPSSUniverseMatchPercent",
-		"NonEPSSCVEsWithEPSS",
-		"source = 'epss'",
-		"c.source != 'epss'",
+		"FROM cve_epss WHERE score > 0 OR percentile > 0",
 		"vulnerability_id ~ '^CVE-[0-9]{4}-[0-9]{4,}$'",
-		"GROUP BY vulnerability_id",
-		"LEFT JOIN non_epss",
-		"latest_epss",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("CVE DB EPSS support missing %q", want)
 		}
 	}
+	// The EPSS signal table is created by migration 072.
 	for _, want := range []string{
-		"ADD COLUMN IF NOT EXISTS epss_score",
-		"ADD COLUMN IF NOT EXISTS epss_percentile",
-		"idx_cve_db_epss_score",
-		"idx_cve_db_epss_percentile",
+		"CREATE TABLE IF NOT EXISTS cve_epss",
+		"idx_cve_epss_score",
 	} {
-		if !strings.Contains(migrationBody, want) {
-			t.Fatalf("EPSS migration missing %q: %s", want, migrationBody)
+		if !strings.Contains(signalMigrationBody, want) {
+			t.Fatalf("signal-plane migration missing %q: %s", want, signalMigrationBody)
 		}
 	}
 }

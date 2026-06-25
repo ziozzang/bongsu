@@ -88,7 +88,9 @@ func TestServiceRunScenarioEndToEnd(t *testing.T) {
 		t.Fatalf("stored response wrong: %s", out.Response)
 	}
 
-	// The tool action in the run events was reconstructed into an audit row.
+	// The tool-call audit is written asynchronously; drain the writer before
+	// asserting it landed.
+	svc.Close()
 	var auditCount int
 	if err := database.QueryRowContext(ctx,
 		`SELECT count(*) FROM intel_tool_calls WHERE run_id=$1`, outcome.RunID).Scan(&auditCount); err != nil {

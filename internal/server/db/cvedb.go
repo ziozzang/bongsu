@@ -21,7 +21,15 @@ import (
 	"github.com/ziozzang/bongsu/internal/shared/models"
 )
 
-const CveCols = `id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, epss_score, epss_percentile, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at`
+// CveCols is the SELECT column list for reading cve_database into a CveEntry.
+// EPSS now lives in the signal-plane table cve_epss (not in cve_database), so it
+// is read back as a correlated subquery aliased to the same column names —
+// ScanCveEntry's scan order is unchanged. COALESCE(...,0) reproduces the old
+// epss_score/epss_percentile NOT NULL DEFAULT 0 semantics (EPSS-less CVEs read 0
+// and sort last under DESC, exactly as before).
+const cveEPSSScoreSelect = `COALESCE((SELECT score FROM cve_epss ce_s WHERE ce_s.vulnerability_id = cve_database.vulnerability_id), 0) AS epss_score`
+const cveEPSSPercentileSelect = `COALESCE((SELECT percentile FROM cve_epss ce_p WHERE ce_p.vulnerability_id = cve_database.vulnerability_id), 0) AS epss_percentile`
+const CveCols = `id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, ` + cveEPSSScoreSelect + `, ` + cveEPSSPercentileSelect + `, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at`
 
 func ScanCveEntry(scanner interface{ Scan(...interface{}) error }, e *models.CveEntry) error {
 	return scanner.Scan(&e.ID, &e.VulnerabilityID, &e.Source, &e.Category, &e.Ecosystem, &e.Severity, &e.CVSSScore, &e.CVSSVector,
@@ -51,13 +59,17 @@ func (db *DB) UpsertCveEntriesWithoutAffectedIndexTx(ctx context.Context, tx *sq
 }
 
 func (db *DB) upsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []models.CveEntry, refreshAffectedIndex, refreshReferenceIndex bool) (int, error) {
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, epss_score, epss_percentile, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
+	// secdb plane separation (Phase 2b): KEV and EPSS are routed to their
+	// dedicated signal tables (cve_kev / cve_epss), NOT into cve_database. The
+	// advisory insert below carries no EPSS columns. Routing is the only ingest
+	// path now — RefreshSignalTables (derive-from-cve_database) is gone, so a
+	// stale prune can't delete these directly-written rows.
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
 ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 	category=CASE WHEN EXCLUDED.category <> '' THEN EXCLUDED.category ELSE cve_database.category END,
 	ecosystem=CASE WHEN EXCLUDED.ecosystem <> '' THEN EXCLUDED.ecosystem ELSE cve_database.ecosystem END,
 	severity=EXCLUDED.severity, cvss_score=EXCLUDED.cvss_score, cvss_vector=EXCLUDED.cvss_vector,
-	epss_score=EXCLUDED.epss_score, epss_percentile=EXCLUDED.epss_percentile,
 	title=EXCLUDED.title, description=EXCLUDED.description,
 	published_date=EXCLUDED.published_date, modified_date=EXCLUDED.modified_date,
 	affected_products=(
@@ -81,12 +93,51 @@ RETURNING id`)
 	}
 	defer stmt.Close()
 
+	kevStmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_kev (vulnerability_id, source, raw_data, updated_at)
+VALUES ($1, $2, COALESCE(NULLIF($3,'')::jsonb, '{}'::jsonb), now())
+ON CONFLICT (vulnerability_id) DO UPDATE SET source=EXCLUDED.source, raw_data=EXCLUDED.raw_data, updated_at=now()`)
+	if err != nil {
+		return 0, fmt.Errorf("prepare kev insert: %w", err)
+	}
+	defer kevStmt.Close()
+
+	epssStmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_epss (vulnerability_id, score, percentile, updated_at)
+VALUES ($1, $2, $3, now())
+ON CONFLICT (vulnerability_id) DO UPDATE SET score=EXCLUDED.score, percentile=EXCLUDED.percentile, updated_at=now()`)
+	if err != nil {
+		return 0, fmt.Errorf("prepare epss insert: %w", err)
+	}
+	defer epssStmt.Close()
+
 	count := 0
 	var firstErr error
 	for i := range entries {
 		e := &entries[i]
 		if e.ID == "" {
 			e.ID = uuid.New().String()
+		}
+		// Signal-plane routing: KEV/EPSS go to their own tables, never cve_database.
+		switch e.Source {
+		case "cisa-kev":
+			if _, err := kevStmt.ExecContext(ctx, e.VulnerabilityID, e.Source, e.RawData); err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("insert kev %s: %w", e.VulnerabilityID, err)
+				}
+				log.Printf("kev signal row: %v", err)
+				continue
+			}
+			count++
+			continue
+		case "epss":
+			if _, err := epssStmt.ExecContext(ctx, e.VulnerabilityID, e.EPSSScore, e.EPSSPercentile); err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("insert epss %s: %w", e.VulnerabilityID, err)
+				}
+				log.Printf("epss signal row: %v", err)
+				continue
+			}
+			count++
+			continue
 		}
 		// Auto-calculate CVSS score from vector if missing
 		if e.CVSSScore == 0 && e.CVSSVector != "" {
@@ -109,7 +160,7 @@ RETURNING id`)
 		}
 		var cveID string
 		if err := stmt.QueryRowContext(ctx, e.ID, e.VulnerabilityID, e.Source, e.Category, e.Ecosystem, e.Severity,
-			e.CVSSScore, e.CVSSVector, e.EPSSScore, e.EPSSPercentile, e.Title, e.Description,
+			e.CVSSScore, e.CVSSVector, e.Title, e.Description,
 			e.PublishedDate, e.ModifiedDate, e.AffectedProducts, e.References, e.RawData).Scan(&cveID); err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("insert %s: %w", e.VulnerabilityID, err)
@@ -721,52 +772,13 @@ func (db *DB) SyncEPSSPriorityColumns(ctx context.Context) (int, error) {
 	return count, tx.Commit()
 }
 
+// SyncEPSSPriorityColumnsTx is a no-op since the secdb signal-plane separation
+// (Phase 2b): EPSS no longer lives in cve_database columns — it is routed
+// directly to cve_epss at ingest, and the read path reads cve_epss. The function
+// (and its callers) are retained as no-ops for one release to avoid churn; the
+// old body propagated epss_score/epss_percentile columns that no longer exist.
 func (db *DB) SyncEPSSPriorityColumnsTx(ctx context.Context, tx *sql.Tx) (int, error) {
-	clearRes, err := tx.ExecContext(ctx, `
-		UPDATE cve_database c
-		SET epss_score = 0,
-		    epss_percentile = 0
-		WHERE c.source != 'epss'
-		  AND (c.epss_score != 0 OR c.epss_percentile != 0)
-		  AND NOT EXISTS (
-			SELECT 1
-			FROM cve_database epss
-			WHERE epss.source = 'epss'
-			  AND epss.vulnerability_id = c.vulnerability_id
-			  AND (epss.epss_score > 0 OR epss.epss_percentile > 0)
-		  )`)
-	if err != nil {
-		return 0, err
-	}
-	setRes, err := tx.ExecContext(ctx, `
-		WITH latest_epss AS (
-			SELECT DISTINCT ON (vulnerability_id)
-			       vulnerability_id, epss_score, epss_percentile
-			FROM cve_database
-			WHERE source = 'epss'
-			  AND (epss_score > 0 OR epss_percentile > 0)
-			ORDER BY vulnerability_id, updated_at DESC, epss_score DESC, epss_percentile DESC
-		)
-		UPDATE cve_database c
-		SET epss_score = latest_epss.epss_score,
-		    epss_percentile = latest_epss.epss_percentile
-		FROM latest_epss
-		WHERE c.source != 'epss'
-		  AND c.vulnerability_id = latest_epss.vulnerability_id
-		  AND (c.epss_score IS DISTINCT FROM latest_epss.epss_score
-		       OR c.epss_percentile IS DISTINCT FROM latest_epss.epss_percentile)`)
-	if err != nil {
-		return 0, err
-	}
-	clearN, _ := clearRes.RowsAffected()
-	setN, _ := setRes.RowsAffected()
-	// Keep the signal-plane tables (cve_kev, cve_epss) in lockstep with each EPSS
-	// sync: the same secdb refresh that updates EPSS columns rebuilds the
-	// dedicated signal tables the read path now consumes.
-	if err := db.RefreshSignalTablesTx(ctx, tx); err != nil {
-		return 0, err
-	}
-	return int(clearN + setN), nil
+	return 0, nil
 }
 
 func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severity, source string, minCVSS, minEPSS, minEPSSPercentile float64, matchableOnly, includePrioritySources bool, sortBy, sortOrder string, limit, offset int) ([]models.CveEntry, int, error) {
@@ -837,12 +849,14 @@ func (db *DB) SearchCveDatabase(ctx context.Context, query, referenceKey, severi
 		argN++
 	}
 	if minEPSS > 0 {
-		baseQ += fmt.Sprintf(" AND epss_score>=$%d", argN)
+		// EPSS lives in cve_epss now; filter via a correlated subquery (the count
+		// query has no SELECT alias to reference).
+		baseQ += fmt.Sprintf(" AND COALESCE((SELECT score FROM cve_epss ce_f WHERE ce_f.vulnerability_id = cve_database.vulnerability_id), 0)>=$%d", argN)
 		args = append(args, minEPSS)
 		argN++
 	}
 	if minEPSSPercentile > 0 {
-		baseQ += fmt.Sprintf(" AND epss_percentile>=$%d", argN)
+		baseQ += fmt.Sprintf(" AND COALESCE((SELECT percentile FROM cve_epss ce_fp WHERE ce_fp.vulnerability_id = cve_database.vulnerability_id), 0)>=$%d", argN)
 		args = append(args, minEPSSPercentile)
 		argN++
 	}
@@ -2234,37 +2248,30 @@ LIMIT $2 OFFSET $3`, cveID, limit, offset)
 }
 
 func (db *DB) GetCveEPSSMergeStats(ctx context.Context) (*CveEPSSMergeStats, error) {
+	// Post signal-plane separation (Phase 2b) EPSS is the SSoT table cve_epss
+	// (one row per CVE), not merged columns on cve_database. The "merge" stats
+	// now measure how much of the EPSS universe matches an advisory CVE and vice
+	// versa, derived from cve_epss + the advisory rows in cve_database.
 	var stats CveEPSSMergeStats
 	err := db.QueryRowContext(ctx, `
 WITH epss AS (
-	SELECT vulnerability_id, count(*) AS records
-	FROM cve_database
-	WHERE source = 'epss'
-	  AND vulnerability_id != ''
-	  AND (epss_score > 0 OR epss_percentile > 0)
-	GROUP BY vulnerability_id
+	SELECT vulnerability_id FROM cve_epss WHERE score > 0 OR percentile > 0
 ),
-non_epss AS (
-	SELECT
-		vulnerability_id,
-		count(*) FILTER (WHERE epss_score > 0 OR epss_percentile > 0) AS enriched_records
-	FROM cve_database
-	WHERE source != 'epss'
-	  AND vulnerability_id ~ '^CVE-[0-9]{4}-[0-9]{4,}$'
-	GROUP BY vulnerability_id
-)
+adv AS (
+	SELECT DISTINCT vulnerability_id, source FROM cve_database
+	WHERE vulnerability_id ~ '^CVE-[0-9]{4}-[0-9]{4,}$'
+),
+adv_cves AS (SELECT DISTINCT vulnerability_id FROM adv)
 SELECT
-	COALESCE((SELECT sum(records) FROM epss), 0),
 	(SELECT count(*) FROM epss),
-	count(n.vulnerability_id),
-	count(*) - count(n.vulnerability_id),
-	(SELECT count(*) FROM non_epss),
-	count(n.vulnerability_id),
-	COALESCE(sum(n.enriched_records), 0),
-	count(n.vulnerability_id) FILTER (WHERE n.enriched_records > 0),
-	COALESCE((SELECT count(DISTINCT source) FROM cve_database WHERE source != 'epss' AND vulnerability_id != '' AND (epss_score > 0 OR epss_percentile > 0)), 0)
-FROM epss e
-LEFT JOIN non_epss n ON n.vulnerability_id = e.vulnerability_id`).Scan(
+	(SELECT count(*) FROM epss),
+	(SELECT count(*) FROM epss e WHERE EXISTS (SELECT 1 FROM adv_cves a WHERE a.vulnerability_id = e.vulnerability_id)),
+	(SELECT count(*) FROM epss e WHERE NOT EXISTS (SELECT 1 FROM adv_cves a WHERE a.vulnerability_id = e.vulnerability_id)),
+	(SELECT count(*) FROM adv_cves),
+	(SELECT count(*) FROM adv_cves a WHERE EXISTS (SELECT 1 FROM epss e WHERE e.vulnerability_id = a.vulnerability_id)),
+	(SELECT count(*) FROM adv_cves a WHERE EXISTS (SELECT 1 FROM epss e WHERE e.vulnerability_id = a.vulnerability_id)),
+	(SELECT count(*) FROM adv_cves a WHERE EXISTS (SELECT 1 FROM epss e WHERE e.vulnerability_id = a.vulnerability_id)),
+	(SELECT count(DISTINCT source) FROM adv a WHERE EXISTS (SELECT 1 FROM epss e WHERE e.vulnerability_id = a.vulnerability_id))`).Scan(
 		&stats.EPSSRecords, &stats.EPSSCVEs, &stats.MatchedCVEs, &stats.UnmatchedCVEs,
 		&stats.NonEPSSCVEs, &stats.NonEPSSCVEsWithEPSS, &stats.EnrichedRecords, &stats.EnrichedCVEs, &stats.EnrichedSourceCount)
 	if err != nil {
