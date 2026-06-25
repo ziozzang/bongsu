@@ -88,6 +88,21 @@ func (s *Store) FinishRun(ctx context.Context, runID, status string, output any,
 	return err
 }
 
+// LoadRunScope reads the RBAC scope snapshot a run was created with. The
+// intel-mcp subprocess uses it to serve tools under exactly the scope the API
+// caller had, so the agent can never exceed it.
+func (s *Store) LoadRunScope(ctx context.Context, runID string) (*Scope, error) {
+	var raw []byte
+	if err := s.db.QueryRowContext(ctx, `SELECT principal_scope FROM intel_runs WHERE id=$1`, runID).Scan(&raw); err != nil {
+		return nil, err
+	}
+	var sc Scope
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &sc)
+	}
+	return &sc, nil
+}
+
 // RecordToolCall queues a tool-call audit (non-blocking). On a full buffer the
 // audit is dropped and the run's drop counter is incremented.
 func (s *Store) RecordToolCall(runID string, seq int, tool string, args, result []byte, truncated bool, duration time.Duration, errMsg string) {

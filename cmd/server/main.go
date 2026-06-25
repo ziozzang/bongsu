@@ -32,6 +32,12 @@ func main() {
 		fmt.Println(serverVersionString())
 		return
 	}
+	// intel-mcp subcommand: serve the read-only intelligence tools over MCP stdio
+	// for a single run (loaded by the jikji agent via --tools-from). It must not
+	// start the HTTP server.
+	if len(os.Args) > 1 && os.Args[1] == "intel-mcp" {
+		os.Exit(runIntelMCP(os.Args[2:]))
+	}
 
 	startTime := time.Now()
 	port := envInt("BONGSU_PORT", 5677)

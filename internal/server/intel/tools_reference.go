@@ -19,6 +19,15 @@ func RegisterReferenceTools(reg *Registry, database *db.DB) {
 	reg.Register(&exposureLookupTool{db: database})
 }
 
+// DefaultRegistry builds a registry with every built-in intelligence tool
+// (reference + host-scoped). This is the toolset the MCP server exposes.
+func DefaultRegistry(database *db.DB) *Registry {
+	reg := NewRegistry()
+	RegisterReferenceTools(reg, database)
+	RegisterScopedTools(reg, database)
+	return reg
+}
+
 // ── advisory_for(cve) ──────────────────────────────────────────────────────
 
 type advisoryForTool struct{ db *db.DB }

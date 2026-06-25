@@ -35,8 +35,8 @@ type Tool interface {
 // its reads to what the caller may see. A nil Scope means "no access" — tools
 // must treat it as deny, not allow.
 type Scope struct {
-	Admin    bool
-	Subjects []string
+	Admin    bool     `json:"admin"`
+	Subjects []string `json:"subjects"`
 }
 
 type scopeKey struct{}
