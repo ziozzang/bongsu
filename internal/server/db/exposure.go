@@ -304,3 +304,12 @@ ON CONFLICT (package_id, scan_id, vulnerability_id) DO NOTHING`)
 	}
 	return created, nil
 }
+
+// NormalizeEcosystem exposes the canonical ecosystem-family mapping to callers
+// outside the db package (e.g. the intelligence tools), so they normalize an
+// ecosystem the same way the matcher and the stored catalog rows do.
+func NormalizeEcosystem(eco string) string { return normalizeEcosystem(eco) }
+
+// NormalizePkgName exposes the per-ecosystem package-name normalization (the Go
+// twin of bongsu_normalize_pkg_name).
+func NormalizePkgName(eco, name string) string { return normalizePkgName(eco, name) }
