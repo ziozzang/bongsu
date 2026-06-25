@@ -2615,7 +2615,6 @@ func TestLegacyMigrationBaselineRequiresLatestSchemaMarkers(t *testing.T) {
 		`{table: "vulnerabilities", column: "pkg_path"}`,
 		`{table: "vulnerabilities", column: "finding_source"}`,
 		`{table: "cve_database", column: "category"}`,
-		`{table: "cve_database", column: "epss_score"}`,
 		`{table: "cve_reference_keys"}`,
 		`{table: "container_assets"}`,
 		`{table: "scan_requests", column: "claimed_by_host_id"}`,

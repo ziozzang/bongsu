@@ -124,7 +124,8 @@ func (db *DB) legacySchemaComplete(ctx context.Context) (bool, error) {
 		{table: "vulnerabilities", column: "pkg_path"},
 		{table: "vulnerabilities", column: "finding_source"},
 		{table: "cve_database", column: "category"},
-		{table: "cve_database", column: "epss_score"},
+		// epss_score/epss_percentile dropped in migration 074 (signal-plane
+		// separation); EPSS now lives in cve_epss.
 		{table: "cve_affected_packages"},
 		{table: "cve_reference_keys"},
 		{table: "container_assets"},
