@@ -314,6 +314,9 @@ func (s *Server) APIKey() string {
 func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/report", s.handleReport)
 	s.mux.HandleFunc("POST /api/sbom", s.handleSBOMIngest)
+	s.mux.HandleFunc("POST /api/exposure-catalog", s.handleUploadExposureCatalog)
+	s.mux.HandleFunc("GET /api/exposure-catalog", s.handleListExposureCatalogs)
+	s.mux.HandleFunc("DELETE /api/exposure-catalog/{id}", s.handleDeleteExposureCatalog)
 	s.mux.HandleFunc("GET /api/scans/{id}/sbom", s.handleGetScanSBOM)
 	s.mux.HandleFunc("GET /api/scans/{id}/dependents", s.handleScanDependents)
 	s.mux.HandleFunc("GET /api/hosts/{id}/vex", s.handleExportHostVEX)

@@ -441,6 +441,15 @@ func (s *Server) runScanMatch(ctx context.Context, report *models.ScanReport, in
 			log.Printf("CPE matched %d runtime vulnerabilities for scan %s", result.NewVulns, report.ScanID)
 			insertedVulns += result.NewVulns
 		}
+		// Exposure-catalog exact match: flag installed releases that are known
+		// compromised supply-chain artifacts (a distinct axis from CVE matching).
+		if n, err := s.db.MatchExposureCatalog(ctx, report.ScanID, report.Host.ID); err != nil {
+			log.Printf("scan exposure-catalog match failed: %v", err)
+			ingestErrors = append(ingestErrors, "exposure_catalog: "+err.Error())
+		} else if n > 0 {
+			log.Printf("Exposure catalog flagged %d compromised packages for scan %s", n, report.ScanID)
+			insertedVulns += n
+		}
 	}
 	return insertedVulns, skippedVulns, newFindings, ingestErrors
 }
