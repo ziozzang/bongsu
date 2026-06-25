@@ -18,6 +18,7 @@ import (
 
 	"github.com/ziozzang/bongsu/internal/server/cvematch"
 	"github.com/ziozzang/bongsu/internal/server/db"
+	"github.com/ziozzang/bongsu/internal/server/intel"
 	"github.com/ziozzang/bongsu/internal/server/live"
 	"github.com/ziozzang/bongsu/internal/server/llm"
 	"github.com/ziozzang/bongsu/internal/server/secdb"
@@ -107,6 +108,7 @@ type Server struct {
 	sessionMaxAge time.Duration
 	authenticator Authenticator
 	ruleNotifier  *ruleNotifier
+	intel         *intel.Service
 
 	buildInfo BuildInfo
 }
@@ -199,6 +201,7 @@ func New(database *db.DB, matcher *cvematch.Matcher, dbMgr *trivydb.Manager, sec
 	s.ruleNotifier = newRuleNotifier(s)
 
 	s.llm = llm.New(llmConfigFromEnv())
+	s.intel = intel.NewServiceFromEnv(database)
 	s.live = live.NewHub(envInt("BONGSU_LIVE_RING", 1000), envInt("BONGSU_LIVE_MAX_CONNS", 256))
 	s.routes()
 	s.bootstrapAdmin()
@@ -314,6 +317,9 @@ func (s *Server) APIKey() string {
 func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/report", s.handleReport)
 	s.mux.HandleFunc("POST /api/sbom", s.handleSBOMIngest)
+	s.mux.HandleFunc("GET /api/intel/scenarios", s.handleIntelScenarios)
+	s.mux.HandleFunc("POST /api/intel/runs", s.handleIntelRun)
+	s.mux.HandleFunc("GET /api/intel/runs/{id}", s.handleIntelGetRun)
 	s.mux.HandleFunc("POST /api/exposure-catalog", s.handleUploadExposureCatalog)
 	s.mux.HandleFunc("GET /api/exposure-catalog", s.handleListExposureCatalogs)
 	s.mux.HandleFunc("DELETE /api/exposure-catalog/{id}", s.handleDeleteExposureCatalog)

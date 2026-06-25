@@ -525,3 +525,16 @@ internal/server/
 ---
 
 이상. 모든 확장이 `init()` 등록만으로 이루어지며, 코어(`IntelligenceRunner`, `MCP Server`, `ToolRegistry`) 변경 없이 새 소스·툴·시나리오가 추가되는 구조. 충돌하는 제안은 근거를 들어 하나로 결정하였으며, 양시론은 배제함.
+
+---
+
+## 11. 적대 검토 결정 — HTTP /v1/runs 모델 (구현 채택)
+
+원안은 `jikjictl --tools-from "intel-mcp --run-id X"`로 per-run RBAC 스코프를 주입했으나, **jikjictl 금지 + jikji는 부트 설정/HTTP API**라는 교정에 따라 `POST /v1/runs` HTTP 모델로 전환한다. 그 결과의 적대 검토:
+
+- **per-run 스코프 주입 불가**: `/v1/runs` 바디는 `{goal/prompt, max_steps, session_id}`뿐이라 런마다 다른 MCP/스코프를 jikji에 넘길 수 없다. jikji는 부트 설정으로 연결한 **고정 MCP**를 쓴다.
+- **결정 (옵션 A)**: 트리거-타임 인가 + 서비스 스코프. `/api/intel/runs`에서 **누가 런을 트리거하나**를 RBAC로 잠근다(기본 admin; `BONGSU_INTEL_REQUIRE_ADMIN=false`로 완화 — 설정으로 RBAC 풀기). 런 자체는 서비스 스코프로 자율 검토하되 전량 감사. per-tool RBAC(`tools_scoped` + `intel-mcp --run-id`)는 stdio/per-run 경로에 유효하고 HTTP 경로에선 방어심층으로 잔존.
+- **감사 상관 (적대 발견)**: 고정 MCP라 per-run id가 없으므로, **툴 호출 감사를 `/v1/runs` 응답의 `events`(tool action)에서 재구성**해 Bongsu run에 귀속한다. MCP-server-side 감사는 독립 보조.
+- **격리**: `Runner.Health()` 실패 시 인텔리전스 API 503, 스캔/매칭 파이프라인 무영향.
+- **자원**: 동기 런 + bounded pool + per-run timeout = 자연 백프레셔.
+- **기각**: 옵션 B(per-run 스코프 유지)는 jikjictl 또는 jikji측 per-run MCP 기능 필요 → 금지/불가(bongsu 밖).

@@ -103,6 +103,32 @@ func (s *Store) LoadRunScope(ctx context.Context, runID string) (*Scope, error) 
 	return &sc, nil
 }
 
+// RunView is the persisted run as read back for the API.
+type RunView struct {
+	ID         string          `json:"id"`
+	Scenario   string          `json:"scenario"`
+	Status     string          `json:"status"`
+	Output     json.RawMessage `json:"output,omitempty"`
+	TokenUsage json.RawMessage `json:"token_usage,omitempty"`
+	Error      string          `json:"error,omitempty"`
+}
+
+// GetRun reads a persisted run.
+func (s *Store) GetRun(ctx context.Context, runID string) (RunView, error) {
+	var v RunView
+	var output, usage []byte
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id::text, scenario, status, COALESCE(output,'null'::jsonb), COALESCE(token_usage,'{}'::jsonb), error
+		   FROM intel_runs WHERE id=$1`, runID).
+		Scan(&v.ID, &v.Scenario, &v.Status, &output, &usage, &v.Error)
+	if err != nil {
+		return RunView{}, err
+	}
+	v.Output = output
+	v.TokenUsage = usage
+	return v, nil
+}
+
 // RecordToolCall queues a tool-call audit (non-blocking). On a full buffer the
 // audit is dropped and the run's drop counter is incremented.
 func (s *Store) RecordToolCall(runID string, seq int, tool string, args, result []byte, truncated bool, duration time.Duration, errMsg string) {
