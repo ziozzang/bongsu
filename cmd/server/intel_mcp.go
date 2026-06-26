@@ -23,11 +23,6 @@ func runIntelMCP(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *runID == "" {
-		log.Println("intel-mcp: --run-id is required")
-		return 2
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -43,21 +38,38 @@ func runIntelMCP(args []string) int {
 	store := intel.NewStore(database, 1024)
 	defer store.Close()
 
-	scope, err := store.LoadRunScope(ctx, *runID)
-	if err != nil {
-		log.Printf("intel-mcp: load run scope for %s: %v", *runID, err)
-		return 1
+	// Two modes:
+	//   --run-id <id>  per-run scope: loads the run's RBAC snapshot and audits
+	//                  every tool call to that run (the stdio per-run path).
+	//   (no run-id)    service-scope: the persistent MCP jikji is configured with
+	//                  at its boot (HTTP /v1/runs model). Authorization is enforced
+	//                  at the API trigger (/api/intel/runs); the run operates at a
+	//                  service scope (admin by default, relaxable by the operator's
+	//                  jikji config). Tool-call audit is reconstructed from the run
+	//                  events by RunScenario, so the MCP side does not audit here.
+	var scope *intel.Scope
+	auditRun := *runID
+	if *runID != "" {
+		scope, err = store.LoadRunScope(ctx, *runID)
+		if err != nil {
+			log.Printf("intel-mcp: load run scope for %s: %v", *runID, err)
+			return 1
+		}
+	} else {
+		scope = &intel.Scope{Admin: true} // service scope
 	}
 
 	reg := intel.DefaultRegistry(database)
-	srv := intel.NewMCPServer(reg, scope).WithAudit(
-		func(seq int, tool string, argsJSON, result []byte, isErr bool, dur time.Duration) {
+	srv := intel.NewMCPServer(reg, scope)
+	if auditRun != "" {
+		srv = srv.WithAudit(func(seq int, tool string, argsJSON, result []byte, isErr bool, dur time.Duration) {
 			errMsg := ""
 			if isErr {
 				errMsg = string(result)
 			}
-			store.RecordToolCall(*runID, seq, tool, argsJSON, result, false, dur, errMsg)
+			store.RecordToolCall(auditRun, seq, tool, argsJSON, result, false, dur, errMsg)
 		})
+	}
 
 	if err := srv.Serve(ctx, os.Stdin, os.Stdout); err != nil && ctx.Err() == nil {
 		log.Printf("intel-mcp: serve: %v", err)
