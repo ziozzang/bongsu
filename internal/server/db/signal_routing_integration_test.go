@@ -86,3 +86,33 @@ func TestSignalIngestRouting(t *testing.T) {
 		t.Fatalf("read path wrong: exploited=%v score=%v", exploited, readScore)
 	}
 }
+
+// TestCveDatabaseRejectsSignalSource is the DB-level invariant guard (migration
+// 075): a cisa-kev/epss row can never be written directly into the advisory
+// table, even bypassing the ingest router.
+func TestCveDatabaseRejectsSignalSource(t *testing.T) {
+	database := openIntegrationDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	for _, src := range []string{"cisa-kev", "epss"} {
+		_, err := database.ExecContext(ctx,
+			`INSERT INTO cve_database (id, vulnerability_id, source, affected_products, refs, raw_data)
+			 VALUES ($1, 'CVE-GUARD-1', $2, '[]', '[]', '{}')`, "guard-"+src, src)
+		if err == nil {
+			t.Fatalf("inserting a %s row into cve_database must be rejected by the invariant constraint", src)
+		}
+	}
+	// A normal advisory source is still accepted.
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO cve_database (id, vulnerability_id, source, affected_products, refs, raw_data)
+		 VALUES ('guard-osv', 'CVE-GUARD-2', 'osv', '[]', '[]', '{}')`); err != nil {
+		t.Fatalf("advisory source must still be accepted: %v", err)
+	}
+	// A custom feed name (not a reserved signal name) is accepted.
+	if _, err := database.ExecContext(ctx,
+		`INSERT INTO cve_database (id, vulnerability_id, source, affected_products, refs, raw_data)
+		 VALUES ('guard-custom', 'CVE-GUARD-3', 'my-internal-feed', '[]', '[]', '{}')`); err != nil {
+		t.Fatalf("custom advisory source must be accepted (constraint is narrow): %v", err)
+	}
+}
