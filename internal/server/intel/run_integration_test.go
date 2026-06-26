@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 )
@@ -145,4 +146,46 @@ func indexOf(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// TestServiceLiveJikjiSmoke runs a real scenario against the live jikji backbone.
+// Guarded by BONGSU_INTEL_LIVE=1 so it never runs in normal CI (it makes a real
+// LLM call). It confirms the HTTP /v1/runs loop, response parsing and run
+// persistence work end-to-end against the real server. The agent has no Bongsu
+// MCP tools here, so it answers from the prompt alone — we only assert the run
+// completes and persists, not the content.
+func TestServiceLiveJikjiSmoke(t *testing.T) {
+	if os.Getenv("BONGSU_INTEL_LIVE") != "1" {
+		t.Skip("set BONGSU_INTEL_LIVE=1 to smoke the live jikji backbone")
+	}
+	database := openIntelDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	liveURL := os.Getenv("BONGSU_INTEL_JIKJI_URL")
+	if liveURL == "" {
+		liveURL = "http://127.0.0.1:1385"
+	}
+	t.Setenv("BONGSU_INTEL_JIKJI_URL", liveURL)
+	t.Setenv("BONGSU_INTEL_MAX_STEPS", "3")
+	svc := NewServiceFromEnv(database)
+	defer svc.Close()
+	if err := svc.Health(ctx); err != nil {
+		t.Fatalf("live backbone health: %v", err)
+	}
+	outcome, err := svc.RunScenario(ctx, RunRequest{
+		Scenario: "correlate", Params: map[string]any{"cve": "CVE-2024-3094"},
+		PrincipalID: "user:admin", Scope: &Scope{Admin: true},
+	})
+	if err != nil {
+		t.Fatalf("live RunScenario: %v", err)
+	}
+	t.Logf("live run %s status=%s tokens=%d response=%.200s", outcome.RunID, outcome.Status, outcome.TotalTokens, outcome.Response)
+	if outcome.RunID == "" {
+		t.Fatal("live run must persist a run id")
+	}
+	view, err := svc.GetRun(ctx, outcome.RunID)
+	if err != nil || view.ID == "" {
+		t.Fatalf("live run must be readable: view=%+v err=%v", view, err)
+	}
 }

@@ -195,6 +195,7 @@ func parseRunResponse(raw []byte) (Result, error) {
 	}
 	res := Result{RunID: resp.ID, Status: resp.Status, Response: resp.Response, ContextTokens: resp.ContextTokens}
 	var pending *ToolCall
+	var lastRespond string
 	for i := range resp.Events {
 		e := &resp.Events[i]
 		if e.Usage.TotalTokens > 0 || e.Usage.PromptTokens > 0 {
@@ -210,18 +211,25 @@ func parseRunResponse(raw []byte) (Result, error) {
 				ToolName string          `json:"tool_name"`
 				Args     json.RawMessage `json:"arguments"`
 				Input    json.RawMessage `json:"input"`
+				Response string          `json:"response"`
 			}
-			if json.Unmarshal(e.Action, &a) == nil && a.Kind == "tool" {
-				res.ToolSteps++
-				// flush any prior tool call missing its observation
-				if pending != nil {
-					res.ToolCalls = append(res.ToolCalls, *pending)
+			if json.Unmarshal(e.Action, &a) == nil {
+				switch a.Kind {
+				case "tool":
+					res.ToolSteps++
+					if pending != nil { // flush a prior tool call missing its observation
+						res.ToolCalls = append(res.ToolCalls, *pending)
+					}
+					args := a.Args
+					if len(args) == 0 {
+						args = a.Input
+					}
+					pending = &ToolCall{Name: firstNonEmpty(a.Name, a.Tool, a.ToolName), Args: args}
+				case "respond":
+					if a.Response != "" {
+						lastRespond = a.Response
+					}
 				}
-				args := a.Args
-				if len(args) == 0 {
-					args = a.Input
-				}
-				pending = &ToolCall{Name: firstNonEmpty(a.Name, a.Tool, a.ToolName), Args: args}
 			}
 		}
 		if len(e.Observation) > 0 && pending != nil {
@@ -233,8 +241,15 @@ func parseRunResponse(raw []byte) (Result, error) {
 	if pending != nil {
 		res.ToolCalls = append(res.ToolCalls, *pending)
 	}
-	if res.Response == "" && res.Status == "" {
-		return Result{}, errors.New("intel: backbone produced no response")
+	// Top-level response is authoritative; fall back to the final respond event.
+	if res.Response == "" {
+		res.Response = lastRespond
+	}
+	// A run with a status but no text is a valid (if empty) completion. Only a
+	// truly malformed body (no status AND no text) is an error; include a snippet
+	// to aid diagnosis.
+	if res.Status == "" && res.Response == "" {
+		return Result{}, fmt.Errorf("intel: backbone produced no response or status: %s", truncate(string(raw), 200))
 	}
 	return res, nil
 }
