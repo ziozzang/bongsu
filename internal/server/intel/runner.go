@@ -131,6 +131,7 @@ type Result struct {
 // is preserved for audit even when the name can't be extracted.
 type ToolCall struct {
 	Name   string
+	ID     string
 	Args   json.RawMessage
 	Result json.RawMessage
 }
@@ -225,6 +226,14 @@ func parseRunResponse(raw []byte) (Result, error) {
 				Args     json.RawMessage `json:"arguments"`
 				Input    json.RawMessage `json:"input"`
 				Response string          `json:"response"`
+				// jikji's /v1/runs nests the tool identity here: the name (e.g.
+				// "bongsu.advisory_for"), a correlation id, and an input hash (jikji
+				// hashes tool inputs, so raw args are not echoed back).
+				ToolCall struct {
+					ID        string `json:"id"`
+					Name      string `json:"name"`
+					InputHash string `json:"input_hash"`
+				} `json:"tool_call"`
 			}
 			if json.Unmarshal(e.Action, &a) == nil {
 				switch a.Kind {
@@ -237,7 +246,14 @@ func parseRunResponse(raw []byte) (Result, error) {
 					if len(args) == 0 {
 						args = a.Input
 					}
-					pending = &ToolCall{Name: firstNonEmpty(a.Name, a.Tool, a.ToolName), Args: args}
+					if len(args) == 0 && a.ToolCall.InputHash != "" {
+						args = json.RawMessage(`{"input_hash":` + strconv.Quote(a.ToolCall.InputHash) + `}`)
+					}
+					pending = &ToolCall{
+						Name: firstNonEmpty(a.Name, a.Tool, a.ToolName, a.ToolCall.Name),
+						ID:   a.ToolCall.ID,
+						Args: args,
+					}
 				case "respond":
 					if a.Response != "" {
 						lastRespond = a.Response
@@ -246,9 +262,26 @@ func parseRunResponse(raw []byte) (Result, error) {
 			}
 		}
 		if len(e.Observation) > 0 && pending != nil {
-			pending.Result = e.Observation
-			res.ToolCalls = append(res.ToolCalls, *pending)
-			pending = nil
+			// jikji observations carry the tool result under "content" (a string)
+			// and correlate to the action via "action_id". Prefer that; fall back to
+			// the raw observation for other event shapes (e.g. httptest fakes).
+			var obs struct {
+				Kind     string `json:"kind"`
+				ActionID string `json:"action_id"`
+				Content  string `json:"content"`
+			}
+			result := e.Observation
+			if json.Unmarshal(e.Observation, &obs) == nil && obs.Content != "" {
+				result = json.RawMessage(obs.Content)
+			}
+			// Only pair the observation with this tool call when it is a tool
+			// observation (or unlabeled); a non-tool observation (e.g. a thought)
+			// should not become the tool's result.
+			if obs.Kind == "" || obs.Kind == "tool" {
+				pending.Result = result
+				res.ToolCalls = append(res.ToolCalls, *pending)
+				pending = nil
+			}
 		}
 	}
 	if pending != nil {

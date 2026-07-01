@@ -120,6 +120,42 @@ func TestRunnerReconstructsToolCalls(t *testing.T) {
 	}
 }
 
+// TestRunnerReconstructsJikjiToolCalls uses jikji's REAL /v1/runs event shape:
+// the tool identity is nested under action.tool_call.{id,name,input_hash} and the
+// result arrives as observation.{kind,action_id,content}. This is what a live
+// jikji backbone actually emits (verified against a running server), so the audit
+// trail must capture the real tool name — not "unknown".
+func TestRunnerReconstructsJikjiToolCalls(t *testing.T) {
+	resp := `{"id":"run-x","status":"completed","response":"done","events":[
+	  {"type":"run.step","action":{"kind":"tool","tool_call":{"id":"call_abc","name":"bongsu.advisory_for","input_hash":"sha256:deadbeef"}}},
+	  {"type":"run.observation","observation":{"kind":"tool","action_id":"call_abc","content":"{\"cve\":\"CVE-2024-3094\",\"sources\":[{\"severity\":\"CRITICAL\"}]}"}},
+	  {"type":"run.step","action":{"kind":"respond","response":"done"}}
+	]}`
+	srv := fakeJikji(t, resp, nil)
+	defer srv.Close()
+	r := NewRunner(RunnerConfig{BaseURL: srv.URL})
+	res, err := r.Run(context.Background(), "report")
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.ToolSteps != 1 || len(res.ToolCalls) != 1 {
+		t.Fatalf("want 1 tool call, got steps=%d calls=%d", res.ToolSteps, len(res.ToolCalls))
+	}
+	tc := res.ToolCalls[0]
+	if tc.Name != "bongsu.advisory_for" {
+		t.Fatalf("tool name must come from tool_call.name, got %q", tc.Name)
+	}
+	if tc.ID != "call_abc" {
+		t.Fatalf("tool call id not captured, got %q", tc.ID)
+	}
+	if !strings.Contains(string(tc.Result), "CRITICAL") {
+		t.Fatalf("observation.content not captured as result: %s", tc.Result)
+	}
+	if !strings.Contains(string(tc.Args), "input_hash") {
+		t.Fatalf("input_hash not captured into args: %s", tc.Args)
+	}
+}
+
 func TestRunnerHTTPErrorSurfaces(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
