@@ -74,6 +74,24 @@ func optParam(params map[string]any, key string) string {
 	return ""
 }
 
+// verifyLensSuffix gives a voter a distinct refutation perspective so a panel of
+// voters fails in different ways (decorrelated errors) rather than all missing
+// the same thing. Empty lens -> no suffix (single-shot verify is unchanged).
+func verifyLensSuffix(lens string) string {
+	switch Lens(lens) {
+	case LensAccuracy:
+		return "Adopt the ACCURACY lens: does the CVE truly apply to this exact package/version? Refute if the version ranges are wrong, the package name is confused, or the advisory is withdrawn/duplicate. "
+	case LensReachability:
+		return "Adopt the REACHABILITY lens: is the vulnerable code path actually reachable in a typical deployment? Refute if it is guarded, behind a feature flag, or needs a rare configuration. "
+	case LensVersionPresence:
+		return "Adopt the VERSION-PRESENCE lens: does the claimed affected version actually exist and is it the one installed? Refute for typos, rebased versions, or a fixed version already in place. "
+	case LensEcosystemMatch:
+		return "Adopt the ECOSYSTEM lens: does the finding agree with upstream advisories (NVD/GHSA/DSA) for the right ecosystem? Refute isolated claims with no ecosystem confirmation or a wrong-ecosystem match. "
+	default:
+		return ""
+	}
+}
+
 const toolPreamble = "You are Bongsu's security-intelligence agent. Use ONLY the provided tools to gather facts; never invent data. " +
 	"Tools enforce the caller's access scope — if a tool returns a forbidden/empty result, do not speculate about hidden data. " +
 	"Return EXACTLY one JSON object matching the requested schema and nothing else."
@@ -197,6 +215,7 @@ func RegisterScenarios(reg *ScenarioRegistry) {
 				b.WriteString(" in scan " + scan)
 			}
 			b.WriteString(". Default to refuting: actively look for evidence the finding is a false positive (fixed version already installed, package not actually present, not reachable, wrong ecosystem). Use advisory_for, sbom_at, dependents_of, query_vulns. Only conclude valid=true if you cannot refute it. ")
+			b.WriteString(verifyLensSuffix(optParam(p, "lens")))
 			b.WriteString(`Output: {"finding","valid":true|false,"confidence":0..1,"refutation":"why it may be false, or empty","evidence":[{tool,fact}]}.`)
 			return b.String(), nil
 		},

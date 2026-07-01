@@ -146,6 +146,62 @@ func (s *Store) GetRun(ctx context.Context, runID string) (RunView, error) {
 	return v, nil
 }
 
+// VerificationRecord is the aggregate row at creation (before voters run).
+type VerificationRecord struct {
+	PrincipalID     string
+	Params          map[string]any
+	RequestedVoters int
+	MinSuccess      int
+	Lenses          []Lens
+}
+
+// CreateVerification inserts the aggregate row in status 'running' and returns
+// its id, so voter runs can be linked to it as they complete.
+func (s *Store) CreateVerification(ctx context.Context, r VerificationRecord) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx,
+		`INSERT INTO intel_verifications (principal_id, params, requested_voters, min_success, lenses, status)
+		 VALUES ($1,$2,$3,$4,$5,'running') RETURNING id`,
+		r.PrincipalID, marshalJSONObject(r.Params), r.RequestedVoters, r.MinSuccess, marshalJSONOrEmptyArray(r.Lenses)).Scan(&id)
+	return id, err
+}
+
+// BackfillVoterRun links a completed voter run to its verification (best-effort;
+// a failure here does not affect the verdict). runID is an intel_runs UUID.
+func (s *Store) BackfillVoterRun(ctx context.Context, runID string, verID int64, index int, lens string) {
+	if runID == "" {
+		return
+	}
+	_, _ = s.db.ExecContext(ctx,
+		`UPDATE intel_runs SET verification_id=$2, voter_index=$3, voter_lens=$4 WHERE id=$1`,
+		runID, verID, index, lens)
+}
+
+// VerificationAggregate is the tally written when all voters finish.
+type VerificationAggregate struct {
+	Status       string
+	Verdict      string
+	Valid        bool
+	Confidence   float64
+	Succeeded    int
+	Failed       int
+	ValidVotes   int
+	RefutedVotes int
+	Votes        []VerificationVote
+}
+
+// UpdateVerification records the final tally and verdict for a verification.
+func (s *Store) UpdateVerification(ctx context.Context, id int64, a VerificationAggregate) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE intel_verifications SET status=$2, verdict=$3, valid=$4, confidence=$5,
+		   succeeded_voters=$6, failed_voters=$7, valid_votes=$8, refuted_votes=$9,
+		   votes=$10, finished_at=now()
+		 WHERE id=$1`,
+		id, a.Status, a.Verdict, a.Valid, a.Confidence,
+		a.Succeeded, a.Failed, a.ValidVotes, a.RefutedVotes, marshalJSONOrEmptyArray(a.Votes))
+	return err
+}
+
 // RecordToolCall queues a tool-call audit (non-blocking). On a full buffer the
 // audit is dropped and the run's drop counter is incremented.
 func (s *Store) RecordToolCall(runID string, seq int, tool string, args, result []byte, truncated bool, duration time.Duration, errMsg string) {
@@ -190,6 +246,14 @@ func marshalJSONObject(v any) []byte {
 	raw, err := json.Marshal(v)
 	if err != nil || len(raw) == 0 || string(raw) == "null" {
 		return []byte("{}")
+	}
+	return raw
+}
+
+func marshalJSONOrEmptyArray(v any) []byte {
+	raw, err := json.Marshal(v)
+	if err != nil || len(raw) == 0 || string(raw) == "null" {
+		return []byte("[]")
 	}
 	return raw
 }

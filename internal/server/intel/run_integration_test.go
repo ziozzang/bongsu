@@ -216,7 +216,8 @@ func TestServiceSessionThreading(t *testing.T) {
 			sess = "sess-generated-1"
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"id":"run-x","session_id":"`+sess+`","status":"completed","response":"ok","events":[]}`)
+		// Schema-valid nl_query output (required: answer) so no corrective retry fires.
+		_, _ = io.WriteString(w, `{"id":"run-x","session_id":"`+sess+`","status":"completed","response":"{\"answer\":\"ok\"}","events":[]}`)
 	}))
 	defer jikji.Close()
 
@@ -262,21 +263,32 @@ func TestServiceRunPipeline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	var calls int
+	// Fail the report stage deterministically (by prompt), return schema-valid
+	// output for the others so no corrective retry fires and skews call ordering.
 	jikji := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			w.WriteHeader(200)
 			return
 		}
-		calls++
-		// Fail the 2nd stage (report), succeed others.
-		if calls == 2 {
+		var body struct {
+			Prompt string `json:"prompt"`
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &body)
+		if contains(body.Prompt, "CVE-grade report") {
 			w.WriteHeader(500)
 			_, _ = io.WriteString(w, "stage boom")
 			return
 		}
+		var inner string
+		switch {
+		case contains(body.Prompt, "ADVERSARIALLY verify"):
+			inner = `{\"finding\":\"CVE-2024-3094\",\"valid\":true,\"confidence\":0.5}`
+		default: // triage
+			inner = `{\"verdict\":\"reachable\",\"confidence\":0.5}`
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"id":"run-p","session_id":"sess-pipe","status":"completed","response":"ok","events":[]}`)
+		_, _ = io.WriteString(w, `{"id":"run-p","session_id":"sess-pipe","status":"completed","response":"`+inner+`","events":[]}`)
 	}))
 	defer jikji.Close()
 
@@ -370,5 +382,135 @@ func TestServiceCorrectiveRetry(t *testing.T) {
 	}
 	if !valid {
 		t.Fatalf("retry produced valid output; output_valid must be true")
+	}
+}
+
+// TestServiceRunVerification drives majority-vote verification: three lens-diverse
+// voters run in parallel (accuracy=valid, reachability=valid, version=refuted) ->
+// verdict=valid; the aggregate persists to intel_verifications and each voter run
+// is linked back by FK.
+func TestServiceRunVerification(t *testing.T) {
+	database := openIntelDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	jikji := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(200)
+			return
+		}
+		var body struct {
+			Prompt string `json:"prompt"`
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &body)
+		// Vote by lens: 2 valid, 1 refuted -> majority valid.
+		valid, conf := true, 0.9
+		switch {
+		case contains(body.Prompt, "VERSION-PRESENCE lens"):
+			valid, conf = false, 0.7
+		case contains(body.Prompt, "REACHABILITY lens"):
+			valid, conf = true, 0.8
+		case contains(body.Prompt, "ACCURACY lens"):
+			valid, conf = true, 0.9
+		}
+		inner, _ := json.Marshal(map[string]any{"finding": "CVE-2024-3094", "valid": valid, "confidence": conf, "refutation": "", "evidence": []any{}})
+		run, _ := json.Marshal(map[string]any{"id": "run-vote", "status": "completed", "response": string(inner), "events": []any{}})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(run)
+	}))
+	defer jikji.Close()
+
+	t.Setenv("BONGSU_INTEL_JIKJI_URL", jikji.URL)
+	svc := NewServiceFromEnv(database)
+	defer svc.Close()
+
+	out, err := svc.RunVerification(ctx, VerificationRequest{
+		CVE: "CVE-2024-3094", Voters: 3, PrincipalID: "user:admin", Scope: &Scope{Admin: true},
+	})
+	if err != nil {
+		t.Fatalf("RunVerification: %v", err)
+	}
+	if out.Verdict != VerdictValid || out.Status != StatusComplete || !out.Valid {
+		t.Fatalf("want valid/complete, got verdict=%q status=%q valid=%v", out.Verdict, out.Status, out.Valid)
+	}
+	if out.Counts.Succeeded != 3 || out.Counts.Valid != 2 || out.Counts.Refuted != 1 {
+		t.Fatalf("counts wrong: %+v", out.Counts)
+	}
+	if len(out.Voters) != 3 {
+		t.Fatalf("want 3 voter records, got %d", len(out.Voters))
+	}
+	// Every voter must have been assigned a distinct default lens.
+	lenses := map[Lens]bool{}
+	for _, v := range out.Voters {
+		lenses[v.Lens] = true
+	}
+	if len(lenses) != 3 {
+		t.Fatalf("voters must get distinct lenses, got %v", lenses)
+	}
+	// Aggregate persisted.
+	var status, verdict string
+	var succeeded int
+	if err := database.QueryRowContext(ctx,
+		`SELECT status, verdict, succeeded_voters FROM intel_verifications WHERE id=$1`, out.VerificationID).
+		Scan(&status, &verdict, &succeeded); err != nil {
+		t.Fatalf("read verification: %v", err)
+	}
+	if status != "complete" || verdict != "valid" || succeeded != 3 {
+		t.Fatalf("persisted aggregate wrong: status=%q verdict=%q succeeded=%d", status, verdict, succeeded)
+	}
+	// Voter runs linked back by FK.
+	var linked int
+	if err := database.QueryRowContext(ctx,
+		`SELECT count(*) FROM intel_runs WHERE verification_id=$1`, out.VerificationID).Scan(&linked); err != nil {
+		t.Fatalf("count linked runs: %v", err)
+	}
+	if linked != 3 {
+		t.Fatalf("want 3 voter runs linked by FK, got %d", linked)
+	}
+}
+
+// TestServiceRunVerificationInconclusive verifies that when too few voters
+// succeed (backbone failing), the verdict is inconclusive, not a false verdict.
+func TestServiceRunVerificationInconclusive(t *testing.T) {
+	database := openIntelDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var n int
+	jikji := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(200)
+			return
+		}
+		n++
+		// Only the first voter succeeds; the rest fail (HTTP 500).
+		if n == 1 {
+			inner, _ := json.Marshal(map[string]any{"finding": "CVE-1", "valid": true, "confidence": 0.9})
+			run, _ := json.Marshal(map[string]any{"id": "run-ok", "status": "completed", "response": string(inner), "events": []any{}})
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write(run)
+			return
+		}
+		w.WriteHeader(500)
+		_, _ = io.WriteString(w, "boom")
+	}))
+	defer jikji.Close()
+
+	t.Setenv("BONGSU_INTEL_JIKJI_URL", jikji.URL)
+	svc := NewServiceFromEnv(database)
+	defer svc.Close()
+
+	out, err := svc.RunVerification(ctx, VerificationRequest{
+		CVE: "CVE-1", Voters: 3, PrincipalID: "user:admin", Scope: &Scope{Admin: true},
+	})
+	if err != nil {
+		t.Fatalf("RunVerification: %v", err)
+	}
+	if out.Status != StatusInconclusive || out.Verdict != VerdictInconclusive {
+		t.Fatalf("too few successes must be inconclusive, got status=%q verdict=%q", out.Status, out.Verdict)
+	}
+	if out.Counts.Succeeded != 1 || out.Counts.Failed != 2 {
+		t.Fatalf("counts wrong: %+v", out.Counts)
 	}
 }

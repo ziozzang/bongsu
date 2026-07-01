@@ -35,7 +35,7 @@ func openIntelDB(t *testing.T) *db.DB {
 	runMigrationsFromRoot(t, ctx, database)
 	// Start each intel integration test from a clean slate (these tests use fixed
 	// ids, so leftover rows from a prior run would collide).
-	if _, err := database.ExecContext(ctx, `TRUNCATE intel_tool_calls, intel_runs, vulnerabilities,
+	if _, err := database.ExecContext(ctx, `TRUNCATE intel_tool_calls, intel_runs, intel_verifications, vulnerabilities,
 		package_dependencies, packages, scans, hosts, access_policies, access_subjects,
 		cve_kev, cve_epss, cve_affected_packages, cve_database,
 		exposure_catalog_entries, exposure_catalog_sources, scan_sboms RESTART IDENTITY CASCADE`); err != nil {

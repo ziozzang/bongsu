@@ -1280,6 +1280,27 @@ export interface IntelPipelineOutcome {
   stages: IntelPipelineStage[];
 }
 
+export interface IntelVerificationVote {
+  index: number;
+  lens: string;
+  run_id?: string;
+  status: string;
+  valid?: boolean;
+  confidence?: number;
+  refutation?: string;
+  error?: string;
+}
+
+export interface IntelVerificationOutcome {
+  verification_id: number;
+  status: string;
+  verdict: string;
+  valid: boolean;
+  confidence: number;
+  counts: { requested: number; required: number; succeeded: number; failed: number; valid: number; refuted: number };
+  voters: IntelVerificationVote[];
+}
+
 export const api = {
   login: (username: string, password: string) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -1503,6 +1524,8 @@ export const api = {
     requestJSON<IntelRunOutcome>('/intel/runs', { scenario, params }),
   runIntelPipeline: (pipeline: string, params: Record<string, unknown>) =>
     requestJSON<IntelPipelineOutcome>('/intel/pipelines', { pipeline, params }),
+  runIntelVerify: (body: { cve: string; scan_id?: string; package?: string; voters?: number; lenses?: string[] }) =>
+    requestJSON<IntelVerificationOutcome>('/intel/verify', body),
   getIntelRun: (id: string) => request<IntelRunView>(`/intel/runs/${encodeURIComponent(id)}`),
 
   // AI vulnerability analysis

@@ -117,6 +117,57 @@ func (s *Server) handleIntelPipeline(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, outcome)
 }
 
+// handleIntelVerify runs a majority-vote adversarial verification: N independent
+// lens-diverse voters judge a finding and the verdict is a majority over the
+// successful voters. Same trigger authz + backbone availability as a run.
+func (s *Server) handleIntelVerify(w http.ResponseWriter, r *http.Request) {
+	if !s.intelAuthorized(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if s.intel == nil || !s.intel.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "intelligence backbone not configured")
+		return
+	}
+	if err := s.intel.Health(r.Context()); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "intelligence backbone unreachable")
+		return
+	}
+	var body struct {
+		CVE     string   `json:"cve"`
+		ScanID  string   `json:"scan_id"`
+		Package string   `json:"package"`
+		Voters  int      `json:"voters"`
+		Lenses  []string `json:"lenses"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if body.CVE == "" {
+		writeError(w, http.StatusBadRequest, "cve is required")
+		return
+	}
+	lenses := make([]intel.Lens, 0, len(body.Lenses))
+	for _, l := range body.Lenses {
+		lenses = append(lenses, intel.Lens(l))
+	}
+	p := s.principal(r)
+	scope := &intel.Scope{Admin: p.Admin, Subjects: append([]string(nil), p.Subjects...)}
+	outcome, err := s.intel.RunVerification(r.Context(), intel.VerificationRequest{
+		CVE: body.CVE, ScanID: body.ScanID, Package: body.Package, Voters: body.Voters,
+		Lenses: lenses, PrincipalID: p.ID, Scope: scope,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.audit(r, "intel.verify", "cve", body.CVE, string(outcome.Verdict),
+		map[string]any{"verification_id": outcome.VerificationID, "voters": outcome.Counts.Requested, "succeeded": outcome.Counts.Succeeded})
+	writeJSON(w, http.StatusOK, outcome)
+}
+
 // handleIntelGetRun returns a persisted run by id.
 func (s *Server) handleIntelGetRun(w http.ResponseWriter, r *http.Request) {
 	if !s.intelAuthorized(r) {

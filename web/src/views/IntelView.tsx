@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { api, type IntelRunOutcome, type IntelPipelineInfo, type IntelPipelineOutcome } from '../api';
+import { api, type IntelRunOutcome, type IntelPipelineInfo, type IntelPipelineOutcome, type IntelVerificationOutcome } from '../api';
 import { Loading, EmptyState, Badge } from '../components/primitives';
 import { Icon } from '../components/Icon';
 
@@ -53,14 +53,20 @@ function pipelineFields(scenarios: string[]): ParamField[] {
 }
 
 function statusTone(s: string): 'critical' | 'high' | 'medium' | 'low' {
-  if (s === 'completed') return 'low';
+  if (s === 'completed' || s === 'complete') return 'low';
   if (s === 'failed' || s === 'timeout') return 'critical';
   return 'medium';
 }
 
+function verdictTone(v: string): 'critical' | 'high' | 'medium' | 'low' {
+  if (v === 'valid') return 'critical';   // confirmed real finding
+  if (v === 'refuted') return 'low';      // likely false positive
+  return 'medium';                        // inconclusive
+}
+
 export function IntelView() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [mode, setMode] = useState<'scenario' | 'pipeline'>('scenario');
+  const [mode, setMode] = useState<'scenario' | 'pipeline' | 'verify'>('scenario');
   const [scenarios, setScenarios] = useState<string[]>([]);
   const [pipelines, setPipelines] = useState<IntelPipelineInfo[]>([]);
   const [scenario, setScenario] = useState('');
@@ -70,6 +76,8 @@ export function IntelView() {
   const [error, setError] = useState('');
   const [outcome, setOutcome] = useState<IntelRunOutcome | null>(null);
   const [pipeOutcome, setPipeOutcome] = useState<IntelPipelineOutcome | null>(null);
+  const [verifyOutcome, setVerifyOutcome] = useState<IntelVerificationOutcome | null>(null);
+  const [voters, setVoters] = useState(3);
 
   useEffect(() => {
     let active = true;
@@ -89,14 +97,17 @@ export function IntelView() {
   const selectedPipeline = useMemo(() => pipelines.find((p) => p.name === pipeline), [pipelines, pipeline]);
   const fields = mode === 'scenario'
     ? (SCENARIO_PARAMS[scenario] || [])
-    : (selectedPipeline ? pipelineFields(selectedPipeline.scenarios) : []);
+    : mode === 'verify'
+      ? SCENARIO_PARAMS.verify
+      : (selectedPipeline ? pipelineFields(selectedPipeline.scenarios) : []);
 
-  const reset = () => { setParams({}); setOutcome(null); setPipeOutcome(null); setError(''); };
+  const reset = () => { setParams({}); setOutcome(null); setPipeOutcome(null); setVerifyOutcome(null); setError(''); };
 
   const run = useCallback(() => {
     setError('');
     setOutcome(null);
     setPipeOutcome(null);
+    setVerifyOutcome(null);
     for (const f of fields) {
       if (f.required && !(params[f.key] || '').trim()) {
         setError(`${f.label} is required`);
@@ -108,10 +119,13 @@ export function IntelView() {
     const fail = (e: unknown) => { setError(e instanceof Error ? e.message : 'Run failed'); done(); };
     if (mode === 'scenario') {
       api.runIntel(scenario, params).then((o) => { setOutcome(o); done(); }).catch(fail);
-    } else {
+    } else if (mode === 'pipeline') {
       api.runIntelPipeline(pipeline, params).then((o) => { setPipeOutcome(o); done(); }).catch(fail);
+    } else {
+      api.runIntelVerify({ cve: params.cve, scan_id: params.scan_id || undefined, package: params.package || undefined, voters })
+        .then((o) => { setVerifyOutcome(o); done(); }).catch(fail);
     }
-  }, [mode, scenario, pipeline, params, fields]);
+  }, [mode, scenario, pipeline, params, fields, voters]);
 
   if (enabled === null) return <Loading />;
 
@@ -129,6 +143,7 @@ export function IntelView() {
           <div className="segmented" style={{ display: 'flex', gap: 4 }}>
             <button className={`btn ${mode === 'scenario' ? 'btn-primary' : ''}`} onClick={() => { setMode('scenario'); reset(); }}>Scenario</button>
             <button className={`btn ${mode === 'pipeline' ? 'btn-primary' : ''}`} disabled={!pipelines.length} onClick={() => { setMode('pipeline'); reset(); }}>Pipeline</button>
+            <button className={`btn ${mode === 'verify' ? 'btn-primary' : ''}`} onClick={() => { setMode('verify'); reset(); }}>Verify (vote)</button>
           </div>
 
           {mode === 'scenario' ? (
@@ -147,6 +162,17 @@ export function IntelView() {
             </label>
           )}
 
+          {mode === 'verify' && (
+            <>
+              <p className="muted" style={{ margin: 0 }}>Run N independent lens-diverse voters that each try to refute the finding; the verdict is a majority over the successful voters (ties → refuted).</p>
+              <label className="field">
+                <span>Voters</span>
+                <select value={voters} onChange={(e) => setVoters(Number(e.target.value))}>
+                  {[1, 3, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+            </>
+          )}
           {mode === 'scenario' && scenario && <p className="muted" style={{ margin: 0 }}>{SCENARIO_BLURB[scenario]}</p>}
           {mode === 'pipeline' && selectedPipeline && (
             <p className="muted" style={{ margin: 0 }}>
@@ -167,8 +193,8 @@ export function IntelView() {
             </label>
           ))}
           <div>
-            <button className="btn btn-primary" disabled={running || (mode === 'scenario' ? !scenario : !pipeline)} onClick={run}>
-              {running ? 'Running…' : mode === 'scenario' ? 'Run scenario' : 'Run pipeline'}
+            <button className="btn btn-primary" disabled={running || (mode === 'scenario' ? !scenario : mode === 'pipeline' ? !pipeline : false)} onClick={run}>
+              {running ? 'Running…' : mode === 'scenario' ? 'Run scenario' : mode === 'pipeline' ? 'Run pipeline' : 'Run verification'}
             </button>
           </div>
           {error && <div className="banner banner-error">{error}</div>}
@@ -182,6 +208,35 @@ export function IntelView() {
             <span className="muted">{outcome.tool_steps} tool calls · {outcome.total_tokens} tokens · run {outcome.run_id.slice(0, 8)}</span>
           </div>
           <pre className="codeblock" style={{ whiteSpace: 'pre-wrap', maxHeight: 480, overflow: 'auto' }}>{outcome.response}</pre>
+        </div>
+      )}
+
+      {verifyOutcome && (
+        <div className="card" style={{ marginTop: 16, maxWidth: 720 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+            <Badge tone={verdictTone(verifyOutcome.verdict)}>{verifyOutcome.verdict}</Badge>
+            <span className="muted">
+              {verifyOutcome.counts.valid}/{verifyOutcome.counts.succeeded} upheld ·
+              {' '}{Math.round(verifyOutcome.confidence * 100)}% confidence ·
+              {' '}{verifyOutcome.counts.failed > 0 ? `${verifyOutcome.counts.failed} failed · ` : ''}
+              {verifyOutcome.status}
+            </span>
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {verifyOutcome.voters.map((v) => (
+              <div key={v.index} style={{ borderLeft: '2px solid var(--border, #333)', paddingLeft: 12 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <span className="muted">{v.lens}</span>
+                  {v.status === 'success'
+                    ? <Badge tone={v.valid ? 'critical' : 'low'}>{v.valid ? 'upheld' : 'refuted'}</Badge>
+                    : <Badge tone="medium">failed</Badge>}
+                  {v.status === 'success' && <span className="muted" style={{ fontSize: '0.85em' }}>{Math.round((v.confidence || 0) * 100)}%</span>}
+                </div>
+                {v.refutation && <p className="muted" style={{ margin: '4px 0 0', fontSize: '0.85em' }}>{v.refutation}</p>}
+                {v.error && <p className="muted" style={{ margin: '4px 0 0', fontSize: '0.85em', color: 'var(--danger, #c33)' }}>{v.error}</p>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
