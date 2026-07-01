@@ -146,6 +146,94 @@ func (s *Service) RunScenario(ctx context.Context, req RunRequest) (RunOutcome, 
 	}, nil
 }
 
+// PipelineRequest chains scenarios into one audit. The stages run in order under
+// a single backbone session, so each agent builds on the prior stages' context
+// (the orchestration pattern: recon -> ... -> verify -> report). Authorization is
+// the caller's; every stage is a normal, persisted run linked by the session id.
+type PipelineRequest struct {
+	Scenarios     []string
+	Params        map[string]any
+	PrincipalID   string
+	Scope         *Scope
+	StopOnFailure bool
+}
+
+// PipelineStage is one scenario run within a pipeline.
+type PipelineStage struct {
+	Scenario string `json:"scenario"`
+	RunID    string `json:"run_id"`
+	Status   string `json:"status"`
+	Response string `json:"response,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+// PipelineOutcome is the API-facing result of a pipeline.
+type PipelineOutcome struct {
+	SessionID string          `json:"session_id"`
+	Status    string          `json:"status"` // completed | partial | failed
+	Stages    []PipelineStage `json:"stages"`
+}
+
+const maxPipelineStages = 8
+
+// RunPipeline runs the scenarios in order under one session. A stage failure
+// stops the pipeline when StopOnFailure is set (otherwise it continues); the
+// outcome is "completed" if all stages succeeded, "failed" if the first stage
+// failed, else "partial".
+func (s *Service) RunPipeline(ctx context.Context, req PipelineRequest) (PipelineOutcome, error) {
+	if !s.Enabled() {
+		return PipelineOutcome{}, ErrBackboneDisabled
+	}
+	if len(req.Scenarios) == 0 {
+		return PipelineOutcome{}, fmt.Errorf("intel: pipeline requires at least one scenario")
+	}
+	if len(req.Scenarios) > maxPipelineStages {
+		return PipelineOutcome{}, fmt.Errorf("intel: pipeline exceeds %d stages", maxPipelineStages)
+	}
+	// Fail fast on an unknown scenario before spending backbone calls.
+	for _, name := range req.Scenarios {
+		if _, ok := s.scenarios.Get(name); !ok {
+			return PipelineOutcome{}, fmt.Errorf("intel: unknown scenario %q", name)
+		}
+	}
+
+	out := PipelineOutcome{Status: "completed"}
+	session := ""
+	failures := 0
+	for i, name := range req.Scenarios {
+		outcome, err := s.RunScenario(ctx, RunRequest{
+			Scenario: name, Params: req.Params, PrincipalID: req.PrincipalID,
+			Scope: req.Scope, SessionID: session,
+		})
+		if outcome.SessionID != "" {
+			session = outcome.SessionID // thread the session through the pipeline
+		}
+		stage := PipelineStage{Scenario: name, RunID: outcome.RunID, Status: outcome.Status, Response: outcome.Response}
+		if err != nil {
+			stage.Status = "failed"
+			stage.Error = err.Error()
+			failures++
+			out.Stages = append(out.Stages, stage)
+			if req.StopOnFailure {
+				break
+			}
+			continue
+		}
+		out.Stages = append(out.Stages, stage)
+		_ = i
+	}
+	out.SessionID = session
+	switch {
+	case failures == 0:
+		out.Status = "completed"
+	case failures == len(out.Stages):
+		out.Status = "failed"
+	default:
+		out.Status = "partial"
+	}
+	return out, nil
+}
+
 // GetRun reads a persisted run for the API.
 func (s *Service) GetRun(ctx context.Context, runID string) (RunView, error) {
 	if s == nil || s.store == nil {

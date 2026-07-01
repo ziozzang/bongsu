@@ -77,6 +77,49 @@ func (s *Server) handleIntelRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, outcome)
 }
 
+// handleIntelPipeline runs a chain of scenarios under one session (recon ->
+// ... -> verify -> report). Same trigger authz + backbone availability as a run.
+func (s *Server) handleIntelPipeline(w http.ResponseWriter, r *http.Request) {
+	if !s.intelAuthorized(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if s.intel == nil || !s.intel.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "intelligence backbone not configured")
+		return
+	}
+	if err := s.intel.Health(r.Context()); err != nil {
+		writeError(w, http.StatusServiceUnavailable, "intelligence backbone unreachable")
+		return
+	}
+	var body struct {
+		Scenarios     []string       `json:"scenarios"`
+		Params        map[string]any `json:"params"`
+		StopOnFailure bool           `json:"stop_on_failure"`
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(body.Scenarios) == 0 {
+		writeError(w, http.StatusBadRequest, "scenarios is required")
+		return
+	}
+	p := s.principal(r)
+	scope := &intel.Scope{Admin: p.Admin, Subjects: append([]string(nil), p.Subjects...)}
+	outcome, err := s.intel.RunPipeline(r.Context(), intel.PipelineRequest{
+		Scenarios: body.Scenarios, Params: body.Params, PrincipalID: p.ID, Scope: scope, StopOnFailure: body.StopOnFailure,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	s.audit(r, "intel.pipeline", "session", outcome.SessionID, outcome.Status,
+		map[string]any{"scenarios": body.Scenarios, "stages": len(outcome.Stages)})
+	writeJSON(w, http.StatusOK, outcome)
+}
+
 // handleIntelGetRun returns a persisted run by id.
 func (s *Server) handleIntelGetRun(w http.ResponseWriter, r *http.Request) {
 	if !s.intelAuthorized(r) {

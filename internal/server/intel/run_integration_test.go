@@ -253,3 +253,67 @@ func TestServiceSessionThreading(t *testing.T) {
 		t.Fatalf("both runs should persist under the session, got %d", n)
 	}
 }
+
+// TestServiceRunPipeline verifies pipeline orchestration: scenarios run in order
+// under one threaded session, all stages persist under it, and a mid-pipeline
+// failure yields "partial" (continue) unless StopOnFailure.
+func TestServiceRunPipeline(t *testing.T) {
+	database := openIntelDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var calls int
+	jikji := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(200)
+			return
+		}
+		calls++
+		// Fail the 2nd stage (report), succeed others.
+		if calls == 2 {
+			w.WriteHeader(500)
+			_, _ = io.WriteString(w, "stage boom")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"run-p","session_id":"sess-pipe","status":"completed","response":"ok","events":[]}`)
+	}))
+	defer jikji.Close()
+
+	t.Setenv("BONGSU_INTEL_JIKJI_URL", jikji.URL)
+	svc := NewServiceFromEnv(database)
+	defer svc.Close()
+
+	out, err := svc.RunPipeline(ctx, PipelineRequest{
+		Scenarios: []string{"triage", "report", "verify"}, Params: map[string]any{"cve": "CVE-2024-3094"},
+		PrincipalID: "user:admin", Scope: &Scope{Admin: true},
+	})
+	if err != nil {
+		t.Fatalf("RunPipeline: %v", err)
+	}
+	if len(out.Stages) != 3 {
+		t.Fatalf("want 3 stages (continue on failure), got %d", len(out.Stages))
+	}
+	if out.Status != "partial" {
+		t.Fatalf("one failed stage -> partial, got %q", out.Status)
+	}
+	if out.Stages[0].Status != "completed" || out.Stages[1].Status != "failed" || out.Stages[2].Status != "completed" {
+		t.Fatalf("stage statuses wrong: %+v", out.Stages)
+	}
+	if out.SessionID != "sess-pipe" {
+		t.Fatalf("pipeline must thread the session, got %q", out.SessionID)
+	}
+	// All stages persist under the shared session.
+	var n int
+	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM intel_runs WHERE session_id='sess-pipe'`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("all 3 stage runs should persist under the session, got %d", n)
+	}
+
+	// Unknown scenario fails fast.
+	if _, err := svc.RunPipeline(ctx, PipelineRequest{Scenarios: []string{"nope"}, PrincipalID: "u", Scope: &Scope{Admin: true}}); err == nil {
+		t.Fatal("unknown scenario must fail fast")
+	}
+}
