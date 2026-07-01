@@ -1,11 +1,13 @@
-import { useState, useEffect, useCallback } from 'react';
-import { api, type IntelRunOutcome } from '../api';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { api, type IntelRunOutcome, type IntelPipelineInfo, type IntelPipelineOutcome } from '../api';
 import { Loading, EmptyState, Badge } from '../components/primitives';
 import { Icon } from '../components/Icon';
 
+type ParamField = { key: string; label: string; required: boolean; placeholder: string };
+
 // Per-scenario parameter hints — the agent prompt validates required params, so
 // the form mirrors what each scenario's BuildPrompt needs.
-const SCENARIO_PARAMS: Record<string, { key: string; label: string; required: boolean; placeholder: string }[]> = {
+const SCENARIO_PARAMS: Record<string, ParamField[]> = {
   correlate: [{ key: 'cve', label: 'CVE id', required: true, placeholder: 'CVE-2024-3094' }],
   triage: [
     { key: 'cve', label: 'CVE id', required: true, placeholder: 'CVE-2024-3094' },
@@ -36,6 +38,20 @@ const SCENARIO_BLURB: Record<string, string> = {
   nl_query: 'Ask a free-form security question about your assets.',
 };
 
+// A pipeline's form is the union of its stages' params (all stages share params).
+function pipelineFields(scenarios: string[]): ParamField[] {
+  const seen = new Set<string>();
+  const out: ParamField[] = [];
+  for (const s of scenarios) {
+    for (const f of SCENARIO_PARAMS[s] || []) {
+      if (seen.has(f.key)) continue;
+      seen.add(f.key);
+      out.push(f);
+    }
+  }
+  return out;
+}
+
 function statusTone(s: string): 'critical' | 'high' | 'medium' | 'low' {
   if (s === 'completed') return 'low';
   if (s === 'failed' || s === 'timeout') return 'critical';
@@ -44,12 +60,16 @@ function statusTone(s: string): 'critical' | 'high' | 'medium' | 'low' {
 
 export function IntelView() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [mode, setMode] = useState<'scenario' | 'pipeline'>('scenario');
   const [scenarios, setScenarios] = useState<string[]>([]);
+  const [pipelines, setPipelines] = useState<IntelPipelineInfo[]>([]);
   const [scenario, setScenario] = useState('');
+  const [pipeline, setPipeline] = useState('');
   const [params, setParams] = useState<Record<string, string>>({});
   const [running, setRunning] = useState(false);
   const [error, setError] = useState('');
   const [outcome, setOutcome] = useState<IntelRunOutcome | null>(null);
+  const [pipeOutcome, setPipeOutcome] = useState<IntelPipelineOutcome | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -58,17 +78,25 @@ export function IntelView() {
         if (!active) return;
         setEnabled(r.enabled);
         setScenarios(r.scenarios || []);
+        setPipelines(r.pipelines || []);
         if ((r.scenarios || []).length) setScenario(r.scenarios[0]);
+        if ((r.pipelines || []).length) setPipeline(r.pipelines[0].name);
       })
       .catch(() => { if (active) setEnabled(false); });
     return () => { active = false; };
   }, []);
 
-  const fields = SCENARIO_PARAMS[scenario] || [];
+  const selectedPipeline = useMemo(() => pipelines.find((p) => p.name === pipeline), [pipelines, pipeline]);
+  const fields = mode === 'scenario'
+    ? (SCENARIO_PARAMS[scenario] || [])
+    : (selectedPipeline ? pipelineFields(selectedPipeline.scenarios) : []);
+
+  const reset = () => { setParams({}); setOutcome(null); setPipeOutcome(null); setError(''); };
 
   const run = useCallback(() => {
     setError('');
     setOutcome(null);
+    setPipeOutcome(null);
     for (const f of fields) {
       if (f.required && !(params[f.key] || '').trim()) {
         setError(`${f.label} is required`);
@@ -76,17 +104,21 @@ export function IntelView() {
       }
     }
     setRunning(true);
-    api.runIntel(scenario, params)
-      .then((o) => { setOutcome(o); setRunning(false); })
-      .catch((e) => { setError(e instanceof Error ? e.message : 'Run failed'); setRunning(false); });
-  }, [scenario, params, fields]);
+    const done = () => setRunning(false);
+    const fail = (e: unknown) => { setError(e instanceof Error ? e.message : 'Run failed'); done(); };
+    if (mode === 'scenario') {
+      api.runIntel(scenario, params).then((o) => { setOutcome(o); done(); }).catch(fail);
+    } else {
+      api.runIntelPipeline(pipeline, params).then((o) => { setPipeOutcome(o); done(); }).catch(fail);
+    }
+  }, [mode, scenario, pipeline, params, fields]);
 
   if (enabled === null) return <Loading />;
 
   return (
     <>
       <h1 style={{ marginBottom: '0.25rem' }}><Icon name="ai-triage" size={20} /> Security Intelligence</h1>
-      <p className="muted" style={{ marginBottom: '1.5rem' }}>Run an agentic scenario over your security data via the jikji backbone. Every run is audited.</p>
+      <p className="muted" style={{ marginBottom: '1.5rem' }}>Run an agentic scenario — or a reviewed pipeline of scenarios — over your security data via the jikji backbone. Every run is audited.</p>
 
       {!enabled && (
         <EmptyState message="Intelligence backbone not configured — set BONGSU_INTEL_JIKJI_URL to point at a jikji server to enable scenario runs." />
@@ -94,13 +126,36 @@ export function IntelView() {
 
       {enabled && (
         <div className="card" style={{ display: 'grid', gap: 12, maxWidth: 720 }}>
-          <label className="field">
-            <span>Scenario</span>
-            <select value={scenario} onChange={(e) => { setScenario(e.target.value); setParams({}); setOutcome(null); }}>
-              {scenarios.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </label>
-          {scenario && <p className="muted" style={{ margin: 0 }}>{SCENARIO_BLURB[scenario]}</p>}
+          <div className="segmented" style={{ display: 'flex', gap: 4 }}>
+            <button className={`btn ${mode === 'scenario' ? 'btn-primary' : ''}`} onClick={() => { setMode('scenario'); reset(); }}>Scenario</button>
+            <button className={`btn ${mode === 'pipeline' ? 'btn-primary' : ''}`} disabled={!pipelines.length} onClick={() => { setMode('pipeline'); reset(); }}>Pipeline</button>
+          </div>
+
+          {mode === 'scenario' ? (
+            <label className="field">
+              <span>Scenario</span>
+              <select value={scenario} onChange={(e) => { setScenario(e.target.value); reset(); }}>
+                {scenarios.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+          ) : (
+            <label className="field">
+              <span>Pipeline</span>
+              <select value={pipeline} onChange={(e) => { setPipeline(e.target.value); reset(); }}>
+                {pipelines.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+              </select>
+            </label>
+          )}
+
+          {mode === 'scenario' && scenario && <p className="muted" style={{ margin: 0 }}>{SCENARIO_BLURB[scenario]}</p>}
+          {mode === 'pipeline' && selectedPipeline && (
+            <p className="muted" style={{ margin: 0 }}>
+              {selectedPipeline.description}
+              <br />
+              <span style={{ fontSize: '0.85em' }}>Stages: {selectedPipeline.scenarios.join(' → ')}</span>
+            </p>
+          )}
+
           {fields.map((f) => (
             <label className="field" key={f.key}>
               <span>{f.label}{f.required && ' *'}</span>
@@ -112,8 +167,8 @@ export function IntelView() {
             </label>
           ))}
           <div>
-            <button className="btn btn-primary" disabled={running || !scenario} onClick={run}>
-              {running ? 'Running…' : 'Run scenario'}
+            <button className="btn btn-primary" disabled={running || (mode === 'scenario' ? !scenario : !pipeline)} onClick={run}>
+              {running ? 'Running…' : mode === 'scenario' ? 'Run scenario' : 'Run pipeline'}
             </button>
           </div>
           {error && <div className="banner banner-error">{error}</div>}
@@ -127,6 +182,29 @@ export function IntelView() {
             <span className="muted">{outcome.tool_steps} tool calls · {outcome.total_tokens} tokens · run {outcome.run_id.slice(0, 8)}</span>
           </div>
           <pre className="codeblock" style={{ whiteSpace: 'pre-wrap', maxHeight: 480, overflow: 'auto' }}>{outcome.response}</pre>
+        </div>
+      )}
+
+      {pipeOutcome && (
+        <div className="card" style={{ marginTop: 16, maxWidth: 720 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+            <Badge tone={statusTone(pipeOutcome.status)}>{pipeOutcome.status}</Badge>
+            <span className="muted">{pipeOutcome.stages.length} stages · session {pipeOutcome.session_id.slice(0, 8)}</span>
+          </div>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {pipeOutcome.stages.map((st, i) => (
+              <div key={st.run_id || i} style={{ borderLeft: '2px solid var(--border, #333)', paddingLeft: 12 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                  <span className="muted">{i + 1}.</span>
+                  <strong>{st.scenario}</strong>
+                  <Badge tone={statusTone(st.status)}>{st.status}</Badge>
+                </div>
+                {st.error
+                  ? <div className="banner banner-error" style={{ margin: 0 }}>{st.error}</div>
+                  : <pre className="codeblock" style={{ whiteSpace: 'pre-wrap', maxHeight: 320, overflow: 'auto', margin: 0 }}>{st.response}</pre>}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </>

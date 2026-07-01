@@ -16,6 +16,7 @@ type Service struct {
 	runner       *Runner
 	store        *Store
 	scenarios    *ScenarioRegistry
+	pipelines    *PipelineRegistry
 	requireAdmin bool
 }
 
@@ -24,10 +25,13 @@ type Service struct {
 func NewServiceFromEnv(database *db.DB) *Service {
 	sc := NewScenarioRegistry()
 	RegisterScenarios(sc)
+	pl := NewPipelineRegistry()
+	RegisterPipelines(pl)
 	return &Service{
 		runner:       NewRunnerFromEnv(),
 		store:        NewStore(database, envInt("BONGSU_INTEL_AUDIT_BUFFER", 1024)),
 		scenarios:    sc,
+		pipelines:    pl,
 		requireAdmin: os.Getenv("BONGSU_INTEL_REQUIRE_ADMIN") != "false",
 	}
 }
@@ -39,6 +43,14 @@ func (s *Service) Scenarios() []string {
 		return nil
 	}
 	return s.scenarios.Names()
+}
+
+// Pipelines lists the registered named pipelines for the API.
+func (s *Service) Pipelines() []PipelineInfo {
+	if s == nil || s.pipelines == nil {
+		return nil
+	}
+	return s.pipelines.Describe()
 }
 
 // Health reports backbone reachability for graceful degrade.
@@ -196,6 +208,28 @@ type PipelineOutcome struct {
 }
 
 const maxPipelineStages = 8
+
+// RunNamedPipeline runs a code-registered pipeline by name. This is the only
+// pipeline entrypoint the API exposes: the caller picks from a fixed set of
+// reviewed chains, never supplies an arbitrary scenario list, so the backbone
+// cannot be driven into an unbounded fan-out. Unknown names are rejected before
+// any backbone call.
+func (s *Service) RunNamedPipeline(ctx context.Context, name string, params map[string]any, principalID string, scope *Scope) (PipelineOutcome, error) {
+	if !s.Enabled() {
+		return PipelineOutcome{}, ErrBackboneDisabled
+	}
+	pl, ok := s.pipelines.Get(name)
+	if !ok {
+		return PipelineOutcome{}, fmt.Errorf("intel: unknown pipeline %q", name)
+	}
+	return s.RunPipeline(ctx, PipelineRequest{
+		Scenarios:     pl.Scenarios,
+		Params:        params,
+		PrincipalID:   principalID,
+		Scope:         scope,
+		StopOnFailure: pl.StopOnFailure,
+	})
+}
 
 // RunPipeline runs the scenarios in order under one session. A stage failure
 // stops the pipeline when StopOnFailure is set (otherwise it continues); the

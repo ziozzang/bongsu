@@ -25,10 +25,10 @@ func (s *Server) handleIntelScenarios(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.intel == nil || !s.intel.Enabled() {
-		writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "scenarios": []string{}})
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "scenarios": []string{}, "pipelines": []any{}})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "scenarios": s.intel.Scenarios()})
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "scenarios": s.intel.Scenarios(), "pipelines": s.intel.Pipelines()})
 }
 
 // handleIntelRun triggers a scenario run on the jikji backbone over HTTP and
@@ -93,30 +93,27 @@ func (s *Server) handleIntelPipeline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Scenarios     []string       `json:"scenarios"`
-		Params        map[string]any `json:"params"`
-		StopOnFailure bool           `json:"stop_on_failure"`
+		Pipeline string         `json:"pipeline"`
+		Params   map[string]any `json:"params"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if len(body.Scenarios) == 0 {
-		writeError(w, http.StatusBadRequest, "scenarios is required")
+	if body.Pipeline == "" {
+		writeError(w, http.StatusBadRequest, "pipeline is required")
 		return
 	}
 	p := s.principal(r)
 	scope := &intel.Scope{Admin: p.Admin, Subjects: append([]string(nil), p.Subjects...)}
-	outcome, err := s.intel.RunPipeline(r.Context(), intel.PipelineRequest{
-		Scenarios: body.Scenarios, Params: body.Params, PrincipalID: p.ID, Scope: scope, StopOnFailure: body.StopOnFailure,
-	})
+	outcome, err := s.intel.RunNamedPipeline(r.Context(), body.Pipeline, body.Params, p.ID, scope)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.audit(r, "intel.pipeline", "session", outcome.SessionID, outcome.Status,
-		map[string]any{"scenarios": body.Scenarios, "stages": len(outcome.Stages)})
+	s.audit(r, "intel.pipeline", "pipeline", body.Pipeline, outcome.Status,
+		map[string]any{"pipeline": body.Pipeline, "stages": len(outcome.Stages)})
 	writeJSON(w, http.StatusOK, outcome)
 }
 

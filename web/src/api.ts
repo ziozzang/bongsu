@@ -1260,6 +1260,26 @@ export interface IntelRunView {
   error?: string;
 }
 
+export interface IntelPipelineInfo {
+  name: string;
+  description: string;
+  scenarios: string[];
+}
+
+export interface IntelPipelineStage {
+  scenario: string;
+  run_id: string;
+  status: string;
+  response?: string;
+  error?: string;
+}
+
+export interface IntelPipelineOutcome {
+  session_id: string;
+  status: string;
+  stages: IntelPipelineStage[];
+}
+
 export const api = {
   login: (username: string, password: string) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -1478,9 +1498,11 @@ export const api = {
   revokeApiToken: (id: string) => requestEmpty<{ status: string }>(`/admin/api-tokens/${encodeURIComponent(id)}`, 'DELETE'),
 
   // Security intelligence (jikji backbone)
-  intelScenarios: () => request<{ enabled: boolean; scenarios: string[] }>('/intel/scenarios'),
+  intelScenarios: () => request<{ enabled: boolean; scenarios: string[]; pipelines: IntelPipelineInfo[] }>('/intel/scenarios'),
   runIntel: (scenario: string, params: Record<string, unknown>) =>
     requestJSON<IntelRunOutcome>('/intel/runs', { scenario, params }),
+  runIntelPipeline: (pipeline: string, params: Record<string, unknown>) =>
+    requestJSON<IntelPipelineOutcome>('/intel/pipelines', { pipeline, params }),
   getIntelRun: (id: string) => request<IntelRunView>(`/intel/runs/${encodeURIComponent(id)}`),
 
   // AI vulnerability analysis
