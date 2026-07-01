@@ -8,7 +8,7 @@ import (
 func TestScenariosRegistered(t *testing.T) {
 	reg := NewScenarioRegistry()
 	RegisterScenarios(reg)
-	want := []string{"campaign", "correlate", "nl_query", "remediate", "triage"}
+	want := []string{"campaign", "correlate", "nl_query", "remediate", "report", "triage", "verify"}
 	got := reg.Names()
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("scenarios = %v, want %v", got, want)

@@ -172,6 +172,56 @@ func RegisterScenarios(reg *ScenarioRegistry) {
 		},
 	})
 
+	// (f) adversarial verification — validate a finding, reduce false positives
+	reg.Register(Scenario{
+		Name:          "verify",
+		Description:   "Adversarially validate a finding: try to REFUTE it using the advisory, dependency graph, exposure and SBOM context, and report whether it holds.",
+		RequiredTools: []string{"advisory_for", "dependents_of", "query_vulns", "sbom_at"},
+		MaxSteps:      10,
+		Timeout:       180 * time.Second,
+		OutputSchema:  json.RawMessage(`{"type":"object","required":["finding","valid","confidence"],"properties":{"finding":{"type":"string"},"valid":{"type":"boolean"},"confidence":{"type":"number"},"refutation":{"type":"string"},"evidence":{"type":"array"}}}`),
+		BuildPrompt: func(p map[string]any) (string, error) {
+			cve, err := reqParam(p, "cve")
+			if err != nil {
+				return "", err
+			}
+			scan := optParam(p, "scan_id")
+			pkg := optParam(p, "package")
+			b := strings.Builder{}
+			b.WriteString(toolPreamble)
+			b.WriteString("\n\nTask: ADVERSARIALLY verify finding " + cve)
+			if pkg != "" {
+				b.WriteString(" on package " + pkg)
+			}
+			if scan != "" {
+				b.WriteString(" in scan " + scan)
+			}
+			b.WriteString(". Default to refuting: actively look for evidence the finding is a false positive (fixed version already installed, package not actually present, not reachable, wrong ecosystem). Use advisory_for, sbom_at, dependents_of, query_vulns. Only conclude valid=true if you cannot refute it. ")
+			b.WriteString(`Output: {"finding","valid":true|false,"confidence":0..1,"refutation":"why it may be false, or empty","evidence":[{tool,fact}]}.`)
+			return b.String(), nil
+		},
+	})
+
+	// (g) CVE-grade structured report
+	reg.Register(Scenario{
+		Name:          "report",
+		Description:   "Produce a CVE-grade structured report for a finding (summary, severity/CVSS, affected assets, attack chain, remediation) with a dedup key.",
+		RequiredTools: []string{"advisory_for", "query_vulns", "dependents_of"},
+		MaxSteps:      10,
+		Timeout:       180 * time.Second,
+		OutputSchema:  json.RawMessage(`{"type":"object","required":["finding","summary","dedup_key"],"properties":{"finding":{"type":"string"},"summary":{"type":"string"},"severity":{"type":"string"},"cvss":{"type":"number"},"affected_assets":{"type":"array"},"attack_chain":{"type":"array"},"remediation":{"type":"string"},"dedup_key":{"type":"string"}}}`),
+		BuildPrompt: func(p map[string]any) (string, error) {
+			cve, err := reqParam(p, "cve")
+			if err != nil {
+				return "", err
+			}
+			return toolPreamble + "\n\nTask: produce a CVE-grade report for " + cve +
+				". Use advisory_for for severity/CVSS/exploited, query_vulns for affected assets, dependents_of for the attack chain. " +
+				`The dedup_key must be a stable identifier (e.g. cve + primary package) so duplicate reports collapse. ` +
+				`Output: {"finding","summary","severity","cvss","affected_assets":[{host,package,version}],"attack_chain":["pkg->pkg"],"remediation","dedup_key"}.`, nil
+		},
+	})
+
 	// (e) natural-language security query
 	reg.Register(Scenario{
 		Name:          "nl_query",

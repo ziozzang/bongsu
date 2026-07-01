@@ -17,6 +17,12 @@ const SCENARIO_PARAMS: Record<string, { key: string; label: string; required: bo
     { key: 'package', label: 'Package', required: true, placeholder: 'left-pad' },
   ],
   remediate: [{ key: 'cve', label: 'CVE id', required: true, placeholder: 'CVE-2024-3094' }],
+  verify: [
+    { key: 'cve', label: 'CVE id', required: true, placeholder: 'CVE-2024-3094' },
+    { key: 'scan_id', label: 'Scan id', required: false, placeholder: 'optional' },
+    { key: 'package', label: 'Package', required: false, placeholder: 'optional' },
+  ],
+  report: [{ key: 'cve', label: 'CVE id', required: true, placeholder: 'CVE-2024-3094' }],
   nl_query: [{ key: 'question', label: 'Question', required: true, placeholder: 'Which hosts run a known-compromised package?' }],
 };
 
@@ -25,6 +31,8 @@ const SCENARIO_BLURB: Record<string, string> = {
   triage: 'Judge whether a finding is reachable / a false positive.',
   campaign: 'Estimate supply-chain compromise propagation from an exposure.',
   remediate: 'Produce a fix plan (fixed version, upgrade path, dependents).',
+  verify: 'Adversarially validate a finding — try to refute it (false-positive check).',
+  report: 'Produce a CVE-grade structured report (severity, attack chain, remediation).',
   nl_query: 'Ask a free-form security question about your assets.',
 };
 
