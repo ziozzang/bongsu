@@ -111,6 +111,7 @@ func (r *Runner) Health(ctx context.Context) error {
 // Result is the parsed outcome of an agent run.
 type Result struct {
 	RunID            string
+	SessionID        string // backbone session id (for interactive follow-up runs)
 	Status           string // jikji run status (e.g. "completed")
 	Response         string
 	ToolSteps        int
@@ -139,6 +140,13 @@ type ToolCall struct {
 // per-run timeout. The prompt is the only caller data sent; callers must not
 // embed secrets in it.
 func (r *Runner) Run(ctx context.Context, prompt string) (Result, error) {
+	return r.RunSession(ctx, prompt, "")
+}
+
+// RunSession is Run with a backbone session id: passing the same session across
+// runs lets the agent build on the earlier conversation (interactive follow-up
+// auditing). An empty sessionID is a fresh, stateless run.
+func (r *Runner) RunSession(ctx context.Context, prompt, sessionID string) (Result, error) {
 	if !r.Enabled() {
 		return Result{}, ErrBackboneDisabled
 	}
@@ -151,7 +159,11 @@ func (r *Runner) Run(ctx context.Context, prompt string) (Result, error) {
 	runCtx, cancel := context.WithTimeout(ctx, r.cfg.Timeout)
 	defer cancel()
 
-	body, _ := json.Marshal(map[string]any{"prompt": prompt, "max_steps": r.cfg.MaxSteps})
+	payload := map[string]any{"prompt": prompt, "max_steps": r.cfg.MaxSteps}
+	if sessionID != "" {
+		payload["session_id"] = sessionID
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(runCtx, http.MethodPost, r.cfg.BaseURL+"/v1/runs", bytes.NewReader(body))
 	if err != nil {
 		return Result{}, err
@@ -177,6 +189,7 @@ func (r *Runner) Run(ctx context.Context, prompt string) (Result, error) {
 func parseRunResponse(raw []byte) (Result, error) {
 	var resp struct {
 		ID            string `json:"id"`
+		SessionID     string `json:"session_id"`
 		Status        string `json:"status"`
 		Response      string `json:"response"`
 		ContextTokens int    `json:"context_tokens"`
@@ -193,7 +206,7 @@ func parseRunResponse(raw []byte) (Result, error) {
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return Result{}, fmt.Errorf("intel: parse run response: %w", err)
 	}
-	res := Result{RunID: resp.ID, Status: resp.Status, Response: resp.Response, ContextTokens: resp.ContextTokens}
+	res := Result{RunID: resp.ID, SessionID: resp.SessionID, Status: resp.Status, Response: resp.Response, ContextTokens: resp.ContextTokens}
 	var pending *ToolCall
 	var lastRespond string
 	for i := range resp.Events {

@@ -189,3 +189,67 @@ func TestServiceLiveJikjiSmoke(t *testing.T) {
 		t.Fatalf("live run must be readable: view=%+v err=%v", view, err)
 	}
 }
+
+// TestServiceSessionThreading verifies interactive-audit sessions: the first run
+// yields a session id (jikji-generated), and a follow-up run carries it back to
+// the backbone and persists it, so the agent can build on prior context.
+func TestServiceSessionThreading(t *testing.T) {
+	database := openIntelDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var gotSessions []string
+	jikji := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(200)
+			return
+		}
+		var body struct {
+			SessionID string `json:"session_id"`
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &body)
+		gotSessions = append(gotSessions, body.SessionID)
+		// The backbone assigns a session when none is supplied.
+		sess := body.SessionID
+		if sess == "" {
+			sess = "sess-generated-1"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"run-x","session_id":"`+sess+`","status":"completed","response":"ok","events":[]}`)
+	}))
+	defer jikji.Close()
+
+	t.Setenv("BONGSU_INTEL_JIKJI_URL", jikji.URL)
+	svc := NewServiceFromEnv(database)
+	defer svc.Close()
+
+	// First run: no session -> backbone generates one, returned + persisted.
+	first, err := svc.RunScenario(ctx, RunRequest{Scenario: "nl_query", Params: map[string]any{"question": "hi"}, PrincipalID: "user:admin", Scope: &Scope{Admin: true}})
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	if first.SessionID != "sess-generated-1" {
+		t.Fatalf("first run should surface the backbone session id, got %q", first.SessionID)
+	}
+	// Follow-up run: reuse the session id.
+	second, err := svc.RunScenario(ctx, RunRequest{Scenario: "nl_query", Params: map[string]any{"question": "and then?"}, PrincipalID: "user:admin", Scope: &Scope{Admin: true}, SessionID: first.SessionID})
+	if err != nil {
+		t.Fatalf("follow-up run: %v", err)
+	}
+	if second.SessionID != "sess-generated-1" {
+		t.Fatalf("follow-up must keep the session id, got %q", second.SessionID)
+	}
+	// The backbone saw: "" (first, generated) then the reused id (follow-up).
+	if len(gotSessions) != 2 || gotSessions[0] != "" || gotSessions[1] != "sess-generated-1" {
+		t.Fatalf("backbone session threading wrong: %v", gotSessions)
+	}
+	// Both runs are persisted under the session.
+	var n int
+	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM intel_runs WHERE session_id='sess-generated-1'`).Scan(&n); err != nil {
+		t.Fatalf("count session runs: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("both runs should persist under the session, got %d", n)
+	}
+}

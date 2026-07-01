@@ -60,6 +60,7 @@ type RunRecord struct {
 	PrincipalID    string
 	PrincipalScope any
 	ToolsInjected  []string
+	SessionID      string
 }
 
 // CreateRun inserts a new run in status 'running' and returns its id.
@@ -67,10 +68,19 @@ func (s *Store) CreateRun(ctx context.Context, r RunRecord) (string, error) {
 	scope := marshalJSONObject(r.PrincipalScope)
 	var id string
 	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO intel_runs (scenario, goal, principal_id, principal_scope, status, tools_injected)
-		 VALUES ($1,$2,$3,$4,'running',$5) RETURNING id`,
-		r.Scenario, r.Goal, r.PrincipalID, scope, pqTextArray(r.ToolsInjected)).Scan(&id)
+		`INSERT INTO intel_runs (scenario, goal, principal_id, principal_scope, status, tools_injected, session_id)
+		 VALUES ($1,$2,$3,$4,'running',$5,$6) RETURNING id`,
+		r.Scenario, r.Goal, r.PrincipalID, scope, pqTextArray(r.ToolsInjected), r.SessionID).Scan(&id)
 	return id, err
+}
+
+// SetRunSession records the backbone session id resolved during the run (jikji
+// generates one when none was supplied), so follow-up runs can reference it.
+func (s *Store) SetRunSession(ctx context.Context, runID, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	_, _ = s.db.ExecContext(ctx, `UPDATE intel_runs SET session_id=$2 WHERE id=$1`, runID, sessionID)
 }
 
 // FinishRun records the terminal status, output, token usage and any dropped

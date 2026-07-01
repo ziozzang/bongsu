@@ -56,17 +56,20 @@ func (s *Service) Close() {
 	}
 }
 
-// RunRequest triggers a scenario.
+// RunRequest triggers a scenario. A non-empty SessionID continues an interactive
+// audit session — the follow-up run builds on the earlier conversation.
 type RunRequest struct {
 	Scenario    string
 	Params      map[string]any
 	PrincipalID string
 	Scope       *Scope
+	SessionID   string
 }
 
 // RunOutcome is the API-facing result of a run.
 type RunOutcome struct {
 	RunID       string `json:"run_id"`
+	SessionID   string `json:"session_id,omitempty"`
 	Scenario    string `json:"scenario"`
 	Status      string `json:"status"`
 	Response    string `json:"response"`
@@ -92,7 +95,7 @@ func (s *Service) RunScenario(ctx context.Context, req RunRequest) (RunOutcome, 
 	}
 	runID, err := s.store.CreateRun(ctx, RunRecord{
 		Scenario: req.Scenario, Goal: scen.Description, PrincipalID: req.PrincipalID,
-		PrincipalScope: req.Scope, ToolsInjected: scen.RequiredTools,
+		PrincipalScope: req.Scope, ToolsInjected: scen.RequiredTools, SessionID: req.SessionID,
 	})
 	if err != nil {
 		return RunOutcome{}, fmt.Errorf("intel: create run: %w", err)
@@ -104,11 +107,12 @@ func (s *Service) RunScenario(ctx context.Context, req RunRequest) (RunOutcome, 
 		runCtx, cancel = context.WithTimeout(ctx, scen.Timeout)
 		defer cancel()
 	}
-	res, runErr := s.runner.Run(runCtx, prompt)
+	res, runErr := s.runner.RunSession(runCtx, prompt, req.SessionID)
 	if runErr != nil {
 		_ = s.store.FinishRun(ctx, runID, "failed", nil, nil, runErr.Error())
-		return RunOutcome{RunID: runID, Scenario: req.Scenario, Status: "failed"}, runErr
+		return RunOutcome{RunID: runID, SessionID: req.SessionID, Scenario: req.Scenario, Status: "failed"}, runErr
 	}
+	s.store.SetRunSession(ctx, runID, res.SessionID)
 
 	status := res.Status
 	if status == "" {
@@ -132,8 +136,12 @@ func (s *Service) RunScenario(ctx context.Context, req RunRequest) (RunOutcome, 
 		// Persistence failure is non-fatal to returning the result.
 		_ = err
 	}
+	sessionID := res.SessionID
+	if sessionID == "" {
+		sessionID = req.SessionID
+	}
 	return RunOutcome{
-		RunID: runID, Scenario: req.Scenario, Status: status,
+		RunID: runID, SessionID: sessionID, Scenario: req.Scenario, Status: status,
 		Response: res.Response, ToolSteps: res.ToolSteps, TotalTokens: res.TotalTokens,
 	}, nil
 }

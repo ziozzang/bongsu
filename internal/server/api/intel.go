@@ -48,8 +48,9 @@ func (s *Server) handleIntelRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Scenario string         `json:"scenario"`
-		Params   map[string]any `json:"params"`
+		Scenario  string         `json:"scenario"`
+		Params    map[string]any `json:"params"`
+		SessionID string         `json:"session_id"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -64,7 +65,7 @@ func (s *Server) handleIntelRun(w http.ResponseWriter, r *http.Request) {
 	p := s.principal(r)
 	scope := &intel.Scope{Admin: p.Admin, Subjects: append([]string(nil), p.Subjects...)}
 	outcome, err := s.intel.RunScenario(r.Context(), intel.RunRequest{
-		Scenario: body.Scenario, Params: body.Params, PrincipalID: p.ID, Scope: scope,
+		Scenario: body.Scenario, Params: body.Params, PrincipalID: p.ID, Scope: scope, SessionID: body.SessionID,
 	})
 	if err != nil {
 		s.audit(r, "intel.run", "scenario", body.Scenario, "error", map[string]any{"error": err.Error(), "run_id": outcome.RunID})
