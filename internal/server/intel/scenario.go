@@ -94,7 +94,8 @@ func verifyLensSuffix(lens string) string {
 
 const toolPreamble = "You are Bongsu's security-intelligence agent. Use ONLY the provided tools to gather facts; never invent data. " +
 	"Tools enforce the caller's access scope — if a tool returns a forbidden/empty result, do not speculate about hidden data. " +
-	"Return EXACTLY one JSON object matching the requested schema and nothing else."
+	"IMPORTANT: never output a tool's raw JSON result as your answer — after gathering evidence from the tools, SYNTHESIZE it into the response. " +
+	"Your FINAL message must be EXACTLY one JSON object matching the requested schema and nothing else (no prose, no tool dumps, no code fences)."
 
 // RegisterScenarios registers the built-in scenarios. Each BuildPrompt is a pure
 // function of its params (deterministic) so runs are reproducible.
