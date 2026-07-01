@@ -50,6 +50,7 @@ See [docs/architecture.md](docs/architecture.md) for full component and data-flo
 - [docs/architecture.md](docs/architecture.md) — component design and implementation notes
 - [docs/operations-runbook.md](docs/operations-runbook.md) — canonical operator runbook (install, upgrade, backup, security DB, monitoring, incident response)
 - [docs/vulnerability-matching-rules.md](docs/vulnerability-matching-rules.md) — matching engine, version algorithms, false-positive reduction
+- [docs/intel-backbone.md](docs/intel-backbone.md) — security-intelligence backbone: jikji setup, MCP tools, scenarios, pipelines, verify voting, finding reports
 - [docs/requirements-audit.md](docs/requirements-audit.md) — requirement traceability matrix and verification suite
 - [docs/agent-handoff.md](docs/agent-handoff.md) — contributor / engineer onboarding
 - [TODO.md](TODO.md) — roadmap
