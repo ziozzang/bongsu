@@ -107,12 +107,33 @@ func (s *Service) RunScenario(ctx context.Context, req RunRequest) (RunOutcome, 
 		runCtx, cancel = context.WithTimeout(ctx, scen.Timeout)
 		defer cancel()
 	}
-	res, runErr := s.runner.RunSession(runCtx, prompt, req.SessionID)
-	if runErr != nil {
-		_ = s.store.FinishRun(ctx, runID, "failed", nil, nil, runErr.Error())
-		return RunOutcome{RunID: runID, SessionID: req.SessionID, Scenario: req.Scenario, Status: "failed"}, runErr
+	// Structured termination: validate the output against the scenario schema and
+	// do one corrective retry (nudge) if it doesn't conform. The corrective retry
+	// stays in the same session so the agent sees its own prior (invalid) answer.
+	const maxAttempts = 2
+	var res Result
+	var runErr error
+	var outputValid bool
+	var validationErr string
+	attemptPrompt := prompt
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		res, runErr = s.runner.RunSession(runCtx, attemptPrompt, req.SessionID)
+		if runErr != nil {
+			_ = s.store.FinishRun(ctx, runID, "failed", nil, nil, runErr.Error())
+			return RunOutcome{RunID: runID, SessionID: req.SessionID, Scenario: req.Scenario, Status: "failed"}, runErr
+		}
+		if res.SessionID != "" {
+			req.SessionID = res.SessionID // thread session into the retry
+		}
+		outputValid, validationErr = validateScenarioOutput(scen.OutputSchema, res.Response)
+		if outputValid || attempt == maxAttempts {
+			break
+		}
+		attemptPrompt = prompt + "\n\nCORRECTION: your previous answer was invalid (" + validationErr +
+			"). Return ONLY a single JSON object with the required fields and nothing else."
 	}
 	s.store.SetRunSession(ctx, runID, res.SessionID)
+	s.store.SetRunValidation(ctx, runID, outputValid, validationErr)
 
 	status := res.Status
 	if status == "" {

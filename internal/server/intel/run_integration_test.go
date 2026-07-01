@@ -317,3 +317,58 @@ func TestServiceRunPipeline(t *testing.T) {
 		t.Fatal("unknown scenario must fail fast")
 	}
 }
+
+// TestServiceCorrectiveRetry verifies structured termination: an invalid first
+// output triggers one corrective retry (in-session), the valid retry is accepted,
+// and output_valid is recorded.
+func TestServiceCorrectiveRetry(t *testing.T) {
+	database := openIntelDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var attempts int
+	var sawCorrection bool
+	jikji := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(200)
+			return
+		}
+		attempts++
+		var body struct {
+			Prompt string `json:"prompt"`
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &body)
+		w.Header().Set("Content-Type", "application/json")
+		if attempts == 1 {
+			// invalid: prose, no JSON — must trigger a corrective retry
+			_, _ = io.WriteString(w, `{"id":"r1","status":"completed","response":"I think it is critical.","events":[]}`)
+			return
+		}
+		if contains(body.Prompt, "CORRECTION") {
+			sawCorrection = true
+		}
+		// valid on the retry (correlate requires cve + canonical)
+		_, _ = io.WriteString(w, `{"id":"r2","status":"completed","response":"{\"cve\":\"CVE-1\",\"canonical\":{\"severity\":\"high\"}}","events":[]}`)
+	}))
+	defer jikji.Close()
+
+	t.Setenv("BONGSU_INTEL_JIKJI_URL", jikji.URL)
+	svc := NewServiceFromEnv(database)
+	defer svc.Close()
+
+	outcome, err := svc.RunScenario(ctx, RunRequest{Scenario: "correlate", Params: map[string]any{"cve": "CVE-1"}, PrincipalID: "user:admin", Scope: &Scope{Admin: true}})
+	if err != nil {
+		t.Fatalf("RunScenario: %v", err)
+	}
+	if attempts != 2 || !sawCorrection {
+		t.Fatalf("invalid output must trigger one corrective retry: attempts=%d sawCorrection=%v", attempts, sawCorrection)
+	}
+	var valid bool
+	if err := database.QueryRowContext(ctx, `SELECT output_valid FROM intel_runs WHERE id=$1`, outcome.RunID).Scan(&valid); err != nil {
+		t.Fatalf("read output_valid: %v", err)
+	}
+	if !valid {
+		t.Fatalf("retry produced valid output; output_valid must be true")
+	}
+}

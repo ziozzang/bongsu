@@ -74,6 +74,13 @@ func (s *Store) CreateRun(ctx context.Context, r RunRecord) (string, error) {
 	return id, err
 }
 
+// SetRunValidation records whether the run's output conformed to its scenario
+// OutputSchema (structured-termination result).
+func (s *Store) SetRunValidation(ctx context.Context, runID string, valid bool, validationErr string) {
+	_, _ = s.db.ExecContext(ctx, `UPDATE intel_runs SET output_valid=$2, output_validation_error=$3 WHERE id=$1`,
+		runID, valid, validationErr)
+}
+
 // SetRunSession records the backbone session id resolved during the run (jikji
 // generates one when none was supplied), so follow-up runs can reference it.
 func (s *Store) SetRunSession(ctx context.Context, runID, sessionID string) {
