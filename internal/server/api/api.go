@@ -321,6 +321,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/intel/runs", s.handleIntelRun)
 	s.mux.HandleFunc("POST /api/intel/pipelines", s.handleIntelPipeline)
 	s.mux.HandleFunc("POST /api/intel/verify", s.handleIntelVerify)
+	s.mux.HandleFunc("GET /api/intel/reports", s.handleIntelListReports)
+	s.mux.HandleFunc("GET /api/intel/report", s.handleIntelGetReport)
 	s.mux.HandleFunc("GET /api/intel/runs/{id}", s.handleIntelGetRun)
 	s.mux.HandleFunc("POST /api/exposure-catalog", s.handleUploadExposureCatalog)
 	s.mux.HandleFunc("GET /api/exposure-catalog", s.handleListExposureCatalogs)

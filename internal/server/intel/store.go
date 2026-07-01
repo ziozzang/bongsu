@@ -202,6 +202,116 @@ func (s *Store) UpdateVerification(ctx context.Context, id int64, a Verification
 	return err
 }
 
+// UpsertFindingReport persists a report keyed UNIQUE by dedup_key: a new key
+// inserts, an existing key updates to the latest report and bumps
+// seen_count/last_seen (first_seen is preserved). Atomic via ON CONFLICT.
+func (s *Store) UpsertFindingReport(ctx context.Context, in FindingReportInput) (*FindingReport, error) {
+	report := in.Report
+	if len(report) == 0 {
+		report = []byte("{}")
+	}
+	var runID any
+	if in.RunID != "" {
+		runID = in.RunID
+	}
+	var fr FindingReport
+	var cvss sql.NullFloat64
+	var run sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+INSERT INTO intel_finding_reports (dedup_key, finding, summary, severity, cvss, report, run_id, principal_id)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+ON CONFLICT (dedup_key) DO UPDATE SET
+	finding=EXCLUDED.finding, summary=EXCLUDED.summary, severity=EXCLUDED.severity,
+	cvss=EXCLUDED.cvss, report=EXCLUDED.report, run_id=EXCLUDED.run_id,
+	principal_id=EXCLUDED.principal_id, last_seen=now(),
+	seen_count=intel_finding_reports.seen_count+1, updated_at=now()
+RETURNING id, dedup_key, finding, summary, severity, cvss, report, run_id, principal_id, first_seen, last_seen, seen_count`,
+		in.DedupKey, in.Finding, in.Summary, in.Severity, nullableFloat(in.CVSS), report, runID, in.PrincipalID).
+		Scan(&fr.ID, &fr.DedupKey, &fr.Finding, &fr.Summary, &fr.Severity, &cvss, &fr.Report, &run, &fr.PrincipalID, &fr.FirstSeen, &fr.LastSeen, &fr.SeenCount)
+	if err != nil {
+		return nil, err
+	}
+	if cvss.Valid {
+		fr.CVSS = &cvss.Float64
+	}
+	fr.RunID = run.String
+	return &fr, nil
+}
+
+// ListFindingReports returns persisted reports, newest activity first, with
+// optional severity/finding filters and pagination.
+func (s *Store) ListFindingReports(ctx context.Context, f FindingReportFilter) (FindingReportList, error) {
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := f.Offset
+	if offset < 0 {
+		offset = 0
+	}
+	out := FindingReportList{Limit: limit, Offset: offset}
+	if err := s.db.QueryRowContext(ctx,
+		`SELECT count(*) FROM intel_finding_reports WHERE ($1='' OR severity=$1) AND ($2='' OR finding ILIKE '%'||$2||'%')`,
+		f.Severity, f.Finding).Scan(&out.Total); err != nil {
+		return out, err
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, dedup_key, finding, summary, severity, cvss, report, run_id, principal_id, first_seen, last_seen, seen_count
+FROM intel_finding_reports
+WHERE ($1='' OR severity=$1) AND ($2='' OR finding ILIKE '%'||$2||'%')
+ORDER BY last_seen DESC, id DESC
+LIMIT $3 OFFSET $4`, f.Severity, f.Finding, limit, offset)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		fr, err := scanFindingReport(rows)
+		if err != nil {
+			return out, err
+		}
+		out.Reports = append(out.Reports, fr)
+	}
+	return out, rows.Err()
+}
+
+// GetFindingReportByDedupKey reads a single report by its normalized dedup key.
+func (s *Store) GetFindingReportByDedupKey(ctx context.Context, dedupKey string) (FindingReport, error) {
+	row := s.db.QueryRowContext(ctx, `
+SELECT id, dedup_key, finding, summary, severity, cvss, report, run_id, principal_id, first_seen, last_seen, seen_count
+FROM intel_finding_reports WHERE dedup_key=$1`, dedupKey)
+	return scanFindingReport(row)
+}
+
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanFindingReport(r rowScanner) (FindingReport, error) {
+	var fr FindingReport
+	var cvss sql.NullFloat64
+	var run sql.NullString
+	if err := r.Scan(&fr.ID, &fr.DedupKey, &fr.Finding, &fr.Summary, &fr.Severity, &cvss, &fr.Report,
+		&run, &fr.PrincipalID, &fr.FirstSeen, &fr.LastSeen, &fr.SeenCount); err != nil {
+		return FindingReport{}, err
+	}
+	if cvss.Valid {
+		fr.CVSS = &cvss.Float64
+	}
+	fr.RunID = run.String
+	return fr, nil
+}
+
+func nullableFloat(f *float64) any {
+	if f == nil {
+		return nil
+	}
+	return *f
+}
+
 // RecordToolCall queues a tool-call audit (non-blocking). On a full buffer the
 // audit is dropped and the run's drop counter is incremented.
 func (s *Store) RecordToolCall(runID string, seq int, tool string, args, result []byte, truncated bool, duration time.Duration, errMsg string) {

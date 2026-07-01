@@ -87,6 +87,10 @@ type RunOutcome struct {
 	Response    string `json:"response"`
 	ToolSteps   int    `json:"tool_steps"`
 	TotalTokens int    `json:"total_tokens"`
+	// Report persistence (report scenario only; omitempty keeps other runs clean).
+	ReportID        *int64 `json:"report_id,omitempty"`
+	ReportDedupKey  string `json:"report_dedup_key,omitempty"`
+	ReportPersisted bool   `json:"report_persisted,omitempty"`
 }
 
 // RunScenario builds the scenario prompt, creates the run (snapshotting the
@@ -173,10 +177,18 @@ func (s *Service) RunScenario(ctx context.Context, req RunRequest) (RunOutcome, 
 	if sessionID == "" {
 		sessionID = req.SessionID
 	}
-	return RunOutcome{
+	outcome := RunOutcome{
 		RunID: runID, SessionID: sessionID, Scenario: req.Scenario, Status: status,
 		Response: res.Response, ToolSteps: res.ToolSteps, TotalTokens: res.TotalTokens,
-	}, nil
+	}
+	// Persist a report-scenario output as a deduplicated finding (best-effort:
+	// a failure here never fails the run — the raw output is in intel_runs).
+	if fr := s.maybePersistReport(ctx, req.Scenario, runID, req.PrincipalID, res.Response, outputValid, status); fr != nil {
+		outcome.ReportID = &fr.ID
+		outcome.ReportDedupKey = fr.DedupKey
+		outcome.ReportPersisted = true
+	}
+	return outcome, nil
 }
 
 // PipelineRequest chains scenarios into one audit. The stages run in order under

@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/ziozzang/bongsu/internal/server/intel"
 )
@@ -166,6 +167,54 @@ func (s *Server) handleIntelVerify(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "intel.verify", "cve", body.CVE, string(outcome.Verdict),
 		map[string]any{"verification_id": outcome.VerificationID, "voters": outcome.Counts.Requested, "succeeded": outcome.Counts.Succeeded})
 	writeJSON(w, http.StatusOK, outcome)
+}
+
+// handleIntelListReports lists persisted, deduplicated finding reports (produced
+// by the report scenario), newest activity first, with optional filters.
+func (s *Server) handleIntelListReports(w http.ResponseWriter, r *http.Request) {
+	if !s.intelAuthorized(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if s.intel == nil {
+		writeError(w, http.StatusServiceUnavailable, "intelligence backbone not configured")
+		return
+	}
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	list, err := s.intel.ListFindingReports(r.Context(), intel.FindingReportFilter{
+		Limit: limit, Offset: offset, Severity: q.Get("severity"), Finding: q.Get("finding"),
+	})
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list reports")
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// handleIntelGetReport returns a single finding report by its dedup key (passed
+// as a query param since a dedup key can contain path-hostile characters).
+func (s *Server) handleIntelGetReport(w http.ResponseWriter, r *http.Request) {
+	if !s.intelAuthorized(r) {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if s.intel == nil {
+		writeError(w, http.StatusServiceUnavailable, "intelligence backbone not configured")
+		return
+	}
+	key := r.URL.Query().Get("dedup_key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, "dedup_key is required")
+		return
+	}
+	report, err := s.intel.GetFindingReport(r.Context(), key)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "report not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
 }
 
 // handleIntelGetRun returns a persisted run by id.

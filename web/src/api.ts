@@ -1301,6 +1301,27 @@ export interface IntelVerificationOutcome {
   voters: IntelVerificationVote[];
 }
 
+export interface IntelFindingReport {
+  id: number;
+  dedup_key: string;
+  finding: string;
+  summary: string;
+  severity: string;
+  cvss?: number;
+  report: Record<string, unknown>;
+  run_id?: string;
+  first_seen: string;
+  last_seen: string;
+  seen_count: number;
+}
+
+export interface IntelFindingReportList {
+  reports: IntelFindingReport[];
+  limit: number;
+  offset: number;
+  total: number;
+}
+
 export const api = {
   login: (username: string, password: string) => {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
@@ -1526,6 +1547,8 @@ export const api = {
     requestJSON<IntelPipelineOutcome>('/intel/pipelines', { pipeline, params }),
   runIntelVerify: (body: { cve: string; scan_id?: string; package?: string; voters?: number; lenses?: string[] }) =>
     requestJSON<IntelVerificationOutcome>('/intel/verify', body),
+  intelReports: (params?: { severity?: string; finding?: string }) =>
+    request<IntelFindingReportList>('/intel/reports', params as Record<string, string> | undefined),
   getIntelRun: (id: string) => request<IntelRunView>(`/intel/runs/${encodeURIComponent(id)}`),
 
   // AI vulnerability analysis

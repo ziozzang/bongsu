@@ -514,3 +514,109 @@ func TestServiceRunVerificationInconclusive(t *testing.T) {
 		t.Fatalf("counts wrong: %+v", out.Counts)
 	}
 }
+
+// reportJikji is a fake backbone that returns a fixed report JSON for any run.
+func reportJikji(t *testing.T, dedupKey, severity string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(200)
+			return
+		}
+		inner, _ := json.Marshal(map[string]any{
+			"finding": "CVE-2024-3094", "summary": "xz backdoor", "severity": severity, "cvss": 10.0,
+			"affected_assets": []any{map[string]any{"host": "h1", "package": "xz", "version": "5.6.0"}},
+			"attack_chain":    []any{"sshd->liblzma"}, "remediation": "downgrade", "dedup_key": dedupKey,
+		})
+		run, _ := json.Marshal(map[string]any{"id": "run-rep", "status": "completed", "response": string(inner), "events": []any{}})
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(run)
+	}))
+}
+
+// TestServiceReportPersist verifies a report run persists a deduplicated finding
+// report, that a second run with the same dedup_key collapses onto one row
+// (seen_count bumped), and that the list/get store paths read it back.
+func TestServiceReportPersist(t *testing.T) {
+	database := openIntelDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	jikji := reportJikji(t, "cve-2024-3094:xz", "critical")
+	defer jikji.Close()
+	t.Setenv("BONGSU_INTEL_JIKJI_URL", jikji.URL)
+	svc := NewServiceFromEnv(database)
+	defer svc.Close()
+
+	out1, err := svc.RunScenario(ctx, RunRequest{Scenario: "report", Params: map[string]any{"cve": "CVE-2024-3094"}, PrincipalID: "user:admin", Scope: &Scope{Admin: true}})
+	if err != nil {
+		t.Fatalf("report run: %v", err)
+	}
+	if !out1.ReportPersisted || out1.ReportID == nil || out1.ReportDedupKey != "cve-2024-3094:xz" {
+		t.Fatalf("first report must persist: %+v", out1)
+	}
+
+	// Second run, same dedup_key -> one row, seen_count bumped.
+	out2, err := svc.RunScenario(ctx, RunRequest{Scenario: "report", Params: map[string]any{"cve": "CVE-2024-3094"}, PrincipalID: "user:admin", Scope: &Scope{Admin: true}})
+	if err != nil {
+		t.Fatalf("second report run: %v", err)
+	}
+	if !out2.ReportPersisted || *out2.ReportID != *out1.ReportID {
+		t.Fatalf("same dedup_key must collapse onto the same row: %+v vs %+v", out1, out2)
+	}
+
+	var rows, seen int
+	if err := database.QueryRowContext(ctx, `SELECT count(*), max(seen_count) FROM intel_finding_reports WHERE dedup_key='cve-2024-3094:xz'`).Scan(&rows, &seen); err != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	if rows != 1 || seen != 2 {
+		t.Fatalf("want 1 row seen_count=2, got rows=%d seen=%d", rows, seen)
+	}
+
+	// Store read paths.
+	list, err := svc.ListFindingReports(ctx, FindingReportFilter{Severity: "critical"})
+	if err != nil || list.Total != 1 || len(list.Reports) != 1 {
+		t.Fatalf("list reports: err=%v total=%d n=%d", err, list.Total, len(list.Reports))
+	}
+	got, err := svc.GetFindingReport(ctx, "cve-2024-3094:xz")
+	if err != nil || got.Finding != "CVE-2024-3094" || got.SeenCount != 2 {
+		t.Fatalf("get report: err=%v finding=%q seen=%d", err, got.Finding, got.SeenCount)
+	}
+}
+
+// TestServiceReportNoPersistOnInvalid verifies an invalid report output (prose,
+// no JSON) is NOT persisted, and a non-report scenario never persists.
+func TestServiceReportNoPersistOnInvalid(t *testing.T) {
+	database := openIntelDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	jikji := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(200)
+			return
+		}
+		// Prose only -> invalid for the report schema (both attempts).
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"run-bad","status":"completed","response":"I could not build a report.","events":[]}`)
+	}))
+	defer jikji.Close()
+	t.Setenv("BONGSU_INTEL_JIKJI_URL", jikji.URL)
+	svc := NewServiceFromEnv(database)
+	defer svc.Close()
+
+	out, err := svc.RunScenario(ctx, RunRequest{Scenario: "report", Params: map[string]any{"cve": "CVE-1"}, PrincipalID: "u", Scope: &Scope{Admin: true}})
+	if err != nil {
+		t.Fatalf("report run: %v", err)
+	}
+	if out.ReportPersisted {
+		t.Fatal("invalid report output must NOT persist")
+	}
+	var n int
+	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM intel_finding_reports`).Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("no report row expected, got %d", n)
+	}
+}

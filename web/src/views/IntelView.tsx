@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { api, type IntelRunOutcome, type IntelPipelineInfo, type IntelPipelineOutcome, type IntelVerificationOutcome } from '../api';
+import { api, type IntelRunOutcome, type IntelPipelineInfo, type IntelPipelineOutcome, type IntelVerificationOutcome, type IntelFindingReport } from '../api';
 import { Loading, EmptyState, Badge } from '../components/primitives';
 import { Icon } from '../components/Icon';
 
@@ -58,6 +58,13 @@ function statusTone(s: string): 'critical' | 'high' | 'medium' | 'low' {
   return 'medium';
 }
 
+function severityTone(s: string): 'critical' | 'high' | 'medium' | 'low' {
+  if (s === 'critical') return 'critical';
+  if (s === 'high') return 'high';
+  if (s === 'medium') return 'medium';
+  return 'low';
+}
+
 function verdictTone(v: string): 'critical' | 'high' | 'medium' | 'low' {
   if (v === 'valid') return 'critical';   // confirmed real finding
   if (v === 'refuted') return 'low';      // likely false positive
@@ -66,7 +73,7 @@ function verdictTone(v: string): 'critical' | 'high' | 'medium' | 'low' {
 
 export function IntelView() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [mode, setMode] = useState<'scenario' | 'pipeline' | 'verify'>('scenario');
+  const [mode, setMode] = useState<'scenario' | 'pipeline' | 'verify' | 'reports'>('scenario');
   const [scenarios, setScenarios] = useState<string[]>([]);
   const [pipelines, setPipelines] = useState<IntelPipelineInfo[]>([]);
   const [scenario, setScenario] = useState('');
@@ -78,6 +85,7 @@ export function IntelView() {
   const [pipeOutcome, setPipeOutcome] = useState<IntelPipelineOutcome | null>(null);
   const [verifyOutcome, setVerifyOutcome] = useState<IntelVerificationOutcome | null>(null);
   const [voters, setVoters] = useState(3);
+  const [reports, setReports] = useState<IntelFindingReport[] | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -93,6 +101,16 @@ export function IntelView() {
       .catch(() => { if (active) setEnabled(false); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (mode !== 'reports') return;
+    let active = true;
+    setReports(null);
+    api.intelReports()
+      .then((r) => { if (active) setReports(r.reports || []); })
+      .catch(() => { if (active) setReports([]); });
+    return () => { active = false; };
+  }, [mode]);
 
   const selectedPipeline = useMemo(() => pipelines.find((p) => p.name === pipeline), [pipelines, pipeline]);
   const fields = mode === 'scenario'
@@ -144,16 +162,18 @@ export function IntelView() {
             <button className={`btn ${mode === 'scenario' ? 'btn-primary' : ''}`} onClick={() => { setMode('scenario'); reset(); }}>Scenario</button>
             <button className={`btn ${mode === 'pipeline' ? 'btn-primary' : ''}`} disabled={!pipelines.length} onClick={() => { setMode('pipeline'); reset(); }}>Pipeline</button>
             <button className={`btn ${mode === 'verify' ? 'btn-primary' : ''}`} onClick={() => { setMode('verify'); reset(); }}>Verify (vote)</button>
+            <button className={`btn ${mode === 'reports' ? 'btn-primary' : ''}`} onClick={() => { setMode('reports'); reset(); }}>Reports</button>
           </div>
 
-          {mode === 'scenario' ? (
+          {mode === 'scenario' && (
             <label className="field">
               <span>Scenario</span>
               <select value={scenario} onChange={(e) => { setScenario(e.target.value); reset(); }}>
                 {scenarios.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </label>
-          ) : (
+          )}
+          {mode === 'pipeline' && (
             <label className="field">
               <span>Pipeline</span>
               <select value={pipeline} onChange={(e) => { setPipeline(e.target.value); reset(); }}>
@@ -182,7 +202,7 @@ export function IntelView() {
             </p>
           )}
 
-          {fields.map((f) => (
+          {mode !== 'reports' && fields.map((f) => (
             <label className="field" key={f.key}>
               <span>{f.label}{f.required && ' *'}</span>
               <input
@@ -192,11 +212,30 @@ export function IntelView() {
               />
             </label>
           ))}
-          <div>
-            <button className="btn btn-primary" disabled={running || (mode === 'scenario' ? !scenario : mode === 'pipeline' ? !pipeline : false)} onClick={run}>
-              {running ? 'Running…' : mode === 'scenario' ? 'Run scenario' : mode === 'pipeline' ? 'Run pipeline' : 'Run verification'}
-            </button>
-          </div>
+          {mode !== 'reports' && (
+            <div>
+              <button className="btn btn-primary" disabled={running || (mode === 'scenario' ? !scenario : mode === 'pipeline' ? !pipeline : false)} onClick={run}>
+                {running ? 'Running…' : mode === 'scenario' ? 'Run scenario' : mode === 'pipeline' ? 'Run pipeline' : 'Run verification'}
+              </button>
+            </div>
+          )}
+          {mode === 'reports' && (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {reports === null && <p className="muted" style={{ margin: 0 }}>Loading…</p>}
+              {reports !== null && reports.length === 0 && <p className="muted" style={{ margin: 0 }}>No finding reports yet — run the report scenario (or the audit pipeline) to accumulate deduplicated findings.</p>}
+              {reports?.map((rep) => (
+                <div key={rep.id} style={{ borderLeft: '2px solid var(--border, #333)', paddingLeft: 12 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <Badge tone={severityTone(rep.severity)}>{rep.severity}</Badge>
+                    <strong>{rep.finding}</strong>
+                    {rep.cvss != null && <span className="muted" style={{ fontSize: '0.85em' }}>CVSS {rep.cvss}</span>}
+                    {rep.seen_count > 1 && <span className="muted" style={{ fontSize: '0.85em' }}>×{rep.seen_count}</span>}
+                  </div>
+                  {rep.summary && <p className="muted" style={{ margin: '4px 0 0', fontSize: '0.9em' }}>{rep.summary}</p>}
+                </div>
+              ))}
+            </div>
+          )}
           {error && <div className="banner banner-error">{error}</div>}
         </div>
       )}
