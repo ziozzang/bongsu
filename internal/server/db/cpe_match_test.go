@@ -85,3 +85,30 @@ func TestCompatibleCPECandidate(t *testing.T) {
 		t.Fatal("eclipse/openjdk must match a jdk runtime")
 	}
 }
+
+// TestCompatibleCPECandidate_VulnerableThreeState verifies the NVD per-CPE
+// `vulnerable` flag is honored three-state: absent (nil) and true still match
+// (backward compatible), an explicit false is a "running ON" platform node that
+// must be excluded even when product+version otherwise match.
+func TestCompatibleCPECandidate_VulnerableThreeState(t *testing.T) {
+	base := `"vendor":"python","product":"python","version_start_including":"3.9.0","version_end_excluding":"3.9.17"`
+
+	// absent → vulnerable (backward compatible)
+	if _, ok := compatibleCPECandidate("python", "3.9.5", `[{`+base+`}]`); !ok {
+		t.Fatal("absent vulnerable flag must still match")
+	}
+	// explicit true → vulnerable
+	if _, ok := compatibleCPECandidate("python", "3.9.5", `[{`+base+`,"vulnerable":true}]`); !ok {
+		t.Fatal("vulnerable:true must match")
+	}
+	// explicit false → excluded (platform constraint)
+	if _, ok := compatibleCPECandidate("python", "3.9.5", `[{`+base+`,"vulnerable":false}]`); ok {
+		t.Fatal("vulnerable:false must be excluded even when product+version match")
+	}
+	// mixed: a false element and a true element for an in-range version → matches
+	// via the true element.
+	mixed := `[{"vendor":"python","product":"python","version":"3.9.5","vulnerable":false},{` + base + `,"vulnerable":true}]`
+	if _, ok := compatibleCPECandidate("python", "3.9.5", mixed); !ok {
+		t.Fatal("a true element must still match when a sibling element is vulnerable:false")
+	}
+}

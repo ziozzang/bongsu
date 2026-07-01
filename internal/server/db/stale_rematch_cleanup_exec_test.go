@@ -66,7 +66,7 @@ func (c *staleCleanupConn) QueryContext(_ context.Context, query string, args []
 	c.state.queryArgs = values
 	c.state.queryCount++
 	return &staleCleanupRows{
-		columns: []string{"id", "package_name", "pkg_type", "package_ecosystem", "installed_version", "cve_category", "cve_ecosystem", "affected_products"},
+		columns: []string{"id", "package_name", "pkg_type", "package_ecosystem", "installed_version", "cve_category", "cve_ecosystem", "affected_products", "is_withdrawn"},
 		rows:    append([][]driver.Value(nil), c.state.rows...),
 	}, nil
 }
@@ -119,7 +119,12 @@ func staleCleanupArrayLen(values []driver.Value) int {
 }
 
 func staleCleanupRow(id, pkgName, pkgType, pkgEco, installed, cveCategory, cveEco, affected string) []driver.Value {
-	return []driver.Value{id, pkgName, pkgType, pkgEco, installed, cveCategory, cveEco, affected}
+	return []driver.Value{id, pkgName, pkgType, pkgEco, installed, cveCategory, cveEco, affected, false}
+}
+
+// staleCleanupRowWithdrawn is a row whose advisory is withdrawn (retracted).
+func staleCleanupRowWithdrawn(id, pkgName, pkgType, pkgEco, installed, cveCategory, cveEco, affected string) []driver.Value {
+	return []driver.Value{id, pkgName, pkgType, pkgEco, installed, cveCategory, cveEco, affected, true}
 }
 
 func newStaleCleanupTestDB(t *testing.T, state *staleCleanupDriverState) *DB {
@@ -153,6 +158,8 @@ func TestRemoveStaleRematchedVulnerabilitiesDeletesOnlyStaleCveDbFindings(t *tes
 			staleCleanupRow("vuln-compatible", "left-pad", "npm", "npm", "1.0.0", "code-library", "npm", `[{"name":"left-pad","ecosystem":"npm","fixed":["1.1.0"]}]`),
 			staleCleanupRow("vuln-missing-fixed", "left-pad", "npm", "npm", "1.0.0", "code-library", "npm", `[{"name":"left-pad","ecosystem":"npm"}]`),
 			staleCleanupRow("vuln-wrong-ecosystem", "left-pad", "npm", "npm", "1.0.0", "os-package", "Debian", `[{"name":"left-pad","ecosystem":"Debian","fixed":["1.1.0"]}]`),
+			// Retracted advisory: compatible by version, but withdrawn -> stale.
+			staleCleanupRowWithdrawn("vuln-withdrawn", "left-pad", "npm", "npm", "1.0.0", "code-library", "npm", `[{"name":"left-pad","ecosystem":"npm","fixed":["1.1.0"]}]`),
 		},
 	}
 	database := newStaleCleanupTestDB(t, state)
@@ -161,8 +168,8 @@ func TestRemoveStaleRematchedVulnerabilitiesDeletesOnlyStaleCveDbFindings(t *tes
 	if err != nil {
 		t.Fatalf("RemoveStaleRematchedVulnerabilities failed: %v", err)
 	}
-	if result.Scanned != 3 || result.Removed != 2 || result.Batches != 1 || result.BatchSize != 10 {
-		t.Fatalf("cleanup result = %+v, want scanned=3 removed=2 batches=1 batch_size=10", result)
+	if result.Scanned != 4 || result.Removed != 3 || result.Batches != 1 || result.BatchSize != 10 {
+		t.Fatalf("cleanup result = %+v, want scanned=4 removed=3 batches=1 batch_size=10", result)
 	}
 
 	state.mu.Lock()
@@ -180,7 +187,7 @@ func TestRemoveStaleRematchedVulnerabilitiesDeletesOnlyStaleCveDbFindings(t *tes
 		t.Fatal("expected stale findings to be deleted")
 	}
 	deleted := fmt.Sprint(state.deleteArgs)
-	for _, want := range []string{"vuln-missing-fixed", "vuln-wrong-ecosystem"} {
+	for _, want := range []string{"vuln-missing-fixed", "vuln-wrong-ecosystem", "vuln-withdrawn"} {
 		if !strings.Contains(deleted, want) {
 			t.Fatalf("delete args missing %q: %#v", want, state.deleteArgs)
 		}

@@ -1834,6 +1834,7 @@ type cveEntryJSON struct {
 	Description      string          `json:"description"`
 	PublishedDate    flexibleCveTime `json:"published_date,omitempty"`
 	ModifiedDate     flexibleCveTime `json:"modified_date,omitempty"`
+	Withdrawn        flexibleCveTime `json:"withdrawn,omitempty"`
 	AffectedProducts string          `json:"affected_products"`
 	References       string          `json:"references"`
 	RawData          string          `json:"raw_data"`
@@ -1856,6 +1857,7 @@ func (e cveEntryJSON) toModel() models.CveEntry {
 		Description:      e.Description,
 		PublishedDate:    e.PublishedDate.Time,
 		ModifiedDate:     e.ModifiedDate.Time,
+		Withdrawn:        e.Withdrawn.Time,
 		AffectedProducts: e.AffectedProducts,
 		References:       e.References,
 		RawData:          e.RawData,

@@ -346,9 +346,13 @@ type CveEntry struct {
 	Description             string     `json:"description"`
 	PublishedDate           *time.Time `json:"published_date,omitempty"`
 	ModifiedDate            *time.Time `json:"modified_date,omitempty"`
-	AffectedProducts        string     `json:"affected_products"`
-	References              string     `json:"references"`
-	ReferenceKeys           []string   `json:"reference_keys,omitempty"`
-	RawData                 string     `json:"raw_data"`
-	UpdatedAt               time.Time  `json:"updated_at"`
+	// Withdrawn is the OSV `withdrawn` timestamp: when set, the advisory has been
+	// retracted and must NOT produce findings. NULL/absent = active (backward
+	// compatible with feeds that don't carry the field).
+	Withdrawn        *time.Time `json:"withdrawn,omitempty"`
+	AffectedProducts string     `json:"affected_products"`
+	References       string     `json:"references"`
+	ReferenceKeys    []string   `json:"reference_keys,omitempty"`
+	RawData          string     `json:"raw_data"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }

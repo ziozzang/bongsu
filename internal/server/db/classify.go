@@ -56,6 +56,10 @@ type affectedProduct struct {
 	VersionStartExcluding string `json:"version_start_excluding"`
 	VersionEndIncluding   string `json:"version_end_including"`
 	VersionEndExcluding   string `json:"version_end_excluding"`
+	// Vulnerable is the NVD per-CPE `vulnerable` flag (three-state): nil = absent
+	// (treat as vulnerable, backward compatible), &true = vulnerable, &false = a
+	// "running ON" platform constraint that must NOT be flagged as vulnerable.
+	Vulnerable *bool `json:"vulnerable,omitempty"`
 }
 
 type affectedRange struct {
@@ -223,6 +227,11 @@ func compatibleCPECandidate(cpeProduct, installedVersion, affectedProducts strin
 		return affectedProduct{}, false
 	}
 	for _, p := range products {
+		// Skip NVD CPE nodes explicitly marked vulnerable:false (platform "running
+		// ON" constraints). Absent (nil) or true still match — backward compatible.
+		if p.Vulnerable != nil && !*p.Vulnerable {
+			continue
+		}
 		if !cpeProductMatches(cpeProduct, strings.ToLower(strings.TrimSpace(p.Product))) {
 			continue
 		}

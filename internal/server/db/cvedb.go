@@ -64,14 +64,15 @@ func (db *DB) upsertCveEntriesTx(ctx context.Context, tx *sql.Tx, entries []mode
 	// advisory insert below carries no EPSS columns. Routing is the only ingest
 	// path now — RefreshSignalTables (derive-from-cve_database) is gone, so a
 	// stale prune can't delete these directly-written rows.
-	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, title, description, published_date, modified_date, affected_products, refs, raw_data, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, now())
+	stmt, err := tx.PrepareContext(ctx, `INSERT INTO cve_database (id, vulnerability_id, source, category, ecosystem, severity, cvss_score, cvss_vector, title, description, published_date, modified_date, withdrawn, affected_products, refs, raw_data, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now())
 ON CONFLICT (vulnerability_id, source) DO UPDATE SET
 	category=CASE WHEN EXCLUDED.category <> '' THEN EXCLUDED.category ELSE cve_database.category END,
 	ecosystem=CASE WHEN EXCLUDED.ecosystem <> '' THEN EXCLUDED.ecosystem ELSE cve_database.ecosystem END,
 	severity=EXCLUDED.severity, cvss_score=EXCLUDED.cvss_score, cvss_vector=EXCLUDED.cvss_vector,
 	title=EXCLUDED.title, description=EXCLUDED.description,
 	published_date=EXCLUDED.published_date, modified_date=EXCLUDED.modified_date,
+	withdrawn=EXCLUDED.withdrawn,
 	affected_products=(
 		SELECT COALESCE(jsonb_agg(DISTINCT ap.elem), '[]'::jsonb)
 		FROM jsonb_array_elements(
@@ -161,7 +162,7 @@ ON CONFLICT (vulnerability_id) DO UPDATE SET score=EXCLUDED.score, percentile=EX
 		var cveID string
 		if err := stmt.QueryRowContext(ctx, e.ID, e.VulnerabilityID, e.Source, e.Category, e.Ecosystem, e.Severity,
 			e.CVSSScore, e.CVSSVector, e.Title, e.Description,
-			e.PublishedDate, e.ModifiedDate, e.AffectedProducts, e.References, e.RawData).Scan(&cveID); err != nil {
+			e.PublishedDate, e.ModifiedDate, e.Withdrawn, e.AffectedProducts, e.References, e.RawData).Scan(&cveID); err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("insert %s: %w", e.VulnerabilityID, err)
 			}
@@ -330,6 +331,8 @@ SELECT DISTINCT ON (c.id, lower(ap->>'name'), %s, %s)
 FROM cve_database c
 JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap ON true
 WHERE COALESCE(ap->>'name', '') != ''
+  AND c.withdrawn IS NULL
+  AND COALESCE(ap->'vulnerable' <> 'false'::jsonb, true)
   AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
   AND %s IS NOT NULL
   AND %s != ''
@@ -365,6 +368,8 @@ FROM cve_database c
 JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(c.affected_products) = 'array' THEN c.affected_products ELSE '[]'::jsonb END) ap ON true
 WHERE c.id=$1
   AND COALESCE(ap->>'name', '') != ''
+  AND c.withdrawn IS NULL
+  AND COALESCE(ap->'vulnerable' <> 'false'::jsonb, true)
   AND COALESCE(NULLIF(ap->>'ecosystem', ''), NULLIF(c.ecosystem, '')) IS NOT NULL
   AND %s IS NOT NULL
   AND %s != ''
@@ -2662,7 +2667,10 @@ func (db *DB) RematchCVEs(ctx context.Context, opts RematchOptions) (*RematchRes
 		opts.CandidateLimit = MaxRematchCandidateLimit
 	}
 	args := []any{}
-	filters := ""
+	// Exclude withdrawn (retracted) advisories. The affected-package index builder
+	// already drops them, so this is a defensive guard for direct cve_database
+	// joins (and covers a stale index).
+	filters := " AND c.withdrawn IS NULL"
 	qualityCTE := ""
 	qualityJoin := ""
 	if len(opts.Sources) > 0 {
@@ -2938,10 +2946,12 @@ WITH cands AS (
 	SELECT vulnerability_id, severity, cvss_score, cvss_vector, title, description, refs, affected_products::text AS ap
 	FROM cve_database
 	WHERE source='nvd'
+	  AND withdrawn IS NULL
 	  AND jsonb_typeof(affected_products)='array'
 	  AND EXISTS (
 		SELECT 1 FROM jsonb_array_elements(affected_products) e
 		WHERE lower(e->>'product') = ANY($1)
+		  AND COALESCE(e->'vulnerable' <> 'false'::jsonb, true)
 	  )
 )
 SELECT p.id, p.name, p.version, p.host_id, p.scan_id, p.container, p.file_path, lower(p.ecosystem),
