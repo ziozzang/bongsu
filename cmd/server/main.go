@@ -138,23 +138,19 @@ func main() {
 		StartTime: startTime,
 	})
 	secMgr.SetFailureHook(server.SecurityDatabaseSyncFailed)
-	recalcCtx, recalcCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS", 120))*time.Second)
-	if n, err := database.CalcCvssScores(recalcCtx); err == nil && n > 0 {
-		log.Printf("Calculated CVSS scores for %d entries", n)
-	} else if err != nil {
-		log.Printf("CVSS score calculation: %v", err)
-	}
-	if n, err := database.EnrichVulnerabilities(recalcCtx); err == nil && n > 0 {
-		log.Printf("Enriched %d vulnerabilities with CVE DB info", n)
-	} else if err != nil {
-		log.Printf("CVE enrichment: %v", err)
-	}
-	if n, err := database.NormalizeVulnSeverity(recalcCtx); err == nil && n > 0 {
-		log.Printf("Normalized severity for %d vulnerabilities", n)
-	} else if err != nil {
-		log.Printf("Severity normalization: %v", err)
-	}
-	recalcCancel()
+	// Run the startup recalc in the BACKGROUND: on a large, mostly-enriched
+	// dataset (100k+ rows) these full-table passes take a while, and blocking the
+	// listener on them delayed availability by up to the whole budget. Each task
+	// gets its OWN timeout so a slow one (enrichment) can't starve the next
+	// (severity normalization) — the previous shared budget caused exactly that.
+	// The passes only fill empty fields, so serving un-enriched rows briefly on a
+	// cold boot is acceptable and self-heals.
+	go func() {
+		recalcTimeout := time.Duration(envInt("BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS", 600)) * time.Second
+		runStartupRecalc("CVSS score calculation", recalcTimeout, database.CalcCvssScores, "Calculated CVSS scores for %d entries")
+		runStartupRecalc("CVE enrichment", recalcTimeout, database.EnrichVulnerabilities, "Enriched %d vulnerabilities with CVE DB info")
+		runStartupRecalc("Severity normalization", recalcTimeout, database.NormalizeVulnSeverity, "Normalized severity for %d vulnerabilities")
+	}()
 
 	summaryCtx, summaryCancel := context.WithTimeout(context.Background(), time.Duration(envInt("BONGSU_PACKAGE_SUMMARY_REBUILD_TIMEOUT_SECONDS", 120))*time.Second)
 	if n, err := database.RebuildLatestPackageVulnerabilitySummaries(summaryCtx); err == nil && n > 0 {
@@ -249,6 +245,19 @@ func envOr(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// runStartupRecalc runs one background recalc pass under its own timeout and
+// logs the outcome. Isolating each task's budget prevents a slow pass from
+// starving the ones after it.
+func runStartupRecalc(name string, timeout time.Duration, fn func(context.Context) (int, error), okFmt string) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if n, err := fn(ctx); err != nil {
+		log.Printf("%s: %v", name, err)
+	} else if n > 0 {
+		log.Printf(okFmt, n)
+	}
 }
 
 func envInt(key string, def int) int {

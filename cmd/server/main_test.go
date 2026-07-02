@@ -165,7 +165,8 @@ func TestMainStartsHTTPListenerBeforeBackgroundSecuritySync(t *testing.T) {
 		`BONGSU_CVE_REFERENCE_INDEX_REBUILD_TIMEOUT_SECONDS`,
 		`database.EnsureCveReferenceKeys(refCtx)`,
 		`BONGSU_STARTUP_RECALC_TIMEOUT_SECONDS`,
-		`database.EnrichVulnerabilities(recalcCtx)`,
+		`runStartupRecalc("CVE enrichment"`,
+		`database.EnrichVulnerabilities`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("startup ordering missing %q", want)
