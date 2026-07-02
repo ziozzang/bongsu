@@ -2422,16 +2422,24 @@ ORDER BY i.indexed_rows DESC, raw_records DESC, i.ecosystem`, limit)
 }
 
 func (db *DB) GetCveSourceFreshnessStats(ctx context.Context) ([]CveSourceFreshnessStats, error) {
+	// Signal-plane sources (cisa-kev, epss) live in their own tables since the
+	// secdb plane separation (migration 072/074), so a freshness/presence check
+	// that only scanned cve_database would falsely report them missing.
 	rows, err := db.QueryContext(ctx, `
 WITH cve_sources AS (
 	SELECT source, count(*) AS count, MAX(updated_at) AS raw_last_update
 	FROM cve_database
 	WHERE source != ''
 	GROUP BY source
+	UNION ALL
+	SELECT 'cisa-kev', count(*), MAX(updated_at) FROM cve_kev
+	UNION ALL
+	SELECT 'epss', count(*), MAX(updated_at) FROM cve_epss
 )
 SELECT c.source, c.count, COALESCE(s.last_sync_finished_at, c.raw_last_update) AS last_update
 FROM cve_sources c
 LEFT JOIN security_sources s ON s.id = c.source
+WHERE c.count > 0
 ORDER BY c.source`)
 	if err != nil {
 		return nil, err
@@ -2450,10 +2458,17 @@ ORDER BY c.source`)
 
 func (db *DB) GetCveSourceDataUpdateStats(ctx context.Context) ([]CveSourceFreshnessStats, error) {
 	rows, err := db.QueryContext(ctx, `
-SELECT source, count(*) AS count, MAX(updated_at) AS last_update
-FROM cve_database
-WHERE source != ''
-GROUP BY source
+WITH src AS (
+	SELECT source, count(*) AS count, MAX(updated_at) AS last_update
+	FROM cve_database
+	WHERE source != ''
+	GROUP BY source
+	UNION ALL
+	SELECT 'cisa-kev', count(*), MAX(updated_at) FROM cve_kev
+	UNION ALL
+	SELECT 'epss', count(*), MAX(updated_at) FROM cve_epss
+)
+SELECT source, count, last_update FROM src WHERE count > 0
 ORDER BY source`)
 	if err != nil {
 		return nil, err

@@ -116,3 +116,45 @@ func TestCveDatabaseRejectsSignalSource(t *testing.T) {
 		t.Fatalf("custom advisory source must be accepted (constraint is narrow): %v", err)
 	}
 }
+
+// TestSourceFreshnessIncludesSignalPlane guards a deploy regression: after the
+// signal-plane separation, the KEV/EPSS sources live in cve_kev/cve_epss (not
+// cve_database), so the freshness/presence stats must read those tables too —
+// otherwise the health check falsely reports cisa-kev/epss as "missing".
+func TestSourceFreshnessIncludesSignalPlane(t *testing.T) {
+	database := openIntegrationDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	entries := []models.CveEntry{
+		{ID: "osv-CVE-FR-1", VulnerabilityID: "CVE-FR-1", Source: "osv", Severity: "HIGH", CVSSScore: 7.5,
+			Ecosystem: "npm", Category: "code-library", AffectedProducts: `[{"name":"foo","ecosystem":"npm","fixed":["1.0.1"]}]`, References: `[]`, RawData: `{}`},
+		{ID: "kev-CVE-FR-1", VulnerabilityID: "CVE-FR-1", Source: "cisa-kev", AffectedProducts: `[]`, References: `[]`, RawData: `{}`},
+		{ID: "epss-CVE-FR-1", VulnerabilityID: "CVE-FR-1", Source: "epss", EPSSScore: 0.3, EPSSPercentile: 0.9, AffectedProducts: `[]`, References: `[]`, RawData: `{}`},
+	}
+	if _, err := database.UpsertCveEntries(ctx, entries); err != nil {
+		t.Fatalf("ingest: %v", err)
+	}
+
+	for _, fn := range []struct {
+		name string
+		get  func(context.Context) ([]CveSourceFreshnessStats, error)
+	}{
+		{"GetCveSourceFreshnessStats", database.GetCveSourceFreshnessStats},
+		{"GetCveSourceDataUpdateStats", database.GetCveSourceDataUpdateStats},
+	} {
+		stats, err := fn.get(ctx)
+		if err != nil {
+			t.Fatalf("%s: %v", fn.name, err)
+		}
+		present := map[string]int{}
+		for _, s := range stats {
+			present[s.Source] = s.Count
+		}
+		for _, want := range []string{"osv", "cisa-kev", "epss"} {
+			if present[want] == 0 {
+				t.Errorf("%s: source %q must be present (signal plane not counted?), got %+v", fn.name, want, present)
+			}
+		}
+	}
+}
