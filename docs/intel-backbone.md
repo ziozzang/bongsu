@@ -120,6 +120,7 @@ Configure the Bongsu server with `BONGSU_INTEL_*`:
 | Env var | Default | Meaning |
 |---------|---------|---------|
 | `BONGSU_INTEL_JIKJI_URL` | *(empty = disabled)* | jikji base URL, e.g. `http://127.0.0.1:1385`. Empty disables the whole layer. |
+| `BONGSU_INTEL_JIKJI_TOKEN` | *(empty)* | Bearer token sent to an authenticated backbone (see §3.4). Required when jikji enforces `runs:write`. |
 | `BONGSU_INTEL_MAX_CONCURRENCY` | `4` | Concurrent `/v1/runs` cap (e.g. parallel verify voters). |
 | `BONGSU_INTEL_TIMEOUT_SECONDS` | `120` | Per-run wall-clock deadline. Should be ≥ the scenario timeouts. |
 | `BONGSU_INTEL_MAX_STEPS` | `8` | Agent step budget (jikji caps at 64). |
@@ -139,6 +140,29 @@ bongsu-server intel-mcp [--dsn <DSN>] [--run-id <id>]
   **service scope** (admin), which is the mode used with the persistent HTTP
   `/v1/runs` backbone; authorization is enforced at the API trigger and the
   tool-call audit is reconstructed from the run's events.
+
+### 3.4 Authenticating to the backbone
+
+A production jikji backbone should not be an open endpoint. Enable jikji's
+`imprimatur` auth with a key scoped for the intel driver, and give Bongsu the
+matching token via `BONGSU_INTEL_JIKJI_TOKEN` (the runner then sends
+`Authorization: Bearer <token>` on every request):
+
+```yaml
+# jikji config
+imprimatur:
+  enabled: true
+  tenants: [{ id: local, name: Local }]
+  keys:
+    - name: bongsu-backbone
+      tenant_id: local
+      token_env: JIKJI_LOCAL_API_KEY   # export the same secret jikji-side
+      scopes: [runs:read, runs:write, sessions:read, tools:read, tools:write, tools:execute, chat.completions:write, models:read, providers:read]
+```
+
+With auth off, jikji grants the caller a default scope; a build that no longer
+includes `runs:write` in that default rejects runs with `403 scope "runs:write"
+is required` — the signal to configure a token.
 
 ---
 
