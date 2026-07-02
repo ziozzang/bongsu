@@ -156,6 +156,36 @@ func TestRunnerReconstructsJikjiToolCalls(t *testing.T) {
 	}
 }
 
+// TestRunnerSendsBearerToken verifies the runner authenticates to a backbone
+// that requires a token: with a configured token every request carries
+// Authorization: Bearer <token>; without one, no auth header is sent.
+func TestRunnerSendsBearerToken(t *testing.T) {
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"r","status":"completed","response":"ok","events":[]}`)
+	}))
+	defer srv.Close()
+
+	r := NewRunner(RunnerConfig{BaseURL: srv.URL, Token: "secret-tok"})
+	if _, err := r.Run(context.Background(), "triage"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if gotAuth != "Bearer secret-tok" {
+		t.Fatalf("Authorization header = %q, want %q", gotAuth, "Bearer secret-tok")
+	}
+
+	gotAuth = ""
+	r2 := NewRunner(RunnerConfig{BaseURL: srv.URL})
+	if _, err := r2.Run(context.Background(), "triage"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if gotAuth != "" {
+		t.Fatalf("no token configured, but sent Authorization %q", gotAuth)
+	}
+}
+
 func TestRunnerHTTPErrorSurfaces(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)

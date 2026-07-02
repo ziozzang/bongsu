@@ -38,6 +38,7 @@ var ErrBackboneDisabled = errors.New("intel: backbone disabled (set BONGSU_INTEL
 // at Bongsu boot).
 type RunnerConfig struct {
 	BaseURL        string        // jikji server base URL (e.g. http://127.0.0.1:1385); empty disables
+	Token          string        // optional bearer token sent to an authenticated backbone
 	MaxConcurrency int           // concurrent runs cap
 	Timeout        time.Duration // per-run wall-clock deadline
 	MaxSteps       int           // agent step budget (jikji caps at 64)
@@ -47,6 +48,7 @@ type RunnerConfig struct {
 func RunnerConfigFromEnv() RunnerConfig {
 	return RunnerConfig{
 		BaseURL:        strings.TrimRight(strings.TrimSpace(os.Getenv("BONGSU_INTEL_JIKJI_URL")), "/"),
+		Token:          strings.TrimSpace(os.Getenv("BONGSU_INTEL_JIKJI_TOKEN")),
 		MaxConcurrency: envInt("BONGSU_INTEL_MAX_CONCURRENCY", 4),
 		Timeout:        time.Duration(envInt("BONGSU_INTEL_TIMEOUT_SECONDS", 120)) * time.Second,
 		MaxSteps:       envInt("BONGSU_INTEL_MAX_STEPS", 8),
@@ -87,6 +89,13 @@ func NewRunnerFromEnv() *Runner { return NewRunner(RunnerConfigFromEnv()) }
 // Enabled reports whether a backbone URL is configured.
 func (r *Runner) Enabled() bool { return r != nil && r.cfg.BaseURL != "" }
 
+// authorize attaches the bearer token when the backbone requires authentication.
+func (r *Runner) authorize(req *http.Request) {
+	if r.cfg.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+r.cfg.Token)
+	}
+}
+
 // Health reports whether the backbone is reachable (GET /health). Used for
 // graceful degrade — the intelligence API returns 503 when this fails while the
 // scan/match pipeline keeps working.
@@ -97,6 +106,7 @@ func (r *Runner) Health(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, r.cfg.BaseURL+"/health", nil)
+	r.authorize(req)
 	resp, err := r.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("intel: backbone unreachable: %w", err)
@@ -170,6 +180,7 @@ func (r *Runner) RunSession(ctx context.Context, prompt, sessionID string) (Resu
 		return Result{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	r.authorize(req)
 	resp, err := r.http.Do(req)
 	if err != nil {
 		if runCtx.Err() == context.DeadlineExceeded {
