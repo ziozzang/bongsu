@@ -217,7 +217,10 @@ func RegisterScenarios(reg *ScenarioRegistry) {
 			}
 			b.WriteString(". Default to refuting: actively look for evidence the finding is a false positive (fixed version already installed, package not actually present, not reachable, wrong ecosystem). Use advisory_for, sbom_at, dependents_of, query_vulns. Only conclude valid=true if you cannot refute it. ")
 			b.WriteString(verifyLensSuffix(optParam(p, "lens")))
-			b.WriteString(`Output: {"finding","valid":true|false,"confidence":0..1,"refutation":"why it may be false, or empty","evidence":[{tool,fact}]}.`)
+			// Verify is prone to returning the advisory_for tool result verbatim; be
+			// explicit that the tool data is EVIDENCE, and the answer is the verdict.
+			b.WriteString("The tools' output (advisory data, SBOM, dependents) is your EVIDENCE, not your answer. Even if you cannot refute the finding, you MUST still return the verdict object with valid=true — never return the raw advisory/tool JSON. ")
+			b.WriteString(`Output EXACTLY: {"finding":"` + cve + `","valid":true|false,"confidence":0..1,"refutation":"why it may be false, or empty","evidence":[{"tool":"...","fact":"..."}]}.`)
 			return b.String(), nil
 		},
 	})
