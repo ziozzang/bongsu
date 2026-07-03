@@ -265,16 +265,19 @@ func TestServiceRunPipeline(t *testing.T) {
 
 	// Fail the report stage deterministically (by prompt), return schema-valid
 	// output for the others so no corrective retry fires and skews call ordering.
+	var reqSessions []string // the session_id each stage sent (must all be "")
 	jikji := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			w.WriteHeader(200)
 			return
 		}
 		var body struct {
-			Prompt string `json:"prompt"`
+			Prompt    string `json:"prompt"`
+			SessionID string `json:"session_id"`
 		}
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &body)
+		reqSessions = append(reqSessions, body.SessionID)
 		if contains(body.Prompt, "CVE-grade report") {
 			w.WriteHeader(500)
 			_, _ = io.WriteString(w, "stage boom")
@@ -312,21 +315,87 @@ func TestServiceRunPipeline(t *testing.T) {
 	if out.Stages[0].Status != "completed" || out.Stages[1].Status != "failed" || out.Stages[2].Status != "completed" {
 		t.Fatalf("stage statuses wrong: %+v", out.Stages)
 	}
-	if out.SessionID != "sess-pipe" {
-		t.Fatalf("pipeline must thread the session, got %q", out.SessionID)
+	// Stages must NOT share a session: every backbone call sent session_id="".
+	for i, s := range reqSessions {
+		if s != "" {
+			t.Fatalf("stage %d must run in an independent session, got session_id=%q", i, s)
+		}
 	}
-	// All stages persist under the shared session.
+	// Instead they are correlated by a shared pipeline_run_id stamped on each run.
+	if out.PipelineRunID == "" {
+		t.Fatal("pipeline must assign a pipeline_run_id")
+	}
 	var n int
-	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM intel_runs WHERE session_id='sess-pipe'`).Scan(&n); err != nil {
+	if err := database.QueryRowContext(ctx, `SELECT count(*) FROM intel_runs WHERE pipeline_run_id=$1`, out.PipelineRunID).Scan(&n); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if n != 3 {
-		t.Fatalf("all 3 stage runs should persist under the session, got %d", n)
+		t.Fatalf("all 3 stage runs should share the pipeline_run_id, got %d", n)
 	}
 
 	// Unknown scenario fails fast.
 	if _, err := svc.RunPipeline(ctx, PipelineRequest{Scenarios: []string{"nope"}, PrincipalID: "u", Scope: &Scope{Admin: true}}); err == nil {
 		t.Fatal("unknown scenario must fail fast")
+	}
+}
+
+// TestPipelineInjectsPriorResults verifies the InputMapping: a later stage's
+// prompt carries the earlier stage's validated result (as reference facts), so
+// stages build on each other without a shared session.
+func TestPipelineInjectsPriorResults(t *testing.T) {
+	database := openIntelDB(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var verifyPrompt string
+	jikji := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(200)
+			return
+		}
+		var body struct {
+			Prompt string `json:"prompt"`
+		}
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &body)
+		var inner string
+		if contains(body.Prompt, "ADVERSARIALLY verify") {
+			verifyPrompt = body.Prompt
+			inner = `{\"finding\":\"CVE-1\",\"valid\":false,\"confidence\":0.7}`
+		} else { // triage — return a distinctive verdict the verify stage should see
+			inner = `{\"verdict\":\"not_reachable\",\"confidence\":0.9,\"evidence\":[{\"tool\":\"x\"}]}`
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"r","status":"completed","response":"`+inner+`","events":[]}`)
+	}))
+	defer jikji.Close()
+
+	t.Setenv("BONGSU_INTEL_JIKJI_URL", jikji.URL)
+	svc := NewServiceFromEnv(database)
+	defer svc.Close()
+
+	out, err := svc.RunPipeline(ctx, PipelineRequest{
+		Scenarios: []string{"triage", "verify"}, Params: map[string]any{"cve": "CVE-1"},
+		PrincipalID: "user:admin", Scope: &Scope{Admin: true},
+	})
+	if err != nil {
+		t.Fatalf("RunPipeline: %v", err)
+	}
+	if out.Status != "completed" {
+		t.Fatalf("both stages valid -> completed, got %q", out.Status)
+	}
+	// The verify stage's prompt must carry triage's distilled result.
+	if !contains(verifyPrompt, "PRIOR STAGE RESULTS") {
+		t.Fatalf("verify prompt must include the prior-results header:\n%s", verifyPrompt)
+	}
+	if !contains(verifyPrompt, "not_reachable") {
+		t.Fatalf("verify prompt must carry triage's verdict, got:\n%s", verifyPrompt)
+	}
+	// Bulky tool-derived arrays must be distilled out: triage's evidence entry
+	// {"tool":"x"} must not survive into the forwarded result. (The verify scenario
+	// has its own "evidence" in its output spec, so we match the distinctive value.)
+	if contains(verifyPrompt, `\"tool\":\"x\"`) || contains(verifyPrompt, `"tool":"x"`) {
+		t.Fatalf("triage evidence array must be distilled out of the forwarded result:\n%s", verifyPrompt)
 	}
 }
 

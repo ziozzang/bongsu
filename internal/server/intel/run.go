@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/google/uuid"
 	"github.com/ziozzang/bongsu/internal/server/db"
 )
 
@@ -76,6 +77,10 @@ type RunRequest struct {
 	PrincipalID string
 	Scope       *Scope
 	SessionID   string
+	// PriorResults carries earlier pipeline stages' validated outputs. It is
+	// injected into the prompt as reference facts (not a shared session). Nil for
+	// standalone runs, so those are byte-for-byte unchanged.
+	PriorResults []StageResult
 }
 
 // RunOutcome is the API-facing result of a run.
@@ -87,6 +92,7 @@ type RunOutcome struct {
 	Response    string `json:"response"`
 	ToolSteps   int    `json:"tool_steps"`
 	TotalTokens int    `json:"total_tokens"`
+	OutputValid bool   `json:"output_valid"`
 	// Report persistence (report scenario only; omitempty keeps other runs clean).
 	ReportID        *int64 `json:"report_id,omitempty"`
 	ReportDedupKey  string `json:"report_dedup_key,omitempty"`
@@ -109,6 +115,9 @@ func (s *Service) RunScenario(ctx context.Context, req RunRequest) (RunOutcome, 
 	if err != nil {
 		return RunOutcome{}, err
 	}
+	// Pipeline stages run in independent sessions and receive prior stages'
+	// results as injected reference facts (standalone runs pass nil -> no-op).
+	prompt = injectPriorResults(prompt, req.PriorResults)
 	runID, err := s.store.CreateRun(ctx, RunRecord{
 		Scenario: req.Scenario, Goal: scen.Description, PrincipalID: req.PrincipalID,
 		PrincipalScope: req.Scope, ToolsInjected: scen.RequiredTools, SessionID: req.SessionID,
@@ -180,6 +189,7 @@ func (s *Service) RunScenario(ctx context.Context, req RunRequest) (RunOutcome, 
 	outcome := RunOutcome{
 		RunID: runID, SessionID: sessionID, Scenario: req.Scenario, Status: status,
 		Response: res.Response, ToolSteps: res.ToolSteps, TotalTokens: res.TotalTokens,
+		OutputValid: outputValid,
 	}
 	// Persist a report-scenario output as a deduplicated finding (best-effort:
 	// a failure here never fails the run — the raw output is in intel_runs).
@@ -212,11 +222,13 @@ type PipelineStage struct {
 	Error    string `json:"error,omitempty"`
 }
 
-// PipelineOutcome is the API-facing result of a pipeline.
+// PipelineOutcome is the API-facing result of a pipeline. Stages no longer share
+// one backbone session (that polluted later stages); they are correlated by
+// PipelineRunID, stamped on each stage's intel_runs row.
 type PipelineOutcome struct {
-	SessionID string          `json:"session_id"`
-	Status    string          `json:"status"` // completed | partial | failed
-	Stages    []PipelineStage `json:"stages"`
+	PipelineRunID string          `json:"pipeline_run_id"`
+	Status        string          `json:"status"` // completed | partial | failed
+	Stages        []PipelineStage `json:"stages"`
 }
 
 const maxPipelineStages = 8
@@ -264,17 +276,20 @@ func (s *Service) RunPipeline(ctx context.Context, req PipelineRequest) (Pipelin
 		}
 	}
 
-	out := PipelineOutcome{Status: "completed"}
-	session := ""
+	pipelineRunID := uuid.NewString()
+	out := PipelineOutcome{PipelineRunID: pipelineRunID, Status: "completed"}
+	var priors []StageResult
 	failures := 0
-	for i, name := range req.Scenarios {
+	for _, name := range req.Scenarios {
+		// Each stage is an INDEPENDENT run (SessionID="") and receives the earlier
+		// stages' validated results as injected reference facts — never a shared
+		// session (which polluted later stages into echoing raw tool output).
 		outcome, err := s.RunScenario(ctx, RunRequest{
 			Scenario: name, Params: req.Params, PrincipalID: req.PrincipalID,
-			Scope: req.Scope, SessionID: session,
+			Scope: req.Scope, SessionID: "", PriorResults: priors,
 		})
-		if outcome.SessionID != "" {
-			session = outcome.SessionID // thread the session through the pipeline
-		}
+		s.store.SetRunPipelineID(ctx, outcome.RunID, pipelineRunID)
+
 		stage := PipelineStage{Scenario: name, RunID: outcome.RunID, Status: outcome.Status, Response: outcome.Response}
 		if err != nil {
 			stage.Status = "failed"
@@ -287,9 +302,14 @@ func (s *Service) RunPipeline(ctx context.Context, req PipelineRequest) (Pipelin
 			continue
 		}
 		out.Stages = append(out.Stages, stage)
-		_ = i
+		// Only a schema-valid stage is carried forward, so a garbled stage can't
+		// mislead the next one.
+		if outcome.OutputValid {
+			if obj, ok := extractJSONObject(outcome.Response); ok {
+				priors = append(priors, StageResult{Stage: name, Status: outcome.Status, Findings: obj})
+			}
+		}
 	}
-	out.SessionID = session
 	switch {
 	case failures == 0:
 		out.Status = "completed"

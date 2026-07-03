@@ -283,7 +283,7 @@ export function IntelView() {
         <div className="card" style={{ marginTop: 16, maxWidth: 720 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
             <Badge tone={statusTone(pipeOutcome.status)}>{pipeOutcome.status}</Badge>
-            <span className="muted">{pipeOutcome.stages.length} stages · session {pipeOutcome.session_id.slice(0, 8)}</span>
+            <span className="muted">{pipeOutcome.stages.length} stages · pipeline {pipeOutcome.pipeline_run_id.slice(0, 8)}</span>
           </div>
           <div style={{ display: 'grid', gap: 12 }}>
             {pipeOutcome.stages.map((st, i) => (

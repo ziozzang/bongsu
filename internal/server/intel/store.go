@@ -81,6 +81,15 @@ func (s *Store) SetRunValidation(ctx context.Context, runID string, valid bool, 
 		runID, valid, validationErr)
 }
 
+// SetRunPipelineID stamps a run with its pipeline correlation id so the stages of
+// one pipeline execution can be queried together (they no longer share a session).
+func (s *Store) SetRunPipelineID(ctx context.Context, runID, pipelineRunID string) {
+	if runID == "" || pipelineRunID == "" {
+		return
+	}
+	_, _ = s.db.ExecContext(ctx, `UPDATE intel_runs SET pipeline_run_id=$2 WHERE id=$1`, runID, pipelineRunID)
+}
+
 // SetRunSession records the backbone session id resolved during the run (jikji
 // generates one when none was supplied), so follow-up runs can reference it.
 func (s *Store) SetRunSession(ctx context.Context, runID, sessionID string) {

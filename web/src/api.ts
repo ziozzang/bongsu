@@ -1275,7 +1275,7 @@ export interface IntelPipelineStage {
 }
 
 export interface IntelPipelineOutcome {
-  session_id: string;
+  pipeline_run_id: string;
   status: string;
   stages: IntelPipelineStage[];
 }
